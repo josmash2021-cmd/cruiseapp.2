@@ -115,15 +115,16 @@ android {
             }
             // R8 shrink+obfuscate ON (2026-10-17, user-approved): the 8 GB
             // Codemagic builder OOM'd on it 2026-09-05 (builds #22/#23/#24),
-            // so the store AAB with R8 is produced with a LOCAL build
-            // (shorebird release android on this machine) — CI keeps the
-            // flag OFF via the CODEMAGIC env guard below so the pipeline
-            // never dies again. Dart-level --obfuscate stays on regardless.
+            // so CI keeps it OFF until the bigger instance is live — flip
+            // the ENABLE_R8=true env var in Codemagic once it is (user
+            // decision 2026-10-17: bigger builder, pipeline stays automatic).
+            // Local builds always get R8. Dart --obfuscate stays on either way.
             val ciBuild = System.getenv("CODEMAGIC") == "true" ||
                 System.getenv("CI") == "true" ||
                 !System.getenv("CM_BUILD_ID").isNullOrEmpty()
-            isMinifyEnabled = !ciBuild
-            isShrinkResources = !ciBuild
+            val r8Enabled = !ciBuild || System.getenv("ENABLE_R8") == "true"
+            isMinifyEnabled = r8Enabled
+            isShrinkResources = r8Enabled
             proguardFiles(
                 getDefaultProguardFile("proguard-android.txt"),
                 "proguard-rules.pro"

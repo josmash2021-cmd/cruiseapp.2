@@ -2019,6 +2019,53 @@ async def web_update_profile(request: Request, db: AsyncSession = Depends(get_db
     return data
 
 
+async def _otp_users_for_identifier(
+    db: AsyncSession,
+    identifier: str,
+    include_inactive: bool = False,
+):
+    if "@" in identifier:
+        query = select(User).where(func.lower(User.email) == identifier.lower())
+    else:
+        query = select(User).where(User.phone.in_(_phone_lookup_variants(identifier)))
+    if not include_inactive:
+        query = query.where(User.status.notin_(["deleted", "pending_deletion"]))
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+def _otp_account_summaries(users) -> list:
+    ordered = sorted(users, key=lambda u: 0 if u.role == "rider" else 1)
+    return [
+        {
+            "role": u.role,
+            "is_new_user": not (u.first_name or "").strip(),
+        }
+        for u in ordered
+        if u.role in ("rider", "driver")
+    ]
+
+
+async def _consume_otp_proof(
+    db: AsyncSession,
+    identifier: str,
+    token: str,
+) -> bool:
+    result = await db.execute(
+        select(OTPCode).where(
+            OTPCode.identifier == identifier,
+            OTPCode.otp_token == token,
+            OTPCode.expires_at > time.time(),
+        )
+    )
+    row = result.scalars().first()
+    if row is None:
+        return False
+    await db.delete(row)
+    await db.commit()
+    return True
+
+
 @router.get("/auth/web/me")
 async def web_get_me(request: Request, db: AsyncSession = Depends(get_db)):
     """Web-safe /auth/me — JWT only, no HMAC/API key."""
@@ -2029,8 +2076,17 @@ async def web_get_me(request: Request, db: AsyncSession = Depends(get_db)):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = int(payload.get("sub", 0))
+        jti = payload.get("jti", "")
     except jwt.InvalidTokenError:
         raise HTTPException(401, "Invalid or expired token")
+    if jti:
+        from utils.security import _is_jti_revoked_memory
+        from models.database import RevokedToken
+        if _is_jti_revoked_memory(jti):
+            raise HTTPException(401, "Invalid or expired token")
+        revoked = await db.execute(select(RevokedToken).where(RevokedToken.jti == jti))
+        if revoked.scalar_one_or_none() is not None:
+            raise HTTPException(401, "Invalid or expired token")
     r = await db.execute(select(User).where(User.id == user_id))
     user = r.scalar_one_or_none()
     if not user:

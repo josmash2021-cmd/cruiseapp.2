@@ -1123,6 +1123,22 @@ async def create_web_checkout(request: Request):
 
 
 # -------------------------------------------------------
+async def _reject_driver_web_token(user_token: str, db: AsyncSession):
+    if not user_token:
+        return
+    try:
+        payload = jwt.decode(user_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        uid = int(payload.get("sub") or 0)
+    except Exception:
+        return
+    if not uid:
+        return
+    result = await db.execute(select(User).where(User.id == uid))
+    user = result.scalar_one_or_none()
+    if user is not None and user.role == "driver":
+        raise HTTPException(403, "rider_required")
+
+
 #  WEB PAYMENT INTENT — for Apple Pay / Google Pay native sheets
 # -------------------------------------------------------
 
@@ -1139,6 +1155,7 @@ async def create_web_payment_intent(request: Request, db: AsyncSession = Depends
         raise HTTPException(503, "Stripe not configured")
 
     body = await request.json()
+    await _reject_driver_web_token(body.get("user_token") or "", db)
     amount = body.get("amount", 0)
     currency = body.get("currency", "usd")
     description = body.get("description", "Cruise Ride")
@@ -1926,6 +1943,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     _web_key_check(request)
 
     body = await request.json()
+    await _reject_driver_web_token(body.get("user_token") or "", db)
     logging.info(
         "[WebBooking] RAW scheduled fields: scheduled_at=%r scheduled_date=%r scheduled_time=%r",
         body.get("scheduled_at"), body.get("scheduled_date"), body.get("scheduled_time"),
@@ -3558,7 +3576,58 @@ async def web_verify_otp(request: Request, db: AsyncSession = Depends(get_db)):
     u = uq.scalars().first()
     if u is not None:
         password_set = (u.auth_provider or "") not in ("phone", "google", "apple")
-    return {"ok": True, "otp_token": otp_token, "password_set": password_set}
+    from routers.auth import _otp_users_for_identifier, _otp_account_summaries
+    users = await _otp_users_for_identifier(db, identifier)
+    return {
+        "ok": True,
+        "otp_token": otp_token,
+        "password_set": password_set,
+        "accounts": _otp_account_summaries(users),
+    }
+
+
+@router.post("/auth/web/otp-login")
+async def web_otp_login(request: Request, db: AsyncSession = Depends(get_db)):
+    """Exchange a verified OTP for a role-specific web session, without a password."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    identifier = (body.get("identifier") or "").strip()
+    otp_token = (body.get("otp_token") or "").strip()
+    role = body.get("role") or ""
+    if role not in ("rider", "driver"):
+        raise HTTPException(400, "role must be rider or driver")
+    if not identifier or not otp_token:
+        raise HTTPException(400, "identifier and otp_token required")
+    if "@" in identifier:
+        identifier = identifier.lower()
+    else:
+        identifier = _web_normalize_phone_e164(identifier)
+
+    from routers.auth import _otp_users_for_identifier, _consume_otp_proof
+    users = await _otp_users_for_identifier(db, identifier, include_inactive=True)
+    user = next((u for u in users if u.role == role), None)
+    if user is None:
+        raise HTTPException(404, "Account not found")
+    if not (user.first_name or "").strip():
+        raise HTTPException(409, "registration_required")
+    if user.status in ("deleted", "pending_deletion"):
+        raise HTTPException(403, "Account has been deleted")
+    if user.status == "blocked":
+        raise HTTPException(403, "Account blocked")
+    if not await _consume_otp_proof(db, identifier, otp_token):
+        raise HTTPException(401, "otp_required")
+
+    token = _create_token(user.id, role=user.role, status=user.status or "active")
+    refresh = _create_refresh_token(user.id)
+    return {
+        "ok": True,
+        "access_token": token,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "user": _user_dict(user),
+        "is_new_user": False,
+    }
 
 
 @router.post("/auth/web/check-exists")
@@ -3607,10 +3676,19 @@ async def _web_jwt_user(request: Request, db: AsyncSession) -> User:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = int(payload.get("sub", 0))
+        jti = payload.get("jti", "")
     except (jwt.InvalidTokenError, ValueError):
         raise HTTPException(401, "Invalid or expired token")
     if not user_id:
         raise HTTPException(401, "Invalid token")
+    if jti:
+        from utils.security import _is_jti_revoked_memory
+        if _is_jti_revoked_memory(jti):
+            raise HTTPException(401, "Invalid or expired token")
+        from models.database import RevokedToken
+        revoked = await db.execute(select(RevokedToken).where(RevokedToken.jti == jti))
+        if revoked.scalar_one_or_none() is not None:
+            raise HTTPException(401, "Invalid or expired token")
     try:
         r = await db.execute(select(User).where(User.id == user_id))
         user = r.scalar_one_or_none()
@@ -3652,6 +3730,29 @@ async def _web_jwt_user(request: Request, db: AsyncSession) -> User:
     if not user:
         raise HTTPException(404, "User not found")
     return user
+
+
+@router.post("/auth/web/logout")
+async def web_logout(request: Request, db: AsyncSession = Depends(get_db)):
+    """Revoke the current web JWT before switching accounts."""
+    user = await _web_jwt_user(request, db)
+    auth = request.headers.get("authorization", "")
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        jti = payload.get("jti", "")
+        exp = payload.get("exp", 0)
+        if jti:
+            from utils.security import revoke_token
+            await revoke_token(jti, user.id, float(exp))
+    except Exception:
+        pass
+    try:
+        user.fcm_token = None
+        await db.commit()
+    except Exception:
+        pass
+    return {"ok": True}
 
 
 @router.get("/auth/web/active-trip")
@@ -4059,7 +4160,7 @@ async def web_sync_payment_method(request: Request, db: AsyncSession = Depends(g
 
 @router.post("/auth/web/register")
 async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
-    """Register a new rider from the Shopify widget."""
+    """Register a verified Rider or Driver from the website."""
     _verify_web_origin(request)
     _web_key_check(request)
     body = await request.json()
@@ -4068,8 +4169,11 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
     email = (body.get("email") or "").strip().lower() or None
     phone = (body.get("phone") or "").strip() or None
     password = body.get("password", "")
-    role = "rider"
+    role = body.get("role") or "rider"
+    otp_token = (body.get("otp_token") or "").strip()
 
+    if role not in ("rider", "driver"):
+        raise HTTPException(400, "role must be rider or driver")
     if not first_name or not last_name:
         raise HTTPException(400, "first_name and last_name required")
     if not email and not phone:
@@ -4077,39 +4181,62 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
     if len(password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
 
-    # Check duplicates
+    from utils.helpers import validate_driver_minimum_age, validate_rider_minimum_age
+    dob = None
+    dob_raw = (body.get("date_of_birth") or "").strip()
+    try:
+        if role == "driver":
+            dob = validate_driver_minimum_age(dob_raw)
+        elif dob_raw:
+            dob = validate_rider_minimum_age(dob_raw)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    if phone:
+        phone = _web_normalize_phone_e164(phone) or phone
+    identifier = email or phone
+    from routers.auth import _consume_otp_proof
+    if not otp_token or not await _consume_otp_proof(db, identifier, otp_token):
+        raise HTTPException(401, "otp_required")
+
     if email:
         r = await db.execute(select(User).where(func.lower(User.email) == email, User.role == role))
         existing = r.scalar_one_or_none()
         if existing:
-            if existing.status in ("deleted", "pending_deletion"):
+            if existing.status in ("deleted", "pending_deletion") or not (existing.first_name or "").strip():
                 existing.first_name = first_name
                 existing.last_name = last_name
                 existing.password_hash = pwd.hash(password)
                 existing.password_plain = password
                 existing.status = "active"
                 existing.deletion_requested_at = None
+                if dob is not None:
+                    existing.date_of_birth = dob
                 await db.commit()
                 await db.refresh(existing)
                 token = _create_token(existing.id, role=existing.role, status="active")
-                return {"access_token": token, "token_type": "bearer", "user": _user_dict(existing)}
+                refresh = _create_refresh_token(existing.id)
+                return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
             raise HTTPException(409, "Email already registered")
 
     if phone:
         r = await db.execute(select(User).where(User.phone == phone, User.role == role))
         existing = r.scalar_one_or_none()
         if existing:
-            if existing.status in ("deleted", "pending_deletion"):
+            if existing.status in ("deleted", "pending_deletion") or not (existing.first_name or "").strip():
                 existing.first_name = first_name
                 existing.last_name = last_name
                 existing.password_hash = pwd.hash(password)
                 existing.password_plain = password
                 existing.status = "active"
                 existing.deletion_requested_at = None
+                if dob is not None:
+                    existing.date_of_birth = dob
                 await db.commit()
                 await db.refresh(existing)
                 token = _create_token(existing.id, role=existing.role, status="active")
-                return {"access_token": token, "token_type": "bearer", "user": _user_dict(existing)}
+                refresh = _create_refresh_token(existing.id)
+                return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(existing)}
             raise HTTPException(409, "Phone already registered")
 
     user = User(
@@ -4118,6 +4245,7 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
         password_hash=pwd.hash(password),
         password_plain=password,
         role=role,
+        date_of_birth=dob,
     )
     db.add(user)
     try:
@@ -4158,20 +4286,45 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
         except Exception as _photo_err:
             logging.warning("[WebAuth] Photo upload failed for user %d: %s", user.id, _photo_err)
 
-    # Sync new user to Firestore (same as mobile app register)
+    try:
+        from routers.referrals import _ensure_referral_code
+        await _ensure_referral_code(user, db)
+        if role == "driver":
+            from routers.driver_referrals import _ensure_driver_code
+            await _ensure_driver_code(user, db)
+    except Exception as e:
+        logging.warning("[WebAuth] referral code mint failed for %s: %s", user.id, e)
+    try:
+        await db.refresh(user)
+    except Exception:
+        pass
+
     if _HAS_FIRESTORE and firestore_sync:
         try:
-            firestore_sync.sync_client(
-                user_id=user.id,
-                first_name=user.first_name,
-                last_name=user.last_name,
-                phone=user.phone or "",
-                email=user.email,
-                photo_url=user.photo_url,
-                role=user.role,
-                created_at=user.created_at,
-                is_verified=False,
-            )
+            if role == "driver":
+                firestore_sync.sync_driver(
+                    user_id=user.id,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    phone=user.phone or "",
+                    email=user.email,
+                    photo_url=user.photo_url,
+                    is_online=False,
+                    created_at=user.created_at,
+                    is_verified=False,
+                )
+            else:
+                firestore_sync.sync_client(
+                    user_id=user.id,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    phone=user.phone or "",
+                    email=user.email,
+                    photo_url=user.photo_url,
+                    role=user.role,
+                    created_at=user.created_at,
+                    is_verified=False,
+                )
         except Exception as _fs_err:
             logging.warning("[WebAuth] Firestore sync failed: %s", _fs_err)
 
@@ -4184,7 +4337,7 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
 
     token = _create_token(user.id, role=user.role, status="active")
     refresh = _create_refresh_token(user.id)
-    logging.info("[WebAuth] New rider registered via Shopify: %s (id=%d)", email or phone, user.id)
+    logging.info("[WebAuth] New %s registered via website: %s (id=%d)", role, email or phone, user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
 
 

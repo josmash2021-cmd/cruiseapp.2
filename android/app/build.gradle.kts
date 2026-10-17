@@ -113,17 +113,17 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            // Minify stays OFF. Play flags obfuscation <25% (deadline Feb
-            // 2027), but R8 shrink+obfuscate does not fit the 8 GB
-            // mac_mini_m2 builder with this dependency graph (Stripe,
-            // Mapbox, ML Kit, Firebase): OOM with optimize, then two
-            // straight timeouts (60 and 120 min) without it — builds
-            // #22/#23/#24 on 2026-09-05. Dex-only R8 fits fine. Revisit
-            // obfuscation with a bigger instance or a local AAB build
-            // before Feb 2027; Dart-level --obfuscate stays on in
-            // codemagic.yaml in the meantime.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // R8 shrink+obfuscate ON (2026-10-17, user-approved): the 8 GB
+            // Codemagic builder OOM'd on it 2026-09-05 (builds #22/#23/#24),
+            // so the store AAB with R8 is produced with a LOCAL build
+            // (shorebird release android on this machine) — CI keeps the
+            // flag OFF via the CODEMAGIC env guard below so the pipeline
+            // never dies again. Dart-level --obfuscate stays on regardless.
+            val ciBuild = System.getenv("CODEMAGIC") == "true" ||
+                System.getenv("CI") == "true" ||
+                !System.getenv("CM_BUILD_ID").isNullOrEmpty()
+            isMinifyEnabled = !ciBuild
+            isShrinkResources = !ciBuild
             proguardFiles(
                 getDefaultProguardFile("proguard-android.txt"),
                 "proguard-rules.pro"

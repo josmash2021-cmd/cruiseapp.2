@@ -358,6 +358,27 @@ void main() {
           reason: 'scheduled rides reuse the surface-reclaiming opener');
       expect(off, contains('UserSession.logout()'),
           reason: 'sign out keeps the offline-then-logout flow');
+      // 2026-10-17 (foto del usuario): categorías con título, sin las
+      // líneas amarillas (falta de Material ancestor en la ruta) y todo
+      // cabe sin scroll.
+      expect(off, contains('return Material('),
+          reason: 'the drawer content is wrapped in Material — without it '
+              'every label inherits the yellow-underline fallback style');
+      expect(off, contains('_menuSection('),
+          reason: 'every division carries its category title');
+      expect(off, isNot(contains('_menuDivider')),
+          reason: 'the hairline dividers died — the titles separate now');
+      for (final key in [
+        'menuSectionAccount',
+        'menuSectionGrowth',
+        'menuSectionWork',
+        'moneySectionLabel',
+        'resourcesSectionLabel',
+      ]) {
+        expect(off, contains('s.$key'), reason: 'section title $key missing');
+        expect(l10n, contains('String get $key'),
+            reason: 'i18n getter $key missing (ES/EN)');
+      }
     });
   });
 }

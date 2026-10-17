@@ -2619,23 +2619,27 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   // ═══════════════════════════════════════════════════
 
   Widget _buildMenuDrawerContent() {
-    final topPad = MediaQuery.of(context).padding.top;
+    final mq = MediaQuery.of(context);
+    final topPad = mq.padding.top;
     final s = S.of(context);
     final photo = _menuPhotoImage();
     final initial = _menuDriverName.isNotEmpty ? _menuDriverName[0] : '·';
-    return Container(
+    // Material es OBLIGATORIO aquí: la ruta transparente no trae uno y sin
+    // él los Text heredan el estilo fallback del overlay (las líneas
+    // amarillas bajo cada label del reporte con foto 2026-10-17).
+    return Material(
       color: neuBase,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ── Header: burbuja de foto a la IZQUIERDA del nombre ──
           Padding(
-            padding: EdgeInsets.fromLTRB(20, topPad + 18, 20, 14),
+            padding: EdgeInsets.fromLTRB(20, topPad + 10, 20, 8),
             child: Row(
               children: [
                 Container(
-                  width: 52,
-                  height: 52,
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: const Color(0xFF2A2A33),
@@ -2653,7 +2657,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                         )
                       : _menuInitial(initial),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     _menuDriverName,
@@ -2661,7 +2665,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 22,
+                      fontSize: 21,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.3,
                     ),
@@ -2670,53 +2674,52 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
               ],
             ),
           ),
-          Divider(
-            color: Colors.white.withValues(alpha: 0.08),
-            height: 1,
-          ),
-          // ── Opciones (las de siempre, con sus iconos) ──
+          // ── Opciones categorizadas: cada división lleva el título de su
+          // categoría (spec 2026-10-17) y los items van compactos para que
+          // TODO quepa sin scroll — el ListView solo scrollea si la
+          // pantalla es más chica que el contenido (respaldo). ──
           Expanded(
             child: ListView(
               physics: const BouncingScrollPhysics(),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              padding: EdgeInsets.only(
+                  left: 10, right: 10, bottom: mq.padding.bottom + 8),
               children: [
+                _menuSection(s.menuSectionAccount),
                 _menuItem(Icons.attach_money_rounded, s.earningsTitle,
                     () => _menuNav(const DriverEarningsScreen())),
                 _menuItem(Icons.health_and_safety_outlined, s.helpAndSafety,
                     () => _menuNav(const HelpScreen())),
                 _menuItem(Icons.settings_rounded, s.settingsTitle,
                     () => _menuNav(const DriverSettingsScreen())),
-                _menuDivider(),
+                _menuSection(s.menuSectionGrowth),
                 _menuItem(Icons.workspace_premium_rounded, s.cruiseLevelLabel,
                     () => _menuNav(const CruiseLevelScreen())),
                 _menuItem(Icons.work_outline_rounded, s.workHub,
                     () => _menuNav(const WorkHubScreen())),
                 _menuItem(Icons.person_add_rounded, s.referFriends,
                     () => _menuNav(const DriverReferralScreen())),
-                _menuDivider(),
+                _menuSection(s.menuSectionWork),
                 _menuItem(Icons.event_note_rounded, s.scheduledTripsMenu,
                     _menuScheduled),
                 _menuItem(Icons.directions_car_rounded, s.vehiclesLabel,
                     () => _menuNav(const DriverVehicleScreen())),
                 _menuItem(Icons.description_rounded, s.documentsLabel,
                     () => _menuNav(const DriverDocumentsScreen())),
-                _menuDivider(),
+                _menuSection(s.moneySectionLabel),
                 _menuItem(Icons.receipt_long_rounded, s.taxInfo,
                     () => _menuNav(const TaxInfoScreen())),
                 _menuItem(Icons.account_balance_rounded, s.payoutMethodsLabel,
                     () => _menuNav(const PayoutMethodsScreen())),
-                _menuDivider(),
+                _menuSection(s.resourcesSectionLabel),
                 _menuItem(Icons.school_rounded, s.learningCenter,
                     () => _menuNav(const LearningCenterScreen())),
                 _menuItem(Icons.bug_report_rounded, s.bugReporter,
                     () => _menuNav(const BugReporterScreen())),
                 _menuItem(Icons.info_outline_rounded, s.aboutLabel,
                     () => _menuNav(const AboutScreen())),
-                _menuDivider(),
+                const SizedBox(height: 4),
                 _menuItem(Icons.logout_rounded, s.signOut, _menuSignOut,
                     danger: true),
-                const SizedBox(height: 12),
               ],
             ),
           ),
@@ -2736,11 +2739,19 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         ),
       );
 
-  Widget _menuDivider() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-        child: Divider(
-          color: Colors.white.withValues(alpha: 0.08),
-          height: 1,
+  /// Título de categoría de cada división del drawer (spec 2026-10-17:
+  /// "categoriza cada cuadro y division colocale un titulo") — reemplaza a
+  /// la hairline divisoria como separador.
+  Widget _menuSection(String title) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+        child: Text(
+          title.toUpperCase(),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.42),
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+          ),
         ),
       );
 
@@ -2751,13 +2762,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         child: Row(
           children: [
             Icon(icon,
                 color: danger ? color : Colors.white.withValues(alpha: 0.85),
-                size: 22),
-            const SizedBox(width: 16),
+                size: 20),
+            const SizedBox(width: 14),
             Expanded(
               child: Text(
                 label,
@@ -2765,7 +2776,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: color,
-                  fontSize: 15.5,
+                  fontSize: 14.5,
                   fontWeight: FontWeight.w600,
                 ),
               ),

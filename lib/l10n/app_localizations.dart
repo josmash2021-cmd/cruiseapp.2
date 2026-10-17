@@ -1502,6 +1502,9 @@ class S {
   String get manageSectionLabel => _es ? 'Administrar' : 'Manage';
   String get moneySectionLabel => _es ? 'Dinero' : 'Money';
   String get resourcesSectionLabel => _es ? 'Recursos' : 'Resources';
+  String get menuSectionAccount => _es ? 'Cuenta' : 'Account';
+  String get menuSectionGrowth => _es ? 'Crecimiento' : 'Growth';
+  String get menuSectionWork => _es ? 'Tu trabajo' : 'Your work';
   String get helpLabel => _es ? 'Ayuda' : 'Help';
   String get safetyLabel => _es ? 'Seguridad' : 'Safety';
   String get aboutLabel => _es ? 'Acerca de' : 'About';

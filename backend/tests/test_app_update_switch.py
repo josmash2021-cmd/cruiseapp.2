@@ -289,3 +289,121 @@ async def test_client_event_breadcrumb(client):
     assert res.json()["ok"] is True
     res = await client.post("/diag/client-event", json={"event": "x"})
     assert res.status_code in (401, 403, 422)
+
+
+# ── Update-available push fan-out (2026-10-17, user spec "que les llegue
+#    una notificación de actualiza tu aplicación") ──
+
+async def test_off_to_on_fans_out_push_to_that_role_only(
+        client, db, test_driver, monkeypatch):
+    """Activar el gate de un rol manda el FCM 'Nueva actualización
+    disponible' SOLO a los usuarios de ese rol con token."""
+    from models.database import User
+
+    rider = User(first_name="R", last_name="T", email="upd-rider@test.com",
+                 password_hash="x", role="rider", status="active",
+                 fcm_token="rider-tok", phone="+13055550123")
+    db.add(rider)
+    await db.commit()
+
+    import utils.helpers as helpers_mod
+    import services.fcm_service as fcm_mod
+    pushes = []
+    monkeypatch.setattr(
+        fcm_mod, "_send_fcm_push_async",
+        lambda token, title, body, data=None: pushes.append(
+            (token, title, body, data)))
+
+    # _safe_create_task es SYNC (agenda la coro) — el fake captura las coros
+    # y el test las awaita él mismo (un async def fake jamás correría:
+    # llamarlo solo crea otra coroutine que nadie awaita).
+    pending = []
+
+    def _capture(coro, name=None):
+        pending.append(coro)
+
+    monkeypatch.setattr(helpers_mod, "_safe_create_task", _capture)
+
+    async def _drain():
+        for c in pending:
+            await c
+        pending.clear()
+
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    # Garantiza el punto de partida: ambos roles OFF (limpia también el
+    # legacy global).
+    await client.post("/admin/app-update", headers=dh(),
+                      json={"driver_enabled": False, "rider_enabled": False})
+    await _drain()
+    pushes.clear()
+
+    # driver off→on: solo el driver con token recibe.
+    res = await client.post("/admin/app-update", headers=dh(),
+                            json={"driver_enabled": True,
+                                  "rider_enabled": False})
+    assert res.status_code == 200, res.text
+    await _drain()
+    toks = [p[0] for p in pushes]
+    assert "test-fcm-token" in toks
+    assert "rider-tok" not in toks
+    assert pushes[0][3]["type"] == "app_update"
+
+    # Re-guardar un switch ya ON: cero reenvíos (no spam).
+    pushes.clear()
+    await client.post("/admin/app-update", headers=dh(),
+                      json={"driver_enabled": True,
+                            "rider_enabled": False})
+    await _drain()
+    assert pushes == []
+
+    # rider off→on: solo el rider recibe.
+    pushes.clear()
+    await client.post("/admin/app-update", headers=dh(),
+                      json={"driver_enabled": True,
+                            "rider_enabled": True})
+    await _drain()
+    assert [p[0] for p in pushes] == ["rider-tok"]
+
+
+async def test_update_push_copy_is_localized(client, db, monkeypatch):
+    """El teléfono del usuario decide el idioma (users.locale)."""
+    from models.database import User
+
+    es_driver = User(first_name="E", last_name="S", email="upd-es@test.com",
+                     password_hash="x", role="driver", status="active",
+                     fcm_token="es-tok", locale="es", phone="+13055550124")
+    en_driver = User(first_name="E", last_name="N", email="upd-en@test.com",
+                     password_hash="x", role="driver", status="active",
+                     fcm_token="en-tok", locale="en", phone="+13055550125")
+    db.add_all([es_driver, en_driver])
+    await db.commit()
+
+    import utils.helpers as helpers_mod
+    import services.fcm_service as fcm_mod
+    pushes = []
+    monkeypatch.setattr(
+        fcm_mod, "_send_fcm_push_async",
+        lambda token, title, body, data=None: pushes.append(
+            (token, title, body)))
+
+    pending = []
+
+    def _capture(coro, name=None):
+        pending.append(coro)
+
+    monkeypatch.setattr(helpers_mod, "_safe_create_task", _capture)
+
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    await client.post("/admin/app-update", headers=dh(),
+                      json={"driver_enabled": False, "rider_enabled": False})
+    for c in pending:
+        await c
+    pending.clear()
+    pushes.clear()
+    await client.post("/admin/app-update", headers=dh(),
+                      json={"driver_enabled": True})
+    for c in pending:
+        await c
+    by_token = {t: (ti, b) for t, ti, b in pushes}
+    assert by_token["es-tok"][0] == "Nueva actualización disponible 🚀"
+    assert by_token["en-tok"][0] == "Update available 🚀"

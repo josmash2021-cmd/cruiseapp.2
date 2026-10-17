@@ -519,10 +519,55 @@ async def get_app_update_switch(db=Depends(get_db)):
     }
 
 
+async def _notify_update_available(role: str) -> None:
+    """Fan-out FCM "nueva actualización disponible" a TODOS los usuarios del
+    rol con token (2026-10-17, user spec: al activar el gate, las apps
+    CERRADAS también se enteran — el gate solo habla dentro de la app). El
+    tap abre la app y el gate la lleva a la tienda; quien ya actualizó
+    (build >= min) pasa directo.
+    """
+    from sqlalchemy import select as _select
+    from models.database import User
+    from services.fcm_service import _send_fcm_push_async
+    try:
+        async with SessionLocal() as s:
+            r = await s.execute(
+                _select(User.id, User.fcm_token, User.locale).where(
+                    User.role == role,
+                    User.fcm_token.isnot(None),
+                    User.fcm_token != "",
+                ))
+            rows = r.all()
+        sent = 0
+        for uid, token, locale in rows:
+            es = (locale or "es").lower().startswith("es")
+            try:
+                _send_fcm_push_async(
+                    token,
+                    "Nueva actualización disponible 🚀" if es
+                    else "Update available 🚀",
+                    "Actualiza Cruise para ver los nuevos cambios." if es
+                    else "Update Cruise to see what's new.",
+                    {"type": "app_update", "role": role},
+                )
+                sent += 1
+            except Exception as e:
+                logger.warning(
+                    "[AppUpdate] update push failed for user %s: %s", uid, e)
+        logger.warning(
+            "[AppUpdate] update-available fan-out role=%s sent=%d", role, sent)
+    except Exception as e:
+        logger.warning("[AppUpdate] update-available fan-out failed: %s", e)
+
+
 @router.post("/admin/app-update", dependencies=[Depends(_require_dispatch_auth)])
 async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
                                 db=Depends(get_db)):
     from sqlalchemy import select
+
+    # Estado previo — la notificación push solo sale en la transición
+    # off→on de cada rol (re-guardar un switch ya ON no espamea).
+    prev = await _read_app_update_state(db)
 
     async def _upsert(key: str, value: str, description: str) -> None:
         r = await db.execute(select(AppConfig).where(AppConfig.key == key))
@@ -584,6 +629,23 @@ async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
         logger.warning("[AppUpdate] socket broadcast failed: %s", e)
 
     state = await _read_app_update_state(db)
+
+    # Push a las apps CERRADAS (2026-10-17, user spec "que les llegue una
+    # notificación de actualiza tu aplicación"): el gate solo habla dentro
+    # de la app — al activarlo, cada rol que acaba de pasar a ON recibe el
+    # FCM "Nueva actualización disponible" (ES/EN por users.locale). Solo
+    # en la transición off→on: re-guardar un switch ya ON no reenvía.
+    try:
+        from utils.helpers import _safe_create_task
+        if state["driver"] and not prev["driver"]:
+            _safe_create_task(_notify_update_available("driver"),
+                              name="app_update_push_driver")
+        if state["rider"] and not prev["rider"]:
+            _safe_create_task(_notify_update_available("rider"),
+                              name="app_update_push_rider")
+    except Exception as e:
+        logger.warning("[AppUpdate] update push schedule failed: %s", e)
+
     return {
         "all_enabled": state["all"],
         "enabled": state["all"],

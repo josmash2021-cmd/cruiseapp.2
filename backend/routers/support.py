@@ -2113,15 +2113,28 @@ async def _followup_task(chat_id: int, user_id: int, lang: str) -> None:
         logging.warning("Follow-up task failed for chat %d: %s", chat_id, e)
 
 
+# Read-settle window (2026-10-17, user report: the bot answered a cut-off
+# "la" before the user finished typing "la foto es en físico"): the reply
+# task waits a few seconds before generating — a fast follow-up message
+# cancels this task (the scheduler already does that) and the new one reads
+# the WHOLE history: one consolidated answer, never two artificial ones.
+_BOT_READ_SETTLE_SECONDS = 4.0
+
+
 async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot_phase: str):
     """Run bot reply generation in the background so the HTTP response returns immediately.
     Includes human-like timing: mid-typing pauses (15%), occasional slow responses (10%).
     """
     try:
+        await asyncio.sleep(_BOT_READ_SETTLE_SECONDS)
         async with SessionLocal() as db:
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
             chat = chat_r.scalar_one_or_none()
-            if not chat or chat.bot_phase == "dispatch_takeover":
+            # Silencio total en chats de humanos — y la carrera queda
+            # cerrada abajo: cada escritura re-lee la fase FRESCA, así un
+            # takeover/escalación que aterriza a mitad de la generación
+            # corta lo que quede por escribir.
+            if not chat or (chat.bot_phase or "") in ("escalated", "dispatch_takeover"):
                 return
 
             # ~10% chance of occasional slow response (agent multitasking)
@@ -2164,6 +2177,19 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                 for pidx, part in enumerate(parts):
                     part = _strip_markdown(part.strip())
                     if not part:
+                        continue
+                    # Carrera cerrada (2026-10-17, chat Yusmel: el bot siguió
+                    # hablando tras "Un agente especializado se ha conectado"):
+                    # la fase se re-lee FRESCA antes de cada mensaje — si el
+                    # operador conectó un agente o el chat escaló a mitad de
+                    # la respuesta, lo que quede NO se escribe. Las líneas de
+                    # sistema (la transferencia de la propia escalación) sí
+                    # salen siempre.
+                    await db.refresh(chat)
+                    _phase_now = chat.bot_phase or ""
+                    if _phase_now == "dispatch_takeover":
+                        break
+                    if _phase_now == "escalated" and r["role"] != "system":
                         continue
                     if pidx > 0:
                         part_len = len(part)

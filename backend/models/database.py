@@ -987,6 +987,22 @@ class LoginActivity(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
 
+class DemandWaitlist(Base):
+    """A rider who asked for a ride with no drivers online (2026-10-17,
+    owner spec "ningun rider podra pedir un viaje si no hay drivers activos"
+    — the demand is never lost): one push the moment a driver flips online
+    in their state, and the entry expires after 24 h."""
+    __tablename__ = "demand_waitlist"
+    id = Column(Integer, primary_key=True, index=True)
+    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    state = Column(String(2), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    notified_at = Column(DateTime(timezone=True), nullable=True)
+
+
 # ═══════════════════════════════════════════════════════
 #  Migration helpers
 # ═══════════════════════════════════════════════════════
@@ -1175,6 +1191,18 @@ async def migrate_add_columns(conn):
             device_label VARCHAR(120),
             ip VARCHAR(45),
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    await conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS demand_waitlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rider_id INTEGER NOT NULL,
+            trip_id INTEGER,
+            lat REAL,
+            lng REAL,
+            state VARCHAR(2),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            notified_at DATETIME
         )
     """))
 
@@ -1443,6 +1471,29 @@ async def migrate_postgres(conn):
                 await conn.execute(text(_ddl))
         except Exception as _e:
             logging.warning("Postgres login_activity DDL skip: %s", _e)
+
+    # ── Demand waitlist (riders waiting for a driver to come online) ──
+    for _ddl in (
+        """
+        CREATE TABLE IF NOT EXISTS demand_waitlist (
+            id SERIAL PRIMARY KEY,
+            rider_id INTEGER NOT NULL REFERENCES users(id),
+            trip_id INTEGER REFERENCES trips(id),
+            lat DOUBLE PRECISION,
+            lng DOUBLE PRECISION,
+            state VARCHAR(2),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            notified_at TIMESTAMP WITH TIME ZONE
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_demand_waitlist_rider ON demand_waitlist (rider_id)",
+        "CREATE INDEX IF NOT EXISTS idx_demand_waitlist_state ON demand_waitlist (state)",
+    ):
+        try:
+            async with conn.begin_nested():
+                await conn.execute(text(_ddl))
+        except Exception as _e:
+            logging.warning("Postgres demand_waitlist DDL skip: %s", _e)
 
     # ── Performance indexes for hot-path queries ──
     _indexes = [

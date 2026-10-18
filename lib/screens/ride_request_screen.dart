@@ -68,6 +68,7 @@ import 'tap_to_pay_screen.dart';
 import 'searching_driver_screen.dart';
 import 'waiting_for_driver_screen.dart';
 import 'home_screen.dart';
+import 'schedule_hub_screen.dart'; // botón "Agendar para más tarde" del diálogo sin drivers
 
 part 'ride_request_controller.dart';
 part 'ride_request_map.dart';

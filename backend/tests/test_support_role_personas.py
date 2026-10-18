@@ -256,6 +256,9 @@ async def test_rapid_messages_get_one_answer_not_two(client, db, test_rider, mon
     import asyncio
     import services.openai_support_service as ai_svc
     from tests.conftest import _make_auth_headers
+    # The read-settle window (2026-10-17) adds 4 s before generation — the
+    # test shrinks it so the 14 s budget still covers slow-LLM + typing.
+    monkeypatch.setattr("routers.support._BOT_READ_SETTLE_SECONDS", 0.1)
     rider, rtoken = test_rider
     chat = await _open_chat_in_phase(rider, db, "agent_active")
     chat.locale = "es"
@@ -1037,7 +1040,7 @@ async def test_takeover_mid_flight_kills_the_rest_of_the_reply():
     src = pathlib.Path("routers/support.py").read_text(encoding="utf-8")
     fn = src.index("async def _background_bot_reply")
     region = src[fn:fn + 6500]
-    assert "await db.refresh(chat)" in region
+    assert "select(SupportChat.bot_phase)" in region
     assert '_phase_now == "dispatch_takeover"' in region
     assert '_phase_now == "escalated" and r["role"] != "system"' in region
     # y una task que entra ya escalated/takeover no habla en absoluto

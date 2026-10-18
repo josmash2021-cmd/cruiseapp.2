@@ -560,6 +560,14 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // Demand waitlist (2026-10-17): the rider asked with no drivers online
+  // and one just went online in their area — tap drops them on the
+  // booking home.
+  if (type == 'drivers_available') {
+    _handleDriversAvailablePush();
+    return;
+  }
+
   // Driver: the 12 h shift cap fired server-side (user spec 2026-09-27) —
   // flip the live UI to offline too.
   if (type == 'driver_shift_ended') {
@@ -632,6 +640,21 @@ void _handleScheduledRidePush(RemoteMessage message) {
     nav.push(MaterialPageRoute(
       builder: (_) => ScheduledRidesMapScreen(initialTripId: tripId),
     ));
+  });
+}
+
+/// Rider tapped a "drivers_available" push (demand waitlist, 2026-10-17):
+/// they asked with no drivers online and a driver just went online in
+/// their area — drop them on the booking home. Rider-only.
+void _handleDriversAvailablePush() {
+  UserSession.getMode().then((mode) {
+    if (mode == 'driver') return;
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+    nav.pushAndRemoveUntil(
+      smoothFadeRoute(const HomeScreen()),
+      (_) => false,
+    );
   });
 }
 

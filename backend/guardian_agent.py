@@ -438,6 +438,22 @@ class DataGuardian:
                             trip_id, _n_err,
                         )
 
+                    # Demand waitlist (2026-10-17, owner spec): the rider
+                    # whose request died with no drivers gets ONE push the
+                    # moment a driver flips online in their state.
+                    try:
+                        if _trip_obj and getattr(_trip_obj, "rider_id", None):
+                            from services.demand_waitlist import add_demand_waitlist
+                            asyncio.create_task(add_demand_waitlist(
+                                _trip_obj.rider_id, trip_id,
+                                getattr(_trip_obj, "pickup_lat", None),
+                                getattr(_trip_obj, "pickup_lng", None)))
+                    except Exception as _dw_err:
+                        logger.warning(
+                            "[AutoCancel/Guardian] demand waitlist add failed for trip=%d: %s",
+                            trip_id, _dw_err,
+                        )
+
                 await session.commit()
                 self._trips_checked += len(orphaned) + len(stuck)
 

@@ -2180,13 +2180,16 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                         continue
                     # Carrera cerrada (2026-10-17, chat Yusmel: el bot siguió
                     # hablando tras "Un agente especializado se ha conectado"):
-                    # la fase se re-lee FRESCA antes de cada mensaje — si el
+                    # la fase se lee FRESCA antes de cada mensaje — si el
                     # operador conectó un agente o el chat escaló a mitad de
                     # la respuesta, lo que quede NO se escribe. Las líneas de
                     # sistema (la transferencia de la propia escalación) sí
-                    # salen siempre.
-                    await db.refresh(chat)
-                    _phase_now = chat.bot_phase or ""
+                    # salen siempre. Column query, no db.refresh: en la
+                    # conexión compartida de los tests, refresh es traicionero.
+                    _phase_row = await db.execute(
+                        select(SupportChat.bot_phase)
+                        .where(SupportChat.id == chat_id))
+                    _phase_now = _phase_row.scalar_one_or_none() or ""
                     if _phase_now == "dispatch_takeover":
                         break
                     if _phase_now == "escalated" and r["role"] != "system":

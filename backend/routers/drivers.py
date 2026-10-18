@@ -339,6 +339,15 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
             user.online_since = utc_now() if body.is_online else None
         await db.commit()
         _driver_last_db_write[driver_id] = _now
+        # Demand waitlist (2026-10-17, owner spec): a rider whose request
+        # died with no drivers gets ONE push the moment a driver flips
+        # online in their state. Background — the heartbeat never waits on
+        # the fan-out (geocoder + pushes).
+        if _online_flipped and body.is_online:
+            from services.demand_waitlist import notify_waiting_riders
+            from utils.helpers import _safe_create_task
+            _safe_create_task(notify_waiting_riders(body.lat, body.lng),
+                              name=f"demand_notify_{driver_id}")
 
     # Going offline retires every pending offer immediately — an offline
     # driver cannot accept, and leaving them "pending" lets a late-tapped

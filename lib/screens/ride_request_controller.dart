@@ -1835,7 +1835,24 @@ extension _RideRequestController on _RideRequestScreenState {
                     style: const TextStyle(fontSize: 17))),
               ]),
               content: Text(localizedBody, style: const TextStyle(fontSize: 15)),
-              actions: [TextButton(onPressed: () => Navigator.maybeOf(dialogCtx)?.pop(), child: Text(S.of(context).okBtn))],
+              actions: [
+                TextButton(onPressed: () => Navigator.maybeOf(dialogCtx)?.pop(), child: Text(S.of(context).okBtn)),
+                if (isNoDrivers)
+                  TextButton(
+                    onPressed: () {
+                      Navigator.maybeOf(dialogCtx)?.pop();
+                      // A + agendar (owner spec 2026-10-17): sin drivers, el
+                      // rider puede dejar el viaje agendado para más tarde.
+                      rootNav.push(
+                          slideFromRightRoute(const ScheduleHubScreen()));
+                    },
+                    child: Text(
+                      S.of(context).scheduleForLater,
+                      style: const TextStyle(
+                          color: Color(0xFFE8C547), fontWeight: FontWeight.w700),
+                    ),
+                  ),
+              ],
             ),
           );
         });
@@ -1884,6 +1901,20 @@ extension _RideRequestController on _RideRequestScreenState {
                   onPressed: () => Navigator.maybeOf(dialogCtx)?.pop(),
                   child: Text(S.of(context).ok),
                 ),
+                if (isNoDrivers)
+                  TextButton(
+                    onPressed: () {
+                      Navigator.maybeOf(dialogCtx)?.pop();
+                      // A + agendar (owner spec 2026-10-17).
+                      navRoot.push(
+                          slideFromRightRoute(const ScheduleHubScreen()));
+                    },
+                    child: Text(
+                      S.of(context).scheduleForLater,
+                      style: const TextStyle(
+                          color: Color(0xFFE8C547), fontWeight: FontWeight.w700),
+                    ),
+                  ),
               ],
             ),
           );

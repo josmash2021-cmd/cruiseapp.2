@@ -2676,8 +2676,10 @@ class S {
   String get noDriversAvailableTitle =>
       _es ? 'Sin conductores disponibles' : 'No drivers available';
   String get noDriversAvailableMsg => _es
-      ? 'No hay conductores disponibles cerca de tu zona en estos momentos. Por favor intenta de nuevo en unos minutos.'
-      : 'There are no drivers available near your area right now. Please try again in a few minutes.';
+      ? 'No hay conductores disponibles cerca de tu zona en este momento. Te avisaremos en cuanto haya conductores activos cerca de ti.'
+      : 'There are no drivers available near your area right now. We will let you know as soon as drivers are active near you.';
+  String get scheduleForLater =>
+      _es ? 'Agendar para más tarde' : 'Schedule for later';
   String get okBtn => _es ? 'Aceptar' : 'OK';
   String get fastRideLabel => _es ? 'Prioritario' : 'Priority';
   String requestRideWithPrice(String price) =>

@@ -1,7 +1,7 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, Form, File
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, or_, text, case, cast, Date, delete, update
 from sqlalchemy.orm import aliased
@@ -2607,6 +2607,49 @@ async def admin_set_document_status(document_id: int, request: Request, db: Asyn
             await driver_approval.recompute_driver_approval(db, doc_user)
         except Exception as e:
             logging.warning("[Admin] approval recompute failed: %s", e)
+    return {"document": _doc_dict(doc)}
+
+
+# Doc types an operator may upload FOR the user (the driver's own upload
+# set + the identity docs, which live as user columns until the backfill).
+_ADMIN_UPLOAD_DOC_TYPES = {
+    "drivers_license", "insurance", "registration", "vehicle_inspection",
+    "background_check", "profile_photo", "id_document", "selfie",
+    "biometric_video",
+}
+
+
+@router.post("/admin/users/{user_id}/documents", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_upload_user_document(
+    user_id: int,
+    doc_type: str = Form(...),
+    file: UploadFile = File(...),
+    vehicle_id: Optional[int] = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Dispatch uploads or replaces a document photo FOR the user
+    (2026-10-17, user spec: "si el usuario necesita ayuda para subirlos yo
+    mismo lo puedo actualizar"). Same storage/upsert/mirror pipeline as the
+    driver's own upload (_store_driver_document): the row lands pending for
+    review and the panel mirror + user columns stay in sync.
+    """
+    _sanitize_string(doc_type)
+    if doc_type not in _ADMIN_UPLOAD_DOC_TYPES:
+        raise HTTPException(400, f"Invalid document type. Allowed: {', '.join(sorted(_ADMIN_UPLOAD_DOC_TYPES))}")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    from routers.drivers import _store_driver_document
+    data = await file.read()
+    doc = await _store_driver_document(
+        db, target, doc_type, data, vehicle_id=vehicle_id)
+    logging.info("[Admin] Document %s (%s) uploaded by dispatch for user %s",
+                 doc.id, doc_type, user_id)
+    _security_audit_log("ADMIN_DOCUMENT_UPLOAD", "admin",
+                        f"user_id={user_id} doc_type={doc_type} doc_id={doc.id}")
     return {"document": _doc_dict(doc)}
 
 

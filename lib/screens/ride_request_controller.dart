@@ -1954,7 +1954,10 @@ extension _RideRequestController on _RideRequestScreenState {
         ? option.priceEstimate * 0.9
         : option.priceEstimate;
     final amountCents = (effectivePrice * 100).round();
-    final label = 'Cruise · ${option.name}';
+    // Label del sheet de pago (Apple Pay / Google Pay / tarjeta): "CRUISE
+    // IN RIDE - {TIER}" canónico en mayúsculas del tier seleccionado
+    // (owner spec 2026-10-18 — Sedan→COMPACT, SUV XL→PREMIUM, Suburban→VIP).
+    final label = 'CRUISE IN RIDE - ${tripTierLabel(option.id)}';
 
     // The backend hard-caps PaymentIntents at $1,000 (payments.py). A fare
     // outside (0, $1,000] means the route estimate is corrupt — fail fast

@@ -119,6 +119,8 @@
 - El auto-resume de viaje activo en home es POR PROCESO (`HomeScreen.autoResumeConsumed` estático): salir de tracking con back lo setea ANTES de construir home (`_navigateToHome`) — con latch por instancia, home re-abría tracking siempre (rebote infinito).
 - `_getPageForRoute` (main.dart) responde TODA ruta nombrada con `SplashScreen` — NUNCA `pushNamedAndRemoveUntil('/home')` (re-corre el boot entero); navegar con `const HomeScreen()` directo.
 
+- **Label del sheet de pago = "CRUISE IN RIDE - {TIER}" (2026-10-18, spec "standard debe decir CRUISE IN RIDE - STANDARD, COMPACT, PREMIUM O VIP dependiendo del que seleccionó"):** `ride_request_controller._confirmNativePayment` arma `label` con `tripTierLabel(option.id)` (`vehicle_tier_style.dart` — usa `tripTierKey`, NO `tierKey`: "Sedan"/camry = COMPACT, SUV XL = PREMIUM, Suburban = VIP, fusion = STANDARD, electric_pro = ELECTRIC PRO en mayúsculas). El MISMO label alimenta Apple Pay, Google Pay y el card sheet (el nombre del comercio en el sheet sale del `displayName` del JSON de config + el Public business name de Stripe Dashboard — el `option.name` viejo ("Cruise · Sedan") murió). Guardián: `test/pay_sheet_tier_label_guard_test.dart`.
+
 **Pagos / holds (2026-08-08)**
 - Hold OBLIGATORIO del total estimado (capture_method=manual) antes de crear el viaje — inmediato (`/dispatch/request`) y agendado (`POST /trips`): sin PI válido (`requires_capture`) → 402 y no se crea nada (producción; testers/sandbox/`TEST_MODE_RIDER_IDS` con bypass).
 - `increment_authorization` extiende el hold cuando algo lo supera: surcharges al crear (dispatch.py), wait time al pasar a `in_trip` (trips.py ~L1445). Emisor sin soporte → warning + shortfall de `_charge_trip` de respaldo (no bloquea).

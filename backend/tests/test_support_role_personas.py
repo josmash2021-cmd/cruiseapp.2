@@ -259,6 +259,16 @@ async def test_rapid_messages_get_one_answer_not_two(client, db, test_rider, mon
     # The read-settle window (2026-10-17) adds 4 s before generation — the
     # test shrinks it so the 14 s budget still covers slow-LLM + typing.
     monkeypatch.setattr("routers.support._BOT_READ_SETTLE_SECONDS", 0.1)
+    # Deterministic timing: never the 10% slow response, never the 15%
+    # mid-typing pause, typing delays at their floor — under suite-wide CPU
+    # pressure the random timings used to push the write past the budget.
+    class _R:
+        def random(self):
+            return 0.99
+
+        def uniform(self, a, b):
+            return a
+    monkeypatch.setattr("routers.support._rng", _R())
     rider, rtoken = test_rider
     chat = await _open_chat_in_phase(rider, db, "agent_active")
     chat.locale = "es"

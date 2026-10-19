@@ -53,6 +53,10 @@ def _parse_collection(data) -> list[dict]:
         lngs = [p[0] for p in pts]
         lats = [p[1] for p in pts]
         out.append({
+            # The sector id rides along (properties.id) so the OFF switch can
+            # name the sector a point falls in (2026-10-17, owner spec:
+            # a zone switched off in dispatch blocks its drivers).
+            "id": str((feat.get("properties") or {}).get("id") or ""),
             "bbox": [min(lngs), min(lats), max(lngs), max(lats)],
             "polys": polys,
         })
@@ -135,3 +139,22 @@ async def sector_gate_blocks(db, lat: float, lng: float) -> bool:
         if any(_ring_contains(lng, lat, ring) for ring in s["polys"]):
             return False
     return True
+
+
+async def sector_id_at(db, lat: float, lng: float) -> str | None:
+    """The id of the sector polygon containing the point, or None.
+
+    Backs the OFF switch (2026-10-17, owner spec: a zone switched off in
+    dispatch blocks its drivers from connecting). None when the point is in
+    no sector (or the map is unreadable) — the caller treats that as
+    "nothing to gate on", never as "off".
+    """
+    sectors = await _sectors_cached(db)
+    for s in sectors:
+        w, so, e, n = s["bbox"]
+        if lng < w or lng > e or lat < so or lat > n:
+            continue
+        if any(_ring_contains(lng, lat, ring) for ring in s["polys"]):
+            sid = s.get("id") or ""
+            return sid or None
+    return None

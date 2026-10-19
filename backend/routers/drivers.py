@@ -306,6 +306,12 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         if await sector_gate_blocks(db, body.lat, body.lng):
             _driver_locations.pop(driver_id, None)
             raise HTTPException(403, "outside_service_area")
+        # 2026-10-17 (owner spec, "todo se controla desde dispatch"): a zone
+        # switched OFF in the panel blocks its drivers from connecting.
+        from routers.system import sector_is_off
+        if await sector_is_off(db, body.lat, body.lng):
+            _driver_locations.pop(driver_id, None)
+            raise HTTPException(403, "zone_disabled")
 
     # Update in-memory location cache FIRST (instant for nearby reads)
     _now = time.monotonic()

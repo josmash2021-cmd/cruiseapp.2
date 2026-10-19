@@ -973,6 +973,18 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       return;
     }
 
+    // Zone OFF gate (2026-10-17, owner spec "todo se controla desde
+    // dispatch"): connecting inside a sector dispatch switched OFF is
+    // refused — the server's own gate (403 zone_disabled) is the backstop.
+    if (FeatureFlags.zonesMapEnabled &&
+        ZoneService.sectorsReady &&
+        _pos != null &&
+        ZoneService.sectorOff(_pos!)) {
+      HapticService.mediumImpact();
+      _showZoneDisabledDialog();
+      return;
+    }
+
     // _ensureVerified is synchronous in practice — the driver passed the
     // splash/login gates to be standing on this screen at all.
     if (!_isVerified) _setState(() => _isVerified = true);
@@ -1022,6 +1034,31 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         content: Text(
           S.of(ctx).zoneOutsideBody(
               _pos == null ? null : ZoneService.stateOfPoint(_pos!)),
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(S.of(ctx).gotIt),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The driver stands in a sector dispatch switched OFF (2026-10-17, owner
+  /// spec: "si esta apagada la zona no pueden prenderse") — no connect.
+  void _showZoneDisabledDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A22),
+        title: Text(
+          S.of(ctx).zoneDisabledTitle,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          S.of(ctx).zoneDisabledBody,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
         ),
         actions: [
@@ -1895,16 +1932,33 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            headline,
-            maxLines: 3,
-            overflow: TextOverflow.clip,
-            style: TextStyle(
-              color: dc.text,
-              fontSize: 30,
-              fontWeight: FontWeight.w800,
-              height: 1.12,
-              letterSpacing: -0.4,
+          // El headline también cruza animado con el nivel (misma spec).
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 350),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.18),
+                  end: Offset.zero,
+                ).animate(anim),
+                child: child,
+              ),
+            ),
+            child: Text(
+              headline,
+              key: ValueKey(headline),
+              maxLines: 3,
+              overflow: TextOverflow.clip,
+              style: TextStyle(
+                color: dc.text,
+                fontSize: 30,
+                fontWeight: FontWeight.w800,
+                height: 1.12,
+                letterSpacing: -0.4,
+              ),
             ),
           ),
           const SizedBox(height: 18),
@@ -1927,12 +1981,31 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 const SizedBox(height: 5),
                 Row(
                   children: [
-                    Text(
-                      demandLabel,
-                      style: TextStyle(
-                        color: dc.text,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
+                    // El nivel cambia ANIMADO (2026-10-17, owner spec: "se
+                    // cambie de forma animada y fluida cuando las zonas
+                    // cambien de estado") — crossfade+slide por nivel.
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 350),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, anim) => FadeTransition(
+                        opacity: anim,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, 0.35),
+                            end: Offset.zero,
+                          ).animate(anim),
+                          child: child,
+                        ),
+                      ),
+                      child: Text(
+                        demandLabel,
+                        key: ValueKey(demandLabel),
+                        style: TextStyle(
+                          color: dc.text,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                     if (bonus > 0) ...[

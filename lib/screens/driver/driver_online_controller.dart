@@ -1363,6 +1363,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }).catchError((e) {
       _isGoingOnline = false;
       debugPrint('âŒ Failed to go online: $e');
+      // Zone gates are terminal answers, never retried (2026-10-17, owner
+      // spec "todo se controla desde dispatch"): a sector switched OFF
+      // (zone_disabled) or a driver outside the coverage must NOT loop a
+      // 403 every 5 s forever — the dialog explains and they stay offline.
+      if (e is ApiException &&
+          (e.message == 'zone_disabled' || e.message == 'outside_service_area')) {
+        if (mounted) {
+          if (e.message == 'zone_disabled') {
+            _showZoneDisabledDialog();
+          } else {
+            _showZoneOutsideDialog();
+          }
+        }
+        return;
+      }
       // Retry after 5s so driver doesn't stay silently offline
       Future.delayed(const Duration(seconds: 5), () {
         if (mounted && _phase == _Phase.searching) {

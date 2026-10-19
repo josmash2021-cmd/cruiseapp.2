@@ -83,6 +83,13 @@ class S {
   // ── Municipal zone gate (driver connect) ──
   String get zoneOutsideTitle =>
       _es ? 'Fuera del área de servicio' : 'Outside the service area';
+  // Zona apagada por dispatch (2026-10-17 owner spec: una zona apagada en
+  // el panel no deja conectarse a sus drivers).
+  String get zoneDisabledTitle =>
+      _es ? 'Zona desactivada por ahora' : 'Zone paused for now';
+  String get zoneDisabledBody => _es
+      ? 'Tu zona está desactivada temporalmente. Te avisaremos cuando se reactive — no puedes conectarte mientras tanto.'
+      : 'Your zone is temporarily paused. We will let you know when it is back — you cannot go online meanwhile.';
   // State-aware (2026-10-14 user report: an Alabama driver read "South
   // Florida" — the zones now live in more than one state). [state] is the
   // ZoneService.stateOfPoint code ('FL'/'AL'/null).

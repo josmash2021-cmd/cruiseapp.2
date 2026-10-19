@@ -830,6 +830,13 @@ def _parse_sector_demand(raw: str) -> dict:
             continue
         if level < 0 or level > 3 or bonus < 0 or bonus > 50:
             continue
+        # A switched-OFF sector survives the parse even at level 0
+        # (2026-10-17, owner spec: dispatch can turn a zone OFF and its
+        # drivers cannot connect) — without this, level 0 is dropped as
+        # noise and the off flag would never reach the gate.
+        if cfg.get("off"):
+            out[sid] = {"level": 0, "bonus": 0, "off": True}
+            continue
         if level == 0:
             continue  # level 0 is the gray base — storing it is noise
         out[sid] = {"level": level, "bonus": round(bonus, 2)}
@@ -865,6 +872,9 @@ class ZoneDemandIn(BaseModel):
     sector_id: str = Field(min_length=1, max_length=40)
     level: int = Field(ge=0, le=3)
     bonus: float = Field(0, ge=0, le=50)
+    # 2026-10-17 (owner spec): dispatch can switch a sector OFF — its
+    # drivers cannot connect while it is off.
+    off: bool = False
 
 
 @router.get("/admin/zone-demand", dependencies=[Depends(_require_dispatch_auth)])
@@ -894,7 +904,10 @@ async def set_zone_demand(req: ZoneDemandIn, request: Request,
         select(AppConfig).where(AppConfig.key == _SECTOR_DEMAND_KEY))
     row = r.scalar_one_or_none()
     current = _parse_sector_demand(row.value if row else "")
-    if req.level == 0:
+    if req.off:
+        # The OFF flag survives level 0 in the parse (see _parse_sector_demand).
+        current[req.sector_id] = {"level": 0, "bonus": 0, "off": True}
+    elif req.level == 0:
         current.pop(req.sector_id, None)
     else:
         current[req.sector_id] = {"level": req.level,
@@ -912,12 +925,28 @@ async def set_zone_demand(req: ZoneDemandIn, request: Request,
     _security_audit_log(
         "zone_demand",
         request.client.host if request.client else "unknown",
-        f"{req.sector_id}=lvl{req.level}/${req.bonus}",
+        f"{req.sector_id}={'OFF' if req.off else f'lvl{req.level}/${req.bonus}'}",
     )
-    logger.warning("[Zones] demand %s -> lvl %d, $%.2f", req.sector_id,
-                   req.level, req.bonus)
+    logger.warning("[Zones] demand %s -> %s", req.sector_id,
+                   "OFF" if req.off else f"lvl {req.level}, ${req.bonus:.2f}")
     return {"sector_id": req.sector_id, "level": req.level,
             "bonus": round(req.bonus, 2)}
+
+
+async def sector_is_off(db, lat: float, lng: float) -> bool:
+    """True when the point falls in a sector dispatch switched OFF
+    (2026-10-17, owner spec: a switched-off zone blocks its drivers from
+    connecting). Fail-open like every zone gate: no sector under the point
+    or unreadable data → False, never a lockout."""
+    from services.zone_polygons import sector_id_at
+    sid = await sector_id_at(db, lat, lng)
+    if not sid:
+        return False
+    from sqlalchemy import select
+    r = await db.execute(
+        select(AppConfig.value).where(AppConfig.key == _SECTOR_DEMAND_KEY))
+    demand = _parse_sector_demand(r.scalar_one_or_none() or "")
+    return (demand.get(sid) or {}).get("off") is True
 
 
 # ═══════════════════════════════════════════════════════════════════════

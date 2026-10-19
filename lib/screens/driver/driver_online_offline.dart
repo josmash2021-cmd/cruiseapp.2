@@ -2748,52 +2748,63 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
             ),
           ),
           // ── Opciones categorizadas: cada división lleva el título de su
-          // categoría (spec 2026-10-17) y los items van compactos para que
-          // TODO quepa sin scroll — el ListView solo scrollea si la
-          // pantalla es más chica que el contenido (respaldo). ──
+          // categoría, y los bloques se REPARTEN la altura del panel
+          // (2026-10-18, owner spec: "que las opciones llenen el menu para
+          // que no se vea tan vacio pero ni tan lleno, y que no genere
+          // scroll") — spaceEvenly entre secciones, CERO ListView (nada de
+          // scroll al deslizar). ──
           Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
+            child: Padding(
               padding: EdgeInsets.only(
                   left: 10, right: 10, bottom: mq.padding.bottom + 8),
-              children: [
-                _menuSection(s.menuSectionAccount),
-                _menuItem(Icons.attach_money_rounded, s.earningsTitle,
-                    () => _menuNav(const DriverEarningsScreen())),
-                _menuItem(Icons.health_and_safety_outlined, s.helpAndSafety,
-                    () => _menuNav(const HelpScreen())),
-                _menuItem(Icons.settings_rounded, s.settingsTitle,
-                    () => _menuNav(const DriverSettingsScreen())),
-                _menuSection(s.menuSectionGrowth),
-                _menuItem(Icons.workspace_premium_rounded, s.cruiseLevelLabel,
-                    () => _menuNav(const CruiseLevelScreen())),
-                _menuItem(Icons.work_outline_rounded, s.workHub,
-                    () => _menuNav(const WorkHubScreen())),
-                _menuItem(Icons.person_add_rounded, s.referFriends,
-                    () => _menuNav(const DriverReferralScreen())),
-                _menuSection(s.menuSectionWork),
-                _menuItem(Icons.event_note_rounded, s.scheduledTripsMenu,
-                    _menuScheduled),
-                _menuItem(Icons.directions_car_rounded, s.vehiclesLabel,
-                    () => _menuNav(const DriverVehicleScreen())),
-                _menuItem(Icons.description_rounded, s.documentsLabel,
-                    () => _menuNav(const DriverDocumentsScreen())),
-                _menuSection(s.moneySectionLabel),
-                _menuItem(Icons.receipt_long_rounded, s.taxInfo,
-                    () => _menuNav(const TaxInfoScreen())),
-                _menuItem(Icons.account_balance_rounded, s.payoutMethodsLabel,
-                    () => _menuNav(const PayoutMethodsScreen())),
-                _menuSection(s.resourcesSectionLabel),
-                _menuItem(Icons.school_rounded, s.learningCenter,
-                    () => _menuNav(const LearningCenterScreen())),
-                _menuItem(Icons.bug_report_rounded, s.bugReporter,
-                    () => _menuNav(const BugReporterScreen())),
-                _menuItem(Icons.info_outline_rounded, s.aboutLabel,
-                    () => _menuNav(const AboutScreen())),
-                const SizedBox(height: 4),
-                _menuItem(Icons.logout_rounded, s.signOut, _menuSignOut,
-                    danger: true),
-              ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _menuSectionGroup(s.menuSectionAccount, [
+                    _menuItem(Icons.attach_money_rounded, s.earningsTitle,
+                        () => _menuNav(const DriverEarningsScreen())),
+                    _menuItem(Icons.health_and_safety_outlined, s.helpAndSafety,
+                        () => _menuNav(const HelpScreen())),
+                    _menuItem(Icons.settings_rounded, s.settingsTitle,
+                        () => _menuNav(const DriverSettingsScreen())),
+                  ]),
+                  _menuSectionGroup(s.menuSectionGrowth, [
+                    _menuItem(Icons.workspace_premium_rounded,
+                        s.cruiseLevelLabel,
+                        () => _menuNav(const CruiseLevelScreen())),
+                    _menuItem(Icons.work_outline_rounded, s.workHub,
+                        () => _menuNav(const WorkHubScreen())),
+                    _menuItem(Icons.person_add_rounded, s.referFriends,
+                        () => _menuNav(const DriverReferralScreen())),
+                  ]),
+                  _menuSectionGroup(s.menuSectionWork, [
+                    _menuItem(Icons.event_note_rounded, s.scheduledTripsMenu,
+                        _menuScheduled),
+                    _menuItem(Icons.directions_car_rounded, s.vehiclesLabel,
+                        () => _menuNav(const DriverVehicleScreen())),
+                    _menuItem(Icons.description_rounded, s.documentsLabel,
+                        () => _menuNav(const DriverDocumentsScreen())),
+                  ]),
+                  _menuSectionGroup(s.moneySectionLabel, [
+                    _menuItem(Icons.receipt_long_rounded, s.taxInfo,
+                        () => _menuNav(const TaxInfoScreen())),
+                    _menuItem(Icons.account_balance_rounded,
+                        s.payoutMethodsLabel,
+                        () => _menuNav(const PayoutMethodsScreen())),
+                  ]),
+                  _menuSectionGroup(s.resourcesSectionLabel, [
+                    _menuItem(Icons.school_rounded, s.learningCenter,
+                        () => _menuNav(const LearningCenterScreen())),
+                    _menuItem(Icons.bug_report_rounded, s.bugReporter,
+                        () => _menuNav(const BugReporterScreen())),
+                    _menuItem(Icons.info_outline_rounded, s.aboutLabel,
+                        () => _menuNav(const AboutScreen())),
+                  ]),
+                  _menuItem(Icons.logout_rounded, s.signOut, _menuSignOut,
+                      danger: true),
+                ],
+              ),
             ),
           ),
         ],
@@ -2827,6 +2838,16 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           ),
         ),
       );
+
+  /// Un bloque de categoría (título + sus items) — la unidad que el Column
+  /// del drawer reparte con spaceEvenly (2026-10-18, owner spec: llenar el
+  /// panel sin scroll).
+  Widget _menuSectionGroup(String title, List<Widget> items) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [_menuSection(title), ...items],
+    );
+  }
 
   Widget _menuItem(IconData icon, String label, VoidCallback onTap,
       {bool danger = false}) {

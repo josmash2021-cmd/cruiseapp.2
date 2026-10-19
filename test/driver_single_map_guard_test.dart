@@ -276,7 +276,13 @@ void main() {
       // botón GO (foto 1).
       expect(off, contains('Positioned.fill('),
           reason: 'the hero gets the full body height');
-      expect(off, isNot(contains('MainAxisAlignment.spaceEvenly')),
+      // Acotado a la región del hero (el drawer del menú SÍ reparte sus
+      // opciones con spaceEvenly desde 2026-10-18 — otra pantalla, otra
+      // regla).
+      final heroIdx = off.indexOf('Widget _buildOfflineHero(');
+      expect(heroIdx, isNonNegative);
+      final heroRegion = off.substring(heroIdx, heroIdx + 2200);
+      expect(heroRegion, isNot(contains('MainAxisAlignment.spaceEvenly')),
           reason: 'spaceEvenly spread the hero wrong — compact top-down now');
       // 2026-10-17 (foto 2 bis, "un poquito mas cerrado"): el reposo del
       // sheet abraza el contenido — 0.42, no 0.5 con banda muerta debajo de
@@ -364,6 +370,16 @@ void main() {
       expect(off, contains('return Material('),
           reason: 'the drawer content is wrapped in Material — without it '
               'every label inherits the yellow-underline fallback style');
+      // 2026-10-18 (owner spec "que las opciones llenen el menu para que no
+      // se vea tan vacio pero ni tan lleno, y que no genere scroll"): los
+      // bloques de sección se reparten la altura — spaceEvenly, cero
+      // ListView.
+      expect(off, contains('MainAxisAlignment.spaceEvenly'),
+          reason: 'the options fill the panel, space-evenly distributed');
+      expect(off, contains('_menuSectionGroup('),
+          reason: 'each category is a block the Column spreads');
+      expect(off, isNot(contains('child: ListView(')),
+          reason: 'zero scroll in the drawer');
       expect(off, contains('_menuSection('),
           reason: 'every division carries its category title');
       expect(off, isNot(contains('_menuDivider')),

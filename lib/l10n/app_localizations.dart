@@ -261,6 +261,10 @@ class S {
       : 'Your onboarding will be based on the requirements of where you plan to drive.';
   String get yourCity => _es ? 'Tu ciudad' : 'Your city';
   String get selectYourCity => _es ? 'Elige tu ciudad' : 'Select your city';
+  String get searchCityHint =>
+      _es ? 'Busca tu ciudad' : 'Search your city';
+  String get noCitiesFound =>
+      _es ? 'Sin resultados' : 'No results';
   String get tellUsAboutYourself =>
       _es ? 'Cuéntanos sobre ti' : 'Tell us about yourself';
   String get whyDriveWithCruise => _es

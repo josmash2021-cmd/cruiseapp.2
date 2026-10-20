@@ -82,8 +82,17 @@ void main() {
   });
 
   test('every tier exposes complete and incomplete drivers', () {
-    expect(chunk, contains('rows=fleet.drivers.filter(d=>d.tier===tier)'),
-        reason: 'each category computes its own doc breakdown');
+    expect(
+        chunk,
+        contains(
+            'rows=fleet.drivers.filter(d=>d.tier===tier&&(cityF===null||cityKeyOf(d)===cityF))'),
+        reason: 'each category computes its own doc breakdown FOLLOWING THE '
+            'SELECTED CITY (2026-10-18 spec: "la ciudad que seleccione debe '
+            'actualizar estos números") — global only when no city is active');
+    expect(chunk, contains('chipBtn(tier,lbl,rows.length'),
+        reason: 'the tier count itself is the city-filtered row count');
+    expect(chunk, isNot(contains('tierBtn("standard","Standard",fleet.tiers.standard')),
+        reason: 'call sites no longer pass the global fleet.tiers count');
     expect(chunk, contains(r'chipBtn(`${tier}:docs_ok`'));
     expect(chunk, contains(r'chipBtn(`${tier}:docs_no`'));
     expect(

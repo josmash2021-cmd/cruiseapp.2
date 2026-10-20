@@ -2308,7 +2308,8 @@ async def admin_driver_fleet_stats(db: AsyncSession = Depends(get_db)):
     drivers). Document rows AND the legacy user *_url columns both count.
     """
     drivers = (await db.execute(
-        select(User.id, User.drive_state, User.license_front_url,
+        select(User.id, User.drive_state, User.drive_city,
+               User.license_front_url,
                User.insurance_url, User.vehicle_registration_url,
                User.inspection_url)
         .where(User.role == "driver")
@@ -2356,7 +2357,11 @@ async def admin_driver_fleet_stats(db: AsyncSession = Depends(get_db)):
         complete += 1 if docs_ok else 0
         # Por driver — los chips del panel son filtros clicables (2026-10-15:
         # "si selecciono uno de esos botones debe mostrarme los usuarios").
-        per_driver.append({"id": u.id, "tier": tier, "docs": docs_ok})
+        # drive_city/drive_state viajan para que los conteos por categoría y
+        # documentos se recalculen con la ciudad elegida (2026-10-18).
+        per_driver.append({"id": u.id, "tier": tier, "docs": docs_ok,
+                           "drive_city": u.drive_city,
+                           "drive_state": u.drive_state})
 
     return {
         "drivers_total": len(drivers),

@@ -79,6 +79,11 @@ void main() {
     expect(driversPage, contains('cityKeyOf(d)===cityF'),
         reason: 'a chip filters by the compound state|city key — same city '
             'name in two states never mixes');
+    expect(driversPage, contains('d.driveCity??d.drive_city'),
+        reason: 'resolvers read both the people list (camelCase) and the '
+            'fleet rows (snake_case) so the tier/docs counts follow the city');
+    expect(driversPage, contains('panel_fleet_city_counts_guard_test'),
+        reason: 'the city-aware tier counts carry their own pin too');
     expect(driversPage, isNot(contains('const cityCounts=')),
         reason: 'the flat per-city chip list is gone (2026-10-18 spec: '
             'group by state — Austin/Dallas are not in Florida)');

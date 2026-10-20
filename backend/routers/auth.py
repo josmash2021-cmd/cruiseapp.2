@@ -532,7 +532,9 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
 <body style="margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f0f0;padding:40px 0"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-bottom:24px">
-<img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.jpg" alt="CRUISE IN RIDE" width="600" style="display:block;width:100%;max-width:600px;height:auto;border-radius:8px;margin:0 auto"/>
+<div style="background:#050505;border-radius:12px;padding:36px 30px;text-align:center">
+<img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.png" alt="CRUISE IN RIDE" width="440" style="display:block;height:auto;margin:0 auto"/>
+</div>
 </td></tr></table>
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden"><tr><td style="padding:48px 40px;text-align:center">
 <h2 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#1a1a2e">Verify your email address</h2>
@@ -845,7 +847,7 @@ async def resend_email_verification(
                 <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #050505; border-radius: 14px; overflow: hidden; border: 1px solid #1a1a1a;">
                   <div style="background: linear-gradient(90deg, transparent, #D4AF37, #E8C547, #D4AF37, transparent); height: 2px;"></div>
                   <div style="padding: 36px 32px; text-align: center;">
-                    <img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.jpg" alt="CRUISE IN RIDE" width="480" style="display: block; width: 100%; height: auto; border-radius: 12px; margin: 0 auto 18px;">
+                    <img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.png" alt="CRUISE IN RIDE" width="480" style="display: block; width: 100%; height: auto; border-radius: 12px; margin: 0 auto 18px;">
                     <p style="color: #888; font-size: 14px; margin: 0 0 18px;">Your verification code is:</p>
                     <p style="color: #FFFFFF; font-size: 40px; font-weight: 800; letter-spacing: 10px; margin: 0 0 18px; text-indent: 10px;">{code}</p>
                     <p style="color: #666; font-size: 12px; margin: 0;">This code expires in 5 minutes.</p>
@@ -3667,7 +3669,7 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
       <div style="background:linear-gradient(90deg,transparent,#D4AF37,#E8C547,#D4AF37,transparent);height:2px;"></div>
       <div style="padding:48px 40px 40px;">
         <div style="text-align:center;margin-bottom:28px;">
-          <img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.jpg" alt="CRUISE IN RIDE" width="560" style="display:block;width:100%;height:auto;border-radius:12px;margin:0 auto;">
+          <img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.png" alt="CRUISE IN RIDE" width="560" style="display:block;width:100%;height:auto;border-radius:12px;margin:0 auto;">
         </div>
         <div style="text-align:center;margin-bottom:28px;">
           <div style="width:64px;height:64px;border-radius:50%;margin:0 auto;border:2px solid #D4AF37;text-align:center;line-height:64px;font-size:28px;">&#128274;</div>
@@ -3758,7 +3760,7 @@ async def send_password_reset_code(
       <div style="background:linear-gradient(90deg,transparent,#D4AF37,#E8C547,#D4AF37,transparent);height:2px;"></div>
       <div style="padding:48px 40px 40px;">
         <div style="text-align:center;margin-bottom:28px;">
-          <img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.jpg" alt="CRUISE IN RIDE" width="560" style="display:block;width:100%;height:auto;border-radius:12px;margin:0 auto;">
+          <img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.png" alt="CRUISE IN RIDE" width="560" style="display:block;width:100%;height:auto;border-radius:12px;margin:0 auto;">
         </div>
         <h1 style="text-align:center;color:#FFFFFF;font-size:23px;font-weight:300;margin:0 0 6px;">Your verification <strong>code</strong></h1>
         <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 28px;line-height:1.6;">Hi {_name}, enter this code in the app to set a new password.</p>
@@ -3990,7 +3992,7 @@ async def send_password_reset_code_public(
       <div style="background:linear-gradient(90deg,transparent,#D4AF37,#E8C547,#D4AF37,transparent);height:2px;"></div>
       <div style="padding:48px 40px 40px;">
         <div style="text-align:center;margin-bottom:28px;">
-          <img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.jpg" alt="CRUISE IN RIDE" width="560" style="display:block;width:100%;height:auto;border-radius:12px;margin:0 auto;">
+          <img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.png" alt="CRUISE IN RIDE" width="560" style="display:block;width:100%;height:auto;border-radius:12px;margin:0 auto;">
         </div>
         <h1 style="text-align:center;color:#FFFFFF;font-size:23px;font-weight:300;margin:0 0 6px;">Your verification <strong>code</strong></h1>
         <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 28px;line-height:1.6;">Hi {_name}, enter this code in the app to set a new password.</p>

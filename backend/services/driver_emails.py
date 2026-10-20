@@ -31,7 +31,7 @@ OPEN_APP_URL = os.getenv(
 # The full-width recruitment banner that heads EVERY branded driver email
 # (2026-10-20 user spec: it replaces the small logo + the CRUISE IN RIDE
 # wordmark in the header; the brand wordmark stays only in the footer).
-_AD_URL = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.jpg"
+_AD_URL = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.png"
 
 
 def _es(user) -> bool:

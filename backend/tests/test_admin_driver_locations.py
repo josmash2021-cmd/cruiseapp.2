@@ -48,6 +48,22 @@ async def test_payload_fields_and_no_position_nulls(client, db):
         assert field in row
 
 
+async def test_city_centers_anchor_the_city_view(client, db):
+    """2026-10-18 prod reality: 5 of 194 drivers had GPS rows — a bubble per
+    driver position showed nothing. The city view anchors to the GeoNames
+    city coordinates (same dump as the app's city picker)."""
+    await _driver(db, "Ana", drive_city="Miami", drive_state="FL")
+    await _driver(db, "Bob", drive_city="Pueblo Inventado", drive_state="ZZ")
+
+    res = await client.get("/admin/driver-locations", headers=_dh())
+    assert res.status_code == 200, res.text
+    centers = res.json()["city_centers"]
+    lat, lng = centers["FL|Miami"]
+    assert abs(lat - 25.77) < 0.2 and abs(lng - (-80.19)) < 0.2
+    assert "ZZ|Pueblo Inventado" not in centers, (
+        "ciudades fuera del mapa GeoNames no llevan centro")
+
+
 async def test_columns_used_and_live_overlay_wins(client, db):
     from routers.drivers import _driver_locations
 

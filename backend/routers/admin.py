@@ -2411,7 +2411,46 @@ async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
             "last_active_at": (u.last_active_at.isoformat()
                                if u.last_active_at else None),
         })
-    return {"drivers": out}
+
+    # The city view anchors its bubbles to the CITY coordinates (2026-10-18:
+    # almost no driver had GPS rows in prod — 5 of 194 — so a bubble per
+    # driver position showed nothing). Centers come from the same GeoNames
+    # dump as the app's city picker (31,226 "ST|City" entries), shipped in
+    # backend/data. Keys with no center simply get no bubble.
+    centers: dict = {}
+    for u in rows:
+        st = (u.drive_state or "").strip().upper()
+        city = (u.drive_city or "").strip()
+        if not city:
+            continue
+        key = f"{st}|{city}"
+        if key in centers:
+            continue
+        c = _city_center(key)
+        if c is not None:
+            centers[key] = c
+    return {"drivers": out, "city_centers": centers}
+
+
+_city_centers_cache: dict | None = None
+
+
+def _city_center(key: str):
+    """[lat, lng] for a "ST|City" key, or None — loaded once from the
+    GeoNames-derived table in backend/data/us_city_centers.json."""
+    global _city_centers_cache
+    if _city_centers_cache is None:
+        import json
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[1] / "data" / \
+            "us_city_centers.json"
+        try:
+            _city_centers_cache = json.loads(path.read_text(
+                encoding="utf-8"))
+        except Exception as e:
+            logging.warning("[CityCenters] load failed: %s", e)
+            _city_centers_cache = {}
+    return _city_centers_cache.get(key)
 
 
 @router.get("/admin/platform-stats", dependencies=[Depends(_require_dispatch_auth)])

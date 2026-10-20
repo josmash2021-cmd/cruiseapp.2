@@ -25,6 +25,13 @@ void main() {
     expect(adminPy, contains('"/admin/driver-locations"'));
     expect(adminPy, contains('_driver_locations.get(u.id)'),
         reason: 'the in-memory heartbeat overlay wins over the columns');
+    expect(adminPy, contains('us_city_centers.json'),
+        reason: 'city bubbles anchor to the GeoNames city coordinates — '
+            'prod had GPS for only 5 of 194 drivers, position-only bubbles '
+            'showed nothing (2026-10-18)');
+    final centers = File('backend/data/us_city_centers.json')
+        .readAsStringSync();
+    expect(centers, contains('"FL|Miami"'));
   });
 
   test('the Zonas chunk carries the drivers layer', () {
@@ -33,6 +40,9 @@ void main() {
             'this edit (the pin says how)');
     expect(chunk, contains('"/admin/driver-locations"'),
         reason: 'the page polls the new endpoint');
+    expect(chunk, contains('drvCenters'),
+        reason: 'city bubbles prefer the GeoNames city center over the '
+            'average of the few positioned drivers');
     expect(chunk, contains('setInterval'), reason: 'live refresh');
     expect(chunk, contains('document.visibilityState'),
         reason: 'the poll pauses on a hidden tab');

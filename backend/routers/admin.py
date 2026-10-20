@@ -2371,6 +2371,49 @@ async def admin_driver_fleet_stats(db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/admin/driver-locations", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
+    """Last known position of every driver for the Zonas page map
+    (2026-10-18 user spec: "en zonas ver dónde están ubicados cada uno
+    seleccionando por ciudad o varias ciudades").
+
+    The in-memory `_driver_locations` overlay (updated on every heartbeat)
+    wins over the throttled `users.lat/lng` columns (written every 3 s);
+    `last_active_at` is the display timestamp. Drivers with NO position at
+    all are included with lat/lng null — the city view still counts them.
+    """
+    from routers.drivers import _driver_locations
+
+    rows = (await db.execute(
+        select(User.id, User.first_name, User.last_name, User.phone,
+               User.photo_url, User.drive_city, User.drive_state,
+               User.is_online, User.lat, User.lng, User.last_active_at)
+        .where(User.role == "driver")
+    )).all()
+
+    out = []
+    for u in rows:
+        live = _driver_locations.get(u.id)
+        lat = live["lat"] if live is not None else u.lat
+        lng = live["lng"] if live is not None else u.lng
+        is_online = bool(live["is_online"]) if live is not None else bool(
+            u.is_online)
+        out.append({
+            "id": u.id,
+            "name": f"{u.first_name or ''} {u.last_name or ''}".strip(),
+            "phone": u.phone,
+            "photo_url": u.photo_url,
+            "drive_city": u.drive_city,
+            "drive_state": u.drive_state,
+            "is_online": is_online,
+            "lat": lat,
+            "lng": lng,
+            "last_active_at": (u.last_active_at.isoformat()
+                               if u.last_active_at else None),
+        })
+    return {"drivers": out}
+
+
 @router.get("/admin/platform-stats", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_platform_stats(db: AsyncSession = Depends(get_db)):
     """Install split by device platform (2026-10-14 user request: "quiero

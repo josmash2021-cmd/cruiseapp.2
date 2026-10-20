@@ -4282,10 +4282,11 @@ async function doReset(e){{
 
 @router.get("/open-app")
 async def open_app_redirect():
-    """Email buttons land here and bounce into the app via its custom
-    scheme, falling back to the right store when the app is not installed.
-    Gmail strips non-http(s) hrefs, so the button cannot point at
-    cruiseapp:// directly."""
+    """Email buttons land here and go straight to the right store for the
+    device (2026-10-20 user spec: the button opens Google Play on Android
+    and the App Store on iPhone — an installed app shows "Abrir" there
+    instead of "Instalar"). Once the domain is verified for Universal/App
+    Links, the OS opens the app directly before this page ever renders."""
     html = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4303,25 +4304,66 @@ a.btn{display:inline-block;background:#D4AF37;color:#000;text-decoration:none;pa
 <body>
 <div class="card">
 <h1>CRUISE IN RIDE</h1>
-<p id="msg">Opening the app&hellip;</p>
-<a class="btn" id="store" href="#">Download the app</a>
+<p id="msg">Opening your store&hellip;</p>
+<a class="btn" id="store" href="#">Get the app</a>
 </div>
 <script>
 var isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
 var isAndroid=/Android/i.test(navigator.userAgent);
 var store=document.getElementById('store');
 store.href=isIOS?'https://apps.apple.com/app/id6760517086':'https://play.google.com/store/apps/details?id=com.cruiseinride.app';
-if(isAndroid){
-  window.location.href='intent://open#Intent;scheme=cruiseapp;package=com.cruiseinride.app;S.browser_fallback_url='+encodeURIComponent(store.href)+';end';
-}else if(isIOS){
-  window.location.href='cruiseapp://open';
-  setTimeout(function(){window.location.href=store.href;},1800);
+if(isIOS||isAndroid){
+  window.location.replace(store.href);
 }else{
-  document.getElementById('msg').textContent='Open this link on your phone, or get the app:';
+  document.getElementById('msg').textContent='Get the app:';
 }
 </script>
 </body></html>"""
     return Response(content=html, media_type="text/html")
+
+
+# ── Universal Links (iOS) / App Links (Android) verification files ─────
+# The email "OPEN THE APP" buttons point at https://<this host>/open-app.
+# For the OS to open the app DIRECTLY (Gmail's embedded browser blocks
+# custom schemes), each platform verifies ownership of this domain by
+# fetching these files. Team ID 7QLC9UVB3Z (ios project.pbxproj
+# DEVELOPMENT_TEAM). The Android fingerprints come from the
+# ANDROID_CERT_FINGERPRINTS env var (comma-separated) — the Play Console
+# "App signing certificate" SHA-256 must be added there.
+
+@router.get("/.well-known/apple-app-site-association")
+async def apple_app_site_association():
+    payload = {
+        "applinks": {
+            "apps": [],
+            "details": [
+                {
+                    "appID": "7QLC9UVB3Z.com.cruiseinride.app",
+                    "paths": ["/open-app", "/open-app*"],
+                }
+            ],
+        }
+    }
+    return Response(content=json.dumps(payload),
+                    media_type="application/json")
+
+
+@router.get("/.well-known/assetlinks.json")
+async def android_asset_links():
+    raw = os.getenv("ANDROID_CERT_FINGERPRINTS", "")
+    fingerprints = [fp.strip() for fp in raw.split(",") if fp.strip()]
+    payload = [
+        {
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": "com.cruiseinride.app",
+                "sha256_cert_fingerprints": fingerprints,
+            },
+        }
+    ]
+    return Response(content=json.dumps(payload),
+                    media_type="application/json")
 
 
 @router.post("/auth/reset-password-web")

@@ -78,6 +78,13 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="cruiseapp"/>
             </intent-filter>
+            <!-- App Links: the email buttons' https URL opens the app directly -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="cruiseapp2-production.up.railway.app" android:pathPrefix="/open-app"/>
+            </intent-filter>
         </activity>
         <!-- Google Places API Key — injected from local.properties or CI -->
         <meta-data

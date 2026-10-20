@@ -284,13 +284,39 @@ async def test_rejection_email_spanish_and_notify_fires_it(
     assert "ABRIR LA APP" in sent[0][2]
 
 
-async def test_open_app_page_bounces_to_scheme_and_stores(client):
-    """The email button target: public page that deep-links into the app
-    and falls back to the platform store."""
+async def test_open_app_page_goes_straight_to_the_store(client):
+    """2026-10-20 user spec: the button opens Google Play on Android and
+    the App Store on iPhone — an installed app shows "Abrir" there instead
+    of "Instalar". The custom-scheme dance died: Gmail's embedded browser
+    blocked it. Once App/Universal Links verify the domain, the OS opens
+    the app before this page ever renders."""
     res = await client.get("/open-app")
     assert res.status_code == 200, res.text
     body = res.text
-    assert "cruiseapp://open" in body
     assert "apps.apple.com/app/id6760517086" in body
     assert "play.google.com/store/apps/details?id=com.cruiseinride.app" in body
+    assert "window.location.replace(store.href)" in body
+    assert "cruiseapp://" not in body, (
+        "la página ya no intenta el esquema custom — va directo a la tienda")
     assert "CRUISE IN RIDE" in body
+
+
+async def test_well_known_files_verify_the_domain(client, monkeypatch):
+    """Universal Links (iOS) / App Links (Android): the OS fetches these to
+    verify the domain before opening the app directly from an email link —
+    Gmail's embedded browser blocks custom schemes, so the https link must
+    be verified (2026-10-20 user spec: "el botón de open the app abra la app")."""
+    res = await client.get("/.well-known/apple-app-site-association")
+    assert res.status_code == 200, res.text
+    assert "application/json" in res.headers["content-type"]
+    details = res.json()["applinks"]["details"]
+    assert details[0]["appID"] == "7QLC9UVB3Z.com.cruiseinride.app"
+    assert "/open-app" in details[0]["paths"]
+
+    monkeypatch.setenv("ANDROID_CERT_FINGERPRINTS", "AA:BB, CC:DD")
+    res = await client.get("/.well-known/assetlinks.json")
+    assert res.status_code == 200, res.text
+    target = res.json()[0]["target"]
+    assert target["package_name"] == "com.cruiseinride.app"
+    assert target["sha256_cert_fingerprints"] == ["AA:BB", "CC:DD"], (
+        "los fingerprints salen de la env ANDROID_CERT_FINGERPRINTS")

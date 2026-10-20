@@ -12,5 +12,9 @@
 	</array>
 	<key>aps-environment</key>
 	<string>production</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:cruiseapp2-production.up.railway.app</string>
+	</array>
 </dict>
 </plist>

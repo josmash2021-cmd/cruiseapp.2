@@ -532,7 +532,7 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
 <body style="margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f0f0;padding:40px 0"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-bottom:24px">
-<h1 style="margin:0;font-size:28px;font-weight:700;color:#d4a843;letter-spacing:2px">Cruise</h1>
+<h1 style="margin:0;font-size:24px;font-weight:700;color:#d4a843;letter-spacing:2px">CRUISE IN RIDE</h1>
 </td></tr></table>
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden"><tr><td style="padding:48px 40px;text-align:center">
 <h2 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#1a1a2e">Verify your email address</h2>
@@ -546,7 +546,7 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
 <td style="padding:24px 40px;text-align:center;background-color:#f7f7f7;border-radius:0 0 8px 8px">
 <p style="margin:0;font-size:14px;color:#999999">If you didn't request this code, you can safely ignore this email.</p>
 </td></tr><tr><td align="center" style="padding-top:24px">
-<p style="margin:0;font-size:12px;color:#bbbbbb">&mdash; Cruise App</p>
+<p style="margin:0;font-size:12px;color:#bbbbbb">&mdash; CRUISE IN RIDE</p>
 </td></tr></table>
 </td></tr></table>
 </body></html>"""
@@ -559,7 +559,7 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
                 loop = asyncio.get_event_loop()
                 sent = await loop.run_in_executor(None, lambda: _send_email(
                     email,
-                    "Your Cruise Verification Code",
+                    "CRUISE IN RIDE — Verification Code",
                     html_body,
                     # Explicit, so EmailJS's template never has to guess.
                     template_params={"code": code},
@@ -826,29 +826,36 @@ async def resend_email_verification(
     code = f"{secrets.randbelow(900000) + 100000}"
     await _store_otp_db(db, user.email.lower(), "email", code)
 
-    # Try to send via configured email service
+    # Try to send via the configured email service. SMTP direct used to be the
+    # only path and, with SMTP_HOST unset (prod 2026-10-18), it answered
+    # "code generated" while NOTHING left — the verification code never
+    # arrived. Use _send_email (Resend/EmailJS/Mailgun/SendGrid/Brevo/SMTP
+    # fallback — whatever IS configured), always with the code + the brand.
     email_sent = False
     try:
-        # Send via SMTP
-        smtp_host = os.environ.get("SMTP_HOST")
-        smtp_user = os.environ.get("SMTP_USER")
-        smtp_pass = os.environ.get("SMTP_PASS")
-        smtp_from = os.environ.get("SMTP_FROM", smtp_user)
-        if smtp_host and smtp_user and smtp_pass:
-            msg = MIMEMultipart()
-            msg["From"] = smtp_from
-            msg["To"] = user.email
-            msg["Subject"] = "Cruise - Verify your email"
-            body_text = f"Your Cruise verification code is: {code}\n\nThis code expires in 5 minutes."
-            msg.attach(MIMEText(body_text, "plain"))
-            server = smtplib.SMTP(smtp_host, int(os.environ.get("SMTP_PORT", 587)))
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(smtp_from, [user.email], msg.as_string())
-            server.quit()
-            email_sent = True
+        import asyncio as _asyncio
+        from services.email_sms_service import _send_email
+        loop = _asyncio.get_running_loop()
+        email_sent = await loop.run_in_executor(
+            None,
+            lambda: _send_email(
+                user.email,
+                "CRUISE IN RIDE — Verify your email",
+                f"""
+                <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #050505; border-radius: 14px; overflow: hidden; border: 1px solid #1a1a1a;">
+                  <div style="background: linear-gradient(90deg, transparent, #D4AF37, #E8C547, #D4AF37, transparent); height: 2px;"></div>
+                  <div style="padding: 36px 32px; text-align: center;">
+                    <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #E8C547; letter-spacing: 6px; margin: 0 0 18px; text-indent: 6px;">CRUISE IN RIDE</h2>
+                    <p style="color: #888; font-size: 14px; margin: 0 0 18px;">Your verification code is:</p>
+                    <p style="color: #FFFFFF; font-size: 40px; font-weight: 800; letter-spacing: 10px; margin: 0 0 18px; text-indent: 10px;">{code}</p>
+                    <p style="color: #666; font-size: 12px; margin: 0;">This code expires in 5 minutes.</p>
+                  </div>
+                </div>
+                """,
+            ),
+        )
     except Exception as e:
-        logging.warning("Email send failed: %s", e)
+        logging.warning("Email verification send failed: %s", e)
 
     return {
         "message": "Verification code sent" if email_sent else "Verification code generated",
@@ -3662,7 +3669,7 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
       <div style="padding:48px 40px 40px;">
         <div style="text-align:center;margin-bottom:40px;">
           <img src="{_logo_url}" alt="Cruise" width="64" height="64" style="display:block;margin:0 auto 14px;border-radius:16px;">
-          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#E8C547;letter-spacing:8px;margin:0;text-indent:8px;">CRUISE</h2>
+          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:#E8C547;letter-spacing:4px;margin:0;text-indent:4px;">CRUISE IN RIDE</h2>
           <div style="margin-top:12px;">
             <span style="display:inline-block;width:50px;height:1px;background:#D4AF37;vertical-align:middle;"></span>
             <span style="display:inline-block;width:6px;height:6px;background:#D4AF37;transform:rotate(45deg);margin:0 10px;vertical-align:middle;"></span>
@@ -3673,7 +3680,7 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
           <div style="width:64px;height:64px;border-radius:50%;margin:0 auto;border:2px solid #D4AF37;text-align:center;line-height:64px;font-size:28px;">&#128274;</div>
         </div>
         <h1 style="text-align:center;color:#FFFFFF;font-size:24px;font-weight:300;margin:0 0 6px;letter-spacing:-0.3px;">Reset Your <strong>Password</strong></h1>
-        <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 32px;line-height:1.6;">Hi {_user_name}, we received a request to reset the password for your Cruise account.</p>
+        <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 32px;line-height:1.6;">Hi {_user_name}, we received a request to reset the password for your CRUISE IN RIDE account.</p>
         <div style="text-align:center;margin-bottom:32px;">
           <a href="{reset_link}" style="display:inline-block;background:#D4AF37;color:#000;text-decoration:none;padding:15px 52px;border-radius:28px;font-size:14px;font-weight:700;letter-spacing:1px;">RESET PASSWORD</a>
         </div>
@@ -3682,12 +3689,12 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
         </div>
       </div>
       <div style="border-top:1px solid #111;padding:24px 40px;text-align:center;">
-        <p style="color:#333;font-size:11px;letter-spacing:3px;margin:0 0 4px;">CRUISE</p>
+        <p style="color:#333;font-size:11px;letter-spacing:2px;margin:0 0 4px;">CRUISE IN RIDE</p>
         <p style="color:#252525;font-size:10px;margin:0;">Premium Rides &mdash; cruiseinride.com</p>
       </div>
     </div>
     """
-    _send_email(user.email, "Cruise ï¿½ Reset Your Password", html)
+    _send_email(user.email, "CRUISE IN RIDE — Reset Your Password", html)
 
     return {"status": "reset_sent", "method": "email"}
 
@@ -3760,7 +3767,7 @@ async def send_password_reset_code(
       <div style="padding:48px 40px 40px;">
         <div style="text-align:center;margin-bottom:36px;">
           <img src="{_logo_url}" alt="Cruise" width="64" height="64" style="display:block;margin:0 auto 14px;border-radius:16px;">
-          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#E8C547;letter-spacing:8px;margin:0;text-indent:8px;">CRUISE</h2>
+          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:#E8C547;letter-spacing:4px;margin:0;text-indent:4px;">CRUISE IN RIDE</h2>
         </div>
         <h1 style="text-align:center;color:#FFFFFF;font-size:23px;font-weight:300;margin:0 0 6px;">Your verification <strong>code</strong></h1>
         <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 28px;line-height:1.6;">Hi {_name}, enter this code in the app to set a new password.</p>
@@ -3772,7 +3779,7 @@ async def send_password_reset_code(
         </div>
       </div>
       <div style="border-top:1px solid #111;padding:24px 40px;text-align:center;">
-        <p style="color:#333;font-size:11px;letter-spacing:3px;margin:0 0 4px;">CRUISE</p>
+        <p style="color:#333;font-size:11px;letter-spacing:2px;margin:0 0 4px;">CRUISE IN RIDE</p>
         <p style="color:#252525;font-size:10px;margin:0;">Premium Rides &mdash; cruiseinride.com</p>
       </div>
     </div>
@@ -3785,7 +3792,7 @@ async def send_password_reset_code(
             None,
             lambda: _send_email(
                 user.email,
-                "Cruise — Your verification code",
+                "CRUISE IN RIDE — Your verification code",
                 html,
                 template_params={"code": code},
             ),
@@ -3994,7 +4001,7 @@ async def send_password_reset_code_public(
       <div style="padding:48px 40px 40px;">
         <div style="text-align:center;margin-bottom:36px;">
           <img src="{_logo_url}" alt="Cruise" width="64" height="64" style="display:block;margin:0 auto 14px;border-radius:16px;">
-          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#E8C547;letter-spacing:8px;margin:0;text-indent:8px;">CRUISE</h2>
+          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:#E8C547;letter-spacing:4px;margin:0;text-indent:4px;">CRUISE IN RIDE</h2>
         </div>
         <h1 style="text-align:center;color:#FFFFFF;font-size:23px;font-weight:300;margin:0 0 6px;">Your verification <strong>code</strong></h1>
         <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 28px;line-height:1.6;">Hi {_name}, enter this code in the app to set a new password.</p>
@@ -4006,7 +4013,7 @@ async def send_password_reset_code_public(
         </div>
       </div>
       <div style="border-top:1px solid #111;padding:24px 40px;text-align:center;">
-        <p style="color:#333;font-size:11px;letter-spacing:3px;margin:0 0 4px;">CRUISE</p>
+        <p style="color:#333;font-size:11px;letter-spacing:2px;margin:0 0 4px;">CRUISE IN RIDE</p>
         <p style="color:#252525;font-size:10px;margin:0;">Premium Rides &mdash; cruiseinride.com</p>
       </div>
     </div>
@@ -4018,7 +4025,7 @@ async def send_password_reset_code_public(
                 None,
                 lambda: _send_email(
                     user.email,
-                    "Cruise — Your verification code",
+                    "CRUISE IN RIDE — Your verification code",
                     html,
                     template_params={"code": code},
                 ),
@@ -4130,7 +4137,7 @@ async def reset_page():
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reset Password — Cruise</title>
+<title>Reset Password — CRUISE IN RIDE</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{background:#050505;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}}
@@ -4169,7 +4176,7 @@ input:focus{{border-color:#D4AF37}}
   <div class="inner">
     <div class="logo-area">
       <img src="{_logo}" alt="Cruise">
-      <h2>CRUISE</h2>
+      <h2>CRUISE IN RIDE</h2>
       <div class="diamond">
         <span class="line"></span><span class="dot"></span><span class="line"></span>
       </div>
@@ -4193,7 +4200,7 @@ input:focus{{border-color:#D4AF37}}
     <div id="msg" class="msg"></div>
   </div>
   <div class="footer">
-    <p>Cruise — Premium Rides</p>
+    <p>CRUISE IN RIDE — Premium Rides</p>
   </div>
 </div>
 <script>
@@ -4265,6 +4272,50 @@ async function doReset(e){{
   }}
   return false;
 }}
+</script>
+</body></html>"""
+    return Response(content=html, media_type="text/html")
+
+
+@router.get("/open-app")
+async def open_app_redirect():
+    """Email buttons land here and bounce into the app via its custom
+    scheme, falling back to the right store when the app is not installed.
+    Gmail strips non-http(s) hrefs, so the button cannot point at
+    cruiseapp:// directly."""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>CRUISE IN RIDE</title>
+<style>
+body{margin:0;background:#050505;color:#fff;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}
+.card{padding:40px 28px;max-width:340px}
+h1{font-family:Georgia,serif;font-size:22px;color:#E8C547;letter-spacing:4px;margin:0 0 10px}
+p{color:#777;font-size:14px;line-height:1.6;margin:0 0 24px}
+a.btn{display:inline-block;background:#D4AF37;color:#000;text-decoration:none;padding:14px 40px;border-radius:28px;font-size:14px;font-weight:700;letter-spacing:1px;margin:4px 6px}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>CRUISE IN RIDE</h1>
+<p id="msg">Opening the app&hellip;</p>
+<a class="btn" id="store" href="#">Download the app</a>
+</div>
+<script>
+var isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+var isAndroid=/Android/i.test(navigator.userAgent);
+var store=document.getElementById('store');
+store.href=isIOS?'https://apps.apple.com/app/id6760517086':'https://play.google.com/store/apps/details?id=com.cruiseinride.app';
+if(isAndroid){
+  window.location.href='intent://open#Intent;scheme=cruiseapp;package=com.cruiseinride.app;S.browser_fallback_url='+encodeURIComponent(store.href)+';end';
+}else if(isIOS){
+  window.location.href='cruiseapp://open';
+  setTimeout(function(){window.location.href=store.href;},1800);
+}else{
+  document.getElementById('msg').textContent='Open this link on your phone, or get the app:';
+}
 </script>
 </body></html>"""
     return Response(content=html, media_type="text/html")

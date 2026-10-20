@@ -59,8 +59,8 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
             _params.setdefault("code", _otp_code)
             _params.setdefault("otp_code", _otp_code)
             _params.setdefault("verification_code", _otp_code)
-            _params.setdefault("app_name", "Cruise")
-            _params.setdefault("from_name", "Cruise")
+            _params.setdefault("app_name", "CRUISE IN RIDE")
+            _params.setdefault("from_name", "CRUISE IN RIDE")
             _params.setdefault("message", html_body)
             payload = _json.dumps({
                 "service_id": EMAILJS_SERVICE_ID,
@@ -100,7 +100,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
             import base64 as _b64
             creds = _b64.b64encode(f"api:{MAILGUN_API_KEY}".encode()).decode()
             form = _uparse.urlencode({
-                "from": f"Cruise <noreply@cruiseapp.com>",
+                "from": f"CRUISE IN RIDE <noreply@cruiseapp.com>",
                 "to": to_email,
                 "subject": subject,
                 "html": html_body,
@@ -125,7 +125,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         try:
             payload = _json.dumps({
                 "personalizations": [{"to": [{"email": to_email}]}],
-                "from": {"email": "noreply@cruiseapp.com", "name": "Cruise"},
+                "from": {"email": "noreply@cruiseapp.com", "name": "CRUISE IN RIDE"},
                 "subject": subject,
                 "content": [{"type": "text/html", "value": html_body}]
             }).encode()
@@ -148,7 +148,7 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
     if BREVO_API_KEY:
         try:
             payload = _json.dumps({
-                "sender": {"name": "Cruise", "email": "noreply@cruiseapp.com"},
+                "sender": {"name": "CRUISE IN RIDE", "email": "noreply@cruiseapp.com"},
                 "to": [{"email": to_email}],
                 "subject": subject,
                 "htmlContent": html_body,
@@ -174,8 +174,11 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
     _from = SMTP_FROM.strip() if SMTP_FROM else SMTP_USER
 
     def _build_msg():
+        # Brand subjects carry an em dash — without RFC-2047 encoding the
+        # flattened message is not ASCII and smtplib refuses to send it.
+        from email.header import Header
         m = MIMEMultipart("alternative")
-        m["Subject"] = subject
+        m["Subject"] = str(Header(subject, "utf-8"))
         m["From"] = _from
         m["To"] = to_email
         m.attach(MIMEText(html_body, "html"))

@@ -171,3 +171,126 @@ async def test_auto_agent_rejection_goes_multichannel(db, channels):
     assert box[0].title == "❌ Registration rejected"
     assert "No file detected" in box[0].body
     assert len(channels["sms"]) == 1
+
+
+async def test_approved_email_runs_the_sync_sender_in_the_executor(
+        db, monkeypatch):
+    """2026-10-18 prod bug: `await _send_email(...)` over the SYNC sender
+    raised "object bool can't be used in 'await' expression" and the welcome
+    email never left. It must run in the executor like the SMS branch."""
+    import services.email_sms_service as em
+    from services import driver_approval
+
+    sent = []
+
+    def _fake_email(to, subject, html, template_params=None,
+                    skip_emailjs=False):
+        sent.append((to, subject))
+        return True
+
+    monkeypatch.setattr(em, "_send_email", _fake_email)
+    u = _user("es", "tok-mail-1")
+    u.email = "welcome@test.com"
+    db.add(u)
+    await db.commit()
+    await driver_approval.send_approved_email(u)
+    assert sent == [("welcome@test.com", "You're Approved — Welcome to CRUISE IN RIDE")]
+
+
+async def test_approved_email_button_opens_the_app(db, monkeypatch):
+    """2026-10-18 user spec: the welcome email's button must open the app,
+    not the website — via /open-app (Gmail strips cruiseapp:// hrefs)."""
+    import services.email_sms_service as em
+
+    sent = []
+
+    def _fake_email(to, subject, html, template_params=None,
+                    skip_emailjs=False):
+        sent.append(html)
+        return True
+
+    monkeypatch.setattr(em, "_send_email", _fake_email)
+    u = _user("es", "tok-mail-2")
+    u.email = "ok@test.com"
+    db.add(u)
+    await db.commit()
+    await driver_approval.send_approved_email(u)
+    assert len(sent) == 1
+    assert driver_approval._OPEN_APP_URL in sent[0]
+    assert "OPEN THE APP" in sent[0]
+    assert "CRUISE IN RIDE" in sent[0]
+
+
+async def test_rejection_email_brand_button_and_escaped_reason(
+        db, monkeypatch):
+    """2026-10-18 user spec: a rejected document also reaches the driver by
+    email — brand, the operator's reason (HTML-escaped: it is typed text),
+    and the open-the-app button."""
+    import services.email_sms_service as em
+
+    sent = []
+
+    def _fake_email(to, subject, html, template_params=None,
+                    skip_emailjs=False):
+        sent.append((to, subject, html))
+        return True
+
+    monkeypatch.setattr(em, "_send_email", _fake_email)
+    u = _user("en", "tok-mail-3")
+    u.email = "rejected@test.com"
+    db.add(u)
+    await db.commit()
+    await driver_approval.send_document_rejected_email(
+        u, "license", reason="blurry <script>alert(1)</script> photo")
+
+    assert len(sent) == 1
+    to, subject, html = sent[0]
+    assert to == "rejected@test.com"
+    assert subject == "CRUISE IN RIDE — Document rejected"
+    assert "Driver&#x27;s license" in html or "Driver's license" in html
+    assert "&lt;script&gt;" in html and "<script>" not in html
+    assert driver_approval._OPEN_APP_URL in html
+    assert "OPEN THE APP" in html
+    assert "CRUISE IN RIDE" in html
+
+
+async def test_rejection_email_spanish_and_notify_fires_it(
+        db, channels, monkeypatch):
+    """The review flow sends the rejection email too (not just push/inbox),
+    in the driver's language."""
+    import services.email_sms_service as em
+
+    sent = []
+
+    def _fake_email(to, subject, html, template_params=None,
+                    skip_emailjs=False):
+        sent.append((to, subject, html))
+        return True
+
+    monkeypatch.setattr(em, "_send_email", _fake_email)
+    u = _user("es", "tok-mail-4")
+    u.email = "rechazado@test.com"
+    db.add(u)
+    await db.commit()
+    await db.refresh(u)
+
+    await notify_document_reviewed(u, "drivers_license", False,
+                                   reason="foto borrosa")
+
+    assert len(sent) == 1
+    assert sent[0][1] == "CRUISE IN RIDE — Documento rechazado"
+    assert "Licencia de conducir" in sent[0][2]
+    assert "foto borrosa" in sent[0][2]
+    assert "ABRIR LA APP" in sent[0][2]
+
+
+async def test_open_app_page_bounces_to_scheme_and_stores(client):
+    """The email button target: public page that deep-links into the app
+    and falls back to the platform store."""
+    res = await client.get("/open-app")
+    assert res.status_code == 200, res.text
+    body = res.text
+    assert "cruiseapp://open" in body
+    assert "apps.apple.com/app/id6760517086" in body
+    assert "play.google.com/store/apps/details?id=com.cruiseinride.app" in body
+    assert "CRUISE IN RIDE" in body

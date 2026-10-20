@@ -15,14 +15,52 @@ SMTP_FROM = os.getenv("SMTP_FROM", "")
 
 
 def _send_email(to_email: str, subject: str, html_body: str, template_params: dict = None, skip_emailjs: bool = False):
-    """Send email via EmailJS, Mailgun API, SendGrid API, Brevo API, or SMTP fallback.
+    """Send email via Google Workspace SMTP (the branded sender), with
+    EmailJS, Mailgun API, SendGrid API and Brevo API as fallbacks.
 
     ``skip_emailjs=True`` bypasses the EmailJS branch — used for branded HTML
     guest notifications which EmailJS reformats through its own template.
     """
     import urllib.request as _ureq, json as _json, urllib.error as _uerr, urllib.parse as _uparse
 
-    # 1. EmailJS REST API (server-side)
+    # 1. Google Workspace / Gmail SMTP — the branded sender (CRUISE IN RIDE
+    # <Support@cruiseinride.com>). First on purpose (2026-10-18 user spec
+    # "debe ser del correo Support@cruiseinride.com"): EmailJS renders its
+    # own dashboard template and sends as whatever account is connected
+    # there, so it stays only as automatic fallback.
+    if SMTP_USER and SMTP_PASS:
+        _from = SMTP_FROM.strip() if SMTP_FROM else SMTP_USER
+
+        def _build_msg():
+            # Brand subjects carry an em dash — without RFC-2047 encoding the
+            # flattened message is not ASCII and smtplib refuses to send it.
+            from email.header import Header
+            m = MIMEMultipart("alternative")
+            m["Subject"] = str(Header(subject, "utf-8"))
+            m["From"] = _from
+            m["To"] = to_email
+            m.attach(MIMEText(html_body, "html"))
+            return m
+
+        try:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=8) as server:
+                server.starttls()
+                server.login(SMTP_USER, SMTP_PASS)
+                server.sendmail(_from, to_email, _build_msg().as_string())
+            logging.info("[EMAIL] Sent via SMTP STARTTLS to %s", to_email)
+            return True
+        except Exception as e:
+            logging.warning("[EMAIL] SMTP port %s failed: %s — trying SSL 465", SMTP_PORT, e)
+        try:
+            with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=8) as server:
+                server.login(SMTP_USER, SMTP_PASS)
+                server.sendmail(_from, to_email, _build_msg().as_string())
+            logging.info("[EMAIL] Sent via SMTP SSL to %s", to_email)
+            return True
+        except Exception as e:
+            logging.error("[EMAIL] SMTP SSL also failed to %s: %s — trying the API fallbacks", to_email, e)
+
+    # 2. EmailJS REST API (server-side)
     EMAILJS_SERVICE_ID = os.getenv("EMAILJS_SERVICE_ID", "")
     EMAILJS_TEMPLATE_ID = os.getenv("EMAILJS_TEMPLATE_ID", "")
     EMAILJS_PUBLIC_KEY = os.getenv("EMAILJS_PUBLIC_KEY", "")
@@ -167,41 +205,9 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         except Exception as e:
             logging.error("[EMAIL] Brevo failed: %s", e)
 
-    # 6. SMTP fallback
-    if not SMTP_USER or not SMTP_PASS:
-        logging.warning("[EMAIL] No email provider configured for %s", to_email)
-        return False
-    _from = SMTP_FROM.strip() if SMTP_FROM else SMTP_USER
-
-    def _build_msg():
-        # Brand subjects carry an em dash — without RFC-2047 encoding the
-        # flattened message is not ASCII and smtplib refuses to send it.
-        from email.header import Header
-        m = MIMEMultipart("alternative")
-        m["Subject"] = str(Header(subject, "utf-8"))
-        m["From"] = _from
-        m["To"] = to_email
-        m.attach(MIMEText(html_body, "html"))
-        return m
-
-    try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=8) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(_from, to_email, _build_msg().as_string())
-        logging.info("[EMAIL] Sent via SMTP STARTTLS to %s", to_email)
-        return True
-    except Exception as e:
-        logging.warning("[EMAIL] SMTP port %s failed: %s — trying SSL 465", SMTP_PORT, e)
-    try:
-        with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=8) as server:
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(_from, to_email, _build_msg().as_string())
-        logging.info("[EMAIL] Sent via SMTP SSL to %s", to_email)
-        return True
-    except Exception as e:
-        logging.error("[EMAIL] SMTP SSL also failed to %s: %s", to_email, e)
-        return False
+    logging.warning("[EMAIL] every provider failed or none is configured "
+                    "for %s", to_email)
+    return False
 
 
 async def send_sms_async(phone_number: str, message: str):

@@ -2221,7 +2221,7 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                         except Exception:
                             pass
             if first_bot_preview:
-                await _push_support_message(db, chat, first_bot_preview)
+                await _push_support_message(db, chat)
     except Exception as e:
         logging.error("[SupportBot] reply task CRASHED for chat %d: %s",
                       chat_id, e, exc_info=True)
@@ -3246,12 +3246,16 @@ async def get_typing_status(chat_id: int, user: User = Depends(_get_current_user
             pass
     return {"dispatch_typing": dispatch_typing}
 
-async def _push_support_message(db, chat, preview: str) -> None:
+async def _push_support_message(db, chat) -> None:
     """Push the user when a support message arrives from the bot or dispatch
     (2026-10-20, user spec: "si el bot o yo les escribimos les llega una
     notificacion a la app y cuando le dan abre el chat ya listo"). The tap
     lands on CruiseSupportChatScreen, which resumes the open chat with its
     transcript. Fail-soft — a push failure never breaks the message flow.
+
+    The body NEVER carries the message text (user spec: "no quiero que diga
+    que le dijeron, solo tap to open the chat") — message content stays off
+    the lock screen; the chat holds it.
     """
     try:
         user_r = await db.execute(select(User).where(User.id == chat.user_id))
@@ -3260,11 +3264,14 @@ async def _push_support_message(db, chat, preview: str) -> None:
             return
         es = ((chat.locale or getattr(user, "locale", None) or "en")
               .lower().startswith("es"))
-        title = "Soporte CRUISE IN RIDE" if es else "CRUISE IN RIDE Support"
+        title = ("💬 Soporte CRUISE IN RIDE" if es else
+                 "💬 CRUISE IN RIDE Support")
+        body = ("Toca para abrir el chat de soporte" if es else
+                "Tap to open the support chat")
         await _send_fcm_push_async(
             token=user.fcm_token,
             title=title,
-            body=preview[:140],
+            body=body,
             data={"type": "support_message", "chat_id": str(chat.id)},
         )
     except Exception as e:
@@ -3307,7 +3314,7 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
     # The user hears about it even with the app closed (2026-10-20, user
     # spec: "les llega una notificacion a la app y cuando le dan abre el
     # chat ya listo").
-    await _push_support_message(db, chat, msg_text)
+    await _push_support_message(db, chat)
 
     return _support_msg_dict(msg, sender_label)
 
@@ -3342,7 +3349,7 @@ async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
         except Exception:
             pass
     # The user hears the human joined even with the app closed (2026-10-20).
-    await _push_support_message(db, chat, sys_msg.message)
+    await _push_support_message(db, chat)
     return {"status": "supervisor_connected", "message_id": sys_msg.id}
 
 @router.post("/support/chats/{chat_id}/connect-agent", dependencies=[Depends(_require_dispatch_auth)])
@@ -3379,7 +3386,7 @@ async def connect_agent(chat_id: int, db: AsyncSession = Depends(get_db)):
         except Exception:
             pass
     # The user hears the human joined even with the app closed (2026-10-20).
-    await _push_support_message(db, chat, text)
+    await _push_support_message(db, chat)
     return {"status": "agent_connected", "message_id": sys_msg.id}
 
 @router.patch("/support/chats/{chat_id}/close", dependencies=[Depends(_require_dispatch_auth)])

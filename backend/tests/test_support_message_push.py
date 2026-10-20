@@ -58,8 +58,11 @@ async def test_dispatch_message_pushes_the_user(client, db, pushes):
     assert len(pushes) == 1
     p = pushes[0]
     assert p["token"] == "tok-1"
-    assert p["title"] == "Soporte CRUISE IN RIDE"
-    assert "ya revisé tu documento" in p["body"]
+    assert p["title"] == "💬 Soporte CRUISE IN RIDE"
+    # The body NEVER carries the message text (user spec: "no quiero que
+    # diga que le dijeron, solo tap to open the chat").
+    assert p["body"] == "Toca para abrir el chat de soporte"
+    assert "ya revisé tu documento" not in p["body"]
     assert p["data"] == {"type": "support_message",
                          "chat_id": str(chat.id)}
 
@@ -72,7 +75,8 @@ async def test_dispatch_message_english_title(client, db, pushes):
         headers=_make_auth_headers("test-dispatch-key"),
         json={"message": "Your document looks good now."})
     assert res.status_code == 200, res.text
-    assert pushes[0]["title"] == "CRUISE IN RIDE Support"
+    assert pushes[0]["title"] == "💬 CRUISE IN RIDE Support"
+    assert pushes[0]["body"] == "Tap to open the support chat"
 
 
 async def test_no_token_no_push_no_crash(client, db, pushes):
@@ -91,7 +95,7 @@ async def test_takeover_connect_pushes(db, pushes):
     chat = await _chat(db, u)
     await support.connect_agent(chat.id, db)
     assert len(pushes) == 1
-    assert "agent has joined" in pushes[0]["body"]
+    assert pushes[0]["body"] == "Tap to open the support chat"
     assert pushes[0]["data"]["type"] == "support_message"
 
 
@@ -122,5 +126,5 @@ async def test_bot_reply_pushes_once_per_batch(db, pushes, monkeypatch):
     await support._background_bot_reply(chat.id, "hola", "Ana",
                                         "agent_active")
     assert len(pushes) == 1, "una sola push por batch, nunca por parte"
-    assert "Primera parte de la respuesta." in pushes[0]["body"]
+    assert pushes[0]["body"] == "Tap to open the support chat"
     assert pushes[0]["data"]["chat_id"] == str(chat.id)

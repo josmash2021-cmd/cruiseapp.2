@@ -532,6 +532,7 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
 <body style="margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f0f0;padding:40px 0"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-bottom:24px">
+<img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png" alt="CRUISE IN RIDE" width="72" style="display:block;margin:0 auto 14px;border-radius:18px"/>
 <h1 style="margin:0;font-size:24px;font-weight:700;color:#d4a843;letter-spacing:2px">CRUISE IN RIDE</h1>
 </td></tr></table>
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden"><tr><td style="padding:48px 40px;text-align:center">
@@ -831,6 +832,7 @@ async def resend_email_verification(
     # "code generated" while NOTHING left — the verification code never
     # arrived. Use _send_email (Resend/EmailJS/Mailgun/SendGrid/Brevo/SMTP
     # fallback — whatever IS configured), always with the code + the brand.
+    _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
     email_sent = False
     try:
         import asyncio as _asyncio
@@ -845,6 +847,7 @@ async def resend_email_verification(
                 <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #050505; border-radius: 14px; overflow: hidden; border: 1px solid #1a1a1a;">
                   <div style="background: linear-gradient(90deg, transparent, #D4AF37, #E8C547, #D4AF37, transparent); height: 2px;"></div>
                   <div style="padding: 36px 32px; text-align: center;">
+                    <img src="{_logo_url}" alt="CRUISE IN RIDE" width="72" height="72" style="display: block; margin: 0 auto 14px; border-radius: 18px;">
                     <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #E8C547; letter-spacing: 6px; margin: 0 0 18px; text-indent: 6px;">CRUISE IN RIDE</h2>
                     <p style="color: #888; font-size: 14px; margin: 0 0 18px;">Your verification code is:</p>
                     <p style="color: #FFFFFF; font-size: 40px; font-weight: 800; letter-spacing: 10px; margin: 0 0 18px; text-indent: 10px;">{code}</p>

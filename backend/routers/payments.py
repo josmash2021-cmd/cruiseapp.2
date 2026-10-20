@@ -3362,7 +3362,8 @@ def _web_otp_email_html(code: str) -> str:
 <body style="margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f0f0;padding:40px 0"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-bottom:24px">
-<h1 style="margin:0;font-size:28px;font-weight:700;color:#d4a843;letter-spacing:2px">Cruise</h1>
+<img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png" alt="CRUISE IN RIDE" width="72" style="display:block;margin:0 auto 14px;border-radius:18px"/>
+<h1 style="margin:0;font-size:24px;font-weight:700;color:#d4a843;letter-spacing:2px">CRUISE IN RIDE</h1>
 </td></tr></table>
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden"><tr><td style="padding:48px 40px;text-align:center">
 <h2 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#1a1a2e">Verify your email address</h2>
@@ -3376,7 +3377,7 @@ def _web_otp_email_html(code: str) -> str:
 <td style="padding:24px 40px;text-align:center;background-color:#f7f7f7;border-radius:0 0 8px 8px">
 <p style="margin:0;font-size:14px;color:#999999">If you didn't request this code, you can safely ignore this email.</p>
 </td></tr><tr><td align="center" style="padding-top:24px">
-<p style="margin:0;font-size:12px;color:#bbbbbb">&mdash; Cruise App</p>
+<p style="margin:0;font-size:12px;color:#bbbbbb">&mdash; CRUISE IN RIDE</p>
 </td></tr></table>
 </td></tr></table>
 </body></html>"""
@@ -3462,7 +3463,7 @@ async def web_send_otp(request: Request, db: AsyncSession = Depends(get_db)):
         if channel == "email":
             sent = await loop.run_in_executor(None, lambda: _send_email(
                 identifier,
-                "Your Cruise Verification Code",
+                "CRUISE IN RIDE — Verification Code",
                 _web_otp_email_html(code),
                 template_params={"code": code},
             ))

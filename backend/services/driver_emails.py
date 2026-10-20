@@ -28,10 +28,7 @@ logger = logging.getLogger(__name__)
 
 OPEN_APP_URL = os.getenv(
     "PUBLIC_BASE_URL", "https://cruiseapp2-production.up.railway.app") + "/open-app"
-# The full-width recruitment banner that heads EVERY branded driver email
-# (2026-10-20 user spec: it replaces the small logo + the CRUISE IN RIDE
-# wordmark in the header; the brand wordmark stays only in the footer).
-_AD_URL = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.png"
+_LOGO_URL = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
 
 
 def _es(user) -> bool:
@@ -65,7 +62,10 @@ def _branded(headline: str, paragraphs: list[str],
     <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;background:#050505;border-radius:16px;overflow:hidden;border:1px solid #1a1a1a;">
       <div style="background:linear-gradient(90deg,transparent,#D4AF37,#E8C547,#D4AF37,transparent);height:2px;"></div>
       <div style="padding:44px 40px 36px;">
-        <img src="{_AD_URL}" alt="CRUISE IN RIDE" width="560" style="display:block;width:100%;height:auto;border-radius:12px;margin:0 auto 28px;">
+        <div style="text-align:center;margin-bottom:28px;">
+          <img src="{_LOGO_URL}" alt="CRUISE IN RIDE" width="72" height="72" style="display:block;margin:0 auto 14px;border-radius:18px;">
+          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:#E8C547;letter-spacing:4px;margin:0;text-indent:4px;">CRUISE IN RIDE</h2>
+        </div>
         <h1 style="text-align:center;color:#FFFFFF;font-size:23px;font-weight:300;margin:0 0 22px;">{headline}</h1>
         {paras}
         {rows_html}

@@ -2157,6 +2157,7 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                              "bit more detail?")
                 replies = [{"role": "bot", "message": _fb0,
                             "sender_name": chat.agent_name or "Cruise AI"}]
+            first_bot_preview = None
             for idx, r in enumerate(replies):
                 # Add human-like typing delay between messages (simulates agent typing)
                 # System messages (join/escalation notices) appear faster
@@ -2205,6 +2206,11 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                     db.add(bot_msg)
                     await db.flush()
                     await db.refresh(bot_msg)
+                    # One push per bot batch, carrying the FIRST part (2026-10-20
+                    # user spec: a message from us must reach the user even with
+                    # the app closed — the tap opens the chat ready).
+                    if first_bot_preview is None and r["role"] == "bot":
+                        first_bot_preview = part
                     chat.updated_at = datetime.now(timezone.utc)
                     await db.commit()
                     if _HAS_FIRESTORE:
@@ -2214,6 +2220,8 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                             )
                         except Exception:
                             pass
+            if first_bot_preview:
+                await _push_support_message(db, chat, first_bot_preview)
     except Exception as e:
         logging.error("[SupportBot] reply task CRASHED for chat %d: %s",
                       chat_id, e, exc_info=True)
@@ -3238,6 +3246,32 @@ async def get_typing_status(chat_id: int, user: User = Depends(_get_current_user
             pass
     return {"dispatch_typing": dispatch_typing}
 
+async def _push_support_message(db, chat, preview: str) -> None:
+    """Push the user when a support message arrives from the bot or dispatch
+    (2026-10-20, user spec: "si el bot o yo les escribimos les llega una
+    notificacion a la app y cuando le dan abre el chat ya listo"). The tap
+    lands on CruiseSupportChatScreen, which resumes the open chat with its
+    transcript. Fail-soft — a push failure never breaks the message flow.
+    """
+    try:
+        user_r = await db.execute(select(User).where(User.id == chat.user_id))
+        user = user_r.scalar_one_or_none()
+        if not user or not user.fcm_token:
+            return
+        es = ((chat.locale or getattr(user, "locale", None) or "en")
+              .lower().startswith("es"))
+        title = "Soporte CRUISE IN RIDE" if es else "CRUISE IN RIDE Support"
+        await _send_fcm_push_async(
+            token=user.fcm_token,
+            title=title,
+            body=preview[:140],
+            data={"type": "support_message", "chat_id": str(chat.id)},
+        )
+    except Exception as e:
+        logging.warning("[Support] message push failed for chat %s: %s",
+                        chat.id, e)
+
+
 @router.post("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_require_dispatch_auth)])
 async def send_support_message_dispatch(chat_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Send a message in a support chat (dispatch side). Switches bot off."""
@@ -3269,6 +3303,11 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
             firestore_sync.sync_support_message(chat_id, msg.id, 0, sender_label, "dispatch", msg_text)
         except Exception as e:
             logging.error("Firestore dispatch msg sync failed: %s", e)
+
+    # The user hears about it even with the app closed (2026-10-20, user
+    # spec: "les llega una notificacion a la app y cuando le dan abre el
+    # chat ya listo").
+    await _push_support_message(db, chat, msg_text)
 
     return _support_msg_dict(msg, sender_label)
 
@@ -3302,6 +3341,8 @@ async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
             firestore_sync.sync_support_message(chat_id, sys_msg.id, 0, "Sistema", "system", sys_msg.message)
         except Exception:
             pass
+    # The user hears the human joined even with the app closed (2026-10-20).
+    await _push_support_message(db, chat, sys_msg.message)
     return {"status": "supervisor_connected", "message_id": sys_msg.id}
 
 @router.post("/support/chats/{chat_id}/connect-agent", dependencies=[Depends(_require_dispatch_auth)])
@@ -3337,6 +3378,8 @@ async def connect_agent(chat_id: int, db: AsyncSession = Depends(get_db)):
                 chat_id, sys_msg.id, 0, "Sistema" if is_es else "System", "system", text)
         except Exception:
             pass
+    # The user hears the human joined even with the app closed (2026-10-20).
+    await _push_support_message(db, chat, text)
     return {"status": "agent_connected", "message_id": sys_msg.id}
 
 @router.patch("/support/chats/{chat_id}/close", dependencies=[Depends(_require_dispatch_auth)])

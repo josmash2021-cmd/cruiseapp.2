@@ -56,6 +56,7 @@ import 'services/firebase_auth_recovery.dart';
 import 'services/prefs_cache.dart';
 import 'services/socket_service.dart';
 import 'screens/chat_screen.dart';
+import 'screens/help_screen.dart';
 import 'screens/ride_request_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/rider_tracking_screen.dart';
@@ -606,6 +607,14 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // ── Support chat tap (2026-10-20, user spec: "cuando le dan abre el chat
+  // ya listo") — a bot/dispatch message lands here; the screen resumes the
+  // user's open chat with its full transcript.
+  if (type == 'support_message' || type == 'support_followup') {
+    _navigateToSupportChat();
+    return;
+  }
+
   // ── Trip cancelled by dispatch ──
   // Backend sends 'trip_canceled' (1 l) when dispatch cancels a trip.
   // The Firestore watcher on each screen handles the actual UI update,
@@ -821,6 +830,17 @@ void _navigateToScheduledTracking(int tripId) {
   }).catchError((e) {
     debugPrint('[FCM] Failed to fetch scheduled trip $tripId: $e');
   });
+}
+
+/// Navigate to the support chat from an FCM tap (bot or dispatch wrote).
+/// CruiseSupportChatScreen resumes the user's open chat with its transcript.
+void _navigateToSupportChat() {
+  final nav = _navigatorKey.currentState;
+  if (nav == null) return;
+  nav.push(MaterialPageRoute(
+    builder: (_) => const CruiseSupportChatScreen(),
+  ));
+  debugPrint('[FCM] Navigated to CruiseSupportChatScreen');
 }
 
 /// Navigate to ChatScreen from FCM tap.

@@ -29,7 +29,7 @@ void main() {
         reason: 'city bubbles anchor to the GeoNames city coordinates — '
             'prod had GPS for only 5 of 194 drivers, position-only bubbles '
             'showed nothing (2026-10-18)');
-    final centers = File('backend/data/us_city_centers.json')
+    final centers = File('backend/geo/us_city_centers.json')
         .readAsStringSync();
     expect(centers, contains('"FL|Miami"'));
   });

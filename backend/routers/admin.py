@@ -2442,7 +2442,7 @@ def _city_center(key: str):
     if _city_centers_cache is None:
         import json
         from pathlib import Path
-        path = Path(__file__).resolve().parents[1] / "data" / \
+        path = Path(__file__).resolve().parents[1] / "geo" / \
             "us_city_centers.json"
         try:
             _city_centers_cache = json.loads(path.read_text(

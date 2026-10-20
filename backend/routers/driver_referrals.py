@@ -397,6 +397,11 @@ async def bump_driver_referral_progress(
                 if referrer is not None:
                     cents = ref.bonus_amount_cents or 0
                     await _credit_cash(db, referrer, cents)
+                    try:
+                        from services.driver_emails import send_referral_milestone_email
+                        await send_referral_milestone_email(referrer, cents / 100)
+                    except Exception as _mail_err:
+                        logging.warning("[DriverReferrals] milestone email failed: %s", _mail_err)
                     ref.status = "qualified"
                     ref.qualified_at = now
                     ref.paid_at = now
@@ -423,6 +428,11 @@ async def bump_driver_referral_progress(
             if referee is not None:
                 cents = settings["referee_bonus_cents"]
                 await _credit_cash(db, referee, cents)
+                try:
+                    from services.driver_emails import send_referral_milestone_email
+                    await send_referral_milestone_email(referee, cents / 100)
+                except Exception as _mail_err:
+                    logging.warning("[DriverReferrals] milestone email failed: %s", _mail_err)
                 ref.referee_bonus_paid_at = now
                 _push(referee, "¡Bono de bienvenida ganado!",
                       f"Acabas de ganar ${cents // 100} por completar tus "
@@ -451,6 +461,11 @@ async def bump_driver_referral_progress(
                 if referrer is not None:
                     cents = m1["amount_cents"]
                     await _credit_cash(db, referrer, cents)
+                    try:
+                        from services.driver_emails import send_referral_milestone_email
+                        await send_referral_milestone_email(referrer, cents / 100)
+                    except Exception as _mail_err:
+                        logging.warning("[DriverReferrals] milestone email failed: %s", _mail_err)
                     ref.qualified_at = now
                     ref.status = "milestone1"
                     _push(referrer, "¡Bono de referido ganado!",
@@ -474,6 +489,11 @@ async def bump_driver_referral_progress(
             if referrer is not None:
                 cents = m2["amount_cents"]
                 await _credit_cash(db, referrer, cents)
+                try:
+                    from services.driver_emails import send_referral_milestone_email
+                    await send_referral_milestone_email(referrer, cents / 100)
+                except Exception as _mail_err:
+                    logging.warning("[DriverReferrals] milestone email failed: %s", _mail_err)
                 ref.paid_at = now
                 ref.status = "qualified"
                 _push(referrer, "¡Bono de referido ganado!",

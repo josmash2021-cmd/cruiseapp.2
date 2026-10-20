@@ -136,9 +136,21 @@ async def admin_update_user_status(user_id: int, status: str = Body(..., embed=T
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
+    old_status = (user.status or "").lower()
     user.status = status
     await db.commit()
     await _terminate_account_session(db, user, status)
+    # Account lifecycle email (2026-10-20, user spec "los 4") — drivers
+    # only, and only on an actual flip (deactivated / blocked / back to
+    # active). Fail-soft: the status change itself already committed.
+    if user.role == "driver" and status != old_status and status in (
+            "active", "blocked", "deactivated"):
+        try:
+            from services.driver_emails import send_account_status_email
+            await send_account_status_email(user, status)
+        except Exception as e:
+            logging.warning("[Admin] account-status email failed for user %s: %s",
+                            user_id, e)
     # Sync to Firestore
     if _HAS_FIRESTORE:
         try:

@@ -3887,6 +3887,17 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             driver.background_check_status = status
         await db.commit()
         logging.info(f"Checkr report.completed: driver={driver.id} status={status}")
+        # Background-check result email (2026-10-20, user spec "los 4"):
+        # clear = approved, consider = under review. Fail-soft like the
+        # push below — Checkr retries a 500, so nothing here may raise.
+        if status in ("clear", "consider"):
+            try:
+                from services.driver_emails import send_background_check_email
+                await send_background_check_email(driver, clear=(status == "clear"))
+            except Exception as _mail_err:
+                logging.warning(
+                    "[Checkr] background-check email failed for driver %s: %s",
+                    driver.id, _mail_err)
         if status == "clear":
             try:
                 # Never a 500 to Checkr (they retry) — a push/aggregation

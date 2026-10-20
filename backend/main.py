@@ -380,6 +380,19 @@ async def _transfer_and_settle(
             if c is not None and c.status != "completed":
                 c.status = "completed"
                 await db.commit()
+                # Payout confirmation email (2026-10-20, user spec "los 4"):
+                # after the settle commits, once per cashout row.
+                if c.payout_email_sent_at is None:
+                    try:
+                        from services.driver_emails import send_payout_email
+                        drv = await db.get(User, driver_id)
+                        if drv is not None and await send_payout_email(drv, amount):
+                            c.payout_email_sent_at = datetime.now(timezone.utc)
+                            await db.commit()
+                    except Exception as e:
+                        logging.warning(
+                            "[AutoPayout] payout email failed for driver %s: %s",
+                            driver_id, e)
         except Exception as e:
             await db.rollback()
             logging.error(
@@ -905,6 +918,8 @@ async def _start_scheduler_agents() -> None:
     _spawn_background(_scheduled_rides_available_notify_loop(), "scheduled_rides_notify")
     _spawn_background(_nightly_reconcile_loop(), "nightly_reconcile")
     _spawn_background(_driver_referral_expiry_loop(), "driver_referral_expiry")
+    from driver_email_agent import run_driver_email_agent
+    _spawn_background(run_driver_email_agent(), "driver_email_agent")
 
     # Class-based autonomous agents
     document_expiry_agent.set_db_session_maker(SessionLocal)

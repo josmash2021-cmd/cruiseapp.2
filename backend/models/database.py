@@ -277,6 +277,10 @@ class User(Base):
     # offline→online flip, cleared going offline. The ghost agent caps shifts
     # at 12 h (user spec: "la app no puede quedar prendida mas de 12 horas").
     online_since = Column(DateTime(timezone=True), nullable=True)
+    # Weekly earnings summary email (2026-10-20): stamped when the Monday
+    # summary goes out, so a retry in the same ISO week never doubles it.
+    # Boot lists below (trampa #0).
+    weekly_summary_sent_at = Column(DateTime(timezone=True), nullable=True)
     # Notification language (2026-10-05, user spec): the app reports the
     # device locale at every boot (PATCH /auth/me) and notifications read it
     # — a Spanish phone gets Spanish pushes, an English one English.
@@ -406,6 +410,11 @@ class Trip(Base):
     # sets in main.py. Migration: ensure-column lists below ("trips",
     # "reminder_sent_at").
     reminder_sent_at = Column(DateTime(timezone=True), nullable=True)
+    # Scheduled-ride EMAIL reminders (2026-10-20, user spec: 24 h + 1 h
+    # before pickup — the push at 30 min stays). Same "flag set once"
+    # pattern as reminder_sent_at. Boot lists below (trampa #0).
+    reminder_email_24h_at = Column(DateTime(timezone=True), nullable=True)
+    reminder_email_1h_at = Column(DateTime(timezone=True), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
@@ -494,6 +503,8 @@ class Cashout(Base):
     # "standard" (default, free, 1-2 days) or "instant" (1.5% fee, minutes).
     method = Column(String(20), default="standard")
     fee = Column(Float, default=0.0)
+    # Payout confirmation email flag (2026-10-20) — boot lists (trampa #0).
+    payout_email_sent_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class Vehicle(Base):
@@ -547,6 +558,9 @@ class Document(Base):
     rejection_reason = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    # Expiry reminder emails (2026-10-20): 0..4 = notices already sent at
+    # the 30/15/7/1-day thresholds. Boot lists below (trampa #0).
+    expiry_email_stage = Column(Integer, default=0)
 
 
 class Rating(Base):
@@ -1135,6 +1149,13 @@ async def migrate_add_columns(conn):
         # Notification language reported by the app (2026-10-05) — boot lists
         # or prod never gets it (trampa #0).
         ("users", "locale", "VARCHAR(5) DEFAULT 'es'"),
+        # Driver email systems (2026-10-20) — boot lists or prod never gets
+        # them (trampa #0).
+        ("trips", "reminder_email_24h_at", "DATETIME"),
+        ("trips", "reminder_email_1h_at", "DATETIME"),
+        ("documents", "expiry_email_stage", "INTEGER DEFAULT 0"),
+        ("cashouts", "payout_email_sent_at", "DATETIME"),
+        ("users", "weekly_summary_sent_at", "DATETIME"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1376,6 +1397,13 @@ async def migrate_postgres(conn):
         # Notification language reported by the app (2026-10-05) — boot list
         # or prod never gets it (trampa #0).
         ("users", "locale", "VARCHAR(5) DEFAULT 'es'"),
+        # Driver email systems (2026-10-20) — boot list or prod never gets
+        # them (trampa #0).
+        ("trips", "reminder_email_24h_at", "TIMESTAMP WITH TIME ZONE"),
+        ("trips", "reminder_email_1h_at", "TIMESTAMP WITH TIME ZONE"),
+        ("documents", "expiry_email_stage", "INTEGER DEFAULT 0"),
+        ("cashouts", "payout_email_sent_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "weekly_summary_sent_at", "TIMESTAMP WITH TIME ZONE"),
     ]
     for table, col, col_type in migrations:
         try:

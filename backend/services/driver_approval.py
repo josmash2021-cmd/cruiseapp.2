@@ -230,7 +230,6 @@ async def send_approved_email(user: User) -> None:
     try:
         from services.email_sms_service import _send_email
         driver_name = _html.escape(user.first_name or "Driver")
-        _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
         # _send_email is SYNC (blocking urllib) — awaiting it used to raise
         # "object bool can't be used in 'await' expression" and the welcome
         # email NEVER left (prod 2026-10-18). Run it in the executor like the
@@ -246,8 +245,7 @@ async def send_approved_email(user: User) -> None:
                 <div style="background: linear-gradient(90deg, transparent, #D4AF37, #E8C547, #D4AF37, transparent); height: 2px;"></div>
                 <div style="padding: 48px 40px 40px;">
                     <div style="text-align: center; margin-bottom: 40px;">
-                        <img src="{_logo_url}" alt="Cruise" width="80" height="80" style="display: block; margin: 0 auto 16px; border-radius: 20px;">
-                        <h2 style="font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 700; color: #E8C547; letter-spacing: 8px; margin: 0; text-indent: 8px;">CRUISE IN RIDE</h2>
+                        <img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.jpg" alt="CRUISE IN RIDE" width="560" style="display: block; width: 100%; height: auto; border-radius: 12px; margin: 0 auto;">
                     </div>
                     <h1 style="text-align: center; color: #FFFFFF; font-size: 26px; font-weight: 300; margin: 0 0 6px; letter-spacing: -0.3px;">You're <strong>Approved</strong>, {driver_name}.</h1>
                     <p style="text-align: center; color: #666; font-size: 14px; margin: 10px 0 0; line-height: 1.6;">Your application has been reviewed and accepted.<br>Welcome to the CRUISE IN RIDE driver team.</p>
@@ -315,7 +313,6 @@ async def send_document_rejected_email(
         doc_name = names[0] if es else names[1]
         driver_name = _html.escape(
             user.first_name or ("Conductor" if es else "Driver"))
-        _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
         reason_block = ""
         if reason:
             reason_block = f"""
@@ -347,8 +344,7 @@ async def send_document_rejected_email(
                 <div style="background: linear-gradient(90deg, transparent, #D4AF37, #E8C547, #D4AF37, transparent); height: 2px;"></div>
                 <div style="padding: 48px 40px 40px;">
                     <div style="text-align: center; margin-bottom: 32px;">
-                        <img src="{_logo_url}" alt="CRUISE IN RIDE" width="80" height="80" style="display: block; margin: 0 auto 16px; border-radius: 20px;">
-                        <h2 style="font-family: Georgia, 'Times New Roman', serif; font-size: 22px; font-weight: 700; color: #E8C547; letter-spacing: 4px; margin: 0; text-indent: 4px;">CRUISE IN RIDE</h2>
+                        <img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.jpg" alt="CRUISE IN RIDE" width="560" style="display: block; width: 100%; height: auto; border-radius: 12px; margin: 0 auto;">
                     </div>
                     <h1 style="text-align: center; color: #FFFFFF; font-size: 24px; font-weight: 300; margin: 0 0 6px;">{headline}</h1>
                     <p style="text-align: center; color: #666; font-size: 14px; margin: 10px 0 28px; line-height: 1.6;">{body_line}</p>

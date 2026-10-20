@@ -566,6 +566,11 @@ class Document(Base):
     # Expiry reminder emails (2026-10-20): 0..4 = notices already sent at
     # the 30/15/7/1-day thresholds. Boot lists below (trampa #0).
     expiry_email_stage = Column(Integer, default=0)
+    # AI-read expiry SUGGESTION (2026-10-20, user-approved design: "la IA
+    # sugiere, el operador confirma en dispatch"). Written by the vision
+    # reader only — it has NO effect until dispatch confirms it into
+    # expiry_date, which reminders and suspension consume. Boot lists.
+    expiry_suggested_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class Rating(Base):
@@ -1159,6 +1164,7 @@ async def migrate_add_columns(conn):
         ("trips", "reminder_email_24h_at", "DATETIME"),
         ("trips", "reminder_email_1h_at", "DATETIME"),
         ("documents", "expiry_email_stage", "INTEGER DEFAULT 0"),
+        ("documents", "expiry_suggested_at", "DATETIME"),
         ("cashouts", "payout_email_sent_at", "DATETIME"),
         ("users", "weekly_summary_sent_at", "DATETIME"),
         ("users", "onboard_nudge_count", "INTEGER DEFAULT 0"),
@@ -1409,6 +1415,7 @@ async def migrate_postgres(conn):
         ("trips", "reminder_email_24h_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "reminder_email_1h_at", "TIMESTAMP WITH TIME ZONE"),
         ("documents", "expiry_email_stage", "INTEGER DEFAULT 0"),
+        ("documents", "expiry_suggested_at", "TIMESTAMP WITH TIME ZONE"),
         ("cashouts", "payout_email_sent_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "weekly_summary_sent_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "onboard_nudge_count", "INTEGER DEFAULT 0"),

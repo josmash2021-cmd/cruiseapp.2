@@ -322,6 +322,8 @@ async def store_confirm(
             user.email,
             f"¡Felicidades por tu nuevo pedido! — Orden #{order.id}",
             f"<div style=\"font-family:Arial,sans-serif\">"
+            f"<img src=\"https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.jpg\" "
+            f"alt=\"CRUISE IN RIDE\" width=\"560\" style=\"display:block;width:100%;max-width:560px;height:auto;border-radius:12px;margin:0 auto 18px\">"
             f"<h2>¡Felicidades por tu nuevo pedido, {user.first_name}!</h2>"
             f"<p>Tu pago se procesó correctamente y tu pedido ya está en "
             f"producción.</p>"

@@ -3362,8 +3362,7 @@ def _web_otp_email_html(code: str) -> str:
 <body style="margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f0f0;padding:40px 0"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-bottom:24px">
-<img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png" alt="CRUISE IN RIDE" width="72" style="display:block;margin:0 auto 14px;border-radius:18px"/>
-<h1 style="margin:0;font-size:24px;font-weight:700;color:#d4a843;letter-spacing:2px">CRUISE IN RIDE</h1>
+<img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/email_header_ad.jpg" alt="CRUISE IN RIDE" width="600" style="display:block;width:100%;max-width:600px;height:auto;border-radius:8px;margin:0 auto"/>
 </td></tr></table>
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden"><tr><td style="padding:48px 40px;text-align:center">
 <h2 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#1a1a2e">Verify your email address</h2>

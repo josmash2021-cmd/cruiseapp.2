@@ -2735,6 +2735,102 @@ async def admin_set_document_status(document_id: int, request: Request, db: Asyn
     return {"document": _doc_dict(doc)}
 
 
+# ── AI expiry suggestions: dispatch confirms (2026-10-20, user-approved
+# design: "la IA sugiere, yo confirmo en dispatch") ─────────────────────
+# The vision reader only ever writes `expiry_suggested_at`. These endpoints
+# are the ONLY path that turns a suggestion into the official `expiry_date`
+# (what reminders and suspension consume). Confirm = operator approved it
+# (optionally edited); dismiss = the read was wrong; confirm-all = the
+# batch button for the review queue.
+
+@router.get("/admin/documents/expiry-suggestions", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_list_expiry_suggestions(db: AsyncSession = Depends(get_db)):
+    """Documents with an AI-read expiry date PENDING operator confirmation."""
+    r = await db.execute(
+        select(Document, User.first_name, User.last_name)
+        .join(User, Document.user_id == User.id)
+        .where(Document.expiry_suggested_at.isnot(None),
+               Document.expiry_date.is_(None))
+        .order_by(Document.expiry_suggested_at))
+    out = []
+    for doc, first, last in r.all():
+        out.append({
+            "id": doc.id,
+            "user_id": doc.user_id,
+            "driver_name": f"{first or ''} {last or ''}".strip(),
+            "doc_type": doc.doc_type,
+            "file_path": doc.file_path,
+            "expiry_suggested_at": doc.expiry_suggested_at.isoformat(),
+        })
+    return {"suggestions": out}
+
+
+@router.post("/admin/documents/expiry-suggestions/confirm-all", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_confirm_all_expiry_suggestions(db: AsyncSession = Depends(get_db)):
+    """The batch button: confirm every pending suggestion as read."""
+    r = await db.execute(
+        select(Document).where(Document.expiry_suggested_at.isnot(None),
+                               Document.expiry_date.is_(None)))
+    docs = r.scalars().all()
+    for doc in docs:
+        doc.expiry_date = doc.expiry_suggested_at
+        doc.expiry_suggested_at = None
+        doc.expiry_email_stage = 0  # fresh countdown, same as single-confirm
+        doc.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    _security_audit_log("ADMIN_EXPIRY_CONFIRM_ALL", "admin",
+                        f"count={len(docs)}")
+    return {"confirmed": len(docs)}
+
+
+@router.post("/admin/documents/{document_id}/expiry-suggestion/confirm", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_confirm_expiry_suggestion(document_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Confirm (optionally edited) one AI-suggested expiry into the
+    official expiry_date — the only way the AI read takes effect."""
+    body = await request.json()
+    override = (body.get("expiry_date") or "").strip()
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if override:
+        try:
+            doc.expiry_date = datetime.fromisoformat(override)
+            if doc.expiry_date.tzinfo is None:
+                doc.expiry_date = doc.expiry_date.replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(400, "expiry_date must be ISO (YYYY-MM-DD)")
+    elif doc.expiry_suggested_at is not None:
+        doc.expiry_date = doc.expiry_suggested_at
+    else:
+        raise HTTPException(400, "No suggestion to confirm — pass expiry_date")
+    doc.expiry_suggested_at = None
+    # A newly confirmed date starts a FRESH reminder countdown (2026-10-20
+    # self-review: the stage of the old date used to carry over, silencing
+    # the 30/15-day notices for the new one).
+    doc.expiry_email_stage = 0
+    doc.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    _security_audit_log("ADMIN_EXPIRY_CONFIRM", "admin",
+                        f"doc={document_id} expiry={doc.expiry_date}")
+    return {"document": _doc_dict(doc)}
+
+
+@router.post("/admin/documents/{document_id}/expiry-suggestion/dismiss", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_dismiss_expiry_suggestion(document_id: int, db: AsyncSession = Depends(get_db)):
+    """The AI read was wrong (or there is no expiry on the document):
+    drop the suggestion without touching anything else."""
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    doc.expiry_suggested_at = None
+    doc.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    _security_audit_log("ADMIN_EXPIRY_DISMISS", "admin", f"doc={document_id}")
+    return {"document": _doc_dict(doc)}
+
+
 # Doc types an operator may upload FOR the user (the driver's own upload
 # set + the identity docs, which live as user columns until the backfill).
 _ADMIN_UPLOAD_DOC_TYPES = {

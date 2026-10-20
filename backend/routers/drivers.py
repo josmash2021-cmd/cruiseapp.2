@@ -3495,6 +3495,9 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
         if body.get("expiry_date"):
             existing.expiry_date = datetime.fromisoformat(body["expiry_date"])
         existing.rejection_reason = None
+        # New photo ⇒ the old AI suggestion belongs to the old photo
+        # (2026-10-20 self-review); the reader re-fills it if readable.
+        existing.expiry_suggested_at = None
         existing.updated_at = datetime.now(timezone.utc)
         doc = existing
     else:
@@ -3513,6 +3516,12 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     # Same panel sync as the multipart path (see _store_driver_document).
     if _HAS_FIRESTORE and firestore_sync and doc.file_path:
         firestore_sync.sync_verification_doc_url(user.id, doc_type, doc.file_path)
+    # AI expiry suggestion (2026-10-20, user-approved design) — background,
+    # suggestion-only; the operator confirms the real expiry_date.
+    from utils.helpers import _safe_create_task
+    from services.doc_expiry_reader import read_and_suggest
+    _safe_create_task(read_and_suggest(doc.id, doc.file_path, doc_type),
+                      name=f"doc_expiry_ai_{doc.id}")
     return _doc_dict(doc)
 
 async def _store_driver_document(
@@ -3582,6 +3591,10 @@ async def _store_driver_document(
         existing.status = "pending"
         existing.file_path = file_path or existing.file_path
         existing.rejection_reason = None
+        # New photo ⇒ the old AI suggestion describes a photo that no longer
+        # exists; the reader re-fills it if the new photo is readable
+        # (2026-10-20 self-review).
+        existing.expiry_suggested_at = None
         existing.updated_at = datetime.now(timezone.utc)
         doc = existing
     else:
@@ -3609,6 +3622,14 @@ async def _store_driver_document(
     if _HAS_FIRESTORE and firestore_sync and doc.file_path:
         firestore_sync.sync_verification_doc_url(
             user.id, doc_type, doc.file_path, side=side)
+    # AI expiry suggestion (2026-10-20, user-approved design: "la IA lee,
+    # yo confirmo en dispatch"): the vision reader writes ONLY a suggestion
+    # in the background — reminders and suspension wait for the operator's
+    # confirmed expiry_date.
+    from utils.helpers import _safe_create_task
+    from services.doc_expiry_reader import read_and_suggest
+    _safe_create_task(read_and_suggest(doc.id, doc.file_path, doc_type),
+                      name=f"doc_expiry_ai_{doc.id}")
     return doc
 
 

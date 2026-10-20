@@ -519,6 +519,9 @@ def _doc_dict(d) -> dict:
         "file_path": d.file_path,
         "doc_number": d.doc_number,
         "expiry_date": d.expiry_date.isoformat() if d.expiry_date else None,
+        "expiry_suggested_at": (d.expiry_suggested_at.isoformat()
+                                if getattr(d, "expiry_suggested_at", None)
+                                else None),
         "rejection_reason": d.rejection_reason,
         "vehicle_id": getattr(d, "vehicle_id", None),
         "created_at": d.created_at.isoformat() if d.created_at else None,

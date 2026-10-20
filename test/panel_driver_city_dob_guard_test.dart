@@ -62,16 +62,26 @@ void main() {
     }
   });
 
-  test('the Drivers page categorizes by city with counts', () {
-    expect(driversPage, contains('"Ciudades"'),
-        reason: 'the chips section header exists');
-    expect(driversPage, contains('const cityOf='),
-        reason: 'city resolver: driveCity → driveState → "Sin ciudad"');
-    expect(driversPage, contains('Sin ciudad'));
-    expect(driversPage, contains('cityCounts'),
-        reason: 'per-city counts feed the chips');
-    expect(driversPage, contains('cityF===null?base:base.filter'),
-        reason: 'the city chip filters the visible list');
+  test('the Drivers page groups cities by state, then city', () {
+    expect(driversPage, contains('panel_driver_city_dob_guard_test'),
+        reason: 'the guard-pin comment must survive — a panel rebuild must '
+            're-apply these edits (source lives outside this repo)');
+    expect(driversPage, contains('const US_STATES='),
+        reason: 'state-code → full-name map (FL → Florida, …)');
+    expect(driversPage, contains('const stKeyOf='),
+        reason: 'raw drive_state resolver ("" → unknown)');
+    expect(driversPage, contains('"Sin estado"'),
+        reason: 'drivers with no drive_state get their own group');
+    expect(driversPage, contains('const stateGroups='),
+        reason: 'per-state groups with per-city counts feed the chips');
+    expect(driversPage, contains('Ciudades por estado'),
+        reason: 'section header: grouped by state, then city');
+    expect(driversPage, contains('cityKeyOf(d)===cityF'),
+        reason: 'a chip filters by the compound state|city key — same city '
+            'name in two states never mixes');
+    expect(driversPage, isNot(contains('const cityCounts=')),
+        reason: 'the flat per-city chip list is gone (2026-10-18 spec: '
+            'group by state — Austin/Dallas are not in Florida)');
   });
 
   test('the backend payloads carry the three fields', () {

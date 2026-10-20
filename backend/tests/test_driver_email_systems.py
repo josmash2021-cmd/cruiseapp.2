@@ -76,8 +76,8 @@ async def test_scheduled_reminder_24h_and_1h_fire_once(db, capture):
     await agent._scheduled_reminders(now, db)
     assert len(capture) == 2
     subjects = sorted(m["subject"] for m in capture)
-    assert "CRUISE IN RIDE — Reminder: ride in 24h" in subjects
-    assert "CRUISE IN RIDE — Reminder: ride in 1h" in subjects
+    assert "CRUISE IN RIDE — 📅 Reminder: ride in 24h" in subjects
+    assert "CRUISE IN RIDE — 📅 Reminder: ride in 1h" in subjects
     await db.refresh(t24)
     await db.refresh(t1)
     assert t24.reminder_email_24h_at is not None
@@ -220,8 +220,8 @@ async def test_background_check_email_clear_and_consider(db, capture):
     assert await dem.send_background_check_email(driver, clear=True)
     assert await dem.send_background_check_email(driver, clear=False)
     subjects = [m["subject"] for m in capture]
-    assert subjects[0] == "CRUISE IN RIDE — Background check approved"
-    assert subjects[1] == "CRUISE IN RIDE — Background check under review"
+    assert subjects[0] == "CRUISE IN RIDE — ✅ Background check approved"
+    assert subjects[1] == "CRUISE IN RIDE — 🔍 Background check under review"
 
 
 async def test_admin_status_flip_emails_the_driver(client, db, capture):
@@ -231,14 +231,14 @@ async def test_admin_status_flip_emails_the_driver(client, db, capture):
     assert res.status_code == 200, res.text
     assert len(capture) == 1
     assert capture[0]["subject"] == \
-        "CRUISE IN RIDE — Your account was deactivated"
+        "CRUISE IN RIDE — ⏸️ Your account was deactivated"
 
     res = await client.patch(f"/admin/users/{driver.id}/status",
                              headers=_dh(), json={"status": "active"})
     assert res.status_code == 200, res.text
     assert len(capture) == 2
     assert capture[1]["subject"] == \
-        "CRUISE IN RIDE — Your account was reactivated"
+        "CRUISE IN RIDE — 🎉 Your account was reactivated"
 
 
 async def test_referral_milestone_email_amount_and_brand(db, capture):
@@ -248,6 +248,39 @@ async def test_referral_milestone_email_amount_and_brand(db, capture):
     assert "$25.00" in m["subject"]
     assert "CRUISE IN RIDE" in m["html"]
     assert "/open-app" in m["html"]
+
+
+async def test_payout_push_is_localized_es_and_en(db, capture, monkeypatch):
+    """2026-10-20 user spec: the payout push was English-only — every
+    driver gets it in their own language (users.locale)."""
+    from main import _transfer_and_settle
+
+    pushes = []
+    monkeypatch.setattr(
+        "main._send_fcm_push",
+        lambda token, title, body, data=None, **kw: pushes.append((title, body)))
+
+    class _Transfer:
+        @staticmethod
+        def create(**kw):
+            return {"id": "tr_x"}
+
+    class _Stripe:
+        Transfer = _Transfer
+
+    for loc, want_title, want_body in (
+            ("es", "💰 ¡Pago enviado!", "ha sido transferido a tu cuenta bancaria"),
+            ("en", "💰 Payout Sent!", "has been transferred to your bank account")):
+        driver = await _user(db, f"P{loc}", locale=loc,
+                             fcm_token=f"tok-{loc}", stripe_connect_id="acct_x")
+        c = Cashout(user_id=driver.id, amount=25.0, status="processing")
+        db.add(c)
+        await db.commit()
+        await db.refresh(c)
+        await _transfer_and_settle(driver.id, c.id, 25.0, "acct_x",
+                                   f"idem_{loc}", driver.fcm_token, _Stripe)
+        assert pushes[-1][0] == want_title
+        assert want_body in pushes[-1][1]
 
 
 async def test_branded_template_escapes_the_name(db, capture):

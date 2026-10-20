@@ -184,21 +184,21 @@ async def send_scheduled_reminder_email(user: User, trip, hours: int) -> bool:
         rows.append(("Tarifa estimada" if es else "Estimated fare",
                      f"${fare:.2f}"))
     if es:
-        subject = f"CRUISE IN RIDE — Recordatorio: viaje en {hours} h"
+        subject = f"CRUISE IN RIDE — 📅 Recordatorio: viaje en {hours} h"
         headline = f"Viaje agendado en <strong>{hours} horas</strong>"
         paras = [f"{_first(user)}, tienes un viaje reservado. Revísalo en "
                  "la app y conéctate a tiempo — si no llegas, la reserva "
                  "puede asignarse a otro conductor."]
         btn = "ABRIR LA APP"
     else:
-        subject = f"CRUISE IN RIDE — Reminder: ride in {hours}h"
+        subject = f"CRUISE IN RIDE — 📅 Reminder: ride in {hours}h"
         headline = f"Scheduled ride in <strong>{hours} hours</strong>"
         paras = [f"{_first(user)}, you have a reserved ride. Review it in "
                  "the app and go online on time — if you miss it, the "
                  "reservation may go to another driver."]
         btn = "OPEN THE APP"
-    title = (f"Viaje agendado en {hours} h" if es else
-             f"Scheduled ride in {hours}h")
+    title = (f"📅 Viaje agendado en {hours} h" if es else
+             f"📅 Scheduled ride in {hours}h")
     body = (f"Recogida {when} — revísalo en la app." if es else
             f"Pickup {when} — review it in the app.")
     return await _deliver_multichannel(
@@ -226,18 +226,18 @@ async def send_doc_expiry_email(user: User, doc_type: str,
         ("Estado" if es else "Status", _esc(urgency)),
     ]
     if es:
-        subject = f"CRUISE IN RIDE — {doc_name} por vencer"
+        subject = f"CRUISE IN RIDE — 📄 {doc_name} por vencer"
         headline = "Documento <strong>por vencer</strong>"
         paras = [f"{_first(user)}, tu {doc_name} vence pronto. Súbelo de "
                  "nuevo desde tu lista To-do para no quedar bloqueado."]
         btn = "ABRIR LA APP"
     else:
-        subject = f"CRUISE IN RIDE — {doc_name} expiring soon"
+        subject = f"CRUISE IN RIDE — 📄 {doc_name} expiring soon"
         headline = "Document <strong>expiring soon</strong>"
         paras = [f"{_first(user)}, your {doc_name} expires soon. Upload it "
                  "again from your To-do list so you don't get blocked."]
         btn = "OPEN THE APP"
-    title = ("Documento por vencer" if es else "Document expiring soon")
+    title = ("📄 Documento por vencer" if es else "📄 Document expiring soon")
     body = (f"Tu {doc_name} vence el {expiry.strftime('%b %d, %Y')}." if es
             else f"Your {doc_name} expires on {expiry.strftime('%b %d, %Y')}.")
     return await _deliver_multichannel(
@@ -262,18 +262,18 @@ async def send_weekly_summary_email(user: User, stats: dict) -> bool:
         ("Total", f"${total:.2f}"),
     ]
     if es:
-        subject = "CRUISE IN RIDE — Tu resumen semanal"
+        subject = "CRUISE IN RIDE — 📊 Tu resumen semanal"
         headline = "Tu semana <strong>en números</strong>"
         paras = [f"{_first(user)}, así te fue la semana pasada. El pago se "
                  "procesa los lunes y llega a tu banco en 1-2 días."]
         btn = "VER MIS GANANCIAS"
     else:
-        subject = "CRUISE IN RIDE — Your weekly summary"
+        subject = "CRUISE IN RIDE — 📊 Your weekly summary"
         headline = "Your week <strong>in numbers</strong>"
         paras = [f"{_first(user)}, here's how last week went. Payouts run "
                  "on Mondays and reach your bank in 1-2 days."]
         btn = "VIEW MY EARNINGS"
-    title = ("Tu resumen semanal" if es else "Your weekly summary")
+    title = ("📊 Tu resumen semanal" if es else "📊 Your weekly summary")
     body = (f"${total:.2f} en {trips} viajes la semana pasada." if es else
             f"${total:.2f} across {trips} trips last week.")
     return await _deliver_multichannel(
@@ -288,18 +288,18 @@ async def send_payout_email(user: User, amount: float) -> bool:
             ("Llega" if es else "Arrives",
              _esc("1-2 días hábiles" if es else "1-2 business days"))]
     if es:
-        subject = f"CRUISE IN RIDE — Tu pago de ${amount:.2f} va en camino"
+        subject = f"CRUISE IN RIDE — 💰 Tu pago de ${amount:.2f} va en camino"
         headline = "Pago <strong>en camino</strong>"
         paras = [f"{_first(user)}, tu pago semanal ya se procesó y va "
                  "camino a tu cuenta bancaria."]
         btn = "ABRIR LA APP"
     else:
-        subject = f"CRUISE IN RIDE — Your ${amount:.2f} payout is on its way"
+        subject = f"CRUISE IN RIDE — 💰 Your ${amount:.2f} payout is on its way"
         headline = "Payout <strong>on its way</strong>"
         paras = [f"{_first(user)}, your weekly payout was processed and is "
                  "on its way to your bank account."]
         btn = "OPEN THE APP"
-    title = ("Pago en camino" if es else "Payout on its way")
+    title = ("💰 Pago en camino" if es else "💰 Payout on its way")
     body = (f"Tu pago de ${amount:.2f} va camino a tu banco." if es else
             f"Your ${amount:.2f} payout is on its way to your bank.")
     return await _deliver_multichannel(
@@ -314,8 +314,8 @@ async def send_background_check_email(user: User, clear: bool) -> bool:
     """Checkr report.completed: clear = approved, consider = under review."""
     es = _es(user)
     if es:
-        subject = ("CRUISE IN RIDE — Antecedentes aprobados" if clear else
-                   "CRUISE IN RIDE — Antecedentes en revisión")
+        subject = ("CRUISE IN RIDE — ✅ Antecedentes aprobados" if clear else
+                   "CRUISE IN RIDE — 🔍 Antecedentes en revisión")
         headline = ("Antecedentes <strong>aprobados</strong>" if clear else
                     "Antecedentes <strong>en revisión</strong>")
         paras = [
@@ -325,8 +325,8 @@ async def send_background_check_email(user: User, clear: bool) -> bool:
             "revisión adicional. Te contactaremos si necesitamos algo."]
         btn = "ABRIR LA APP"
     else:
-        subject = ("CRUISE IN RIDE — Background check approved" if clear else
-                   "CRUISE IN RIDE — Background check under review")
+        subject = ("CRUISE IN RIDE — ✅ Background check approved" if clear else
+                   "CRUISE IN RIDE — 🔍 Background check under review")
         headline = ("Background check <strong>approved</strong>" if clear else
                     "Background check <strong>under review</strong>")
         paras = [
@@ -336,13 +336,13 @@ async def send_background_check_email(user: User, clear: bool) -> bool:
             "review. We'll reach out if we need anything."]
         btn = "OPEN THE APP"
     if es:
-        title = ("Antecedentes aprobados" if clear else
-                 "Antecedentes en revisión")
+        title = ("✅ Antecedentes aprobados" if clear else
+                 "🔍 Antecedentes en revisión")
         body = ("Tu verificación de antecedentes fue aprobada." if clear else
                 "Tu verificación requiere revisión adicional — te contactaremos.")
     else:
-        title = ("Background check approved" if clear else
-                 "Background check under review")
+        title = ("✅ Background check approved" if clear else
+                 "🔍 Background check under review")
         body = ("Your background check was approved." if clear else
                 "Your check needs additional review — we'll reach out.")
     return await _deliver_multichannel(
@@ -355,8 +355,8 @@ async def send_account_status_email(user: User, status: str) -> bool:
     es = _es(user)
     st = (status or "").lower()
     if st == "active":
-        subject = "CRUISE IN RIDE — Tu cuenta fue reactivada" if es else \
-            "CRUISE IN RIDE — Your account was reactivated"
+        subject = "CRUISE IN RIDE — 🎉 Tu cuenta fue reactivada" if es else \
+            "CRUISE IN RIDE — 🎉 Your account was reactivated"
         headline = "Cuenta <strong>reactivada</strong>" if es else \
             "Account <strong>reactivated</strong>"
         paras = [f"{_first(user)}, tu cuenta está activa de nuevo. Ya "
@@ -364,8 +364,8 @@ async def send_account_status_email(user: User, status: str) -> bool:
                  f"{_first(user)}, your account is active again. You can "
                  "go online and work."]
     elif st == "blocked":
-        subject = "CRUISE IN RIDE — Tu cuenta fue bloqueada" if es else \
-            "CRUISE IN RIDE — Your account was blocked"
+        subject = "CRUISE IN RIDE — 🚫 Tu cuenta fue bloqueada" if es else \
+            "CRUISE IN RIDE — 🚫 Your account was blocked"
         headline = "Cuenta <strong>bloqueada</strong>" if es else \
             "Account <strong>blocked</strong>"
         paras = [f"{_first(user)}, tu cuenta fue bloqueada. Si crees que "
@@ -374,8 +374,8 @@ async def send_account_status_email(user: User, status: str) -> bool:
                  f"{_first(user)}, your account was blocked. If you think "
                  "this is a mistake, contact us from the help center."]
     else:  # deactivated
-        subject = "CRUISE IN RIDE — Tu cuenta fue desactivada" if es else \
-            "CRUISE IN RIDE — Your account was deactivated"
+        subject = "CRUISE IN RIDE — ⏸️ Tu cuenta fue desactivada" if es else \
+            "CRUISE IN RIDE — ⏸️ Your account was deactivated"
         headline = "Cuenta <strong>desactivada</strong>" if es else \
             "Account <strong>deactivated</strong>"
         paras = [f"{_first(user)}, tu cuenta fue desactivada temporalmente. "
@@ -399,19 +399,19 @@ async def send_referral_milestone_email(user: User, amount: float) -> bool:
              _esc("Tu balance — se paga el lunes" if es else
                   "Your balance — paid out on Monday"))]
     if es:
-        subject = f"CRUISE IN RIDE — Ganaste ${amount:.2f} por tu referido"
+        subject = f"CRUISE IN RIDE — 🎁 Ganaste ${amount:.2f} por tu referido"
         headline = "Bono de referido <strong>acreditado</strong>"
         paras = [f"{_first(user)}, tu referido alcanzó un hito y el bono "
                  "ya está en tu balance. Sigue compartiendo tu código."]
         btn = "ABRIR LA APP"
     else:
-        subject = f"CRUISE IN RIDE — You earned ${amount:.2f} from your referral"
+        subject = f"CRUISE IN RIDE — 🎁 You earned ${amount:.2f} from your referral"
         headline = "Referral bonus <strong>credited</strong>"
         paras = [f"{_first(user)}, your referral hit a milestone and the "
                  "bonus is already in your balance. Keep sharing your code."]
         btn = "OPEN THE APP"
-    title = ("Bono de referido acreditado" if es else
-             "Referral bonus credited")
+    title = ("🎁 Bono de referido acreditado" if es else
+             "🎁 Referral bonus credited")
     body = (f"Ganaste ${amount:.2f} — ya está en tu balance." if es else
             f"You earned ${amount:.2f} — already in your balance.")
     return await _deliver_multichannel(
@@ -449,20 +449,20 @@ async def send_onboarding_nudge_email(user: User, missing: list[str],
     missing_txt = ", ".join(_esc(n) for n in names)
     rows = [("Te falta" if es else "Missing", missing_txt)]
     if es:
-        subject = "CRUISE IN RIDE — Completa tu cuenta"
+        subject = "CRUISE IN RIDE — 📝 Completa tu cuenta"
         headline = "Te falta <strong>poco</strong> para conducir"
         paras = [f"{_first(user)}, completa estos pasos en tu lista To-do y "
                  "empieza a ganar con nosotros."]
         btn = "COMPLETAR MI CUENTA"
-        title = "Completa tu cuenta"
+        title = "📝 Completa tu cuenta"
         body = f"Te falta: {', '.join(names)}"
     else:
-        subject = "CRUISE IN RIDE — Complete your account"
+        subject = "CRUISE IN RIDE — 📝 Complete your account"
         headline = "You're <strong>almost</strong> ready to drive"
         paras = [f"{_first(user)}, finish these steps in your To-do list and "
                  "start earning with us."]
         btn = "COMPLETE MY ACCOUNT"
-        title = "Complete your account"
+        title = "📝 Complete your account"
         body = f"Missing: {', '.join(names)}"
     if with_email:
         return await _deliver_multichannel(

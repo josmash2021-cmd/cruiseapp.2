@@ -374,18 +374,21 @@ async def _transfer_and_settle(
     except Exception:
         transfer_id = getattr(transfer, "id", None)
 
+    drv_locale = "es"
     async with SessionLocal() as db:
         try:
             c = await db.get(Cashout, cashout_id)
             if c is not None and c.status != "completed":
                 c.status = "completed"
                 await db.commit()
+                drv = await db.get(User, driver_id)
+                if drv is not None:
+                    drv_locale = (drv.locale or "es").lower()
                 # Payout confirmation email (2026-10-20, user spec "los 4"):
                 # after the settle commits, once per cashout row.
                 if c.payout_email_sent_at is None:
                     try:
                         from services.driver_emails import send_payout_email
-                        drv = await db.get(User, driver_id)
                         if drv is not None and await send_payout_email(drv, amount):
                             c.payout_email_sent_at = datetime.now(timezone.utc)
                             await db.commit()
@@ -407,10 +410,15 @@ async def _transfer_and_settle(
     )
     if fcm_token:
         try:
+            # ES/EN by driver locale (2026-10-20, user spec: this push was
+            # English-only — every driver gets their own language).
+            _es_push = drv_locale.startswith("es")
             _send_fcm_push(
                 fcm_token,
-                title="💰 Payout Sent!",
-                body=f"${amount:.2f} has been transferred to your bank account.",
+                title="💰 ¡Pago enviado!" if _es_push else "💰 Payout Sent!",
+                body=(f"${amount:.2f} ha sido transferido a tu cuenta bancaria."
+                      if _es_push else
+                      f"${amount:.2f} has been transferred to your bank account."),
                 data={"type": "auto_payout", "amount": str(amount)},
             )
         except Exception as e:

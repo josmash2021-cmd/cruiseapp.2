@@ -165,6 +165,6 @@ async def test_spanish_nudge_lists_the_missing_items(db, channels):
     await agent._onboarding_nudges(NOW, db)
     box = await _inbox(db, d.id)
     assert len(box) == 1
-    assert box[0].title == "Completa tu cuenta"
+    assert box[0].title == "📝 Completa tu cuenta"
     assert "Te falta:" in box[0].body
     assert "Licencia de conducir" in box[0].body

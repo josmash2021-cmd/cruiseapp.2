@@ -2429,7 +2429,33 @@ async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
         c = _city_center(key)
         if c is not None:
             centers[key] = c
-    return {"drivers": out, "city_centers": centers}
+    # Drivers per zone (2026-10-18, user spec: "ver en qué zona o parte del
+    # sur de la Florida hay más drivers"): each driver's work-city GeoNames
+    # center is tested against the SAME sector polygons the panel edits —
+    # the zone choropleth works for the whole roster, GPS or not.
+    zone_counts: dict = {}
+    try:
+        from services.zone_polygons import sector_id_at
+        city_sector: dict = {}
+        for u in rows:
+            st = (u.drive_state or "").strip().upper()
+            city = (u.drive_city or "").strip()
+            key = f"{st}|{city}"
+            if not city or key in city_sector:
+                continue
+            c = _city_center(key)
+            city_sector[key] = (
+                await sector_id_at(db, c[0], c[1])) if c is not None else None
+        for u in rows:
+            st = (u.drive_state or "").strip().upper()
+            city = (u.drive_city or "").strip()
+            sec = city_sector.get(f"{st}|{city}")
+            if sec:
+                zone_counts[sec] = zone_counts.get(sec, 0) + 1
+    except Exception as e:
+        logging.warning("[DriverLocations] zone counts failed: %s", e)
+    return {"drivers": out, "city_centers": centers,
+            "zone_counts": zone_counts}
 
 
 _city_centers_cache: dict | None = None

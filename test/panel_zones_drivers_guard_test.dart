@@ -29,6 +29,9 @@ void main() {
         reason: 'city bubbles anchor to the GeoNames city coordinates — '
             'prod had GPS for only 5 of 194 drivers, position-only bubbles '
             'showed nothing (2026-10-18)');
+    expect(adminPy, contains('zone_counts'),
+        reason: 'per-sector driver counts feed the zone choropleth '
+            '(2026-10-18 spec: "en qué zona hay más drivers")');
     final centers = File('backend/geo/us_city_centers.json')
         .readAsStringSync();
     expect(centers, contains('"FL|Miami"'));
@@ -43,12 +46,31 @@ void main() {
     expect(chunk, contains('drvCenters'),
         reason: 'city bubbles prefer the GeoNames city center over the '
             'average of the few positioned drivers');
+    expect(chunk, contains('drvZones'),
+        reason: 'the zone choropleth reads the per-sector counts');
     expect(chunk, contains('setInterval'), reason: 'live refresh');
     expect(chunk, contains('document.visibilityState'),
         reason: 'the poll pauses on a hidden tab');
     for (final id in ['drv-pos', 'drv-dots', 'drv-cities', 'drv-bubbles']) {
       expect(chunk, contains(id), reason: 'map source/layer $id exists');
     }
+  });
+
+  test('the concentration view is the default and needs no GPS', () {
+    expect(chunk, contains('useState("heat")'),
+        reason: 'Concentración is the default view (2026-10-18 spec: "no '
+            'quiero ver el punto verde — quiero ver dónde hay más")');
+    expect(chunk, contains('Concentración'));
+    expect(chunk, contains('"drv-heat-layer"'),
+        reason: 'heatmap weighted by roster city counts — covers all 194 '
+            'drivers via their work city, not only the 5 with GPS');
+    expect(chunk, contains('"zonas-fill-heat"'),
+        reason: 'zones fill by driver count (choropleth)');
+    expect(chunk, contains('"zonas-count-labels"'),
+        reason: 'each zone shows its driver count');
+    expect(chunk, contains('"heatmap-color"'));
+    expect(chunk, contains('serialize()'),
+        reason: 'zone polygons are read back from the zonas-areas source');
   });
 
   test('toggle GPS / ciudad de trabajo and multi-city selection', () {

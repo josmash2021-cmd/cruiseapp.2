@@ -64,6 +64,26 @@ async def test_city_centers_anchor_the_city_view(client, db):
         "ciudades fuera del mapa GeoNames no llevan centro")
 
 
+async def test_zone_counts_per_sector(client, db, monkeypatch):
+    """2026-10-18 spec: "en qué zona hay más drivers" — each driver's
+    work-city center resolves against the sector polygons, roster-wide."""
+    async def _fake_sector(db_, lat, lng):
+        if abs(lat - 25.77427) < 0.01:   # Miami center
+            return "zona-3"
+        return None
+
+    monkeypatch.setattr(
+        "services.zone_polygons.sector_id_at", _fake_sector)
+    await _driver(db, "Ana", drive_city="Miami", drive_state="FL")
+    await _driver(db, "Bob", drive_city="Miami", drive_state="FL")
+    await _driver(db, "Cal", drive_city="Austin", drive_state="TX")
+
+    res = await client.get("/admin/driver-locations", headers=_dh())
+    assert res.status_code == 200, res.text
+    assert res.json()["zone_counts"] == {"zona-3": 2}, (
+        "los dos de Miami cuentan en su zona; Austin no cae en ninguna")
+
+
 async def test_columns_used_and_live_overlay_wins(client, db):
     from routers.drivers import _driver_locations
 

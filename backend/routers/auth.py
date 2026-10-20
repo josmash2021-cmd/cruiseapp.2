@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from pydantic import ValidationError, BaseModel, Field
 import jwt
-from fastapi.responses import JSONResponse, FileResponse, Response
+from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse
 from sqlalchemy import select, func, and_, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -4281,12 +4281,22 @@ async function doReset(e){{
 
 
 @router.get("/open-app")
-async def open_app_redirect():
-    """Email buttons land here and go straight to the right store for the
-    device (2026-10-20 user spec: the button opens Google Play on Android
-    and the App Store on iPhone — an installed app shows "Abrir" there
-    instead of "Instalar"). Once the domain is verified for Universal/App
-    Links, the OS opens the app directly before this page ever renders."""
+async def open_app_redirect(request: Request):
+    """Email buttons land here and go STRAIGHT to the right store for the
+    device (2026-10-20 user spec: "directo a la app en Google Play si
+    tienen Android y App Store si tienen iOS") — a 302 by User-Agent, no
+    intermediate page on phones. An installed app shows "Abrir" in the
+    store instead of "Instalar"; desktop browsers get the branded page
+    with both store links. Once the domain is verified for Universal/App
+    Links, the OS opens the app directly before any of this renders."""
+    ua = (request.headers.get("user-agent") or "").lower()
+    if any(t in ua for t in ("iphone", "ipad", "ipod")):
+        return RedirectResponse(
+            "https://apps.apple.com/app/id6760517086", status_code=302)
+    if "android" in ua:
+        return RedirectResponse(
+            "https://play.google.com/store/apps/details?id=com.cruiseinride.app",
+            status_code=302)
     html = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4304,20 +4314,10 @@ a.btn{display:inline-block;background:#D4AF37;color:#000;text-decoration:none;pa
 <body>
 <div class="card">
 <h1>CRUISE IN RIDE</h1>
-<p id="msg">Opening your store&hellip;</p>
-<a class="btn" id="store" href="#">Get the app</a>
+<p id="msg">Get the app:</p>
+<a class="btn" href="https://apps.apple.com/app/id6760517086">App Store</a>
+<a class="btn" href="https://play.google.com/store/apps/details?id=com.cruiseinride.app">Google Play</a>
 </div>
-<script>
-var isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
-var isAndroid=/Android/i.test(navigator.userAgent);
-var store=document.getElementById('store');
-store.href=isIOS?'https://apps.apple.com/app/id6760517086':'https://play.google.com/store/apps/details?id=com.cruiseinride.app';
-if(isIOS||isAndroid){
-  window.location.replace(store.href);
-}else{
-  document.getElementById('msg').textContent='Get the app:';
-}
-</script>
 </body></html>"""
     return Response(content=html, media_type="text/html")
 

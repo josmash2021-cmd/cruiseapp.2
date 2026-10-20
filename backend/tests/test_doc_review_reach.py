@@ -285,19 +285,33 @@ async def test_rejection_email_spanish_and_notify_fires_it(
 
 
 async def test_open_app_page_goes_straight_to_the_store(client):
-    """2026-10-20 user spec: the button opens Google Play on Android and
-    the App Store on iPhone — an installed app shows "Abrir" there instead
-    of "Instalar". The custom-scheme dance died: Gmail's embedded browser
-    blocked it. Once App/Universal Links verify the domain, the OS opens
-    the app before this page ever renders."""
+    """2026-10-20 user spec: "directo a la app en Google Play si tienen
+    Android y App Store si tienen iOS" — the server 302s by User-Agent,
+    no intermediate page on phones. An installed app shows "Abrir" in the
+    store. Desktop gets the branded page with both links. Once App/
+    Universal Links verify the domain, the OS opens the app directly."""
+    res = await client.get(
+        "/open-app", follow_redirects=False,
+        headers={"user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"})
+    assert res.status_code == 302
+    assert res.headers["location"] == "https://apps.apple.com/app/id6760517086"
+
+    res = await client.get(
+        "/open-app", follow_redirects=False,
+        headers={"user-agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36"})
+    assert res.status_code == 302
+    assert res.headers["location"] == \
+        "https://play.google.com/store/apps/details?id=com.cruiseinride.app"
+
+    # Desktop / unknown UA: the branded page with both store links.
     res = await client.get("/open-app")
     assert res.status_code == 200, res.text
     body = res.text
     assert "apps.apple.com/app/id6760517086" in body
     assert "play.google.com/store/apps/details?id=com.cruiseinride.app" in body
-    assert "window.location.replace(store.href)" in body
     assert "cruiseapp://" not in body, (
-        "la página ya no intenta el esquema custom — va directo a la tienda")
+        "no custom-scheme dance anywhere — Gmail's embedded browser "
+        "blocked that path")
     assert "CRUISE IN RIDE" in body
 
 

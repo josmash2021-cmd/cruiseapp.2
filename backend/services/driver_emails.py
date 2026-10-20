@@ -96,6 +96,58 @@ async def _send_driver_email(user: User, subject: str, html: str) -> bool:
         return False
 
 
+async def _deliver_inbox_push(user: User, title: str, body: str,
+                              notif_type: str, data: dict | None = None,
+                              with_push: bool = True) -> bool:
+    """In-app inbox row (ALWAYS) + FCM when a device is registered (SMS
+    when it isn't). Fail-soft per channel — like notify_document_reviewed.
+    ``with_push=False`` for senders whose flow already pushes on its own
+    (payout and referral milestones already send their own FCM banners —
+    duplicating them would mean two banners per event)."""
+    delivered = False
+    try:
+        import json as _json
+        from models.database import Notification, SessionLocal
+        async with SessionLocal() as _db:
+            _db.add(Notification(
+                user_id=user.id, title=title, body=body,
+                notif_type=notif_type, data=_json.dumps(data or {})))
+            await _db.commit()
+        delivered = True
+    except Exception as e:
+        logger.warning("[DriverEmails] inbox row failed for user %s: %s",
+                       getattr(user, "id", "?"), e)
+    if with_push:
+        try:
+            if getattr(user, "fcm_token", None):
+                from services.fcm_service import _send_fcm_push_async
+                await _send_fcm_push_async(
+                    user.fcm_token, title, body,
+                    {"type": notif_type, "user_id": str(user.id)})
+                delivered = True
+            elif getattr(user, "phone", None):
+                from services.email_sms_service import send_sms_async
+                await send_sms_async(
+                    user.phone, f"CRUISE IN RIDE — {title}: {body}")
+                delivered = True
+        except Exception as e:
+            logger.warning("[DriverEmails] push/sms failed for user %s: %s",
+                           getattr(user, "id", "?"), e)
+    return delivered
+
+
+async def _deliver_multichannel(user: User, subject: str, html: str,
+                                title: str, body: str, notif_type: str,
+                                data: dict | None = None,
+                                with_push: bool = True) -> bool:
+    """Every branded email ALSO reaches the driver in-app (2026-10-20,
+    user spec: multicanal — email + push + inbox)."""
+    delivered = await _deliver_inbox_push(
+        user, title, body, notif_type, data, with_push)
+    emailed = await _send_driver_email(user, subject, html)
+    return delivered or emailed
+
+
 # ── 1. Scheduled-ride reminders ──────────────────────────────────────────
 
 def _fmt_pickup(sched_at: datetime) -> str:
@@ -145,8 +197,14 @@ async def send_scheduled_reminder_email(user: User, trip, hours: int) -> bool:
                  "the app and go online on time — if you miss it, the "
                  "reservation may go to another driver."]
         btn = "OPEN THE APP"
-    return await _send_driver_email(
-        user, subject, _branded(headline, paras, rows, btn))
+    title = (f"Viaje agendado en {hours} h" if es else
+             f"Scheduled ride in {hours}h")
+    body = (f"Recogida {when} — revísalo en la app." if es else
+            f"Pickup {when} — review it in the app.")
+    return await _deliver_multichannel(
+        user, subject, _branded(headline, paras, rows, btn),
+        title=title, body=body, notif_type="scheduled_reminder",
+        data={"trip_id": str(trip.id), "hours": str(hours)})
 
 
 # ── 2. Document expiring ─────────────────────────────────────────────────
@@ -179,8 +237,13 @@ async def send_doc_expiry_email(user: User, doc_type: str,
         paras = [f"{_first(user)}, your {doc_name} expires soon. Upload it "
                  "again from your To-do list so you don't get blocked."]
         btn = "OPEN THE APP"
-    return await _send_driver_email(
-        user, subject, _branded(headline, paras, rows, btn))
+    title = ("Documento por vencer" if es else "Document expiring soon")
+    body = (f"Tu {doc_name} vence el {expiry.strftime('%b %d, %Y')}." if es
+            else f"Your {doc_name} expires on {expiry.strftime('%b %d, %Y')}.")
+    return await _deliver_multichannel(
+        user, subject, _branded(headline, paras, rows, btn),
+        title=title, body=body, notif_type="doc_expiring",
+        data={"doc_type": doc_type, "days_left": str(days_left)})
 
 
 # ── 3. Weekly summary + payout ───────────────────────────────────────────
@@ -210,8 +273,12 @@ async def send_weekly_summary_email(user: User, stats: dict) -> bool:
         paras = [f"{_first(user)}, here's how last week went. Payouts run "
                  "on Mondays and reach your bank in 1-2 days."]
         btn = "VIEW MY EARNINGS"
-    return await _send_driver_email(
-        user, subject, _branded(headline, paras, rows, btn))
+    title = ("Tu resumen semanal" if es else "Your weekly summary")
+    body = (f"${total:.2f} en {trips} viajes la semana pasada." if es else
+            f"${total:.2f} across {trips} trips last week.")
+    return await _deliver_multichannel(
+        user, subject, _branded(headline, paras, rows, btn),
+        title=title, body=body, notif_type="weekly_summary")
 
 
 async def send_payout_email(user: User, amount: float) -> bool:
@@ -232,8 +299,13 @@ async def send_payout_email(user: User, amount: float) -> bool:
         paras = [f"{_first(user)}, your weekly payout was processed and is "
                  "on its way to your bank account."]
         btn = "OPEN THE APP"
-    return await _send_driver_email(
-        user, subject, _branded(headline, paras, rows, btn))
+    title = ("Pago en camino" if es else "Payout on its way")
+    body = (f"Tu pago de ${amount:.2f} va camino a tu banco." if es else
+            f"Your ${amount:.2f} payout is on its way to your bank.")
+    return await _deliver_multichannel(
+        user, subject, _branded(headline, paras, rows, btn),
+        title=title, body=body, notif_type="payout_sent",
+        with_push=False)  # the settle flow already sends its own FCM banner
 
 
 # ── 4. Account lifecycle ─────────────────────────────────────────────────
@@ -263,8 +335,19 @@ async def send_background_check_email(user: User, clear: bool) -> bool:
             f"{_first(user)}, your background check needs additional "
             "review. We'll reach out if we need anything."]
         btn = "OPEN THE APP"
-    return await _send_driver_email(
-        user, subject, _branded(headline, paras, [], btn))
+    if es:
+        title = ("Antecedentes aprobados" if clear else
+                 "Antecedentes en revisión")
+        body = ("Tu verificación de antecedentes fue aprobada." if clear else
+                "Tu verificación requiere revisión adicional — te contactaremos.")
+    else:
+        title = ("Background check approved" if clear else
+                 "Background check under review")
+        body = ("Your background check was approved." if clear else
+                "Your check needs additional review — we'll reach out.")
+    return await _deliver_multichannel(
+        user, subject, _branded(headline, paras, [], btn),
+        title=title, body=body, notif_type="background_check")
 
 
 async def send_account_status_email(user: User, status: str) -> bool:
@@ -300,8 +383,12 @@ async def send_account_status_email(user: User, status: str) -> bool:
                  f"{_first(user)}, your account was temporarily deactivated. "
                  "Contact us if you have questions."]
     btn = "ABRIR LA APP" if es else "OPEN THE APP"
-    return await _send_driver_email(
-        user, subject, _branded(headline, paras, [], btn))
+    title = subject.split(" — ", 1)[-1]
+    body = paras[0].split(", ", 1)[-1]  # drop the "Name, " lead-in
+    return await _deliver_multichannel(
+        user, subject, _branded(headline, paras, [], btn),
+        title=title, body=body, notif_type="account_status",
+        data={"status": st})
 
 
 async def send_referral_milestone_email(user: User, amount: float) -> bool:
@@ -323,5 +410,65 @@ async def send_referral_milestone_email(user: User, amount: float) -> bool:
         paras = [f"{_first(user)}, your referral hit a milestone and the "
                  "bonus is already in your balance. Keep sharing your code."]
         btn = "OPEN THE APP"
-    return await _send_driver_email(
-        user, subject, _branded(headline, paras, rows, btn))
+    title = ("Bono de referido acreditado" if es else
+             "Referral bonus credited")
+    body = (f"Ganaste ${amount:.2f} — ya está en tu balance." if es else
+            f"You earned ${amount:.2f} — already in your balance.")
+    return await _deliver_multichannel(
+        user, subject, _branded(headline, paras, rows, btn),
+        title=title, body=body, notif_type="referral_milestone",
+        with_push=False)  # driver_referrals already pushes its own banner
+
+
+# ── 5. "Completa tu cuenta" nudge ────────────────────────────────────────
+
+# Onboarding item display names (ES, EN) — the same item keys
+# _derive_onboarding_items returns.
+_ITEM_NAME = {
+    "plate": ("Placa del vehículo", "License plate"),
+    "ssn": ("Número de seguro social (SSN)", "Social Security number"),
+    "license": ("Licencia de conducir", "Driver's license"),
+    "photo": ("Foto de perfil", "Profile photo"),
+    "background": ("Verificación de antecedentes", "Background check"),
+    "vehicle": ("Vehículo", "Vehicle"),
+    "registration": ("Registración del vehículo", "Vehicle registration"),
+    "insurance": ("Seguro del vehículo", "Vehicle insurance"),
+    "inspection": ("Inspección del vehículo", "Vehicle inspection"),
+}
+
+
+async def send_onboarding_nudge_email(user: User, missing: list[str],
+                                      with_email: bool) -> bool:
+    """'Completa tu cuenta' nudge carrying the driver's OWN missing items
+    (2026-10-20 user spec: "recuerda completar tu cuenta / qué documentos
+    faltan para que empieces a conducir"). ``with_email=False`` for the
+    early touches (day 1/3: push + inbox only, per the approved cadence —
+    email joins from the day-7 touch onward)."""
+    es = _es(user)
+    names = [_ITEM_NAME.get(k, (k, k))[0 if es else 1] for k in missing[:4]]
+    missing_txt = ", ".join(_esc(n) for n in names)
+    rows = [("Te falta" if es else "Missing", missing_txt)]
+    if es:
+        subject = "CRUISE IN RIDE — Completa tu cuenta"
+        headline = "Te falta <strong>poco</strong> para conducir"
+        paras = [f"{_first(user)}, completa estos pasos en tu lista To-do y "
+                 "empieza a ganar con nosotros."]
+        btn = "COMPLETAR MI CUENTA"
+        title = "Completa tu cuenta"
+        body = f"Te falta: {', '.join(names)}"
+    else:
+        subject = "CRUISE IN RIDE — Complete your account"
+        headline = "You're <strong>almost</strong> ready to drive"
+        paras = [f"{_first(user)}, finish these steps in your To-do list and "
+                 "start earning with us."]
+        btn = "COMPLETE MY ACCOUNT"
+        title = "Complete your account"
+        body = f"Missing: {', '.join(names)}"
+    if with_email:
+        return await _deliver_multichannel(
+            user, subject, _branded(headline, paras, rows, btn),
+            title=title, body=body, notif_type="onboarding_nudge",
+            data={"missing": ",".join(missing[:4])})
+    return await _deliver_inbox_push(
+        user, title, body, notif_type="onboarding_nudge",
+        data={"missing": ",".join(missing[:4])})

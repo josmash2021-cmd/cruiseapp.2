@@ -281,6 +281,11 @@ class User(Base):
     # summary goes out, so a retry in the same ISO week never doubles it.
     # Boot lists below (trampa #0).
     weekly_summary_sent_at = Column(DateTime(timezone=True), nullable=True)
+    # "Completa tu cuenta" nudge (2026-10-20, user spec): count of nudges
+    # sent (cap 6) and when the last one went out — drives the day-1/3/7 +
+    # weekly cadence and the never-more-than-one-per-week rule.
+    onboard_nudge_count = Column(Integer, default=0)
+    onboard_nudge_last_at = Column(DateTime(timezone=True), nullable=True)
     # Notification language (2026-10-05, user spec): the app reports the
     # device locale at every boot (PATCH /auth/me) and notifications read it
     # — a Spanish phone gets Spanish pushes, an English one English.
@@ -1156,6 +1161,8 @@ async def migrate_add_columns(conn):
         ("documents", "expiry_email_stage", "INTEGER DEFAULT 0"),
         ("cashouts", "payout_email_sent_at", "DATETIME"),
         ("users", "weekly_summary_sent_at", "DATETIME"),
+        ("users", "onboard_nudge_count", "INTEGER DEFAULT 0"),
+        ("users", "onboard_nudge_last_at", "DATETIME"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1404,6 +1411,8 @@ async def migrate_postgres(conn):
         ("documents", "expiry_email_stage", "INTEGER DEFAULT 0"),
         ("cashouts", "payout_email_sent_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "weekly_summary_sent_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "onboard_nudge_count", "INTEGER DEFAULT 0"),
+        ("users", "onboard_nudge_last_at", "TIMESTAMP WITH TIME ZONE"),
     ]
     for table, col, col_type in migrations:
         try:

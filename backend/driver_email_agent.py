@@ -16,13 +16,14 @@ All sends go through services.driver_emails (fail-soft, ES/EN by locale).
 import asyncio
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 
 from models.database import Document, SessionLocal, Trip, User
 from services.driver_emails import (
     send_doc_expiry_email,
+    send_onboarding_nudge_email,
     send_scheduled_reminder_email,
     send_weekly_summary_email,
 )
@@ -119,6 +120,76 @@ async def _doc_expiry_notices(now: datetime, db) -> None:
                 break  # thresholds descend: first match is the right stage
 
 
+# ── "Completa tu cuenta" nudges ──────────────────────────────────────────
+
+_NUDGE_START_DATE = date(2026, 10, 21)  # user spec 2026-10-20: "a partir
+                                        # de mañana" — never fires earlier
+_NUDGE_STEPS = [  # (journey day, min gap since last touch, with_email)
+    (1, timedelta(hours=0), False),   # day 1: push + inbox
+    (3, timedelta(days=2), False),    # day 3: push + inbox
+    (7, timedelta(days=4), True),     # day 7: push + inbox + email
+    (14, timedelta(days=6), True),    # then weekly x3: email
+    (21, timedelta(days=6), True),
+    (28, timedelta(days=6), True),
+]
+_NUDGE_MAX = len(_NUDGE_STEPS)  # after the 6th touch: total silence
+_NUDGE_CAP_PER_TICK = 100
+_NUDGE_BLOCKED = ("blocked", "deleted", "deactivated", "pending_deletion")
+
+
+def _nudge_quiet_hours(now: datetime) -> bool:
+    """Never 9pm–9am Eastern (Florida is most of the roster)."""
+    from zoneinfo import ZoneInfo
+    h = now.astimezone(ZoneInfo("America/New_York")).hour
+    return h >= 21 or h < 9
+
+
+async def _onboarding_nudges(now: datetime, db) -> None:
+    """'Completa tu cuenta / te faltan documentos' nudge (2026-10-20 user
+    spec): drivers who cannot work yet because something on THEIR side is
+    missing (pending/rejected onboarding items) — items merely submitted
+    are OUR queue, never their fault. Approved cadence: journey day 1/3/7
+    then weekly x3, gaps enforced so a legacy driver never gets a burst,
+    total silence after the 6th touch."""
+    if now.date() < _NUDGE_START_DATE or _nudge_quiet_hours(now):
+        return
+    r = await db.execute(
+        select(User).where(
+            User.role == "driver",
+            (User.status.is_(None)) | (User.status.notin_(_NUDGE_BLOCKED)),
+            User.created_at <= now - timedelta(days=1),
+            (User.onboard_nudge_count.is_(None))
+            | (User.onboard_nudge_count < _NUDGE_MAX),
+        ).limit(_NUDGE_CAP_PER_TICK))
+    from routers.auth import _derive_onboarding_items
+    for user in r.scalars().all():
+        count = user.onboard_nudge_count or 0
+        if count >= len(_NUDGE_STEPS):
+            continue
+        created = _aware(user.created_at)
+        last = _aware(user.onboard_nudge_last_at)
+        if created is None:
+            continue
+        jday, min_gap, with_email = _NUDGE_STEPS[count]
+        if now - created < timedelta(days=jday):
+            continue
+        if last is not None and now - last < min_gap:
+            continue
+        items = await _derive_onboarding_items(db, user)
+        missing = [k for k, v in items.items()
+                   if (v or {}).get("status") in ("pending", "rejected")]
+        if not missing:
+            continue  # complete, or everything waits on OUR review
+        sent = await send_onboarding_nudge_email(user, missing, with_email)
+        if sent:
+            user.onboard_nudge_count = count + 1
+            user.onboard_nudge_last_at = now
+            await db.commit()
+            logger.info(
+                "[DriverEmailAgent] nudge %d sent (driver %s, missing=%s)",
+                count + 1, user.id, missing[:4])
+
+
 # ── Weekly summary ───────────────────────────────────────────────────────
 
 def _payout_tz():
@@ -190,6 +261,7 @@ async def run_driver_email_agent():
                 await _scheduled_reminders(now, db)
                 if time.monotonic() - last_doc_tick >= _DOC_TICK_S:
                     await _doc_expiry_notices(now, db)
+                    await _onboarding_nudges(now, db)
                     last_doc_tick = time.monotonic()
         except Exception as e:
             logger.error("[DriverEmailAgent] tick failed: %s", e)

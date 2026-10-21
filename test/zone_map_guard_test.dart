@@ -128,7 +128,9 @@ void main() {
         reason: 'manual-off sectors are gray, not gold');
     expect(s, contains('fillColor: 0xFFE8C547,'),
         reason: 'the base fill is brand gold');
-    expect(s, contains('lineTranslate'), reason: 'the 3D shadow online');
+    expect(s, contains('lineColor: 0xFFE8C547,\n        lineWidth: 3.4,'),
+        reason: 'even the legacy helper outline is brand gold, never black');
+    expect(s, contains('lineTranslate'), reason: 'the helper layer stays inert');
     expect(s.contains('_zoneLookOnline'), isTrue,
         reason: 'the look flips with the mode');
     expect(s,
@@ -152,6 +154,9 @@ void main() {
     }
     expect(look, isNot(contains(': 1.0')),
         reason: 'Muy ocupado is semi-transparent, never solid gold');
+    expect(look, contains("'sec-shadow-\$sid'"));
+    expect(look, contains("'line-opacity', 0.0"),
+        reason: 'no black outline may paint beside the gold border');
 
     // Selection is a brighter traveling border, never a fill; a disabled
     // sector cannot start the gold wave.

@@ -2648,7 +2648,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
         id: 'sec-shadow-$sid',
         sourceId: 'sec-src-$sid',
-        lineColor: 0xFF000000,
+        lineColor: 0xFFE8C547,
         lineWidth: 3.4,
         lineOpacity: 0.0,
         lineTranslate: const [0.0, 2.0],
@@ -2840,8 +2840,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         map.style.setStyleLayerProperty('sec-line-$sid', 'line-color', color),
         map.style.setStyleLayerProperty(
             'sec-line-$sid', 'line-opacity', visible ? 0.85 : 0.0),
-        map.style.setStyleLayerProperty('sec-shadow-$sid', 'line-opacity',
-            visible && online ? 0.35 : 0.0),
+        map.style.setStyleLayerProperty(
+            'sec-shadow-$sid', 'line-opacity', 0.0),
       ]);
     } catch (_) {}
   }

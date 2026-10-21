@@ -3025,6 +3025,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         veh_result = await db.execute(select(Vehicle).where(
             Vehicle.user_id == db_user.id,
             Vehicle.is_active == True,
+            Vehicle.archived_at.is_(None),
         ))
         veh = veh_result.scalar_one_or_none()
         if veh:
@@ -4550,10 +4551,11 @@ def _set_onboarding_override(db_user: User, item: str, status: str, reason: Opti
 
 
 async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
-    veh_result = await db.execute(select(Vehicle).where(
-        Vehicle.user_id == db_user.id,
-        Vehicle.is_active == True,
-    ))
+    veh_result = await db.execute(
+        select(Vehicle)
+        .where(Vehicle.user_id == db_user.id, Vehicle.archived_at.is_(None))
+        .order_by(Vehicle.created_at.desc())
+    )
     veh = veh_result.scalars().first()
     # Document rows (registration / insurance / vehicle_inspection uploads via
     # /drivers/documents[/upload]) back the same items — a non-rejected row
@@ -4654,10 +4656,11 @@ async def submit_onboarding_plate(body: _OnboardingPlateIn, user: User = Depends
     # If the driver already has a Vehicle row, that row is the source of
     # truth for the plate; otherwise stash it on the user until the
     # vehicle step creates the row.
-    veh_result = await db.execute(select(Vehicle).where(
-        Vehicle.user_id == db_user.id,
-        Vehicle.is_active == True,
-    ))
+    veh_result = await db.execute(
+        select(Vehicle)
+        .where(Vehicle.user_id == db_user.id, Vehicle.archived_at.is_(None))
+        .order_by(Vehicle.created_at.desc())
+    )
     veh = veh_result.scalars().first()
     if veh:
         veh.plate = plate
@@ -4693,10 +4696,11 @@ async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Dep
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    veh_result = await db.execute(select(Vehicle).where(
-        Vehicle.user_id == db_user.id,
-        Vehicle.is_active == True,
-    ))
+    veh_result = await db.execute(
+        select(Vehicle)
+        .where(Vehicle.user_id == db_user.id, Vehicle.archived_at.is_(None))
+        .order_by(Vehicle.created_at.desc())
+    )
     veh = veh_result.scalars().first()
     # The tier is the car — classify here too, exactly like
     # POST /drivers/vehicles does. This endpoint used to leave the column
@@ -4715,7 +4719,7 @@ async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Dep
         if body.seatbelts is not None:
             veh.seatbelts = body.seatbelts
     else:
-        db.add(Vehicle(
+        new_vehicle = Vehicle(
             user_id=db_user.id,
             year=body.year,
             make=body.make.strip(),
@@ -4725,10 +4729,17 @@ async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Dep
             plate_state=db_user.plate_state,
             vehicle_type=tier,
             seatbelts=body.seatbelts,
-        ))
+            is_active=False,
+            approval_status="pending",
+        )
+        db.add(new_vehicle)
     _set_onboarding_override(db_user, "vehicle", "submitted")
     # A vehicle row now holds the plate captured in the plate step.
     await db.commit()
+    if not veh:
+        await db.refresh(new_vehicle)
+        from services.vehicle_eligibility import notify_vehicle_added
+        await notify_vehicle_added(db_user, new_vehicle)
     return {"ok": True, "item": "vehicle", "status": "submitted"}
 
 

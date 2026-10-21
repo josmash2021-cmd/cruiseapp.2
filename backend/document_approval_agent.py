@@ -288,11 +288,19 @@ class DocumentApprovalAgent:
                 approved_count += 1
                 self._stats["auto_approved"] += 1
 
-                # Update Vehicle validity flags
-                vehicle_result = await db.execute(
-                    select(Vehicle).where(Vehicle.user_id == driver.id)
+                # Update validity flags on the vehicle that owns the document.
+                vehicle_query = select(Vehicle).where(
+                    Vehicle.user_id == driver.id,
+                    Vehicle.archived_at.is_(None),
                 )
-                vehicle = vehicle_result.scalar_one_or_none()
+                if doc.vehicle_id is not None:
+                    vehicle_query = vehicle_query.where(
+                        Vehicle.id == doc.vehicle_id)
+                else:
+                    vehicle_query = vehicle_query.order_by(
+                        Vehicle.is_active.desc(), Vehicle.created_at.desc())
+                vehicle_result = await db.execute(vehicle_query)
+                vehicle = vehicle_result.scalars().first()
 
                 if vehicle:
                     if doc.doc_type == "insurance":
@@ -308,6 +316,8 @@ class DocumentApprovalAgent:
                                 "[DocApproval] plate change cleared for driver #%d",
                                 driver.id,
                             )
+                    elif doc.doc_type == "vehicle_inspection":
+                        vehicle.inspection_valid = True
 
                 logger.info(
                     "[DocApproval] APPROVED %s for driver #%d (%s %s)",
@@ -440,9 +450,12 @@ class DocumentApprovalAgent:
 
         # CHECK 5: Vehicle registered
         veh_result = await db.execute(
-            select(Vehicle).where(Vehicle.user_id == driver.id)
+            select(Vehicle)
+            .where(Vehicle.user_id == driver.id,
+                   Vehicle.archived_at.is_(None))
+            .order_by(Vehicle.is_active.desc(), Vehicle.created_at.desc())
         )
-        vehicle = veh_result.scalar_one_or_none()
+        vehicle = veh_result.scalars().first()
         if not vehicle:
             reject_reasons.append("No tiene vehículo registrado")
         else:

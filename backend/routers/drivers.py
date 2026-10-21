@@ -2951,6 +2951,7 @@ async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
         select(Vehicle).where(
             Vehicle.user_id == driver_id,
             Vehicle.is_active == True,
+            Vehicle.archived_at.is_(None),
         )
     )
     vehicle = result.scalar_one_or_none()
@@ -3007,10 +3008,14 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     v_result = await db.execute(select(Vehicle).where(
         Vehicle.user_id == user.id,
         Vehicle.is_active == True,
+        Vehicle.archived_at.is_(None),
     ))
     vehicle = v_result.scalar_one_or_none()
     n_vehicles = await db.scalar(
-        select(func.count(Vehicle.id)).where(Vehicle.user_id == user.id)
+        select(func.count(Vehicle.id)).where(
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
+        )
     ) or 0
     single_vehicle = n_vehicles <= 1
 
@@ -3029,59 +3034,20 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         else:
             reasons.append("vehicle_not_approved")
 
-    # 3. Vehicle-level documents must describe the ACTIVE car: insurance +
-    # registration, plus the inspection for Alabama drivers. A row counts
-    # when it is not rejected and not expired and either names this vehicle
-    # or — only with exactly one car on the account, where there is no
-    # doubt which car the paper belongs to — is a legacy vehicle_id NULL
-    # row / user-level URL column.
-    now = datetime.now(timezone.utc)
+    # 3. The active car needs its OWN approved, current documents. Pending
+    # uploads are visible in the UI but do not authorize going online.
     all_docs_approved = False
     has_expired = False
     missing_docs: List[str] = []
     if vehicle:
-        docs_result = await db.execute(
-            select(Document).where(
-                Document.user_id == user.id,
-                Document.doc_type.in_(
-                    ["insurance", "registration", "vehicle_inspection"]),
-            )
-        )
-        docs = docs_result.scalars().all()
-
-        legacy_url = {
-            "insurance": user.insurance_url,
-            "registration": user.vehicle_registration_url,
-            "vehicle_inspection": user.inspection_url,
-        }
-        required = ["insurance", "registration"]
-        if (user.drive_state or "").strip().upper() == "AL":
-            required.append("vehicle_inspection")
-
-        def _covers(d: Document) -> bool:
-            return d.vehicle_id == vehicle.id or (
-                single_vehicle and d.vehicle_id is None)
-
-        for doc_type in required:
-            rows = [d for d in docs if d.doc_type == doc_type and _covers(d)]
-            live = [
-                d for d in rows
-                if (d.status or "").lower() != "rejected"
-                and (d.expiry_date is None or d.expiry_date >= now)
-            ]
-            if any(
-                d.expiry_date is not None and d.expiry_date < now
-                and (d.status or "").lower() == "approved"
-                for d in rows
-            ):
-                has_expired = True
-            if live or (single_vehicle and legacy_url[doc_type]):
-                continue
-            missing_docs.append(doc_type)
-
+        from services.vehicle_eligibility import vehicle_document_status
+        doc_status = await vehicle_document_status(
+            db, user, vehicle, single_vehicle)
+        missing_docs = doc_status["unapproved_vehicle_docs"]
+        has_expired = doc_status["has_expired"]
+        all_docs_approved = doc_status["documents_approved"]
         if missing_docs:
             reasons.append("vehicle_docs_missing")
-        all_docs_approved = not missing_docs
 
     # 4. A plate change that dispatch has not signed off yet overrides an
     # approved account on purpose: the registration on file names a
@@ -3167,6 +3133,7 @@ async def change_license_plate(
     result = await db.execute(select(Vehicle).where(
         Vehicle.user_id == user.id,
         Vehicle.is_active == True,
+        Vehicle.archived_at.is_(None),
     ))
     vehicle = result.scalar_one_or_none()
     if not vehicle:
@@ -3251,6 +3218,7 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
     if body.year is not None and body.year < 2018:
         raise HTTPException(400, "Vehicle year must be 2018 or newer")
     v = await _get_active_vehicle(db, user.id)
+    created = v is None
     update_data = body.model_dump(exclude_unset=True)
     if v:
         for k, val in update_data.items():
@@ -3265,7 +3233,7 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
             plate=body.plate or "",
             vin=body.vin,
             vehicle_type="comfort",  # will be auto-classified below
-            is_active=True,
+            is_active=False,
             approval_status="pending",
             doors=body.doors,
             seatbelts=body.seatbelts,
@@ -3281,16 +3249,20 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
 
     await db.commit()
     await db.refresh(v)
+    if created:
+        from services.vehicle_eligibility import notify_vehicle_added
+        await notify_vehicle_added(user, v)
     logging.info("[Vehicle] Driver %s: %s %s %s → tier=%s", user.id, make, model, year, v.vehicle_type)
     return {"vehicle": _vehicle_dict(v)}
 
 
 async def _get_active_vehicle(db: AsyncSession, user_id: int) -> Vehicle | None:
-    """The driver's currently selected vehicle — the one dispatch reads."""
+    """The driver's currently selected, unarchived vehicle."""
     result = await db.execute(
         select(Vehicle).where(
             Vehicle.user_id == user_id,
             Vehicle.is_active == True,
+            Vehicle.archived_at.is_(None),
         )
     )
     return result.scalar_one_or_none()
@@ -3298,24 +3270,30 @@ async def _get_active_vehicle(db: AsyncSession, user_id: int) -> Vehicle | None:
 
 @router.get("/drivers/vehicles", dependencies=[Depends(_verify_api_key)])
 async def list_vehicles(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """All vehicles the driver has ever added, oldest first."""
+    """Unarchived vehicles with their real per-car document state."""
     result = await db.execute(
-        select(Vehicle).where(Vehicle.user_id == user.id).order_by(Vehicle.created_at.asc())
+        select(Vehicle)
+        .where(Vehicle.user_id == user.id, Vehicle.archived_at.is_(None))
+        .order_by(Vehicle.created_at.asc())
     )
     vehicles = result.scalars().all()
-    return {"vehicles": [_vehicle_dict(v) for v in vehicles]}
+    from services.vehicle_eligibility import vehicle_document_status
+    single_vehicle = len(vehicles) <= 1
+    payload = []
+    for vehicle in vehicles:
+        data = _vehicle_dict(vehicle)
+        status = await vehicle_document_status(
+            db, user, vehicle, single_vehicle)
+        data["missing_vehicle_docs"] = status["missing_vehicle_docs"]
+        data["pending_vehicle_docs"] = status["pending_vehicle_docs"]
+        data["documents_approved"] = status["documents_approved"]
+        payload.append(data)
+    return {"vehicles": payload}
 
 
 @router.post("/drivers/vehicles", dependencies=[Depends(_verify_api_key)])
 async def add_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Add a NEW vehicle — never touches the existing one.
-
-    The first vehicle a driver adds becomes active by default; every later
-    one starts pending until dispatch approves its documents.
-    """
-    result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
-    existing = result.scalars().all()
-    is_first = len(existing) == 0
+    """Add a NEW vehicle, pending and inactive until fully approved."""
     if body.year is not None and body.year < 2018:
         raise HTTPException(400, "Vehicle year must be 2018 or newer")
 
@@ -3328,7 +3306,7 @@ async def add_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), 
         plate=body.plate or "",
         vin=body.vin,
         vehicle_type=_classify_vehicle_tier(body.make or "", body.model or "", body.year or 0),
-        is_active=is_first,
+        is_active=False,
         approval_status="pending",
         doors=body.doors,
         seatbelts=body.seatbelts,
@@ -3336,6 +3314,8 @@ async def add_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), 
     db.add(vehicle)
     await db.commit()
     await db.refresh(vehicle)
+    from services.vehicle_eligibility import notify_vehicle_added
+    await notify_vehicle_added(user, vehicle)
     logging.info("[Vehicle] Driver %s added vehicle %s: %s %s %s → tier=%s",
                  user.id, vehicle.id, vehicle.make, vehicle.model, vehicle.year, vehicle.vehicle_type)
     return {"vehicle": _vehicle_dict(vehicle)}
@@ -3343,18 +3323,34 @@ async def add_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), 
 
 @router.post("/drivers/vehicles/{vehicle_id}/use", dependencies=[Depends(_verify_api_key)])
 async def use_vehicle(vehicle_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Mark one vehicle as the active one (the one that receives trips)."""
+    """Activate only an approved, documented, unarchived vehicle."""
     result = await db.execute(
-        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+        select(Vehicle).where(
+            Vehicle.id == vehicle_id,
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
+        )
     )
     vehicle = result.scalar_one_or_none()
     if not vehicle:
         raise HTTPException(404, "Vehicle not found")
-    if (vehicle.approval_status or "").lower() != "approved":
-        raise HTTPException(400, "Vehicle is not approved yet")
+    count_r = await db.execute(
+        select(func.count()).select_from(Vehicle).where(
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
+        )
+    )
+    single_vehicle = (count_r.scalar() or 0) <= 1
+    from services.vehicle_eligibility import vehicle_is_selectable
+    if not await vehicle_is_selectable(db, user, vehicle, single_vehicle):
+        if (vehicle.approval_status or "").lower() != "approved":
+            raise HTTPException(400, "Vehicle is not approved yet")
+        raise HTTPException(400, "Vehicle documents are not approved yet")
 
     await db.execute(
-        update(Vehicle).where(Vehicle.user_id == user.id).values(is_active=False)
+        update(Vehicle)
+        .where(Vehicle.user_id == user.id, Vehicle.archived_at.is_(None))
+        .values(is_active=False)
     )
     vehicle.is_active = True
     await db.commit()
@@ -3365,30 +3361,62 @@ async def use_vehicle(vehicle_id: int, user: User = Depends(_get_current_user), 
 
 @router.delete("/drivers/vehicles/{vehicle_id}", dependencies=[Depends(_verify_api_key)])
 async def delete_vehicle(vehicle_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Remove a vehicle. If it was the active one, the oldest approved
-    vehicle becomes active; if none are approved, the driver is offline."""
+    """Archive a vehicle and keep its documents; never hard-delete history."""
     result = await db.execute(
-        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+        select(Vehicle).where(
+            Vehicle.id == vehicle_id,
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
+        )
     )
     vehicle = result.scalar_one_or_none()
     if not vehicle:
         raise HTTPException(404, "Vehicle not found")
     was_active = bool(vehicle.is_active)
-    await db.delete(vehicle)
+    vehicle.archived_at = datetime.now(timezone.utc)
+    vehicle.is_active = False
     await db.commit()
+
+    replacement = None
     if was_active:
         result = await db.execute(
             select(Vehicle).where(
                 Vehicle.user_id == user.id,
+                Vehicle.archived_at.is_(None),
                 Vehicle.approval_status == "approved",
             ).order_by(Vehicle.created_at.asc())
         )
-        next_vehicle = result.scalars().first()
-        if next_vehicle:
-            next_vehicle.is_active = True
+        candidates = result.scalars().all()
+        remaining_count = await db.scalar(
+            select(func.count()).select_from(Vehicle).where(
+                Vehicle.user_id == user.id,
+                Vehicle.archived_at.is_(None),
+            )
+        ) or 0
+        single_vehicle = remaining_count <= 1
+        from services.vehicle_eligibility import vehicle_document_status
+        for candidate in candidates:
+            status = await vehicle_document_status(
+                db, user, candidate, single_vehicle)
+            if status["documents_approved"]:
+                replacement = candidate
+                break
+        if replacement:
+            replacement.is_active = True
             await db.commit()
-    logging.info("[Vehicle] Driver %s deleted vehicle %s", user.id, vehicle_id)
-    return {"deleted": True}
+        else:
+            user.is_online = False
+            user.online_since = None
+            _driver_locations.pop(user.id, None)
+            from routers.dispatch import expire_pending_offers_for_driver
+            await expire_pending_offers_for_driver(
+                db, user.id, "vehicle archived without eligible replacement")
+            await db.commit()
+    logging.info("[Vehicle] Driver %s archived vehicle %s", user.id, vehicle_id)
+    return {
+        "archived": True,
+        "replacement_vehicle_id": replacement.id if replacement else None,
+    }
 
 
 async def _resolve_doc_vehicle(
@@ -3402,14 +3430,18 @@ async def _resolve_doc_vehicle(
     with NO vehicle at all still gets a 400, with a actionable message."""
     if vehicle_id is not None:
         result = await db.execute(
-            select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user_id)
+            select(Vehicle).where(
+                Vehicle.id == vehicle_id,
+                Vehicle.user_id == user_id,
+                Vehicle.archived_at.is_(None),
+            )
         )
         if not result.scalar_one_or_none():
             raise HTTPException(404, "Vehicle not found")
         return vehicle_id
     result = await db.execute(
         select(Vehicle)
-        .where(Vehicle.user_id == user_id)
+        .where(Vehicle.user_id == user_id, Vehicle.archived_at.is_(None))
         .order_by(Vehicle.is_active.desc(), Vehicle.created_at.desc())
     )
     vehicle = result.scalars().first()

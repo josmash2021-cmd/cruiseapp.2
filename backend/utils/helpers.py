@@ -505,6 +505,8 @@ def _vehicle_dict(v) -> dict:
         # registration that names the new plate.
         "plate_pending_review": getattr(v, "plate_pending_review", False) or False,
         "is_active": getattr(v, "is_active", False) or False,
+        "archived_at": (v.archived_at.isoformat()
+                        if getattr(v, "archived_at", None) else None),
         "approval_status": getattr(v, "approval_status", "pending"),
         "doors": getattr(v, "doors", None),
         "seatbelts": getattr(v, "seatbelts", None),

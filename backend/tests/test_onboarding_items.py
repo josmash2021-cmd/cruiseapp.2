@@ -206,6 +206,8 @@ async def test_post_vehicle_creates_row_and_marks_submitted(client, db, test_dri
     assert veh.year == 2021 and veh.make == "Toyota" and veh.model == "Camry"
     assert veh.plate == "ABC123"  # plate step carried into the Vehicle row
     assert veh.seatbelts == 5
+    assert veh.is_active is False
+    assert veh.approval_status == "pending"
     # The tier is classified on submit — never left at the "comfort"
     # default. A 2021 sedan is Standard (2026-10-15 rule: Premium is the
     # three-row SUV tier; four-seat cars never leave Standard).

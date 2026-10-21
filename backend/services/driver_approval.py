@@ -381,61 +381,52 @@ async def send_document_rejected_email(
         logger.warning("[DocApproval] rejection email failed: %s", e)
 
 
-async def recompute_driver_approval(db: AsyncSession, user: User) -> bool:
-    """Re-evaluate the active vehicle after a document decision.
-
-    A complete, live document set can approve the vehicle. The driver ACCOUNT
-    is NEVER approved here: account approval is always a manual dispatch
-    decision via /auth/dispatch-approve. Returns False for compatibility with
-    callers that used the old account-flip result.
-    """
+async def recompute_driver_approval(
+    db: AsyncSession, user: User, vehicle_id: int | None = None
+) -> bool:
+    """Re-evaluate one unarchived vehicle, never the driver account."""
     if (user.role or "") != "driver":
         return False
-    now = datetime.now(timezone.utc)
+    from services.vehicle_eligibility import vehicle_document_status
 
-    # Coverage mirrors can_go_online's rule: the row names this vehicle, or —
-    # only with a single car on the account — it is a legacy vehicle_id NULL row.
-    veh_r = await db.execute(select(Vehicle).where(
-        Vehicle.user_id == user.id, Vehicle.is_active == True,
-    ))
-    veh = veh_r.scalars().first()
-    if veh:
-        count_r = await db.execute(
-            select(func.count()).select_from(Vehicle).where(
-                Vehicle.user_id == user.id)
+    query = select(Vehicle).where(
+        Vehicle.user_id == user.id,
+        Vehicle.archived_at.is_(None),
+    )
+    if vehicle_id is not None:
+        query = query.where(Vehicle.id == vehicle_id)
+    else:
+        query = query.order_by(
+            Vehicle.is_active.desc(), Vehicle.created_at.desc())
+    veh = (await db.execute(query)).scalars().first()
+    if not veh:
+        return False
+
+    count_r = await db.execute(
+        select(func.count()).select_from(Vehicle).where(
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
         )
-        single_vehicle = (count_r.scalar() or 0) <= 1
-        docs_r = await db.execute(
-            select(Document).where(
-                Document.user_id == user.id,
-                Document.doc_type.in_(
-                    ["insurance", "registration", "vehicle_inspection"]),
-            )
-        )
-        docs = docs_r.scalars().all()
+    )
+    single_vehicle = (count_r.scalar() or 0) <= 1
+    status = await vehicle_document_status(db, user, veh, single_vehicle)
+    approved_types = set(status["approved_vehicle_docs"])
+    changed = False
+    for attr, value in {
+        "insurance_valid": "insurance" in approved_types,
+        "registration_valid": "registration" in approved_types,
+        "inspection_valid": "vehicle_inspection" in approved_types,
+    }.items():
+        if getattr(veh, attr) != value:
+            setattr(veh, attr, value)
+            changed = True
 
-        required = ["insurance", "registration"]
-        if (user.drive_state or "").strip().upper() == "AL":
-            required.append("vehicle_inspection")
-
-        def _covers(d: Document) -> bool:
-            return d.vehicle_id == veh.id or (
-                single_vehicle and d.vehicle_id is None)
-
-        def _approved_live(t: str) -> bool:
-            return any(
-                (d.status or "").lower() == "approved"
-                and (d.expiry_date is None or d.expiry_date >= now)
-                and _covers(d)
-                for d in docs if d.doc_type == t
-            )
-
-        vehicle_ok = all(_approved_live(t) for t in required)
-        if vehicle_ok and (veh.approval_status or "").lower() != "approved":
-            veh.approval_status = "approved"
-            db.add(veh)
-            await db.commit()
-            logger.info("[DocApproval] vehicle %s auto-approved (docs green)",
-                        veh.id)
-
+    if (status["documents_approved"]
+            and (veh.approval_status or "").lower() != "approved"):
+        veh.approval_status = "approved"
+        changed = True
+        logger.info("[DocApproval] vehicle %s auto-approved (docs green)", veh.id)
+    if changed:
+        db.add(veh)
+        await db.commit()
     return False

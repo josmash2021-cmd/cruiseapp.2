@@ -107,6 +107,24 @@ async def test_second_car_with_its_own_docs_goes_online(client, db, test_driver)
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_pending_vehicle_docs_do_not_authorize_online(client, db, test_driver):
+    driver, token = test_driver
+    driver.verification_status = "approved"
+    await db.commit()
+    car = await _add_vehicle(db, driver, active=True, approval="approved")
+    await _add_doc(db, driver, "insurance", vehicle_id=car.id,
+                   status="pending")
+    await _add_doc(db, driver, "registration", vehicle_id=car.id,
+                   status="pending")
+
+    body = await _can_go(client, token)
+    assert body["can_go_online"] is False, body
+    assert "vehicle_docs_missing" in body["reasons"]
+    assert body["missing_vehicle_docs"] == ["insurance", "registration"]
+
+
+@pytest.mark.asyncio
 async def test_pending_second_vehicle_blocks_even_with_docs(client, db, test_driver):
     driver, token = test_driver
     driver.verification_status = "approved"

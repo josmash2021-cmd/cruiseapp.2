@@ -579,6 +579,7 @@ class Vehicle(Base):
     # Default TRUE so existing single-vehicle rows and tests keep working;
     # POST /drivers/vehicles flips it explicitly for every car after the first.
     is_active = Column(Boolean, default=True, nullable=False)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
     approval_status = Column(String(20), default="pending")  # pending | approved | rejected
     doors = Column(Integer, nullable=True)
     seatbelts = Column(Integer, nullable=True)
@@ -1144,6 +1145,7 @@ async def migrate_add_columns(conn):
         ("vehicles", "registration_valid", "BOOLEAN DEFAULT 0"),
         ("vehicles", "registration_expiry", "DATETIME"),
         ("vehicles", "is_active", "BOOLEAN DEFAULT 1"),
+        ("vehicles", "archived_at", "DATETIME"),
         ("vehicles", "approval_status", "VARCHAR(20) DEFAULT 'pending'"),
         ("vehicles", "doors", "INTEGER"),
         ("vehicles", "seatbelts", "INTEGER"),
@@ -1399,6 +1401,7 @@ async def migrate_postgres(conn):
         ("vehicles", "registration_valid", "BOOLEAN DEFAULT FALSE"),
         ("vehicles", "registration_expiry", "TIMESTAMP WITH TIME ZONE"),
         ("vehicles", "is_active", "BOOLEAN DEFAULT TRUE"),
+        ("vehicles", "archived_at", "TIMESTAMP WITH TIME ZONE"),
         ("vehicles", "approval_status", "VARCHAR(20) DEFAULT 'pending'"),
         ("vehicles", "doors", "INTEGER"),
         ("vehicles", "seatbelts", "INTEGER"),

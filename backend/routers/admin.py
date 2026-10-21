@@ -2677,7 +2677,8 @@ async def admin_set_vehicle_status(vehicle_id: int, request: Request, db: AsyncS
         except Exception as e:
             logging.warning("[Admin] vehicle notify failed: %s", e)
         try:
-            await driver_approval.recompute_driver_approval(db, veh_user)
+            await driver_approval.recompute_driver_approval(
+                db, veh_user, vehicle_id=vehicle.id)
         except Exception as e:
             logging.warning("[Admin] approval recompute failed: %s", e)
     return {"vehicle": _vehicle_dict(vehicle)}
@@ -2730,7 +2731,8 @@ async def admin_set_document_status(document_id: int, request: Request, db: Asyn
             doc_user, doc.doc_type, action == "approve",
             reason=doc.rejection_reason)
         try:
-            await driver_approval.recompute_driver_approval(db, doc_user)
+            await driver_approval.recompute_driver_approval(
+                db, doc_user, vehicle_id=doc.vehicle_id)
         except Exception as e:
             logging.warning("[Admin] approval recompute failed: %s", e)
     return {"document": _doc_dict(doc)}

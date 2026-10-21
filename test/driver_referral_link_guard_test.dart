@@ -178,4 +178,40 @@ void main() {
       expect(screen, contains('_SteeringWheelPainter'));
     });
   });
+
+  group('page 1 cleanup (2026-10-22 spec)', () {
+    test('code card, redeem block, stats and No Limit are gone', () {
+      for (final dead in [
+        '_buildCodeCard',
+        '_buildRedeemBlock',
+        '_buildStats',
+        '_statCard',
+        '_buildInfoCard',
+        '_copyCode',
+        'noLimitTitle',
+        'noLimitDesc',
+      ]) {
+        expect(screen.contains(dead), isFalse,
+            reason: '$dead was removed from page 1 by spec');
+      }
+    });
+
+    test('timeline icons are glyphs that survive release tree-shaking', () {
+      // Glyphs referenced ONLY inside the steps record literal get shaken
+      // out of the bundled font in release builds and render as "?" boxes
+      // (prod screenshots). These three are used as plain const references
+      // elsewhere in the app, so the tree-shaker keeps them.
+      expect(screen, contains('icon: Icons.share_rounded'));
+      expect(screen, contains('icon: Icons.person_add_rounded'));
+      expect(screen, contains('icon: Icons.emoji_events_rounded'));
+      for (final shaken in [
+        'Icons.share_outlined',
+        'Icons.person_add_alt_rounded',
+        'Icons.emoji_events_outlined',
+      ]) {
+        expect(screen.contains(shaken), isFalse,
+            reason: '$shaken rendered as a "?" box in the release build');
+      }
+    });
+  });
 }

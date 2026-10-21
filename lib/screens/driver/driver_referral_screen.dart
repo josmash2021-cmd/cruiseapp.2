@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../services/haptic_service.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -50,12 +49,6 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
   int _refereeBonusCents = 2500;
   int _refereeBonusRides = 2;
 
-  // Redeem-someone-else's-code mini form (driver who skipped it at signup)
-  final _redeemCtl = TextEditingController();
-  bool _redeeming = false;
-  String? _redeemError;
-  String? _redeemSuccess;
-
   @override
   void initState() {
     super.initState();
@@ -65,38 +58,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
   @override
   void dispose() {
     _pageCtrl.dispose();
-    _redeemCtl.dispose();
     super.dispose();
-  }
-
-  Future<void> _redeem() async {
-    final s = S.of(context);
-    final code = _redeemCtl.text.trim().toUpperCase();
-    if (code.isEmpty) return;
-    setState(() {
-      _redeeming = true;
-      _redeemError = null;
-      _redeemSuccess = null;
-    });
-    try {
-      final res = await ApiService.redeemDriverReferralCode(code);
-      if (!mounted) return;
-      _redeemCtl.clear();
-      setState(() {
-        _redeeming = false;
-        _redeemSuccess = (res['referrer_name'] as String?) != null
-            ? s.linkedToName(res['referrer_name'] as String)
-            : s.codeRedeemed;
-      });
-      HapticService.mediumImpact();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _redeeming = false;
-        _redeemError = e.toString().replaceFirst('ApiException: ', '');
-      });
-      HapticService.heavyImpact();
-    }
   }
 
   Future<void> _load() async {
@@ -134,20 +96,6 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
   }
 
   String _dollars(int cents) => '\$${(cents / 100).toStringAsFixed(0)}';
-
-  void _copyCode() {
-    if (_code.isEmpty) return;
-    HapticService.lightImpact();
-    Clipboard.setData(ClipboardData(text: _code));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(S.of(context).codeCopied),
-        backgroundColor: _gold,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
 
   void _shareInvite() {
     if (_code.isEmpty) return;
@@ -294,22 +242,9 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
             offset: const Offset(0, -22),
             child: _buildRewardsCard(s),
           ),
-
-          _buildCodeCard(s),
-          const SizedBox(height: 14),
-          _buildRedeemBlock(s),
-          const SizedBox(height: 14),
-          _buildStats(s),
           const SizedBox(height: 24),
 
           _buildHowItWorksTimeline(s),
-          const SizedBox(height: 16),
-          _buildInfoCard(
-            title: s.noLimitTitle,
-            icon: Icons.all_inclusive_rounded,
-            iconColor: _gold,
-            lines: [s.noLimitDesc],
-          ),
 
           // Hint toward page 2 — the referrals tracker lives one swipe away.
           if (_referees.isNotEmpty) ...[
@@ -492,12 +427,16 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
   Widget _buildHowItWorksTimeline(S s) {
     final steps = <({IconData icon, String title, String body})>[
       (
-        icon: Icons.share_outlined,
+        // Icon glyphs must ALSO exist as plain const references elsewhere in
+        // the app: the release build's icon tree-shaker misses glyphs that
+        // appear ONLY inside this record literal and the circle then renders
+        // a "?" box (prod screenshots, 2026-10-22).
+        icon: Icons.share_rounded,
         title: s.driverHowShareTitle,
         body: s.driverHowStep1,
       ),
       (
-        icon: Icons.person_add_alt_rounded,
+        icon: Icons.person_add_rounded,
         title: s.driverHowSignupTitle,
         body: s.driverHowSignupDesc,
       ),
@@ -508,7 +447,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
             _dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides),
       ),
       (
-        icon: Icons.emoji_events_outlined,
+        icon: Icons.emoji_events_rounded,
         title: s.driverHowPaidTitle,
         body:
             '${s.driverHowStep3(_dollars(_amountCents))}\n${s.driverHowWelcomeBonus(_dollars(_refereeBonusCents), _refereeBonusRides)}',
@@ -677,251 +616,6 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
             elevation: 0,
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildCodeCard(S s) {
-    return GestureDetector(
-      onTap: _copyCode,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        decoration: BoxDecoration(
-          color: _surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.qr_code_rounded, color: _gold, size: 22),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    s.yourCode,
-                    style: const TextStyle(
-                      color: Color(0xFFB0B0B6),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _code.isEmpty ? '— — —' : _code,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.copy_rounded,
-                color: Color(0xFFB0B0B6), size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// For the driver who signed up WITHOUT a code: one redemption is still
-  /// allowed here (backend enforces one-per-driver). Same pattern as the
-  /// rider screen's redeem block.
-  Widget _buildRedeemBlock(S s) {
-    final showSuccess = _redeemSuccess != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: _surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _redeemCtl,
-                  textCapitalization: TextCapitalization.characters,
-                  enabled: !_redeeming && !showSuccess,
-                  cursorColor: _gold,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.0,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: s.gotInviteCode,
-                    hintStyle: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.35),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    border: InputBorder.none,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: (_redeeming || showSuccess) ? null : _redeem,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: showSuccess ? const Color(0xFF22C55E) : _gold,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: _redeeming
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.2, color: Colors.black),
-                        )
-                      : Text(
-                          showSuccess ? '✓' : s.redeemLabel,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (_redeemError != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, left: 4),
-            child: Text(
-              _redeemError!,
-              style: const TextStyle(
-                color: Color(0xFFEF9A9A),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        if (_redeemSuccess != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, left: 4),
-            child: Text(
-              _redeemSuccess!,
-              style: const TextStyle(
-                color: Color(0xFF22C55E),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildStats(S s) {
-    return Row(
-      children: [
-        Expanded(child: _statCard(s.earnedLabel, _dollars(_totalEarnedCents))),
-        const SizedBox(width: 10),
-        Expanded(child: _statCard(s.pendingLabel, _dollars(_pendingCents))),
-        const SizedBox(width: 10),
-        Expanded(
-            child:
-                _statCard(s.referralsLabel, _referees.length.toString())),
-      ],
-    );
-  }
-
-  Widget _statCard(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: _gold,
-              fontSize: 19,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFFB0B0B6),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoCard({
-    required String title,
-    required IconData icon,
-    required Color iconColor,
-    required List<String> lines,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: iconColor, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                ...lines.map((line) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        line,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.65),
-                          fontSize: 13,
-                          height: 1.45,
-                        ),
-                      ),
-                    )),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

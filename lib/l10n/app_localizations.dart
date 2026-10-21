@@ -4176,6 +4176,21 @@ class S {
       _es ? 'a los $rides viajes' : 'at $rides rides';
   String get shareReferralLinkBtn =>
       _es ? 'Compartir enlace de referido' : 'Share Referral Link';
+
+  // ── Driver referrals: invite link + My Referrals page (2026-10-22) ───────────
+  String get referralInvitationApplied => _es
+      ? '¡Invitación de referido aplicada exitosamente!'
+      : 'Referral invitation applied successfully!';
+  String get myReferralsTitle => _es ? 'Mis Referidos' : 'My Referrals';
+  String driversJoinedCount(int n) => _es ? '$n conductores' : '$n Drivers';
+  String referralJoined(String date) =>
+      _es ? 'Se unió el $date' : 'Joined $date';
+  String referralExpires(String date) =>
+      _es ? 'Expira el $date' : 'Expires $date';
+  String get paidLabel => _es ? 'Pagado' : 'Paid';
+  String get swipeToSeeReferrals => _es
+      ? 'Desliza para ver tus referidos'
+      : 'Swipe to see your referrals';
   String get driverHowShareTitle =>
       _es ? 'Comparte tu código' : 'Share Your Code';
   String get driverHowSignupTitle => _es ? 'Se registran' : 'They Sign Up';

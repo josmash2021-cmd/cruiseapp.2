@@ -4323,6 +4323,66 @@ a.btn{display:inline-block;background:#D4AF37;color:#000;text-decoration:none;pa
     return Response(content=html, media_type="text/html")
 
 
+@router.get("/drive/{code}")
+async def driver_referral_landing(code: str, request: Request,
+                                  db: AsyncSession = Depends(get_db)):
+    """Driver referral link. Installed apps intercept it; new installs keep
+    the code through Play's referrer on Android or a copy fallback on iOS."""
+    from routers.driver_referrals import _normalize_driver_code
+    import html as html_lib
+    from urllib.parse import quote
+
+    normalized = _normalize_driver_code(code)
+    referrer = None
+    if normalized:
+        result = await db.execute(
+            select(User).where(
+                func.upper(func.replace(User.driver_referral_code, "-", ""))
+                == normalized
+            )
+        )
+        referrer = result.scalar_one_or_none()
+    if referrer is None or (referrer.role or "").lower() != "driver":
+        return RedirectResponse("/open-app", status_code=302)
+
+    safe_code = html_lib.escape(referrer.driver_referral_code or code)
+    ua = (request.headers.get("user-agent") or "").lower()
+    if "android" in ua:
+        encoded = quote(f"driver_code={safe_code}", safe="")
+        return RedirectResponse(
+            "https://play.google.com/store/apps/details"
+            f"?id=com.cruiseinride.app&referrer={encoded}",
+            status_code=302,
+        )
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>CRUISE IN RIDE — Driver invite</title>
+<style>
+body{{margin:0;background:#050505;color:#fff;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}}
+.card{{padding:40px 28px;max-width:360px}}
+h1{{font-family:Georgia,serif;font-size:22px;color:#E8C547;letter-spacing:4px;margin:0 0 10px}}
+p{{color:#777;font-size:14px;line-height:1.6}}
+.code{{margin:22px auto;padding:14px 18px;border:1px solid #E8C547;border-radius:16px;color:#E8C547;font-size:20px;font-weight:800;letter-spacing:1.5px}}
+a.btn,button.btn{{display:inline-block;background:#D4AF37;color:#000;border:0;text-decoration:none;padding:14px 32px;border-radius:28px;font-size:14px;font-weight:800;letter-spacing:1px;margin:5px 6px;cursor:pointer}}
+button.ghost{{background:#1C1C24;color:#E8C547;border:1px solid #E8C547}}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>CRUISE IN RIDE</h1>
+<p>Your driver invitation code is ready:</p>
+<div class="code" id="invite-code">{safe_code}</div>
+<button class="btn ghost" onclick="navigator.clipboard.writeText('{safe_code}')">Copy code</button>
+<a class="btn" href="https://apps.apple.com/app/id6760517086">App Store</a>
+<a class="btn" href="https://play.google.com/store/apps/details?id=com.cruiseinride.app">Google Play</a>
+</div>
+</body></html>"""
+    return Response(content=html, media_type="text/html")
+
+
 # ── Universal Links (iOS) / App Links (Android) verification files ─────
 # The email "OPEN THE APP" buttons point at https://<this host>/open-app.
 # For the OS to open the app DIRECTLY (Gmail's embedded browser blocks
@@ -4340,7 +4400,7 @@ async def apple_app_site_association():
             "details": [
                 {
                     "appID": "7QLC9UVB3Z.com.cruiseinride.app",
-                    "paths": ["/open-app", "/open-app*"],
+                    "paths": ["/open-app", "/open-app*", "/drive", "/drive/*"],
                 }
             ],
         }

@@ -7,12 +7,16 @@ import ActivityKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  private var referralChannel: FlutterMethodChannel?
+  private static var latestDriverCode: String?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
     setupLiveActivityChannel()
+    setupReferralLinkChannel()
     // Show notifications even when app is in foreground
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
@@ -116,6 +120,41 @@ import ActivityKit
       }
       CruiseLiveActivityManager.shared.startPushToStartObserver()
     }
+  }
+
+  // Driver referral Universal Links (/drive/{code}) use the same Dart channel
+  // as Android. The latest code is cached natively so a cold start can ask for
+  // it after Flutter is ready instead of dropping the first event.
+  private func setupReferralLinkChannel() {
+    guard let registrar = self.registrar(forPlugin: "CruiseReferralLinkChannel") else { return }
+    let channel = FlutterMethodChannel(
+      name: "cruise/referral_link",
+      binaryMessenger: registrar.messenger()
+    )
+    referralChannel = channel
+    channel.setMethodCallHandler { call, result in
+      if call.method == "getPendingDriverCode" {
+        result(AppDelegate.latestDriverCode)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  // Handles https://cruiseapp2-production.up.railway.app/drive/{code}.
+  // Under the UIScene lifecycle NSUserActivity is delivered to the
+  // SceneDelegate (scene(_:continue:) / willConnectTo options), NEVER to
+  // application(_:continue:) — so the SceneDelegate forwards the URL here.
+  static func handleDriverReferralUrl(_ url: URL) -> Bool {
+    guard url.host == "cruiseapp2-production.up.railway.app",
+          url.path.hasPrefix("/drive/") else { return false }
+    let parts = url.path.split(separator: "/")
+    guard parts.count >= 2, !parts[1].isEmpty else { return true }
+    let code = String(parts[1]).uppercased()
+    AppDelegate.latestDriverCode = code
+    (UIApplication.shared.delegate as? AppDelegate)?
+      .referralChannel?.invokeMethod("driverReferralLink", arguments: code)
+    return true
   }
 
   // Show notification banner/alert/sound even when app is open

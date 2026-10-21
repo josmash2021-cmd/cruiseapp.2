@@ -42,6 +42,7 @@ import 'services/account_session_guard.dart';
 import 'services/map_controller_cache.dart';
 import 'services/notification_service.dart';
 import 'services/live_activity_service.dart';
+import 'services/referral_link_service.dart';
 import 'services/security_service.dart';
 import 'services/user_session.dart';
 import 'services/local_data_service.dart';
@@ -1278,6 +1279,10 @@ Future<void> heavyInit() async {
 
     // Initialize profile photo notifier
     UserSession.initPhotoNotifier(),
+
+    // Absorb any driver-referral code that arrived via the /drive/{code}
+    // link or the Play install referrer (native cached it before Dart ran).
+    ReferralLinkService.init(),
 
     // ── Stripe ──
     () async {

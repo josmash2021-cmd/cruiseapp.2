@@ -28,7 +28,11 @@ void main() {
   final splash =
       File('lib/screens/splash_screen.dart').readAsStringSync();
   final mainDart = File('lib/main.dart').readAsStringSync();
-  final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
+  // CRLF-agnostic: the checkout converts line endings on Windows
+  // (core.autocrlf), and a needle spanning a line break must still match.
+  final l10n = File('lib/l10n/app_localizations.dart')
+      .readAsStringSync()
+      .replaceAll('\r\n', '\n');
 
   group('mock art — real illustration, OTA image chain', () {
     test('hero is the mock illustration: asset → /static → drawn widgets', () {

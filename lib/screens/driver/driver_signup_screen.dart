@@ -16,6 +16,7 @@ import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/meta_app_events_service.dart';
+import '../../services/referral_link_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/neu_style.dart';
 import '../face_liveness_screen.dart';
@@ -295,6 +296,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   // earns $25 after their first 2 rides (redeemed right after register).
   final _refCodeCtrl = TextEditingController();
 
+  /// A code that arrived through a /drive/{code} invite link and validated
+  /// server-side — shows the "invitation applied" line under the DOB tile.
+  bool _linkReferralApplied = false;
+
   // Date of birth — drivers must be at least 25 (server re-validates).
   DateTime? _dob;
   static const int _minDriverAge = 25;
@@ -340,6 +345,34 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     _emailCtrl.addListener(_onEmailChanged);
     _phoneCtrl.addListener(_onPhoneChanged);
     _passwordCtrl.addListener(_onPasswordChanged);
+    _absorbLinkReferralCode();
+  }
+
+  /// A driver who installed the app from someone's /drive/{code} invite
+  /// carries a pending code (ReferralLinkService). Pre-fill the referral
+  /// field with it and confirm against the server so the DOB tile can say
+  /// the invitation was applied. A stale/unknown code is dropped so it
+  /// never blocks the form.
+  Future<void> _absorbLinkReferralCode() async {
+    final code = await ReferralLinkService.pendingDriverCode();
+    if (code == null || !mounted) return;
+    var valid = false;
+    try {
+      valid = await ApiService.validateDriverReferralCode(code);
+    } catch (_) {
+      // Offline or server hiccup — keep the code stored; the redeem at
+      // submit time is the authority anyway.
+      return;
+    }
+    if (!mounted) return;
+    if (valid) {
+      setState(() {
+        _refCodeCtrl.text = code;
+        _linkReferralApplied = true;
+      });
+    } else {
+      await ReferralLinkService.clearPendingDriverCode();
+    }
   }
 
   void _onPasswordChanged() => setState(() {});
@@ -956,6 +989,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         try {
           await ApiService.redeemDriverReferralCode(refCode);
           debugPrint('✅ Driver referral code redeemed at signup');
+          // The link-delivered code did its job — stop carrying it, or the
+          // next account created on this phone would inherit the invite.
+          await ReferralLinkService.clearPendingDriverCode();
         } catch (e) {
           debugPrint('⚠️ Referral code redeem failed (non-blocking): $e');
         }
@@ -1291,6 +1327,29 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               ),
             ),
           _buildDobPicker(),
+          // The driver arrived through someone's invite link and the code
+          // already validated — say so right under the date of birth.
+          if (_linkReferralApplied)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded,
+                      color: Color(0xFF22C55E), size: 16),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      S.of(context).referralInvitationApplied,
+                      style: const TextStyle(
+                        color: Color(0xFF22C55E),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 16),
           _field(
             ctrl: _emailCtrl,

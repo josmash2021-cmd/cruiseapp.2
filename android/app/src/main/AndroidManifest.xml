@@ -84,6 +84,7 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="https" android:host="cruiseapp2-production.up.railway.app" android:pathPrefix="/open-app"/>
+                <data android:scheme="https" android:host="cruiseapp2-production.up.railway.app" android:pathPrefix="/drive"/>
             </intent-filter>
         </activity>
         <!-- Google Places API Key — injected from local.properties or CI -->

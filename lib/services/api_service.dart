@@ -2930,6 +2930,26 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Public pre-signup check: does this driver referral code exist?
+  /// No JWT — the person holding the code has no account yet (they got it
+  /// from the /drive/{code} invite link). Returns {valid, code,
+  /// referrer_name}; never throws on an unknown code, just valid=false.
+  static Future<bool> validateDriverReferralCode(String code) async {
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/driver-referrals/validate?code=${Uri.encodeQueryComponent(code)}'),
+          headers: _jsonHeaders(),
+        )
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) return false;
+    try {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      return body['valid'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Redeem someone else's referral code (one-time, at signup).
   /// Backend rejects self-referral, repeat-redemption, and same-
   /// email/phone as the inviter.

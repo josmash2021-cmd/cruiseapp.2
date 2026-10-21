@@ -98,7 +98,7 @@ import 'driver_referral_screen.dart';
 import 'driver_settings_screen.dart';
 import 'driver_vehicle_screen.dart';
 import 'payout_methods_screen.dart';
-import 'driver_agreement_screen.dart';
+import 'driver_contracts_screen.dart';
 import 'onboarding/driver_notifications_screen.dart';
 import 'onboarding/driver_todo_screen.dart'; // gate de aprobación en el destino
 import 'driver_waitlist_screen.dart'; // gate de aprobación en el destino
@@ -1288,12 +1288,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           CurvedAnimation(parent: _goIgniteCtrl!, curve: Curves.elasticOut));
 
       // Guards de boot portados del home (antes vivían en
-      // driver_home_screen.dart): cuenta, acuerdo, permisos, docs, viaje
+      // driver_home_screen.dart): cuenta, contratos, permisos, docs, viaje
       // activo. Corren en cualquier modo — el driver puede estar offline.
       unawaited(_checkAccountStatus());
       _accountStatusTimer ??= Timer.periodic(
           const Duration(seconds: 300), (_) => _checkAccountStatus());
-      unawaited(_checkDriverAgreementConsent());
+      unawaited(_checkContractsGate());
       unawaited(_runDriverPermissionFlow());
       unawaited(_startDocApprovalListener());
       unawaited(_checkVehicleDocStatus());
@@ -1397,6 +1397,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _vehicleDocsApproved = false;
   bool _hasExpiredDocs = false;
   bool _plateChangePending = false;
+  /// Slugs of required contracts still unsigned (from can_go_online) — the
+  /// GO tap opens the e-sign hub before flipping online.
+  List<String> _contractsPending = const [];
   bool _docStatusLoaded = false;
   StreamSubscription? _docApprovalSub;
   Timer? _accountStatusTimer;

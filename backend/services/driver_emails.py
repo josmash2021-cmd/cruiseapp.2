@@ -434,6 +434,7 @@ _ITEM_NAME = {
     "registration": ("Registración del vehículo", "Vehicle registration"),
     "insurance": ("Seguro del vehículo", "Vehicle insurance"),
     "inspection": ("Inspección del vehículo", "Vehicle inspection"),
+    "contracts": ("Contratos legales", "Legal contracts"),
 }
 
 

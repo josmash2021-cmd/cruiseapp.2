@@ -1144,6 +1144,18 @@ async def lifespan(app: FastAPI):
                 except Exception as _mig_err:
                     logging.error("[DB Init] column migration failed (non-fatal): %s", _mig_err)
 
+            # Contracts seed (2026-10-21, user spec — Uber-style
+            # e-acceptance): the 5 legal documents land in legal_documents
+            # on first boot, on BOTH backends (tests run SQLite); idempotent
+            # (empty-table only) so operator edits from dispatch never get
+            # clobbered by a redeploy.
+            try:
+                from services.legal_documents import seed_legal_documents
+                async with SessionLocal() as _legal_db:
+                    await seed_legal_documents(_legal_db)
+            except Exception as _seed_err:
+                logging.error("[DB Init] legal seed failed (non-fatal): %s", _seed_err)
+
             # NOTE: PostgreSQL index migrations moved to standalone script
             # (backend/run_migrations.py) to avoid running DDL on every boot.
             # Indexes are created with IF NOT EXISTS, but checking pg_indexes

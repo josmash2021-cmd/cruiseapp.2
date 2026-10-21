@@ -22,6 +22,7 @@ import '../face_liveness_screen.dart';
 import '../biometric_consent_screen.dart';
 import '../privacy_policy_screen.dart';
 import 'driver_agreement_screen.dart';
+import 'driver_contracts_screen.dart';
 import 'onboarding/driver_todo_screen.dart';
 import '../../utils/ssn_validator.dart';
 import 'license_guidelines_screen.dart';
@@ -2109,6 +2110,12 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         S.of(context).docLinkPrivacyPolicy,
         () => Navigator.of(context).push(
               scaleExpandRoute(const PrivacyPolicyScreen(), durationMs: 420),
+            ),
+      ),
+      (
+        S.of(context).docLinkContracts,
+        () => Navigator.of(context).push(
+              scaleExpandRoute(const DriverContractsScreen(), durationMs: 420),
             ),
       ),
     ];

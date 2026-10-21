@@ -4961,6 +4961,72 @@ class ApiService {
     return _parse(res);
   }
 
+  // ── Digital contracts (e-acceptance, 2026-10-21 — Uber-style) ────────────
+  //
+  // The five required driver contracts live server-side (legal_documents
+  // table, dispatch-editable). Acceptance is a ConsentLog row with the full
+  // evidence (version, content hash, IP, user agent, device info, exact
+  // timestamp); can_go_online refuses drivers with any contract pending.
+
+  /// `{contracts: [{slug, title_en, title_es, version, accepted_version,
+  /// accepted_at, needs_acceptance}], all_current}` for the signed-in driver.
+  static Future<Map<String, dynamic>> getContracts() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/legal/contracts'), headers: h)
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Full markdown of one contract: `{slug, title, version, locale,
+  /// content_markdown, content_hash}` (EN fallback when `lang` is missing).
+  static Future<Map<String, dynamic>> getContract(String slug,
+      {String lang = 'en'}) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/legal/contracts/$slug?lang=$lang'),
+            headers: h)
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Record the verifiable e-acceptance of one contract. The version must
+  /// be the current one — a stale text can never be signed (400).
+  static Future<Map<String, dynamic>> acceptContract({
+    required String slug,
+    required String version,
+    required String contentHash,
+    String deviceInfo = '',
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/legal/contracts/$slug/accept'),
+          headers: h,
+          body: jsonEncode({
+            'version': version,
+            'content_hash': contentHash,
+            'device_info': deviceInfo,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// The signed-copy PDF receipt (evidence block + the exact text the
+  /// driver accepted), as raw bytes for save/share.
+  static Future<Uint8List> downloadContractReceipt(String slug) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/legal/contracts/$slug/receipt.pdf'),
+            headers: h)
+        .timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) {
+      throw ApiException(res.statusCode, 'receipt download failed');
+    }
+    return res.bodyBytes;
+  }
+
   /// Fetch the current user's consent history (all consent types).
   /// Returns the `items` list from `{items: [...]}`.
   static Future<List<Map<String, dynamic>>> fetchConsentHistory() async {

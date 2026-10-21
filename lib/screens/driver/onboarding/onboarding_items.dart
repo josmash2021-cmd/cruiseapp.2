@@ -15,7 +15,8 @@ enum OnboardingItem {
   vehicle('vehicle', 'assets/images/onboarding/vehicle.jpg'),
   registration('registration', 'assets/images/onboarding/documents.jpg'),
   insurance('insurance', 'assets/images/onboarding/documents.jpg'),
-  inspection('inspection', 'assets/images/onboarding/documents.jpg');
+  inspection('inspection', 'assets/images/onboarding/documents.jpg'),
+  contracts('contracts', 'assets/images/onboarding/documents.jpg');
 
   const OnboardingItem(this.key, this.asset);
 
@@ -139,6 +140,14 @@ class OnboardingIntroCopy {
           subtitle: s.obItemInspectionSub,
           button: s.next,
         );
+      // Contracts have no intro step either — the card opens the e-sign
+      // hub directly. This copy only satisfies the switch.
+      case OnboardingItem.contracts:
+        return OnboardingIntroCopy(
+          title: s.obItemContractsTitle,
+          subtitle: s.obItemContractsSub,
+          button: s.next,
+        );
     }
   }
 }
@@ -167,6 +176,8 @@ class OnboardingIntroCopy {
       return (s.obItemInsuranceTitle, s.obItemInsuranceSub);
     case OnboardingItem.inspection:
       return (s.obItemInspectionTitle, s.obItemInspectionSub);
+    case OnboardingItem.contracts:
+      return (s.obItemContractsTitle, s.obItemContractsSub);
   }
 }
 
@@ -191,5 +202,7 @@ IconData onboardingItemIcon(OnboardingItem item) {
       return Icons.shield_outlined;
     case OnboardingItem.inspection:
       return Icons.fact_check_outlined;
+    case OnboardingItem.contracts:
+      return Icons.draw_rounded;
   }
 }

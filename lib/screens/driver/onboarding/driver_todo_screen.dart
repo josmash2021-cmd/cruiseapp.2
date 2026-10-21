@@ -12,6 +12,7 @@ import '../../../widgets/feathered_image.dart';
 import '../../../widgets/neu_style.dart';
 import '../../help_screen.dart';
 import '../../splash_screen.dart';
+import '../driver_contracts_screen.dart';
 import '../driver_waitlist_screen.dart';
 import 'doc_capture_screen.dart';
 import 'driver_approved_celebration_screen.dart';
@@ -46,6 +47,7 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
     OnboardingItem.registration,
     OnboardingItem.insurance,
     OnboardingItem.inspection,
+    OnboardingItem.contracts,
   ];
 
   /// Items whose card opens the capture page directly (no intro step).
@@ -190,6 +192,15 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
   }
 
   Future<void> _openItem(OnboardingItemEntry entry) async {
+    // Contracts open the e-sign hub (server-versioned documents with
+    // checkbox + electronic signature), not a capture page.
+    if (entry.item == OnboardingItem.contracts) {
+      await Navigator.of(context).push(
+        onboardingFadeSlideRoute(const DriverContractsScreen()),
+      );
+      _load();
+      return;
+    }
     // Document items have no intro — the card opens the capture page
     // directly; everything else goes through the generic intro.
     if (_docItems.contains(entry.item)) {

@@ -14,6 +14,7 @@ from models.database import (
     PasswordResetToken, Referral, CruiseCashBalance, CruiseCashTransaction,
     DriverReferral, FavoriteLocation, RevokedToken, DriverLocationHistory,
     SmsLog, EmailLog, ZeroToleranceComplaint, ConsentLog,
+    LegalDocument, LegalDocumentVersion,
     SummaryOfRightsDelivery, WalletTransaction, ZeroToleranceAudit,
     LoginActivity, StoreOrder,
 )
@@ -2829,6 +2830,123 @@ async def admin_dismiss_expiry_suggestion(document_id: int, db: AsyncSession = D
     await db.commit()
     _security_audit_log("ADMIN_EXPIRY_DISMISS", "admin", f"doc={document_id}")
     return {"document": _doc_dict(doc)}
+
+
+# ── Digital contracts admin (2026-10-21, user spec — Uber-style): consult
+# acceptances, download receipt PDFs, update the documents (version bump →
+# re-acceptance wave), and read the version history ──────────────────────
+
+@router.get("/admin/contracts", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_list_contracts(db: AsyncSession = Depends(get_db)):
+    """The current legal documents (both locales) for the dispatch editor —
+    slug, title, live version and full markdown."""
+    r = await db.execute(select(LegalDocument).order_by(
+        LegalDocument.slug, LegalDocument.locale))
+    return {"documents": [{
+        "slug": d.slug, "locale": d.locale, "title": d.title,
+        "version": d.version, "is_required": bool(d.is_required),
+        "content_markdown": d.content_markdown,
+        "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+        "updated_by": d.updated_by,
+    } for d in r.scalars().all()]}
+
+
+@router.get("/admin/contracts/acceptances", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_contract_acceptances(user_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
+    """Who accepted what, at which version, when, from which IP."""
+    q = (select(ConsentLog, User.first_name, User.last_name)
+         .join(User, ConsentLog.user_id == User.id)
+         .where(ConsentLog.action == "accepted",
+                ConsentLog.consent_type.in_(
+                    ["contract_acceptance", "independent_contractor_agreement"]))
+         .order_by(ConsentLog.created_at.desc()))
+    if user_id is not None:
+        q = q.where(ConsentLog.user_id == user_id)
+    r = await db.execute(q.limit(500))
+    out = []
+    for log, first, last in r.all():
+        out.append({
+            "user_id": log.user_id,
+            "driver_name": f"{first or ''} {last or ''}".strip(),
+            "document_id": log.document_id or log.consent_type,
+            "version": log.version,
+            "accepted_at": log.created_at.isoformat() if log.created_at else None,
+            "ip_address": log.ip_address,
+            "content_hash": log.content_hash,
+        })
+    return {"acceptances": out}
+
+
+@router.put("/admin/contracts/{slug}", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_update_contract(slug: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Update a legal document from dispatch: bumps the version, appends to
+    the version history, and every driver below the new version falls back
+    to needs_acceptance (the gate re-asks them at their next GO)."""
+    body = await request.json()
+    content = (body.get("content_markdown") or "").strip()
+    locale = (body.get("locale") or "en").strip().lower()[:5]
+    notes = (body.get("notes") or "").strip()
+    if not content:
+        raise HTTPException(400, "content_markdown required")
+
+    r = await db.execute(select(LegalDocument).where(
+        LegalDocument.slug == slug, LegalDocument.locale == locale))
+    doc = r.scalars().first()
+    if doc is None:
+        raise HTTPException(404, "Unknown contract")
+    try:
+        major, minor = doc.version.split(".")[:2]
+        new_version = f"{major}.{int(minor) + 1}"
+    except Exception:
+        new_version = f"{doc.version}.1"
+
+    now = datetime.now(timezone.utc)
+    db.add(LegalDocumentVersion(
+        slug=slug, locale=locale, version=new_version,
+        content_markdown=content, created_at=now,
+        created_by=f"dispatch: {notes}" if notes else "dispatch"))
+    doc.content_markdown = content
+    doc.version = new_version
+    doc.updated_at = now
+    doc.updated_by = "dispatch"
+    await db.commit()
+    _security_audit_log("ADMIN_CONTRACT_UPDATE", "admin",
+                        f"slug={slug} locale={locale} v={new_version}")
+    return {"slug": slug, "locale": locale, "version": new_version}
+
+
+@router.get("/admin/contracts/versions", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_contract_versions(slug: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """Version history of the legal documents (append-only)."""
+    q = select(LegalDocumentVersion).order_by(LegalDocumentVersion.created_at.desc())
+    if slug:
+        q = q.where(LegalDocumentVersion.slug == slug)
+    r = await db.execute(q.limit(100))
+    out = [{
+        "slug": v.slug, "locale": v.locale, "version": v.version,
+        "created_at": v.created_at.isoformat() if v.created_at else None,
+        "created_by": v.created_by,
+        "chars": len(v.content_markdown or ""),
+    } for v in r.scalars().all()]
+    return {"versions": out}
+
+
+@router.get("/admin/contracts/{slug}/receipt.pdf", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_contract_receipt(slug: str, user_id: int, db: AsyncSession = Depends(get_db)):
+    """Dispatch downloads the signed-copy PDF for a driver."""
+    from routers.legal import _build_receipt_pdf, _receipt_for
+    user_r = await db.execute(select(User).where(User.id == user_id))
+    user = user_r.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    doc, log = await _receipt_for(db, user, slug)
+    pdf_bytes = _build_receipt_pdf(doc, log, user)
+    _security_audit_log("ADMIN_CONTRACT_RECEIPT", "admin",
+                        f"slug={slug} user_id={user_id}")
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition":
+                 f'attachment; filename="receipt_{slug}_u{user_id}_v{doc.version}.pdf"'})
 
 
 # Doc types an operator may upload FOR the user (the driver's own upload

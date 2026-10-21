@@ -12,7 +12,7 @@ part of 'driver_online_screen.dart';
 ///     ([_ensureLocationReady]);
 ///   * the vehicle-document gates ([_checkVehicleDocStatus] +
 ///     [_startDocApprovalListener]);
-///   * the boot guards ([_checkAccountStatus], [_checkDriverAgreementConsent],
+///   * the boot guards ([_checkAccountStatus], [_checkContractsGate],
 ///     [_runDriverPermissionFlow], [_checkScheduledRideLockout]);
 ///   * active-trip detection + Resume ([_refreshActiveTripStatus],
 ///     [_checkBackendActiveTrip], [_resumeActiveTrip]);
@@ -230,6 +230,12 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       final canGo = result['can_go_online'] == true;
       final expired = result['has_expired_docs'] == true;
       final platePending = result['plate_change_pending'] == true;
+      // Unsigned required contracts (e-acceptance gate, 2026-10-21): the GO
+      // tap opens the contracts hub before the mode flips.
+      final pending = (result['contracts_pending'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const <String>[];
 
       // Sync approval status locally
       if (result['approved'] == true) {
@@ -241,6 +247,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         _vehicleDocsApproved = canGo;
         _hasExpiredDocs = expired;
         _plateChangePending = platePending;
+        _contractsPending = pending;
         _docStatusLoaded = true;
       });
     } catch (e) {
@@ -329,43 +336,26 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     } catch (_) {}
   }
 
-  /// Re-acceptance gate for the Independent Contractor Agreement (current
-  /// version: [kDriverAgreementVersion]). Every acceptance is logged
-  /// server-side (ConsentLog) with the document version, so when the
-  /// agreement version bumps, a driver whose newest
-  /// 'independent_contractor_agreement' acceptance is stale — or who has
-  /// none — must review and accept the new version before continuing.
-  /// Fail-open: a network failure never locks the driver out; the check
-  /// simply re-runs on the next app start.
-  Future<void> _checkDriverAgreementConsent() async {
+  /// Re-acceptance gate for the five driver contracts (2026-10-21, user
+  /// spec — Uber-style e-acceptance; it replaced the old single-ICA check).
+  /// The server tracks each document's current version against the driver's
+  /// newest acceptance (ConsentLog evidence), so a dispatch version bump —
+  /// or a driver who never signed — lands here and must review and sign
+  /// before continuing. Fail-open: a network failure never locks the driver
+  /// out; the check simply re-runs on the next app start.
+  Future<void> _checkContractsGate() async {
     try {
-      final items = await ApiService.fetchConsentHistory();
+      final data = await ApiService.getContracts();
       if (!mounted) return;
-      // The history comes newest-first: the first match is the latest.
-      String? acceptedVersion;
-      for (final item in items) {
-        if (item['consent_type'] == 'independent_contractor_agreement' &&
-            item['action'] == 'accepted') {
-          acceptedVersion = item['version']?.toString();
-          break;
-        }
-      }
-      if (acceptedVersion == kDriverAgreementVersion) return;
+      if (data['all_current'] == true) return;
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+        MaterialPageRoute<bool>(
           fullscreenDialog: true,
-          builder: (_) => DriverAgreementScreen(
-            onAccept: () => ApiService.recordConsent(
-              consentType: 'independent_contractor_agreement',
-              action: 'accepted',
-              version: kDriverAgreementVersion,
-            ),
-          ),
+          builder: (_) => const DriverContractsScreen(gate: true),
         ),
       );
     } catch (e) {
-      debugPrint(
-          '[DriverOnline] agreement consent check skipped (fail-open): $e');
+      debugPrint('[DriverOnline] contracts gate skipped (fail-open): $e');
     }
   }
 
@@ -1003,6 +993,20 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       );
       if (mounted) await _checkVehicleDocStatus();
       return;
+    }
+    // Unsigned contracts gate (2026-10-21, user spec item 4: a driver is
+    // never activated — and never goes online — with required contracts
+    // pending). The backend can_go_online refuses as the backstop.
+    if (_docStatusLoaded && _contractsPending.isNotEmpty) {
+      HapticService.mediumImpact();
+      await Navigator.of(context).push(
+        MaterialPageRoute<bool>(
+          fullscreenDialog: true,
+          builder: (_) => const DriverContractsScreen(gate: true),
+        ),
+      );
+      if (mounted) await _checkVehicleDocStatus();
+      if (!mounted || _contractsPending.isNotEmpty) return;
     }
     // else: doc status not loaded yet — don't block. _verifyAndGoOnline()
     // runs the backend check in background once the mode is on.

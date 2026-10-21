@@ -5883,6 +5883,43 @@ class S {
   String get obItemInspectionSub => _es
       ? 'Requerida para conductores de Alabama'
       : 'Required for Alabama drivers';
+
+  // ── Digital contracts (e-acceptance, 2026-10-21) ──
+  String get obItemContractsTitle =>
+      _es ? 'Contratos legales' : 'Legal contracts';
+  String get obItemContractsSub => _es
+      ? 'Lee y firma los acuerdos del conductor'
+      : 'Read and sign the driver agreements';
+  String get contractsTitle => _es ? 'Contratos legales' : 'Legal contracts';
+  String get contractsSubtitle => _es
+      ? 'Lee y firma cada documento para poder conducir'
+      : 'Read and sign each document to start driving';
+  String get contractVersion => _es ? 'Versión' : 'Version';
+  String get contractSignedChip => _es ? 'Firmado' : 'Signed';
+  String get contractPendingChip => _es ? 'Pendiente' : 'Pending';
+  String get contractReadAndAccept => _es
+      ? 'He leído y acepto este documento'
+      : 'I have read and accept this document';
+  String get contractAcceptSign => _es
+      ? 'Aceptar y firmar electrónicamente'
+      : 'Accept and sign electronically';
+  String get contractDownloadPdf =>
+      _es ? 'Descargar comprobante (PDF)' : 'Download receipt (PDF)';
+  String get contractSignedOn => _es ? 'Firmado el' : 'Signed on';
+  String get contractAllSigned => _es
+      ? 'Todos los contratos están firmados'
+      : 'All contracts are signed';
+  String get contractAcceptError => _es
+      ? 'No se pudo registrar la firma. Inténtalo de nuevo.'
+      : 'Could not record the signature. Please try again.';
+  String get contractStaleVersion => _es
+      ? 'Este documento se actualizó. Revisa y firma la nueva versión.'
+      : 'This document was updated. Please review and sign the new version.';
+  String get docLinkContracts => _es ? 'Contratos' : 'Contracts';
+  String get contractEsignNote => _es
+      ? 'Al firmar, aceptas celebrar este contrato por medios electrónicos (E-SIGN / UETA).'
+      : 'By signing, you agree to enter into this contract electronically (E-SIGN / UETA).';
+
   String obDocSavedMsg(String doc) => _es
       ? '¡Tu $doc se guardó con éxito! Actualízalo subiendo una nueva imagen.'
       : 'Your $doc was successfully saved! Update it by uploading a new image.';

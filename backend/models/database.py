@@ -286,6 +286,10 @@ class User(Base):
     # weekly cadence and the never-more-than-one-per-week rule.
     onboard_nudge_count = Column(Integer, default=0)
     onboard_nudge_last_at = Column(DateTime(timezone=True), nullable=True)
+    # Contracts e-acceptance (2026-10-21, user spec Uber-style): stamped
+    # when the whole REQUIRED set of legal documents is accepted at current
+    # versions. The per-document evidence lives in consent_logs.
+    contracts_accepted_at = Column(DateTime(timezone=True), nullable=True)
     # Notification language (2026-10-05, user spec): the app reports the
     # device locale at every boot (PATCH /auth/me) and notifications read it
     # — a Spanish phone gets Spanish pushes, an English one English.
@@ -310,6 +314,40 @@ class ConsentLog(Base):
     ip_address = Column(String(50), nullable=True)
     user_agent = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class LegalDocument(Base):
+    """Digital contracts (2026-10-21, user spec: Uber-style e-acceptance).
+    The CURRENT version of each legal document per (slug, locale) — editable
+    from dispatch; every edit bumps the version and appends to
+    legal_document_versions, and drivers below current get re-asked via the
+    can_go_online gate. Tables are created by the boot create_all."""
+    __tablename__ = "legal_documents"
+    __table_args__ = (
+        Index("ix_legal_docs_slug_locale", "slug", "locale", unique=True),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(60), nullable=False, index=True)
+    locale = Column(String(5), nullable=False, default="en")
+    title = Column(String(200), nullable=False)
+    version = Column(String(20), nullable=False)
+    content_markdown = Column(Text, nullable=False)
+    is_required = Column(Boolean, default=True)
+    active = Column(Boolean, default=True)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_by = Column(String(100), nullable=True)
+
+
+class LegalDocumentVersion(Base):
+    """Append-only version history of every legal document edit."""
+    __tablename__ = "legal_document_versions"
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(60), nullable=False, index=True)
+    locale = Column(String(5), nullable=False, default="en")
+    version = Column(String(20), nullable=False)
+    content_markdown = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_by = Column(String(100), nullable=True)
 
 
 class SummaryOfRightsDelivery(Base):
@@ -1169,6 +1207,7 @@ async def migrate_add_columns(conn):
         ("users", "weekly_summary_sent_at", "DATETIME"),
         ("users", "onboard_nudge_count", "INTEGER DEFAULT 0"),
         ("users", "onboard_nudge_last_at", "DATETIME"),
+        ("users", "contracts_accepted_at", "DATETIME"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1420,6 +1459,7 @@ async def migrate_postgres(conn):
         ("users", "weekly_summary_sent_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "onboard_nudge_count", "INTEGER DEFAULT 0"),
         ("users", "onboard_nudge_last_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "contracts_accepted_at", "TIMESTAMP WITH TIME ZONE"),
     ]
     for table, col, col_type in migrations:
         try:

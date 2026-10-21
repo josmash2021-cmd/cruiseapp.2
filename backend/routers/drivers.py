@@ -3093,12 +3093,23 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     if has_expired:
         reasons.append("expired_documents")
 
+    # 5. Legal contracts must be accepted at current versions (2026-10-21,
+    # user spec — Uber-style e-acceptance: "no permitir que un conductor sea
+    # activado hasta completar la aceptación"). The legacy ICA acceptance
+    # (consent_type "independent_contractor_agreement" at v2.2) counts — the
+    # seed ships v2.2, so only the OTHER four docs are new asks.
+    from services.legal_documents import contracts_pending
+    pending_contracts = await contracts_pending(db, user)
+    if pending_contracts:
+        reasons.append("contracts_not_accepted")
+
     can_go = (
         approved
         and vehicle_ok
         and all_docs_approved
         and not has_expired
         and not plate_pending
+        and not pending_contracts
     )
 
     return {
@@ -3111,6 +3122,7 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         "has_expired_docs": has_expired,
         "plate_change_pending": plate_pending,
         "missing_vehicle_docs": missing_docs,
+        "contracts_pending": pending_contracts,
         "reasons": reasons,
     }
 

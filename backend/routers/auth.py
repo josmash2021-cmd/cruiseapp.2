@@ -4525,7 +4525,7 @@ async def set_password(body: SetPasswordIn, request: Request, db: AsyncSession =
 # users.onboarding_items and are layered on top of the derivation.
 
 ONBOARDING_ITEMS = ("plate", "ssn", "license", "photo", "background", "vehicle",
-                    "registration", "insurance", "inspection")
+                    "registration", "insurance", "inspection", "contracts")
 
 _ONBOARDING_STATUSES = ("pending", "submitted", "approved", "rejected")
 
@@ -4566,6 +4566,8 @@ async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
     )
     doc_types = {row[0] for row in doc_result.all()}
     bg = db_user.background_check_status or "none"
+    from services.legal_documents import contracts_pending
+    contracts_missing = await contracts_pending(db, db_user)
     has = {
         "plate": bool((veh and veh.plate) or db_user.plate_number),
         "ssn": bool(db_user.ssn),
@@ -4576,6 +4578,7 @@ async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
         "registration": bool(db_user.vehicle_registration_url) or "registration" in doc_types,
         "insurance": bool(db_user.insurance_url) or "insurance" in doc_types,
         "inspection": bool(db_user.inspection_url) or "vehicle_inspection" in doc_types,
+        "contracts": not contracts_missing,
     }
     # Vehicle inspection is only required in Alabama — other states never
     # see the item at all.
@@ -4586,7 +4589,11 @@ async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
         if key == "inspection" and not requires_inspection:
             continue
         status = "submitted" if has[key] else "pending"
-        if key == "background" and bg == "clear":
+        if key == "contracts":
+            # E-acceptance is self-serve and final — there is no dispatch
+            # review step, so "submitted" never applies.
+            status = "approved" if has[key] else "pending"
+        elif key == "background" and bg == "clear":
             status = "approved"
         elif globally_approved and has[key]:
             # No per-item approval signal exists; the global dispatch

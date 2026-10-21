@@ -173,190 +173,447 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
             ? const Center(
                 child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
               )
-            : RefreshIndicator(
-                color: _gold,
-                onRefresh: _load,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics(),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-                  children: [
-                    // ── Top bar ──
-                    Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () => Navigator.of(context).pop(),
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: _surface,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.arrow_back_ios_new_rounded,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Text(
-                          s.referFriends,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.4,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-
-                    // ── Hero card: amount + share ──
-                    _buildHeroCard(s),
-                    const SizedBox(height: 14),
-
-                    // ── Code chip ──
-                    _buildCodeCard(s),
-                    const SizedBox(height: 14),
-
-                    // ── Redeem someone else's code (skipped at signup) ──
-                    _buildRedeemBlock(s),
-                    const SizedBox(height: 14),
-
-                    // ── Aggregate stats (earned / pending / referrals) ──
-                    _buildStats(s),
-                    const SizedBox(height: 14),
-
-                    // ── How it works ──
-                    _buildInfoCard(
-                      title: s.howItWorksTitle,
-                      icon: Icons.info_outline_rounded,
-                      iconColor: _gold,
-                      lines: [
-                        s.driverHowStep1,
-                        s.driverHowStep2Milestones(
-                            _dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides),
-                        s.driverHowStep3(_dollars(_amountCents)),
-                        s.driverHowWelcomeBonus(
-                            _dollars(_refereeBonusCents), _refereeBonusRides),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    _buildInfoCard(
-                      title: s.noLimitTitle,
-                      icon: Icons.all_inclusive_rounded,
-                      iconColor: _gold,
-                      lines: [s.noLimitDesc],
-                    ),
-
-                    // ── Referees list ──
-                    if (_referees.isNotEmpty) ...[
-                      const SizedBox(height: 24),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 4, bottom: 10),
-                        child: Text(
-                          s.yourReferrals,
-                          style: const TextStyle(
-                            color: Color(0xFFB0B0B6),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
+            : Stack(
+                children: [
+                  RefreshIndicator(
+                    color: _gold,
+                    onRefresh: _load,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
                       ),
-                      ..._referees.map((r) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _buildRefereeRow(r, s),
-                          )),
-                    ],
-                  ],
-                ),
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 110),
+                      children: [
+                        // ── Top bar ──
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () => Navigator.of(context).pop(),
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: _surface,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_back_ios_new_rounded,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Text(
+                              s.referFriends,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 22),
+
+                        _buildHeroArtwork(),
+                        Transform.translate(
+                          offset: const Offset(0, -22),
+                          child: _buildRewardsCard(s),
+                        ),
+
+                        _buildCodeCard(s),
+                        const SizedBox(height: 14),
+                        _buildRedeemBlock(s),
+                        const SizedBox(height: 14),
+                        _buildStats(s),
+                        const SizedBox(height: 24),
+
+                        _buildHowItWorksTimeline(s),
+                        const SizedBox(height: 16),
+                        _buildInfoCard(
+                          title: s.noLimitTitle,
+                          icon: Icons.all_inclusive_rounded,
+                          iconColor: _gold,
+                          lines: [s.noLimitDesc],
+                        ),
+
+                        // ── Referees list ──
+                        if (_referees.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          Padding(
+                            padding:
+                                const EdgeInsets.only(left: 4, bottom: 10),
+                            child: Text(
+                              s.yourReferrals,
+                              style: const TextStyle(
+                                color: Color(0xFFB0B0B6),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ),
+                          ..._referees.map((r) => Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: _buildRefereeRow(r, s),
+                              )),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    left: 20,
+                    right: 20,
+                    bottom: 12,
+                    child: _buildBottomShareButton(s),
+                  ),
+                ],
               ),
       ),
     );
   }
 
-  Widget _buildHeroCard(S s) {
+  Widget _buildHeroArtwork() {
     return Container(
-      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _gold.withValues(alpha: 0.18)),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: _gold.withValues(alpha: 0.06),
-            blurRadius: 22,
-            spreadRadius: 1,
+            color: _gold.withValues(alpha: 0.18),
+            blurRadius: 26,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: Column(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Image.asset(
-              'assets/images/referral_hero.png',
-              width: double.infinity,
-              height: 150,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-            ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Image.asset(
+          'assets/images/referral_hero.png',
+          width: double.infinity,
+          height: 214,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRewardsCard(S s) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _gold.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: _gold.withValues(alpha: 0.22),
+            blurRadius: 26,
+            offset: const Offset(0, 8),
           ),
-          const SizedBox(height: 18),
-          Text(
-            s.driverEarnHero(_dollars(_amountCents)),
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _gold,
-              fontSize: 36,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            s.driverEarnSubMilestones(
-                _dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides),
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.65),
-              fontSize: 13.5,
-              height: 1.45,
-            ),
-          ),
-          const SizedBox(height: 22),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton.icon(
-              onPressed: _code.isEmpty ? null : _shareInvite,
-              icon: const Icon(Icons.share_rounded, size: 18),
-              label: Text(
-                s.shareInviteLinkBtn,
-                style: const TextStyle(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w800,
-                ),
+        ],
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: const Color(0xFF14141A),
+                shape: BoxShape.circle,
+                border: Border.all(color: _gold, width: 1.5),
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: Colors.black,
-                disabledBackgroundColor:
-                    _gold.withValues(alpha: 0.35),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+              child: const Icon(Icons.card_giftcard_rounded,
+                  color: _gold, size: 28),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              flex: 47,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.driverReferralWinsTitle,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _dollars(_refereeBonusCents),
+                    style: const TextStyle(
+                      color: _gold,
+                      fontSize: 33,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
+                  Text(
+                    s.driverAfterFirstRides(_refereeBonusRides),
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      fontSize: 13,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 12),
+              color: Colors.black.withValues(alpha: 0.10),
+            ),
+            Expanded(
+              flex: 53,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.driverYouEarnTitle,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _rewardMilestone(
+                      _dollars(_m1Cents), s.driverAtRides(_m1Rides)),
+                  const SizedBox(height: 2),
+                  _rewardMilestone(
+                      _dollars(_m2Cents), s.driverAtRides(_m2Rides)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _rewardMilestone(String amount, String when) {
+    return Row(
+      children: [
+        Text(
+          amount,
+          style: const TextStyle(
+            color: _gold,
+            fontSize: 29,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.7,
+          ),
+        ),
+        const SizedBox(width: 5),
+        Flexible(
+          child: Text(
+            when,
+            style: TextStyle(
+              color: Colors.black.withValues(alpha: 0.78),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHowItWorksTimeline(S s) {
+    final steps = <({IconData icon, String title, String body})>[
+      (
+        icon: Icons.share_outlined,
+        title: s.driverHowShareTitle,
+        body: s.driverHowStep1,
+      ),
+      (
+        icon: Icons.person_add_alt_rounded,
+        title: s.driverHowSignupTitle,
+        body: s.driverHowSignupDesc,
+      ),
+      (
+        icon: Icons.directions_car_rounded,
+        title: s.driverHowRidesTitle,
+        body: s.driverHowStep2Milestones(
+            _dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides),
+      ),
+      (
+        icon: Icons.emoji_events_outlined,
+        title: s.driverHowPaidTitle,
+        body:
+            '${s.driverHowStep3(_dollars(_amountCents))}\n${s.driverHowWelcomeBonus(_dollars(_refereeBonusCents), _refereeBonusRides)}',
+      ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          s.howItWorksTitle,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 28,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.5,
+          ),
+        ),
+        const SizedBox(height: 18),
+        for (var i = 0; i < steps.length; i++)
+          _buildTimelineRow(
+            number: i + 1,
+            icon: steps[i].icon,
+            title: steps[i].title,
+            body: steps[i].body,
+            isLast: i == steps.length - 1,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTimelineRow({
+    required int number,
+    required IconData icon,
+    required String title,
+    required String body,
+    required bool isLast,
+  }) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 34,
+            child: Column(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: const BoxDecoration(
+                    color: _gold,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$number',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
                 ),
-                elevation: 0,
+                if (!isLast) Expanded(child: _timelineDashedLine()),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C24),
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: _gold.withValues(alpha: 0.62), width: 1.3),
+            ),
+            child: Icon(icon, color: _gold, size: 28),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    body,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      fontSize: 14.5,
+                      height: 1.38,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _timelineDashedLine() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final count = (constraints.maxHeight / 9).floor().clamp(0, 20).toInt();
+        return Column(
+          children: [
+            const SizedBox(height: 6),
+            for (var i = 0; i < count; i++)
+              Container(
+                width: 2,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 5),
+                color: _gold.withValues(alpha: 0.65),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildBottomShareButton(S s) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: _gold.withValues(alpha: 0.32),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        height: 56,
+        child: ElevatedButton.icon(
+          onPressed: _code.isEmpty ? null : _shareInvite,
+          icon: const Icon(Icons.share_rounded, size: 20),
+          label: Text(
+            s.shareReferralLinkBtn,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.2,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _gold,
+            foregroundColor: Colors.black,
+            disabledBackgroundColor: _gold.withValues(alpha: 0.35),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            elevation: 0,
+          ),
+        ),
       ),
     );
   }

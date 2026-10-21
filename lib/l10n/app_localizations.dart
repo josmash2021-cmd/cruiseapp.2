@@ -4166,6 +4166,25 @@ class S {
           ? 'Yo gano $m1Amount cuando completes $m1Rides viajes, ¡y $m2Amount más cuando llegues a $m2Rides!'
           : 'I earn $m1Amount when you complete $m1Rides rides, and $m2Amount more when you reach $m2Rides!';
   String get statusMilestone1 => _es ? 'HITO 1 PAGADO' : 'MILESTONE 1 PAID';
+  String get driverReferralWinsTitle =>
+      _es ? 'TU REFERIDO GANA' : 'YOUR REFERRAL WINS';
+  String get driverYouEarnTitle => _es ? 'TÚ GANAS' : 'YOU EARN';
+  String driverAfterFirstRides(int rides) => _es
+      ? 'tras sus primeros $rides viajes'
+      : 'after their first $rides rides';
+  String driverAtRides(int rides) =>
+      _es ? 'a los $rides viajes' : 'at $rides rides';
+  String get shareReferralLinkBtn =>
+      _es ? 'Compartir enlace de referido' : 'Share Referral Link';
+  String get driverHowShareTitle =>
+      _es ? 'Comparte tu código' : 'Share Your Code';
+  String get driverHowSignupTitle => _es ? 'Se registran' : 'They Sign Up';
+  String get driverHowRidesTitle =>
+      _es ? 'Completan viajes' : 'They Complete Rides';
+  String get driverHowPaidTitle => _es ? 'Recibes el pago' : 'You Get Paid';
+  String get driverHowSignupDesc => _es
+      ? 'Se registran como conductor usando tu código.'
+      : 'They register as a driver using your code.';
 
   // ── Driver Insurance Screen ────────────────────────────────────────────────
   String get cruiseDriverProtectionTitle =>

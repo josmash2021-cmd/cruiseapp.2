@@ -1202,7 +1202,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       final mode = await UserSession.getMode();
       _userRole = mode.isNotEmpty ? mode : 'rider';
 
-      await ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 4));
+      // The boot probe (main.dart) already settled the best URL — awaiting
+      // another one here used to add up to 4 s to every chat open
+      // (2026-10-20, user report: ~10 s to load the chat the first time).
+      unawaited(ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 4)));
       // A different session key than the one we opened last time means this
       // is a new conversation — the server closes the old chat and hands
       // back a clean one. Consumed once (the key is stored as we ask, so a

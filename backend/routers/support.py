@@ -2920,13 +2920,16 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
             firestore_sync.mark_support_messages_read(chat_id, _flipped)
         except Exception as e:
             logging.warning("[support] mirror read-mark failed: %s", e)
-    # Build sender names
-    sender_ids = {m.sender_id for m in messages if m.sender_id != 0}
+    # Build sender names — ONE query, not one per sender (2026-10-20, user
+    # report: the chat took ~10 s to open; the per-sender loop was N
+    # sequential round-trips inside the first load).
+    sender_ids = {m.sender_id for m in messages if m.sender_id}
     sender_names = {}
-    for sid in sender_ids:
-        r = await db.execute(select(User).where(User.id == sid))
-        u = r.scalar_one_or_none()
-        sender_names[sid] = f"{u.first_name} {u.last_name}".strip() if u else "Unknown"
+    if sender_ids:
+        rows = (await db.execute(
+            select(User.id, User.first_name, User.last_name)
+            .where(User.id.in_(sender_ids)))).all()
+        sender_names = {r[0]: f"{r[1]} {r[2]}".strip() for r in rows}
     # Build output with proper names for bot/system messages
     output = []
     _chat_lang = getattr(chat, "locale", "en") or "en"
@@ -2987,12 +2990,13 @@ async def get_support_messages_dispatch(chat_id: int, db: AsyncSession = Depends
             firestore_sync.mark_support_messages_read(chat_id, _mirror)
         except Exception as e:
             logging.warning("[support] mirror read-mark failed: %s", e)
-    sender_ids = {m.sender_id for m in messages if m.sender_id != 0}
+    sender_ids = {m.sender_id for m in messages if m.sender_id}
     sender_names = {}
-    for sid in sender_ids:
-        r = await db.execute(select(User).where(User.id == sid))
-        u = r.scalar_one_or_none()
-        sender_names[sid] = f"{u.first_name} {u.last_name}".strip() if u else "Unknown"
+    if sender_ids:
+        rows = (await db.execute(
+            select(User.id, User.first_name, User.last_name)
+            .where(User.id.in_(sender_ids)))).all()
+        sender_names = {r[0]: f"{r[1]} {r[2]}".strip() for r in rows}
     output = []
     _chat_lang = getattr(chat, "locale", "en") or "en"
     for m in messages:

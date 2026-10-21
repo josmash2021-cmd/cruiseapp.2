@@ -69,7 +69,7 @@ async def test_reactivate_hands_chat_back_to_bot(client, db, test_rider,
 
     fired = []
 
-    async def _fake_reply(chat_id, user_msg, user_name, phase):
+    async def _fake_reply(chat_id, user_msg, user_name, phase, **_kw):
         fired.append((chat_id, phase))
 
     monkeypatch.setattr(support, "_background_bot_reply", _fake_reply)
@@ -109,7 +109,7 @@ async def test_reactivate_sweep_covers_all_stuck(client, db, test_rider,
     ok = await _mkchat(db, rider.id, "agent_active", last_user=False)
 
     monkeypatch.setattr(support, "_background_bot_reply",
-                        lambda *args: _noop(*args))
+                        lambda *args, **_kw: _noop(*args))
 
     async def _noop(*args):
         return None

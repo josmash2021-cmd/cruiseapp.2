@@ -114,12 +114,14 @@ _CANCEL_INTENT = [
 def _realistic_typing_delay(message: str, is_first: bool = False) -> float:
     """Simulate realistic human typing: ~40 chars/sec with variance + thinking time.
     Agent 4: Tone Calibration — makes bot timing feel human, not mechanical.
+    Capped at 6 s (2026-10-22): the old 18 s cap left the user staring at a
+    dead chat after the settle, and widened the mid-generation race window.
     """
     char_count = len(message)
     typing_time = char_count / 40.0
-    think_time = _rng.uniform(2.5, 5.0) if is_first else _rng.uniform(1.0, 3.0)
+    think_time = _rng.uniform(1.5, 3.0) if is_first else _rng.uniform(1.0, 2.0)
     total = typing_time + think_time
-    return max(3.0, min(18.0, total))
+    return max(2.0, min(6.0, total))
 
 
 def _detect_frustration(text: str) -> bool:
@@ -397,6 +399,11 @@ _DOC_LABELS = {
     "ssn": ("SSN", "SSN"),
     "background": ("background check", "background check"),
     "vehicle": ("vehículo", "vehicle"),
+    # NOT an upload — the in-app e-signature from the 2026-10-21 contracts
+    # feature. Without this label the bot saw the bare word "contracts" and
+    # invented an upload flow (prod chat 134: "envía los contratos").
+    "contracts": ("contratos legales (firma en la app)",
+                  "legal contracts (in-app signature)"),
 }
 
 
@@ -1841,14 +1848,17 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
     elif phase == "agent_active":
         agent = chat.agent_name or "Agente"
 
-        # Variable reading pause - feels like agent is reading the message
+        # Variable reading pause - feels like agent is reading the message.
+        # Kept short (2026-10-22): the 10 s settle already provides the
+        # natural beat, and every extra second here widens the window where
+        # a follow-up message arrives mid-generation.
         msg_len = len(user_msg)
         if msg_len < 30:
-            read_delay = _rng.uniform(2.0, 4.0)    # short message
+            read_delay = _rng.uniform(1.0, 2.0)    # short message
         elif msg_len < 120:
-            read_delay = _rng.uniform(4.0, 7.0)    # medium
+            read_delay = _rng.uniform(1.5, 3.0)    # medium
         else:
-            read_delay = _rng.uniform(6.0, 10.0)   # long message
+            read_delay = _rng.uniform(2.0, 3.5)    # long message
         await asyncio.sleep(read_delay)
 
         # Gather user context for smarter responses
@@ -2115,13 +2125,57 @@ async def _followup_task(chat_id: int, user_id: int, lang: str) -> None:
 
 # Read-settle window (2026-10-17, user report: the bot answered a cut-off
 # "la" before the user finished typing "la foto es en físico"): the reply
-# task waits a few seconds before generating — a fast follow-up message
-# cancels this task (the scheduler already does that) and the new one reads
-# the WHOLE history: one consolidated answer, never two artificial ones.
-_BOT_READ_SETTLE_SECONDS = 4.0
+# task waits before generating — a fast follow-up message cancels this task
+# (the scheduler already does that) and the new one reads the WHOLE history:
+# one consolidated answer, never two artificial ones. Raised 4 s → 10 s
+# (2026-10-22, prod chat 134: people send follow-up parts 5-15 s apart, so
+# the 4 s window still fired mid-typing).
+_BOT_READ_SETTLE_SECONDS = 10.0
 
 
-async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot_phase: str):
+async def _bot_write_blocked(db: AsyncSession, chat_id: int,
+                             anchor_id: int | None,
+                             first_write: bool) -> bool:
+    """Multi-worker-safe exactly-once gate for bot writes (2026-10-22).
+
+    Prod runs UVICORN_WORKERS=4 and the reply-task registry
+    (_reply_tasks) is per-process: a follow-up message landing on ANOTHER
+    worker cannot cancel the reply already composing here, and both workers
+    wrote a full answer (prod chat 134: duplicate long replies 2-4 s apart).
+    The shared DB becomes the arbiter instead: every reply anchors to the
+    user message it answers, and before each write we check the newest row.
+
+    - A USER message newer than the anchor → a newer task owns the answer
+      (same worker already cancelled us; another worker cannot — this check
+      is what kills it). Abort silently.
+    - On the FIRST write, ANY newer message (user or bot) counts: two
+      workers answering the same anchor (duplicate sweep reactivation) —
+      the loser's first write sees the winner's bot row and stands down.
+    """
+    if anchor_id is None:
+        return False
+    q = select(func.max(SupportMessage.id)).where(
+        SupportMessage.chat_id == chat_id)
+    if not first_write:
+        q = q.where(SupportMessage.sender_role.in_(_USER_MSG_ROLES))
+    newest = (await db.execute(q)).scalar_one_or_none()
+    return bool(newest and newest > anchor_id)
+
+
+def _cancel_chat_tasks(chat_id: int) -> None:
+    """Silence a chat's background work on THIS worker (reply being composed
+    + inactivity chain). Cross-worker silence comes from the DB gates: the
+    per-write status/phase check and the anchor check."""
+    reply = _reply_tasks.pop(chat_id, None)
+    if reply is not None and not reply.done():
+        reply.cancel()
+    inactive = _inactivity_tasks.pop(chat_id, None)
+    if inactive is not None and not inactive.done():
+        inactive.cancel()
+
+
+async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str,
+                                bot_phase: str, anchor_msg_id: int | None = None):
     """Run bot reply generation in the background so the HTTP response returns immediately.
     Includes human-like timing: mid-typing pauses (15%), occasional slow responses (10%).
     """
@@ -2134,7 +2188,8 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
             # cerrada abajo: cada escritura re-lee la fase FRESCA, así un
             # takeover/escalación que aterriza a mitad de la generación
             # corta lo que quede por escribir.
-            if not chat or (chat.bot_phase or "") in ("escalated", "dispatch_takeover"):
+            if not chat or chat.status != "open" or \
+                    (chat.bot_phase or "") in ("escalated", "dispatch_takeover"):
                 return
 
             # ~10% chance of occasional slow response (agent multitasking)
@@ -2158,6 +2213,16 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                 replies = [{"role": "bot", "message": _fb0,
                             "sender_name": chat.agent_name or "Cruise AI"}]
             first_bot_preview = None
+            # Cap the flood (2026-10-22, prod chat 134): the model sometimes
+            # returns 2-3 long bubbles for one question. A good human agent
+            # sends ONE short message — keep at most two bot bubbles, system
+            # lines (transfer notices) always pass.
+            _bot_replies = [r for r in replies if r["role"] == "bot"]
+            if len(_bot_replies) > 2:
+                _keep = {id(r) for r in _bot_replies[:2]}
+                replies = [r for r in replies
+                           if r["role"] != "bot" or id(r) in _keep]
+            _first_write = True
             for idx, r in enumerate(replies):
                 # Add human-like typing delay between messages (simulates agent typing)
                 # System messages (join/escalation notices) appear faster
@@ -2166,19 +2231,27 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                         await asyncio.sleep(_rng.uniform(0.8, 1.5))
                     else:
                         msg_len = len(r["message"])
-                        typing_time = min(2.5 + msg_len * 0.04, 12.0)
+                        typing_time = min(1.2 + msg_len * 0.02, 4.0)
                         await asyncio.sleep(_rng.uniform(typing_time * 0.75, typing_time))
 
                 # ~15% chance of mid-typing pause (agent stops to think/research)
                 if r["role"] == "bot" and _rng.random() < 0.15:
-                    await asyncio.sleep(_rng.uniform(1.0, 2.5))
+                    await asyncio.sleep(_rng.uniform(1.0, 2.0))
 
-                # Split ||SPLIT|| markers into separate messages with typing delays
-                parts = r["message"].split("||SPLIT||") if "||SPLIT||" in r["message"] else [r["message"]]
+                # Split ||SPLIT|| markers into separate messages with typing
+                # delays — at most 2 parts (same anti-flood rule).
+                parts = (r["message"].split("||SPLIT||")[:2]
+                         if "||SPLIT||" in r["message"] else [r["message"]])
                 for pidx, part in enumerate(parts):
                     part = _strip_markdown(part.strip())
                     if not part:
                         continue
+                    # Multi-worker write gate: a newer user message (or, on
+                    # the first write, ANY newer row) means another task —
+                    # possibly on another worker — owns this answer now.
+                    if await _bot_write_blocked(db, chat_id, anchor_msg_id,
+                                                _first_write):
+                        return
                     # Carrera cerrada (2026-10-17, chat Yusmel: el bot siguió
                     # hablando tras "Un agente especializado se ha conectado"):
                     # la fase se lee FRESCA antes de cada mensaje — si el
@@ -2187,17 +2260,24 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                     # sistema (la transferencia de la propia escalación) sí
                     # salen siempre. Column query, no db.refresh: en la
                     # conexión compartida de los tests, refresh es traicionero.
-                    _phase_row = await db.execute(
-                        select(SupportChat.bot_phase)
+                    _state_row = await db.execute(
+                        select(SupportChat.bot_phase, SupportChat.status)
                         .where(SupportChat.id == chat_id))
-                    _phase_now = _phase_row.scalar_one_or_none() or ""
+                    _state = _state_row.first()
+                    _phase_now = (_state[0] if _state else "") or ""
+                    # A closed chat is silent (2026-10-22, "siguió
+                    # contestando y el chat ya estaba cerrado"): the close
+                    # cancels this worker's task; this gate is what stops a
+                    # reply composing on ANOTHER worker (multi-worker prod).
+                    if _state is None or _state[1] != "open":
+                        return
                     if _phase_now == "dispatch_takeover":
                         break
                     if _phase_now == "escalated" and r["role"] != "system":
                         continue
                     if pidx > 0:
                         part_len = len(part)
-                        typing_time = min(2.0 + part_len * 0.04, 10.0)
+                        typing_time = min(1.0 + part_len * 0.02, 3.5)
                         await asyncio.sleep(_rng.uniform(typing_time * 0.75, typing_time))
                     bot_msg = SupportMessage(
                         chat_id=chat_id, sender_id=None,
@@ -2213,6 +2293,10 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                         first_bot_preview = part
                     chat.updated_at = datetime.now(timezone.utc)
                     await db.commit()
+                    # The first row is on the DB now — later parts of THIS
+                    # answer only yield to a newer USER message, never to
+                    # their own parts.
+                    _first_write = False
                     if _HAS_FIRESTORE:
                         try:
                             firestore_sync.sync_support_message(
@@ -2235,6 +2319,11 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                 ).scalar_one_or_none()
                 if (chat2 and chat2.status == "open"
                         and (chat2.bot_phase or "") != "dispatch_takeover"):
+                    # The same multi-worker gate: if a newer message already
+                    # exists, another task owns this answer — no fallback.
+                    if await _bot_write_blocked(db2, chat_id, anchor_msg_id,
+                                                True):
+                        return
                     _lang2 = (getattr(chat2, "locale", "en") or "en")
                     _fb2 = (f"Entiendo, {user_name}. Podria darme un poco mas "
                             "de detalle sobre lo que necesita?"
@@ -2865,7 +2954,8 @@ async def send_support_attachment(
             _old.cancel()
         _reply_task_started[chat_id] = time.monotonic()
         _reply_tasks[chat_id] = _safe_create_task(
-            _background_bot_reply(chat_id, note, user.first_name or "Cliente", bot_phase_snapshot))
+            _background_bot_reply(chat_id, note, user.first_name or "Cliente",
+                                  bot_phase_snapshot, anchor_msg_id=row.id))
 
     old_task = _inactivity_tasks.pop(chat_id, None)
     if old_task and not old_task.done():
@@ -3111,7 +3201,8 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
             _old.cancel()
         _reply_task_started[chat_id] = time.monotonic()
         _reply_tasks[chat_id] = _safe_create_task(
-            _background_bot_reply(chat_id, msg_text, user.first_name or "Cliente", bot_phase_snapshot))
+            _background_bot_reply(chat_id, msg_text, user.first_name or "Cliente",
+                                  bot_phase_snapshot, anchor_msg_id=msg.id))
 
     # Start inactivity timer
     _inactivity_tasks[chat_id] = _safe_create_task(_check_chat_inactivity(chat_id))
@@ -3404,6 +3495,13 @@ async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
     chat.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
+    # A closed chat is silent: kill the reply being composed and the
+    # inactivity chain (2026-10-22, user report: "siguió contestando y el
+    # chat ya estaba cerrado" — the close touched no task, and the write
+    # loop never checked status). Same-worker cancel here; a reply composing
+    # on ANOTHER worker dies at the per-write status gate.
+    _cancel_chat_tasks(chat_id)
+
     if _HAS_FIRESTORE:
         try:
             user_result = await db.execute(select(User).where(User.id == chat.user_id))
@@ -3533,7 +3631,8 @@ async def sweep_stuck_bot_chats(db: AsyncSession,
         _reply_task_started[chat.id] = time.monotonic()
         _reply_tasks[chat.id] = _safe_create_task(_background_bot_reply(
             chat.id, last_msg.message or "",
-            (u.first_name if u else None) or "Cliente", "agent_active"))
+            (u.first_name if u else None) or "Cliente", "agent_active",
+            anchor_msg_id=last_msg.id))
         logging.warning("[SupportBot] chat %s reactivated by dispatch — "
                         "bot answers the pending message", chat.id)
 
@@ -3573,10 +3672,9 @@ async def close_support_chat_user(chat_id: int, user: User = Depends(_get_curren
     chat.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
-    # Cancel any pending inactivity task
-    task = _inactivity_tasks.pop(chat_id, None)
-    if task:
-        task.cancel()
+    # Same silence rule as the dispatch close: no reply in flight, no
+    # inactivity chain survives the close.
+    _cancel_chat_tasks(chat_id)
 
     if _HAS_FIRESTORE:
         try:

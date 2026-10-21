@@ -74,7 +74,7 @@ def _record_bot_tasks(monkeypatch, support_router):
     (inactivity timers) so no 120 s coroutine outlives the test."""
     calls = []
 
-    def _fake_reply(chat_id, user_msg, user_name, phase):
+    def _fake_reply(chat_id, user_msg, user_name, phase, **_kw):
         calls.append((chat_id, user_msg))
         import asyncio
         return asyncio.sleep(0)

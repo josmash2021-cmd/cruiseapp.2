@@ -1055,7 +1055,7 @@ class S {
   String get offlineHeroHeadlineMedium =>
       _es ? 'Hay demanda cerca de ti' : "There's demand near you";
   String get offlineHeroHeadlineIdle =>
-      _es ? 'Conéctate y empieza a ganar' : 'Go online and start earning';
+      _es ? 'Conéctate y comienza a ganar' : 'Go online and start earning';
   String get offlineDemandTitle =>
       _es ? 'Demanda en tu zona' : 'Demand in your area';
   // Escala 2026-10-16 (user spec): apagada en el dispatcher = "Very slow";

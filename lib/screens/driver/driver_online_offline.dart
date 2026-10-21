@@ -1951,17 +1951,25 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 child: child,
               ),
             ),
-            child: Text(
-              headline,
-              key: ValueKey(headline),
-              maxLines: 3,
-              overflow: TextOverflow.clip,
-              style: TextStyle(
-                color: dc.text,
-                fontSize: 30,
-                fontWeight: FontWeight.w800,
-                height: 1.12,
-                letterSpacing: -0.4,
+            // Una sola línea SIEMPRE (user spec 2026-10-21: "que ese texto
+            // se vea en horizontal, no que quede debajo la palabra ganar") —
+            // FittedBox achica solo lo necesario para caber; nunca parte la
+            // frase en dos líneas, con cualquier tamaño de pantalla/sistema.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                headline,
+                key: ValueKey(headline),
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+                style: TextStyle(
+                  color: dc.text,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  height: 1.12,
+                  letterSpacing: -0.4,
+                ),
               ),
             ),
           ),

@@ -469,8 +469,11 @@ class _ContractReaderPageState extends State<_ContractReaderPage> {
   }
 
   Widget _bottomBar(S s) {
-    if (!widget.needsAcceptance) {
-      return Container(
+    // Sign mode has NO pinned bar (user spec 2026-10-21: "en lo último es
+    // que marcarán la casilla y el botón") — the sign block is the LAST
+    // item of the document scroll, so signing requires reading to the end.
+    if (widget.needsAcceptance) return const SizedBox.shrink();
+    return Container(
         padding: EdgeInsets.fromLTRB(
             24, 12, 24, MediaQuery.of(context).padding.bottom + 12),
         decoration: neuBox(radius: 0),
@@ -530,12 +533,17 @@ class _ContractReaderPageState extends State<_ContractReaderPage> {
           ],
         ),
       );
-    }
-    final canSign = _checked && !_busy && _doc != null && _doc!.isNotEmpty;
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-          24, 12, 24, MediaQuery.of(context).padding.bottom + 12),
-      decoration: neuBox(radius: 0),
+  }
+
+  /// Checkbox + gold sign button + E-SIGN note as the LAST scroll item
+  /// (user spec 2026-10-21: "requiere que hagan todo el scroll down para
+  /// que realmente se verifique que leyeron todo el contrato") — the block
+  /// only exists at the end of the document, so it cannot be signed
+  /// without scrolling through the full text first.
+  Widget _signBlock(S s) {
+    final canSign = _checked && !_busy;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -691,8 +699,15 @@ class _ContractReaderPageState extends State<_ContractReaderPage> {
                   : ListView(
                       physics: const BouncingScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-                      children:
-                          _renderMarkdown(doc['content_markdown']?.toString() ?? ''),
+                      // The sign block is the LAST item — full scroll first.
+                      children: [
+                        ..._renderMarkdown(
+                            doc['content_markdown']?.toString() ?? ''),
+                        if (widget.needsAcceptance &&
+                            (doc['content_markdown']?.toString() ?? '')
+                                .isNotEmpty)
+                          _signBlock(s),
+                      ],
                     ),
             ),
             _bottomBar(s),

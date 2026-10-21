@@ -36,6 +36,21 @@ void main() {
         reason: 'gate mode blocks back until every contract is current');
   });
 
+  test('signing requires scrolling to the END of the document', () {
+    // User spec 2026-10-21: "requiere que hagan todo el scroll down... y en
+    // lo último es que marcarán la casilla y el botón de aceptar" — the sign
+    // block is the LAST ListView item, and sign mode has no pinned bar.
+    expect(screen.contains('_signBlock(s)'), isTrue);
+    expect(screen.contains('if (widget.needsAcceptance &&'), isTrue,
+        reason: 'the sign block only exists appended after the full text');
+    expect(
+        screen.contains(
+            'if (widget.needsAcceptance) return const SizedBox.shrink();'),
+        isTrue,
+        reason: 'no pinned bottom bar in sign mode — the checkbox must live '
+            'at the end of the scroll, not floating above the text');
+  });
+
   test('the boot gate checks all five contracts, not just the old ICA', () {
     expect(offline.contains('_checkContractsGate'), isTrue);
     expect(offline.contains('ApiService.getContracts()'), isTrue);

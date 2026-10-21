@@ -141,12 +141,19 @@ import ActivityKit
     }
   }
 
-  // Handles https://cruiseapp2-production.up.railway.app/drive/{code}.
-  // Under the UIScene lifecycle NSUserActivity is delivered to the
-  // SceneDelegate (scene(_:continue:) / willConnectTo options), NEVER to
-  // application(_:continue:) — so the SceneDelegate forwards the URL here.
+  // Handles /drive/{code} on the backend host and the brand domain (the
+  // brand site's hosting redirects it to the backend when the app is not
+  // installed; when it IS installed, the AASA file served there opens the
+  // app directly). Under the UIScene lifecycle NSUserActivity is delivered
+  // to the SceneDelegate (scene(_:continue:) / willConnectTo options),
+  // NEVER to application(_:continue:) — so the SceneDelegate forwards here.
   static func handleDriverReferralUrl(_ url: URL) -> Bool {
-    guard url.host == "cruiseapp2-production.up.railway.app",
+    let allowedHosts = [
+      "cruiseapp2-production.up.railway.app",
+      "cruiseinride.com",
+      "www.cruiseinride.com",
+    ]
+    guard let host = url.host, allowedHosts.contains(host),
           url.path.hasPrefix("/drive/") else { return false }
     let parts = url.path.split(separator: "/")
     guard parts.count >= 2, !parts[1].isEmpty else { return true }

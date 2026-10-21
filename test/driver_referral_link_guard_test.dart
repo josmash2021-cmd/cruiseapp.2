@@ -33,25 +33,40 @@ void main() {
       File('ios/Runner/AppDelegate.swift').readAsStringSync();
   final sceneDelegate =
       File('ios/Runner/SceneDelegate.swift').readAsStringSync();
+  final entitlements =
+      File('ios/Runner/Runner.entitlements').readAsStringSync();
   final authRouter =
       File('backend/routers/auth.py').readAsStringSync();
 
-  group('share link targets the backend host', () {
-    test('the shared URL is /drive/{code} on the API host', () {
-      expect(screen, contains('/drive/\$_code'));
-      expect(screen, contains('ApiService.currentBaseUrl'));
-      expect(screen.contains('cruiseinride.com/drive'), isFalse,
-          reason: 'the marketing domain serves no AASA/assetlinks — the OS '
-              'could never open an installed app from it');
+  group('share link targets the brand domain', () {
+    test('the shared URL is /drive/{code} on cruiseinride.com', () {
+      expect(screen, contains("'https://cruiseinride.com/drive/\$_code'"));
+      // The message is invitee-centered: the "I earn $50 when you…" line
+      // (what the REFERRER earns) must never be in a shared invite.
+      expect(screen.contains('driverShareMilestones'), isFalse,
+          reason: 'the referrer-earnings line was removed 2026-10-22');
+      expect(screen, contains('driverShareCodeLine'));
     });
   });
 
   group('native link capture', () {
-    test('Android manifest matches /drive on the backend host', () {
+    test('Android manifest matches /drive on both hosts', () {
       expect(
         manifest,
         contains('android:host="cruiseapp2-production.up.railway.app" '
             'android:pathPrefix="/drive"'),
+      );
+      // Brand domain lives in its OWN filter: autoVerify fails the whole
+      // filter if one host lacks assetlinks.json, and the brand file depends
+      // on the marketing site's hosting.
+      expect(
+        manifest,
+        contains('android:host="cruiseinride.com" android:pathPrefix="/drive"'),
+      );
+      expect(
+        manifest,
+        contains(
+            'android:host="www.cruiseinride.com" android:pathPrefix="/drive"'),
       );
     });
 
@@ -61,6 +76,9 @@ void main() {
       expect(mainActivity, contains('driverReferralLink'));
       expect(mainActivity, contains('InstallReferrerClient'));
       expect(mainActivity, contains('getQueryParameter("driver_code")'));
+      // Both link hosts accepted: backend + brand domain.
+      expect(mainActivity, contains('REFERRAL_HOSTS'));
+      expect(mainActivity, contains('"cruiseinride.com"'));
       expect(mainActivity, contains('catch (e: Exception)'),
           reason: 'installReferrer can throw — an uncaught throw inside '
               'onInstallReferrerSetupFinished kills the connection silently');
@@ -76,6 +94,8 @@ void main() {
       expect(appDelegate, contains('latestDriverCode'));
       expect(appDelegate, contains('handleDriverReferralUrl'));
       expect(appDelegate, contains('getPendingDriverCode'));
+      // Both hosts accepted: backend + brand domain.
+      expect(appDelegate, contains('cruiseinride.com'));
     });
 
     test('the SceneDelegate — not the AppDelegate — receives the link', () {
@@ -85,6 +105,13 @@ void main() {
       expect(sceneDelegate, contains('scene(_:continue'));
       expect(sceneDelegate, contains('willConnectTo'));
       expect(sceneDelegate, contains('AppDelegate.handleDriverReferralUrl'));
+    });
+
+    test('iOS entitlements cover both link hosts', () {
+      expect(entitlements,
+          contains('applinks:cruiseapp2-production.up.railway.app'));
+      expect(entitlements, contains('applinks:cruiseinride.com'));
+      expect(entitlements, contains('applinks:www.cruiseinride.com'));
     });
 
     test('the backend serves the /drive landing + AASA path', () {
@@ -135,6 +162,10 @@ void main() {
     test('the string is localized ES/EN', () {
       expect(l10n, contains('Invitación de referido aplicada exitosamente'));
       expect(l10n, contains('Referral invitation applied successfully'));
+      // Shared invite copy: invitee hook + code line, no referrer earnings.
+      expect(l10n, contains('driverShareCodeLine'));
+      expect(l10n, contains('🚗 Drive with Cruise!'));
+      expect(l10n.contains('driverShareMilestones'), isFalse);
     });
   });
 

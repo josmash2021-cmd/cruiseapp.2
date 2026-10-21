@@ -4158,13 +4158,12 @@ class S {
       ? 'Tu referido también gana: $amount al completar sus primeros $rides viajes.'
       : 'Your referral wins too: $amount after their first $rides rides.';
   String driverShareWelcome(String amount, int rides) => _es
-      ? '¡Conduce con Cruise! Regístrate con mi código y gana $amount al completar tus primeros $rides viajes.'
-      : 'Drive with Cruise! Sign up with my code and earn $amount after your first $rides rides.';
-  String driverShareMilestones(
-          String m1Amount, int m1Rides, String m2Amount, int m2Rides) =>
-      _es
-          ? 'Yo gano $m1Amount cuando completes $m1Rides viajes, ¡y $m2Amount más cuando llegues a $m2Rides!'
-          : 'I earn $m1Amount when you complete $m1Rides rides, and $m2Amount more when you reach $m2Rides!';
+      ? '🚗 ¡Conduce con Cruise! Regístrate con mi código y gana $amount tras tus primeros $rides viajes.'
+      : '🚗 Drive with Cruise! Sign up with my code and earn $amount after your first $rides rides!';
+  // The shared message is invitee-centered: what the REFERRER earns is
+  // never in it (the old "I earn $50 when you…" line died 2026-10-22).
+  String driverShareCodeLine(String code) =>
+      _es ? 'Código: $code' : 'Code: $code';
   String get statusMilestone1 => _es ? 'HITO 1 PAGADO' : 'MILESTONE 1 PAID';
   String get driverReferralWinsTitle =>
       _es ? 'TU REFERIDO GANA' : 'YOUR REFERRAL WINS';

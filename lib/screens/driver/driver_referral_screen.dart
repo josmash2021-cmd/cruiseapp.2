@@ -101,19 +101,19 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     if (_code.isEmpty) return;
     HapticService.mediumImpact();
     final s = S.of(context);
-    // The deal, milestone-shaped: the new driver's $25 welcome hook first
-    // (that's what makes them use the code), then what the referrer earns.
+    // Invitee-centered: the message sells ONLY what the invited driver gets
+    // ($25 after 2 rides). What the referrer earns is never the invitee's
+    // business — the old "I earn $50 when you…" line died 2026-10-22.
     //
-    // The link lives on the BACKEND host, not the marketing domain: that is
-    // the host serving /.well-known/apple-app-site-association and
-    // assetlinks.json, so the OS can open an installed app directly, and the
-    // /drive/{code} route there bounces new Android installs through the
-    // Play install referrer so the code survives the install.
-    final link = '${ApiService.currentBaseUrl}/drive/$_code';
+    // Brand domain, not the backend host: short and trustworthy. The
+    // cruiseinride.com hosting redirects /drive/* to the backend's route
+    // (which bounces new Android installs through the Play install
+    // referrer) and serves the AASA/assetlinks files so an installed app
+    // opens the link directly.
+    final link = 'https://cruiseinride.com/drive/$_code';
     final text =
         '${s.driverShareWelcome(_dollars(_refereeBonusCents), _refereeBonusRides)}\n\n'
-        '${s.driverShareMilestones(_dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides)}\n\n'
-        'Code: $_code\n'
+        '${s.driverShareCodeLine(_code)}\n'
         '$link';
     unawaited(shareText(context, text, subject: s.driverShareSubject));
   }

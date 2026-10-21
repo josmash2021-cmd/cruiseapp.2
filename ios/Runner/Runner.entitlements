@@ -15,6 +15,8 @@
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:cruiseapp2-production.up.railway.app</string>
+		<string>applinks:cruiseinride.com</string>
+		<string>applinks:www.cruiseinride.com</string>
 	</array>
 </dict>
 </plist>

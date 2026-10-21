@@ -14,6 +14,14 @@ class MainActivity : FlutterFragmentActivity() {
     companion object {
         @Volatile
         private var latestDriverCode: String? = null
+
+        // Backend host (serves /drive today) + the brand domain (redirects
+        // to it). Both are in the Manifest's App Links filters.
+        private val REFERRAL_HOSTS = setOf(
+            "cruiseapp2-production.up.railway.app",
+            "cruiseinride.com",
+            "www.cruiseinride.com",
+        )
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -41,7 +49,7 @@ class MainActivity : FlutterFragmentActivity() {
     private fun captureDriverReferralIntent(intent: Intent?) {
         val uri = intent?.data ?: return
         if (uri.scheme != "https" ||
-            uri.host != "cruiseapp2-production.up.railway.app"
+            uri.host !in REFERRAL_HOSTS
         ) return
         val path = uri.path ?: return
         if (!path.startsWith("/drive/")) return

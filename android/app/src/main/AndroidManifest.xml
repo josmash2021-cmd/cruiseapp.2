@@ -86,6 +86,18 @@
                 <data android:scheme="https" android:host="cruiseapp2-production.up.railway.app" android:pathPrefix="/open-app"/>
                 <data android:scheme="https" android:host="cruiseapp2-production.up.railway.app" android:pathPrefix="/drive"/>
             </intent-filter>
+            <!-- Referral links on the brand domain. Separate filter on
+                 purpose: autoVerify fails the WHOLE filter if any host in it
+                 does not serve assetlinks.json, and this host's file depends
+                 on the marketing site's hosting — a miss there must not kill
+                 the backend-host links too. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="cruiseinride.com" android:pathPrefix="/drive"/>
+                <data android:scheme="https" android:host="www.cruiseinride.com" android:pathPrefix="/drive"/>
+            </intent-filter>
         </activity>
         <!-- Google Places API Key — injected from local.properties or CI -->
         <meta-data

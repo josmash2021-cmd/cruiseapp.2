@@ -1058,12 +1058,13 @@ class S {
       _es ? 'Conéctate y comienza a ganar' : 'Go online and start earning';
   String get offlineDemandTitle =>
       _es ? 'Demanda en tu zona' : 'Demand in your area';
-  // Escala 2026-10-16 (user spec): apagada en el dispatcher = "Very slow";
-  // nivel 1 (dorado) = "Normal"; 2 = "Ocupado"; 3 = "Muy ocupado".
-  String get offlineDemandVerySlow => _es ? 'Muy lenta' : 'Very slow';
-  String get offlineDemandNormal => _es ? 'Normal' : 'Normal';
+  // Sin viajes y Lento conservan calor dorado tenue; el apagado manual es
+  // un estado distinto y se muestra en gris.
+  String get offlineDemandNoRides => _es ? 'Sin viajes' : 'No rides';
+  String get offlineDemandSlow => _es ? 'Lento' : 'Slow';
   String get offlineDemandBusy => _es ? 'Ocupado' : 'Busy';
   String get offlineDemandVeryBusy => _es ? 'Muy ocupado' : 'Very busy';
+  String get offlineDemandZoneOff => _es ? 'Zona apagada' : 'Zone off';
   String get offlineDemandYourArea => _es ? 'tu zona' : 'your area';
   String get offlineSchedulesTooltip =>
       _es ? 'Ver viajes agendados' : 'See scheduled rides';

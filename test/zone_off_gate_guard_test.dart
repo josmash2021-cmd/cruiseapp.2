@@ -58,14 +58,26 @@ void main() {
         reason: 'the toggle button label');
     expect(panelChunk, contains('(e.off===!0)!==(a.off===!0)'),
         reason: 'the dirty detector sees off changes so Guardar saves them');
+    expect(panelChunk, contains('{value:0,label:"Sin viajes"}'));
+    expect(panelChunk, contains('{value:1,label:"Lento"}'));
+    expect(panelChunk.contains('label:"Dorado"'), isFalse);
+    expect(panelChunk, contains('«Apagada» pinta la zona de gris'),
+        reason: 'the help text distinguishes manual off from no rides');
   });
 
-  test('the demand card animates on level change', () {
+  test('the demand card animates and distinguishes off from no rides', () {
     expect(
         'AnimatedSwitcher('.allMatches(offline).length >= 2, isTrue,
         reason: 'the demand label AND the hero headline both crossfade');
     expect(offline, contains('key: ValueKey(demandLabel)'));
     expect(offline, contains('key: ValueKey(headline)'));
     expect(offline, contains('const Duration(milliseconds: 350)'));
+    expect(offline, contains('final off = d?.off ?? false;'));
+    expect(offline, contains('s.offlineDemandZoneOff'));
+    expect(offline, contains('s.offlineDemandSlow'));
+    expect(offline, contains('s.offlineDemandNoRides'));
+    expect(l10n, contains("_es ? 'Sin viajes' : 'No rides'"));
+    expect(l10n, contains("_es ? 'Lento' : 'Slow'"));
+    expect(l10n, contains("_es ? 'Zona apagada' : 'Zone off'"));
   });
 }

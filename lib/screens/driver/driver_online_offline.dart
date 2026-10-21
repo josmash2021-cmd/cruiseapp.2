@@ -1909,23 +1909,23 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     final pos = _pos;
     final sector = pos != null ? ZoneService.sectorContaining(pos) : null;
     final d = sector != null ? ZoneService.demand[sector.id] : null;
-    final level = d?.level ?? 0;
+    final off = d?.off ?? false;
+    final level = off ? 0 : d?.level ?? 0;
     final bonus = d?.bonus ?? 0;
     final headline = level >= 3
         ? s.offlineHeroHeadlineHigh
         : level == 2
             ? s.offlineHeroHeadlineMedium
             : s.offlineHeroHeadlineIdle;
-    // Escala del dispatcher (user spec 2026-10-16): zona APAGADA (sin calor)
-    // = "Muy lenta"; nivel 1 (dorado) = "Normal"; 2 = "Ocupado"; 3 = "Muy
-    // ocupado".
-    final demandLabel = level >= 3
-        ? s.offlineDemandVeryBusy
-        : level == 2
-            ? s.offlineDemandBusy
-            : level == 1
-                ? s.offlineDemandNormal
-                : s.offlineDemandVerySlow;
+    final demandLabel = off
+        ? s.offlineDemandZoneOff
+        : level >= 3
+            ? s.offlineDemandVeryBusy
+            : level == 2
+                ? s.offlineDemandBusy
+                : level == 1
+                    ? s.offlineDemandSlow
+                    : s.offlineDemandNoRides;
     return Padding(
       // El hero va compacto ARRIBA (estilo Dash — foto 2 del spec
       // 2026-10-16-noche), y el padding de abajo libra la fila de botones

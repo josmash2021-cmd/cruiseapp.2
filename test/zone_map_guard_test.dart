@@ -5,10 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cruise_app/models/lat_lng.dart';
 import 'package:cruise_app/services/zone_service.dart';
 
-/// Guardian for the driver SECTORS (2026-10-12, user spec: the Florida map
-/// divided by big sectors like the reference photo — "no de mini ciudad en
-/// mini ciudad si no por sectores" — always visible in gray with thick
-/// boundaries; dispatch turns a sector gold by demand level with a pill).
+/// Guardian for the driver SECTORS: big regions with gold boundaries, four
+/// offline gold demand opacities, and gray for a manual Dispatch shutoff.
 void main() {
   final sectorsJson =
       File('backend/static/fl_sectors.json').readAsStringSync();
@@ -107,7 +105,7 @@ void main() {
         isNull);
   });
 
-  test('the map draws one SMALL source per sector, gray base, gold heat',
+  test('the map draws one SMALL source per sector with the demand ladder',
       () {
     final s =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
@@ -125,47 +123,58 @@ void main() {
     }
     expect(s, contains('ZoneService.sectors'),
         reason: 'layers iterate the baked sectors');
-    expect(s, contains('0xFFE8C547'), reason: 'gold heat/selection');
-    expect(s.contains('0xFF9AA3B8'), isFalse,
-        reason: '2026-10-15 spec: "las zonas deben estar amarillas" — el '
-            'gris/blanco murió; fill y borde son gold de marca');
-    expect(s, contains("fillColor: 0xFFE8C547, // 2026-10-15: zonas AMARILLAS"),
-        reason: 'the base fill is brand yellow, never gray');
+    expect(s, contains('0xFFE8C547'), reason: 'gold heat and active borders');
+    expect(s, contains('0xFF7F858E'),
+        reason: 'manual-off sectors are gray, not gold');
+    expect(s, contains('fillColor: 0xFFE8C547,'),
+        reason: 'the base fill is brand gold');
     expect(s, contains('lineTranslate'), reason: 'the 3D shadow online');
     expect(s.contains('_zoneLookOnline'), isTrue,
         reason: 'the look flips with the mode');
-    // The demand level drives the fill, dispatch-side.
-    expect(s, contains('ZoneService.demand[sid]?.level'));
-    // 2026-10-15 (user spec): ONLINE ninguna zona pinta relleno — el mapa
-    // vuelve a su color normal; las zonas amarillas se ven offline, que es
-    // donde se eligen.
-    expect(s, contains('!visible || online'),
-        reason: 'online the zone fills are zero — normal map while driving');
-    // 2026-10-16 (user specs): el borde de la zona es NEGRO (el gold del
-    // borde murió) y ONLINE el highlight de selección también es cero — sin
-    // amarillo con el driver activo, solo borde negro + sombra.
-    expect(s, contains('lineColor: 0xFF000000,\n        lineWidth: 2.4,'),
-        reason: 'the sector boundary line is black');
-    // 2026-10-16 bis: el FILL de selección murió del todo ("no se prendera
-    // en amarillo") — la selección es el BORDE con onda viajera
-    // (lineGradient sobre line-progress; sources con lineMetrics).
+    expect(s,
+        contains('final demand = visible ? ZoneService.demand[sid] : null;'));
+    expect(s, contains('demand?.off'));
+    expect(s, contains('e.value.off'),
+        reason: 'an off flip must invalidate the painted look immediately');
+    expect(s, contains('lineColor: 0xFFE8C547,\n        lineWidth: 2.4,'),
+        reason: 'active sector boundaries are gold');
+
+    final lookStart = s.indexOf('Future<void> _writeSectorLook(');
+    final lookEnd = s.indexOf('// ── Onda de selección', lookStart);
+    expect(lookStart, greaterThan(0));
+    expect(lookEnd, greaterThan(lookStart));
+    final look = s.substring(lookStart, lookEnd);
+    expect(look, contains('final color = off ? gray : gold;'));
+    expect(look, contains('!visible || online'),
+        reason: 'online paints borders only; the four fills stay offline');
+    for (final opacity in ['0.20', '0.08', '0.18', '0.32', '0.48']) {
+      expect(look, contains(opacity), reason: 'missing opacity $opacity');
+    }
+    expect(look, isNot(contains(': 1.0')),
+        reason: 'Muy ocupado is semi-transparent, never solid gold');
+
+    // Selection is a brighter traveling border, never a fill; a disabled
+    // sector cannot start the gold wave.
     expect(s, contains("'sec-hl-fill', 'fill-opacity', 0.0"),
         reason: 'the selection fill never paints, in any mode');
     expect(s, contains('lineMetrics: true'),
         reason: 'the sector sources carry lineMetrics for the border wave');
-    expect(s, contains('void _syncZoneWave()'),
-        reason: 'the selection wave sync exists');
-    expect(s, contains("'line-gradient'"),
-        reason: 'the traveling gold band rides lineGradient');
-    expect(s, contains('_stopZoneWave'),
-        reason: 'deselect/online/dispose restores the black border');
+    expect(s, contains('void _syncZoneWave()'));
+    expect(s, contains('ZoneService.demand[sel]?.off != true'));
+    expect(s, contains("const dim = '#E8C547';"),
+        reason: 'the wave runs over a gold base border');
+    expect(s,
+        contains("final gradientColor = off ? '#7F858E' : '#E8C547';"),
+        reason: 'stopping the wave restores the actual off/active color');
+    expect(s, contains('_stopZoneWave'));
+
     // Labels/pills are FLUTTER OVERLAYS, never a native text layer
     // (2026-10-11 black-map incident).
     expect(s, isNot(contains('SymbolLayer')),
         reason: 'no native text layer — labels and pills are Flutter');
     expect(s, contains('Widget _zoneLabelOverlay()'));
     expect(s, contains('if (_driverOnline) return const SizedBox.shrink();'),
-        reason: 'online keeps only the gray boundary lines');
+        reason: 'online keeps borders only, without label overlays');
     expect(s, contains('_phase == _Phase.searching'),
         reason: 'sectors live on the flat searching map only — never on '
             'top of an active trip route');
@@ -339,13 +348,10 @@ void main() {
             're-tap toggle clears it (_onZoneMapTap)');
   });
 
-  test('online: heat under the roads AND the dark focus around the zone', () {
-    // User specs 2026-10-14: "cuando se conecte, ese dorado debajo del mapa
-    // y las líneas encima" + "sí" (revive el foco oscuro: "se pone oscuro
-    // alrededor y solo se ve la zona donde está conectado"). Coexisten:
-    // online, las zonas con calor pintan dorado bajo las calles Y, con zona
-    // elegida, todo lo de fuera se atenúa — la zona queda limpia por el
-    // hueco de la máscara. Sin selección online no hay máscara.
+  test('online: borders only AND the dark focus around the zone', () {
+    // Online the four demand fills stay off: only gold/gray borders remain.
+    // With a chosen zone, everything outside it dims through the spotlight
+    // mask; without a selection there is no mask.
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     expect(map, contains('sec-dim-src'), reason: 'the mask source is back');
@@ -356,13 +362,9 @@ void main() {
     expect(map, contains('_previewingOffer == null'),
         reason: 'an offer preview kills the dim — the route must read');
     expect(map, contains('moveStyleLayer'),
-        reason: 'fills move with the mode flip — under roads online, on top '
-            'offline');
-    // Heat online: the level no longer force-zeros when online.
-    expect(map.contains('visible && !online ? (ZoneService.demand'), isFalse,
-        reason: 'heat paints online too, under the roads');
-    expect(map, contains(': 1.0;'),
-        reason: 'Muy ocupado = dorado 100% sólido (spec 2026-10-12)');
+        reason: 'mode flips keep the fill stacking consistent');
+    expect(map, contains('!visible || online'),
+        reason: 'online demand fills are zero; only borders remain');
     // Both mode flips rewrite the zone look immediately (a parked driver
     // gets no GPS fix for minutes).
     final ctrl = File('lib/screens/driver/driver_online_controller.dart')

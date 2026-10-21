@@ -2402,11 +2402,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
 
   // ══════════════════════════════════════════════════════════════════
-  //  SECTOR LAYERS (2026-10-12, user spec: big SECTORS — "no de mini
-  //  ciudad en mini ciudad si no por sectores" — always visible in gray
-  //  with thick gray boundaries; dispatch turns a sector gold by demand
-  //  level with an optional +$ bonus pill; the driver's tap selection
-  //  paints brighter). ONE small source per sector — the single 83 KB
+  //  SECTOR LAYERS: big regions with gold boundaries. Offline, Dispatch
+  //  demand controls four gold opacities; a manually disabled sector is
+  //  gray. The selected active sector gets a brighter traveling border.
+  //  ONE small source per sector — the single 83 KB
   //  all-cities source never materialized on iOS, while ~5 KB sources
   //  draw fine (the size class of the proven highlight source).
   //  The fields live in the state class (extensions can't declare them).
@@ -2465,7 +2464,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         }
       }
       final demandSig = ZoneService.demand.entries
-          .map((e) => '${e.key}:${e.value.level}')
+          .map((e) => '${e.key}:${e.value.level}:${e.value.off}')
           .join('|');
       // The visible-state set rides the signature: crossing a state line
       // (or the first fix landing) repaints the look for the new state.
@@ -2629,18 +2628,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         id: 'sec-src-$sid', data: emptyFc, lineMetrics: true)));
   }
 
-  /// The look per the user's specs (2026-10-12/14, ajustados 2026-10-16):
-  /// offline every sector paints its heat gold (tres niveles) con un borde
-  /// NEGRO con su sombra 3D; online ninguna zona pinta relleno ni highlight
-  /// — el mapa queda en su color normal debajo de las vías y solo quedan
-  /// el borde negro y su sombra.
+  /// Offline every sector paints one of four gold demand opacities; online
+  /// only the borders remain. Active borders are gold; a sector switched
+  /// off by Dispatch is gray instead.
   List<Future<void>> _addSectorLayers(mapbox.MapboxMap map, Sector s,
       [String? fillBelowId]) {
     final sid = s.id;
     final fill = mapbox.FillLayer(
       id: 'sec-fill-$sid',
       sourceId: 'sec-src-$sid',
-      fillColor: 0xFFE8C547, // 2026-10-15: zonas AMARILLAS (el gris/blanco murió)
+      fillColor: 0xFFE8C547,
       fillOpacity: 0.0,
     );
     return [
@@ -2660,9 +2657,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
         id: 'sec-line-$sid',
         sourceId: 'sec-src-$sid',
-        // 2026-10-16 (user spec: "la linea que bordea la zona quiero que sea
-        // linea negra"): el borde gold murió — negro, como la sombra 3D.
-        lineColor: 0xFF000000,
+        lineColor: 0xFFE8C547,
         lineWidth: 2.4,
         lineOpacity: 0.0,
       ))),
@@ -2729,13 +2724,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
   }
 
-  /// Fill/line visibility + color per sector. Base (no dispatch heat): thin
-  /// gold wash offline, nothing online + the black boundary with its shadow.
-  /// Level 1 ("Dorado"): gold semi-transparent. Level 2 ("Ocupado"): more
-  /// gold. Level 3 ("Muy ocupado"): 100% solid gold (user spec 2026-10-12).
-  /// ONLINE ninguna zona pinta relleno (2026-10-15/16 specs: "debajo de las
-  /// vías el color normal del mapa", "quítale el amarillo cuando el driver
-  /// está activo") — solo quedan el borde negro y su sombra sobre las calles.
+  /// Offline fills go from the faintest gold (Sin viajes) to the strongest
+  /// semi-transparent gold (Muy ocupado). Online only borders remain: gold
+  /// for active sectors, gray for a sector switched off by Dispatch.
   Future<void> _writeZoneVisibility(mapbox.MapboxMap map, bool visible,
       bool online, Set<String> visibleIds) async {
     // The fill stacking follows the mode (offline on top / online under the
@@ -2822,28 +2813,31 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _writeSectorLook(
       mapbox.MapboxMap map, Sector s, bool visible, bool online) async {
     final sid = s.id;
-    final level = visible ? (ZoneService.demand[sid]?.level ?? 0) : 0;
-    final fillColor = 0xFFE8C547; // amarillo siempre; el nivel solo mueve la opacidad
-    // Heat ladder (user spec 2026-10-13): Apagado = wash mínimo, Busy = gold
-    // ALMOST solid, Ocupado = more, Muy ocupado = 100% solid gold — OFFLINE
-    // only: ONLINE ninguna zona pinta relleno (2026-10-15/16: "debajo de las
-    // vías el color normal del mapa"; el highlight de selección también
-    // murió online 2026-10-16 — quedan borde negro + sombra).
+    final demand = visible ? ZoneService.demand[sid] : null;
+    final off = demand?.off ?? false;
+    final level = off ? 0 : demand?.level ?? 0;
+    const gold = 0xFFE8C547;
+    const gray = 0xFF7F858E;
+    final color = off ? gray : gold;
+    // Offline: Sin viajes 8%, Lento 18%, Ocupado 32%, Muy ocupado 48%.
+    // Online solo quedan los bordes. El apagado manual siempre gana: gris.
     final fillOpacity = !visible || online
         ? 0.0
-        : level == 0
-            ? 0.07
-            : level == 1
-                ? 0.80
-                : level == 2
-                    ? 0.90
-                    : 1.0;
+        : off
+            ? 0.20
+            : level == 0
+                ? 0.08
+                : level == 1
+                    ? 0.18
+                    : level == 2
+                        ? 0.32
+                        : 0.48;
     try {
       await Future.wait([
-        map.style
-            .setStyleLayerProperty('sec-fill-$sid', 'fill-color', fillColor),
+        map.style.setStyleLayerProperty('sec-fill-$sid', 'fill-color', color),
         map.style.setStyleLayerProperty(
             'sec-fill-$sid', 'fill-opacity', fillOpacity),
+        map.style.setStyleLayerProperty('sec-line-$sid', 'line-color', color),
         map.style.setStyleLayerProperty(
             'sec-line-$sid', 'line-opacity', visible ? 0.85 : 0.0),
         map.style.setStyleLayerProperty('sec-shadow-$sid', 'line-opacity',
@@ -2868,7 +2862,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _zoneLayersReady &&
         !_driverOnline &&
         _phase == _Phase.searching &&
-        sel != null;
+        sel != null &&
+        ZoneService.demand[sel]?.off != true;
     if (!active) {
       _stopZoneWave();
       return;
@@ -2915,12 +2910,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         'sec-line-$sid', 'line-gradient', _zoneWaveStops(_zoneWavePhase)));
   }
 
-  /// Banda dorada viajera sobre el anillo negro. Tres copias de la banda
+  /// Banda dorada viajera sobre el anillo dorado. Tres copias de la banda
   /// (fase−1, fase, fase+1) para que al cruzar el cierre del anillo salga
   /// por un lado y entre por el otro sin salto — el anillo es cerrado.
   List<dynamic> _zoneWaveStops(double phase) {
     const half = 0.09; // media anchura de la banda
-    const dim = '#000000';
+    const dim = '#E8C547';
     const lit = '#FFE066';
     final stops = <double, String>{0.0: dim, 1.0: dim};
     for (final c in [phase - 1.0, phase, phase + 1.0]) {
@@ -2945,15 +2940,23 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final prev = _zoneWaveSectorId;
     _zoneWaveSectorId = null;
     if (map == null || kIsWeb || prev == null) return;
-    // Restaura el borde negro de siempre y "limpia" el gradiente: la firma
-    // del plugin no acepta null, así que se escribe un gradiente plano
-    // negro (visualmente idéntico a quitarlo).
+    final off = ZoneService.demand[prev]?.off ?? false;
+    final color = off ? 0xFF7F858E : 0xFFE8C547;
+    final gradientColor = off ? '#7F858E' : '#E8C547';
+    // El plugin no acepta un gradiente null: se restaura uno plano del
+    // color actual, gris si Dispatch apagó la zona y dorado si está activa.
     _guardedStyleWrite(map.style.setStyleLayerProperty(
-        'sec-line-$prev',
-        'line-gradient',
-        ['interpolate', ['linear'], ['line-progress'], 0.0, '#000000', 1.0, '#000000']));
+        'sec-line-$prev', 'line-gradient', [
+      'interpolate',
+      ['linear'],
+      ['line-progress'],
+      0.0,
+      gradientColor,
+      1.0,
+      gradientColor
+    ]));
     _guardedStyleWrite(map.style
-        .setStyleLayerProperty('sec-line-$prev', 'line-color', 0xFF000000));
+        .setStyleLayerProperty('sec-line-$prev', 'line-color', color));
     _guardedStyleWrite(map.style
         .setStyleLayerProperty('sec-line-$prev', 'line-width', 2.4));
   }

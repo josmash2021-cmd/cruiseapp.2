@@ -82,11 +82,16 @@ void main() {
     expect(api.contains('/legal/contracts'), isTrue);
   });
 
-  test('the to-do hub lists contracts and routes to the e-sign hub', () {
-    expect(items.contains("contracts('contracts'"), isTrue);
-    expect(items.contains('case OnboardingItem.contracts'), isTrue);
-    expect(hub.contains('OnboardingItem.contracts'), isTrue);
-    expect(hub.contains('DriverContractsScreen'), isTrue);
+  test('the to-do hub does NOT list contracts (user spec 2026-10-21)', () {
+    // "debe aparecer en esta pagina, no en el to-do" — the e-sign flow
+    // reaches the driver through the GO gate and the boot check only.
+    expect(items.contains("contracts('contracts'"), isFalse);
+    expect(hub.contains('OnboardingItem.contracts'), isFalse,
+        reason: 'the hub never renders a contracts card');
+    expect(hub.contains('DriverContractsScreen'), isFalse);
+    // The GO/boot gates stay — they ARE the signing entry.
+    expect(offline.contains('_checkContractsGate'), isTrue);
+    expect(offline.contains('_contractsPending.isNotEmpty'), isTrue);
   });
 
   test('signup step 0 links the contracts', () {

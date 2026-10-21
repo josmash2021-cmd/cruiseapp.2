@@ -8,7 +8,6 @@ import '../../../widgets/feathered_image.dart';
 import 'background_consent_screen.dart';
 import 'doc_capture_screen.dart';
 import 'license_capture_screen.dart';
-import '../driver_contracts_screen.dart';
 import 'onboarding_items.dart';
 import 'onboarding_widgets.dart';
 import 'plate_capture_screen.dart';
@@ -58,10 +57,6 @@ class OnboardingIntroScreen extends StatelessWidget {
       case OnboardingItem.insurance:
       case OnboardingItem.inspection:
         return DocCaptureScreen(entry: entry);
-      case OnboardingItem.contracts:
-        // The hub routes contracts straight to the e-sign hub (no intro);
-        // this case only keeps the switch exhaustive.
-        return const DriverContractsScreen();
     }
   }
 

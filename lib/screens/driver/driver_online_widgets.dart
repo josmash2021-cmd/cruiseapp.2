@@ -446,9 +446,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       }
       if (mounted) _syncZoneLayers(forceHighlight: true);
     }));
-    // First paint already carries dispatch's heat when it exists.
+    // First paint already carries dispatch's heat when it exists. Refresh
+    // the offline hero too, or it stays at the default until the next poll.
     unawaited(ZoneService.loadDemand(force: true).then((_) {
-      if (mounted) _syncZoneLayers();
+      if (!mounted) return;
+      _syncZoneLayers();
+      if (!_driverOnline) _setState(() {});
     }));
     // Offline with zones the camera is born at the region view (10.8) — the
     // 16→target entry ease must not drag it back up on the first tick.

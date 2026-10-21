@@ -60,11 +60,8 @@ class _DriverContractsScreenState extends State<DriverContractsScreen> {
         _contracts = list;
         _loadError = false;
       });
-      // Gate mode: the moment the whole set is current the page has done
-      // its job — hand control back to the caller.
       if (widget.gate && _allCurrent) {
-        await Future<void>.delayed(const Duration(milliseconds: 350));
-        if (mounted) Navigator.of(context).pop(true);
+        Navigator.of(context).pop(true);
       }
     } catch (_) {
       if (mounted) setState(() => _loadError = true);
@@ -82,13 +79,23 @@ class _DriverContractsScreenState extends State<DriverContractsScreen> {
   Future<void> _open(Map<String, dynamic> c) async {
     final slug = c['slug']?.toString() ?? '';
     if (slug.isEmpty) return;
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => _ContractReaderPage(
-        slug: slug,
-        needsAcceptance: c['needs_acceptance'] == true,
-        acceptedAt: c['accepted_at']?.toString(),
+    final signed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => _ContractReaderPage(
+          slug: slug,
+          needsAcceptance: c['needs_acceptance'] == true,
+          acceptedAt: c['accepted_at']?.toString(),
+        ),
       ),
-    ));
+    );
+    if (!mounted) return;
+    if (signed == true) {
+      setState(() => c['needs_acceptance'] = false);
+      if (widget.gate && _allCurrent) {
+        Navigator.of(context).pop(true);
+        return;
+      }
+    }
     _load();
   }
 
@@ -364,7 +371,7 @@ class _ContractReaderPageState extends State<_ContractReaderPage> {
       );
       if (!mounted) return;
       if (res['ok'] == true) {
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(true);
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

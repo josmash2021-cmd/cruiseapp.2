@@ -167,6 +167,16 @@ void main() {
         contains("final gradientColor = off ? '#7F858E' : '#E8C547';"),
         reason: 'stopping the wave restores the actual off/active color');
     expect(s, contains('_stopZoneWave'));
+    final baseStart = s.indexOf('Future<void> _paintZoneWaveBase');
+    final baseEnd = s.indexOf('void _tickZoneWave', baseStart);
+    expect(baseStart, isNonNegative);
+    expect(baseEnd, greaterThan(baseStart));
+    final base = s.substring(baseStart, baseEnd);
+    expect(base, contains('0xFFE8C547'));
+    expect(base, contains("'line-gradient'"));
+    expect(base, contains('_zoneWaveStops(_zoneWavePhase)'),
+        reason: 'selection writes a gold gradient immediately, never a stale '
+            'black gradient while the first tick is pending');
 
     // Labels/pills are FLUTTER OVERLAYS, never a native text layer
     // (2026-10-11 black-map incident).

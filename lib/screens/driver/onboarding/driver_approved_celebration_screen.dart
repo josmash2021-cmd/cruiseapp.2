@@ -17,8 +17,9 @@ import 'first_trip_guide_screen.dart';
 /// "Start driving" runs the payout gate (`GET /drivers/stripe-connect/status`
 /// via [ApiService.getStripeConnectStatus]): no payout destination yet →
 /// [PayoutMethodsScreen] first (leaving without setting one up is fine — a
-/// snackbar tells them the menu path). Then the first-trip guide exactly
-/// once (flag `first_trip_guide_seen_v1`), then [DriverHomeScreen].
+/// snackbar tells them the menu path). Its Skip always forces the complete
+/// first-trip guide; otherwise the guide follows `first_trip_guide_seen_v1`.
+/// The flow ends at [DriverOnlineScreen].
 class DriverApprovedCelebrationScreen extends StatefulWidget {
   const DriverApprovedCelebrationScreen({super.key});
 
@@ -66,11 +67,13 @@ class _DriverApprovedCelebrationScreenState
     }
     if (!mounted) return;
 
+    var forceGuide = false;
     if (!configured) {
-      await Navigator.of(context).push(
+      final result = await Navigator.of(context).push(
         onboardingFadeSlideRoute(
             const PayoutMethodsScreen(autoPopOnBankLinked: true)),
       );
+      forceGuide = result == 'skip';
       if (!mounted) return;
       // Re-check on return: success → straight to the guide/home; left
       // without setting one up → they may continue anyway (not a prison).
@@ -91,14 +94,15 @@ class _DriverApprovedCelebrationScreenState
       }
     }
 
-    await _continueToHome();
+    await _continueToHome(forceGuide: forceGuide);
   }
 
-  /// First-trip guide once, then home. Approved drivers who already saw the
-  /// guide skip straight to home.
-  Future<void> _continueToHome() async {
+  /// First-trip guide once, then home. Skip on the payout gate forces the
+  /// complete guide even when another account already saw it on this phone.
+  Future<void> _continueToHome({bool forceGuide = false}) async {
     final prefs = await SharedPreferences.getInstance();
-    final guideSeen = prefs.getBool('first_trip_guide_seen_v1') ?? false;
+    final guideSeen =
+        !forceGuide && (prefs.getBool('first_trip_guide_seen_v1') ?? false);
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       onboardingFadeSlideRoute(

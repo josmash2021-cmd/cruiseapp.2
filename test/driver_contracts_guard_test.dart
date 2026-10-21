@@ -70,6 +70,38 @@ void main() {
             'authority, the app only routes to the e-sign hub');
   });
 
+  test('completed signatures clear the gate locally without another fetch', () {
+    expect(screen, contains('final signed = await Navigator.of(context).push<bool>('));
+    expect(screen, contains("c['needs_acceptance'] = false"),
+        reason: 'the signed tile updates locally before any refresh');
+    expect(
+        screen,
+        isNot(contains(
+            'Future<void>.delayed(const Duration(milliseconds: 350))')),
+        reason: 'the completed gate must not wait before closing');
+    expect(offline, contains('final completed = await Navigator.of(context).push<bool>('));
+    expect(offline, contains('_contractsPending = const []'));
+    expect(offline,
+        contains("reasons.every((r) => r == 'contracts_not_accepted')"),
+        reason: 'contracts alone must not look like a vehicle-doc failure');
+
+    final goStart =
+        offline.indexOf('if (_docStatusLoaded && _contractsPending.isNotEmpty)');
+    final goEnd = offline.indexOf('// Quick check:', goStart);
+    expect(goStart, isNonNegative);
+    expect(goEnd, greaterThan(goStart));
+    final gate = offline.substring(goStart, goEnd);
+    final completedStart = gate.indexOf('if (completed == true)');
+    final elseStart = gate.indexOf('} else {', completedStart);
+    expect(completedStart, isNonNegative);
+    expect(elseStart, greaterThan(completedStart));
+    final successBranch = gate.substring(completedStart, elseStart);
+    expect(successBranch, isNot(contains('_checkVehicleDocStatus')),
+        reason: 'a completed signature goes straight to GO without re-fetching');
+    expect(gate, contains('await _checkVehicleDocStatus();'),
+        reason: 'the network fallback remains for an incomplete/unknown result');
+  });
+
   test('ApiService carries the four contract calls', () {
     for (final m in [
       'getContracts()',

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform, File;
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -61,7 +61,6 @@ import '../../utils/driver_location_settings.dart';
 import '../chat_screen.dart';
 import '../safety_screen.dart';
 import '../../navigation/car_icon_loader.dart';
-import 'driver_info_pages.dart';
 import 'driver_earnings_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
@@ -90,14 +89,7 @@ import '../welcome_screen.dart';
 import '../account_deactivated_screen.dart';
 import 'cruise_level_screen.dart';
 import 'driver_documents_screen.dart';
-// Drawer del menú (2026-10-16): destinos que antes vivían en DriverMenuScreen.
-import '../about_screen.dart';
-import '../help_screen.dart';
-import '../splash_screen.dart'; // logout del drawer → Splash (como el menú)
-import 'driver_referral_screen.dart';
-import 'driver_settings_screen.dart';
-import 'driver_vehicle_screen.dart';
-import 'payout_methods_screen.dart';
+import 'driver_menu_screen.dart';
 import 'driver_contracts_screen.dart';
 import 'onboarding/driver_notifications_screen.dart';
 import 'onboarding/driver_todo_screen.dart'; // gate de aprobación en el destino
@@ -1477,14 +1469,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Timer? _zoneWaveTimer;
   String? _zoneWaveSectorId;
   double _zoneWavePhase = 0;
-  // Drawer lateral del menú (2026-10-16, estilo Dash; 2026-10-17 = RUTA
-  // transparente del Navigator — el overlay in-screen nunca se pintó en el
-  // device del usuario). La página completa DriverMenuScreen sigue viva
-  // para la pantalla de viaje.
-  String _menuDriverName = '';
-  String? _menuPhotoUrl;
-  bool _menuIdentityLoaded = false;
-  // Guard anti doble-tap: la ruta del drawer solo se empuja una vez.
+  // Guard anti doble-tap: la ruta del menú clásico solo se empuja una vez.
   bool _menuRouteOpen = false;
   // Gate de aprobación EN EL DESTINO (2026-10-17, spec "eso nunca puede
   // pasar si trabajamos en la app o el dispatch"): el splash confía en el

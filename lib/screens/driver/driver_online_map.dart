@@ -2879,7 +2879,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     });
   }
 
-  /// El borde seleccionado se enciende: dorado de base, un pelo más grueso.
+  /// El borde seleccionado se enciende: color y gradiente dorados juntos
+  /// para que ningún gradiente anterior pueda dejarlo negro.
   Future<void> _paintZoneWaveBase(String sid) async {
     final map = _map;
     if (map == null || kIsWeb) return;
@@ -2887,6 +2888,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await Future.wait([
         map.style.setStyleLayerProperty(
             'sec-line-$sid', 'line-color', 0xFFE8C547),
+        map.style.setStyleLayerProperty('sec-line-$sid', 'line-gradient',
+            _zoneWaveStops(_zoneWavePhase)),
         map.style.setStyleLayerProperty('sec-line-$sid', 'line-width', 3.0),
       ]);
     } catch (_) {}

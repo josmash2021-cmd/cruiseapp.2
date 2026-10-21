@@ -230,6 +230,15 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       final canGo = result['can_go_online'] == true;
       final expired = result['has_expired_docs'] == true;
       final platePending = result['plate_change_pending'] == true;
+      final reasons = (result['reasons'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const <String>[];
+      // Contracts have their own gate: they must not masquerade as a
+      // vehicle-document failure when they are the only remaining blocker.
+      final vehicleDocsApproved = canGo ||
+          (reasons.isNotEmpty &&
+              reasons.every((r) => r == 'contracts_not_accepted'));
       // Unsigned required contracts (e-acceptance gate, 2026-10-21): the GO
       // tap opens the contracts hub before the mode flips.
       final pending = (result['contracts_pending'] as List?)
@@ -244,7 +253,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       if (!mounted) return;
 
       _setState(() {
-        _vehicleDocsApproved = canGo;
+        _vehicleDocsApproved = vehicleDocsApproved;
         _hasExpiredDocs = expired;
         _plateChangePending = platePending;
         _contractsPending = pending;
@@ -348,12 +357,15 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       final data = await ApiService.getContracts();
       if (!mounted) return;
       if (data['all_current'] == true) return;
-      await Navigator.of(context).push(
+      final completed = await Navigator.of(context).push<bool>(
         MaterialPageRoute<bool>(
           fullscreenDialog: true,
           builder: (_) => const DriverContractsScreen(gate: true),
         ),
       );
+      if (completed == true && mounted) {
+        _setState(() => _contractsPending = const []);
+      }
     } catch (e) {
       debugPrint('[DriverOnline] contracts gate skipped (fail-open): $e');
     }
@@ -999,14 +1011,20 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     // pending). The backend can_go_online refuses as the backstop.
     if (_docStatusLoaded && _contractsPending.isNotEmpty) {
       HapticService.mediumImpact();
-      await Navigator.of(context).push(
+      final completed = await Navigator.of(context).push<bool>(
         MaterialPageRoute<bool>(
           fullscreenDialog: true,
           builder: (_) => const DriverContractsScreen(gate: true),
         ),
       );
-      if (mounted) await _checkVehicleDocStatus();
-      if (!mounted || _contractsPending.isNotEmpty) return;
+      if (!mounted) return;
+      if (completed == true) {
+        _setState(() => _contractsPending = const []);
+      } else {
+        await _checkVehicleDocStatus();
+        if (!mounted) return;
+      }
+      if (_contractsPending.isNotEmpty) return;
     }
     // else: doc status not loaded yet — don't block. _verifyAndGoOnline()
     // runs the backend check in background once the mode is on.
@@ -1900,14 +1918,17 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     );
   }
 
-  /// La cara Dash del sheet a medio abrir (user spec 2026-10-16): headline
-  /// grande que responde a la demanda del sector + UNA tarjeta con la
-  /// demanda de la zona (nivel + bonus) — dato real de ZoneService, polled
-  /// cada 60 s. Los botones (GO dorado + calendario) flotan encima por la
-  /// vía del morphing button, no van aquí.
+  /// La cara Dash del sheet a medio abrir: headline + tarjeta de demanda
+  /// (nivel + bonus). La ZONA SELECCIONADA tiene prioridad; el GPS es el
+  /// fallback cuando no hay selección. Datos de ZoneService, polled 60 s.
   Widget _buildOfflineHero(DriverColors dc, S s, EdgeInsets pad) {
     final pos = _pos;
-    final sector = pos != null ? ZoneService.sectorContaining(pos) : null;
+    final selectedId = _selectedZoneName;
+    final sector = selectedId != null
+        ? ZoneService.sectorById(selectedId)
+        : pos != null
+            ? ZoneService.sectorContaining(pos)
+            : null;
     final d = sector != null ? ZoneService.demand[sector.id] : null;
     final off = d?.off ?? false;
     final level = off ? 0 : d?.level ?? 0;
@@ -2580,380 +2601,21 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   //  MENU BUTTON (the home top bar's `_glassBtn`, menu flavour)
   // ═══════════════════════════════════════════════════
 
-  /// The driver menu is a Dash-style LEFT DRAWER pushed as a TRANSPARENT
-  /// ROUTE of the Navigator (2026-10-17, tras "el menú no abre" en prod: el
-  /// overlay in-screen — AnimationController primero, TweenAnimationBuilder
-  /// después — nunca se pintó en el device del usuario aunque el tap sí
-  /// llegaba al servidor; la ruta la dibuja el Navigator por encima de todo,
-  /// la misma vía del menú viejo que sí abría). No es opaca: el mapa sigue
-  /// montado debajo, nunca cambia de manos y el negro es imposible.
+  /// Menú clásico de pantalla completa, empujado con una ruta opaca que
+  /// entra desde la izquierda. El mapa sigue montado debajo y se reclama al
+  /// volver solo si otra pantalla tomó su superficie.
   Future<void> _openDriverMenu() async {
     HapticService.selectionClick();
-    // Breadcrumb al servidor — si el tap llega, lo vemos en prod.
-    ApiService.logClientEvent('menu_drawer', 'tap route');
+    ApiService.logClientEvent('menu_classic', 'tap left route');
     if (_menuRouteOpen) return;
     _menuRouteOpen = true;
-    // Identidad ANTES de empujar: la ruta no se reconstruye con el setState
-    // de la pantalla, así que nombre/foto deben estar listos al montarla.
-    await _loadMenuIdentity();
-    if (!mounted) {
+    try {
+      await Navigator.of(context)
+          .push(slideFromLeftRoute(const DriverMenuScreen()));
+    } finally {
       _menuRouteOpen = false;
-      return;
+      if (mounted) unawaited(_remountMapSurface());
     }
-    unawaited(Navigator.of(context)
-        .push(_driverMenuRoute())
-        .whenComplete(() => _menuRouteOpen = false));
-  }
-
-  /// Drawer transparente con slide desde la izquierda (estilo Dash). La
-  /// barrera atenúa y cierra al tap; back la popea solo — la ruta responde
-  /// al pop, `_goBack` ya no intercepta nada.
-  PageRoute<void> _driverMenuRoute() {
-    return PageRouteBuilder<void>(
-      opaque: false,
-      barrierDismissible: true,
-      barrierColor: Colors.black.withValues(alpha: 0.45),
-      barrierLabel: 'menu_drawer',
-      transitionDuration: const Duration(milliseconds: 320),
-      reverseTransitionDuration: const Duration(milliseconds: 260),
-      pageBuilder: (routeContext, _, __) {
-        final size = MediaQuery.of(routeContext).size;
-        final panelW = math.min(320.0, size.width * 0.78);
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: SizedBox(
-            width: panelW,
-            height: size.height,
-            child: _buildMenuDrawerContent(),
-          ),
-        );
-      },
-      transitionsBuilder: (context, animation, _, child) {
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(-1, 0),
-            end: Offset.zero,
-          ).animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
-          child: child,
-        );
-      },
-    );
-  }
-
-  void _closeDriverMenu() {
-    Navigator.of(context).pop();
-  }
-
-  /// Cierra el drawer y luego navega — las dos animaciones no se pelean.
-  Future<void> _menuNav(Widget page) async {
-    _closeDriverMenu();
-    // El cierre animado dura 260 ms; navegar encima a la vez se ve brusco.
-    await Future.delayed(const Duration(milliseconds: 280));
-    if (!mounted) return;
-    Navigator.of(context).push(slideFromRightRoute(page));
-  }
-
-  /// El mapa de agendados toma la única superficie nativa — la reclamación
-  /// al volver vive en `_openScheduledRides` (misma disciplina del toast).
-  Future<void> _menuScheduled() async {
-    _closeDriverMenu();
-    await Future.delayed(const Duration(milliseconds: 280));
-    if (!mounted) return;
-    _openScheduledRides();
-  }
-
-  /// Nombre + foto para el header del drawer — cache-first como el menú
-  /// completo (sesión en disco primero; el notifier por si la foto rotó).
-  Future<void> _loadMenuIdentity() async {
-    if (_menuIdentityLoaded) return;
-    _menuIdentityLoaded = true;
-    final cachedPhoto = UserSession.photoUrlNotifier.value;
-    if (cachedPhoto.isNotEmpty) _menuPhotoUrl = cachedPhoto;
-    final user = await UserSession.getUser();
-    if (user == null || !mounted) return;
-    final first = (user['firstName'] ?? '').toString();
-    final last = (user['lastName'] ?? '').toString();
-    final photo = (user['photoUrl'] ?? '').toString();
-    if (!mounted) return;
-    _setState(() {
-      if (first.isNotEmpty) {
-        _menuDriverName =
-            last.isNotEmpty ? '$first ${last[0].toUpperCase()}' : first;
-      }
-      if (photo.isNotEmpty) _menuPhotoUrl = photo;
-    });
-  }
-
-  /// La foto puede ser URL absoluta, path local o path del servidor — la
-  /// misma resolución del menú completo.
-  ImageProvider? _menuPhotoImage() {
-    final p = _menuPhotoUrl;
-    if (p == null || p.isEmpty) return null;
-    if (p.startsWith('http')) return CachedNetworkImageProvider(p);
-    if (p.startsWith('/')) {
-      final f = File(p);
-      if (f.existsSync()) return FileImage(f);
-      return CachedNetworkImageProvider('${ApiService.publicBaseUrl}$p');
-    }
-    return CachedNetworkImageProvider('${ApiService.publicBaseUrl}/$p');
-  }
-
-  // ═══════════════════════════════════════════════════
-  //  MENU DRAWER (estilo Dash, foto 2026-10-16)
-  // ═══════════════════════════════════════════════════
-
-  Widget _buildMenuDrawerContent() {
-    final mq = MediaQuery.of(context);
-    final topPad = mq.padding.top;
-    final s = S.of(context);
-    final photo = _menuPhotoImage();
-    final initial = _menuDriverName.isNotEmpty ? _menuDriverName[0] : '·';
-    // Material es OBLIGATORIO aquí: la ruta transparente no trae uno y sin
-    // él los Text heredan el estilo fallback del overlay (las líneas
-    // amarillas bajo cada label del reporte con foto 2026-10-17).
-    return Material(
-      color: neuBase,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Header: burbuja de foto a la IZQUIERDA del nombre ──
-          Padding(
-            padding: EdgeInsets.fromLTRB(20, topPad + 10, 20, 8),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF2A2A33),
-                    border: Border.all(
-                      color: _offlineGold.withValues(alpha: 0.5),
-                      width: 1.4,
-                    ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: photo != null
-                      ? Image(
-                          image: photo,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _menuInitial(initial),
-                        )
-                      : _menuInitial(initial),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _menuDriverName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // ── Opciones categorizadas: cada división lleva el título de su
-          // categoría, y los bloques se REPARTEN la altura del panel
-          // (2026-10-18, owner spec: "que las opciones llenen el menu para
-          // que no se vea tan vacio pero ni tan lleno, y que no genere
-          // scroll") — spaceEvenly entre secciones, CERO ListView (nada de
-          // scroll al deslizar). ──
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(
-                  left: 10, right: 10, bottom: mq.padding.bottom + 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _menuSectionGroup(s.menuSectionAccount, [
-                    _menuItem(Icons.attach_money_rounded, s.earningsTitle,
-                        () => _menuNav(const DriverEarningsScreen())),
-                    _menuItem(Icons.health_and_safety_outlined, s.helpAndSafety,
-                        () => _menuNav(const HelpScreen())),
-                    _menuItem(Icons.settings_rounded, s.settingsTitle,
-                        () => _menuNav(const DriverSettingsScreen())),
-                  ]),
-                  _menuSectionGroup(s.menuSectionGrowth, [
-                    _menuItem(Icons.workspace_premium_rounded,
-                        s.cruiseLevelLabel,
-                        () => _menuNav(const CruiseLevelScreen())),
-                    _menuItem(Icons.work_outline_rounded, s.workHub,
-                        () => _menuNav(const WorkHubScreen())),
-                    _menuItem(Icons.person_add_rounded, s.referFriends,
-                        () => _menuNav(const DriverReferralScreen())),
-                  ]),
-                  _menuSectionGroup(s.menuSectionWork, [
-                    _menuItem(Icons.event_note_rounded, s.scheduledTripsMenu,
-                        _menuScheduled),
-                    _menuItem(Icons.directions_car_rounded, s.vehiclesLabel,
-                        () => _menuNav(const DriverVehicleScreen())),
-                    _menuItem(Icons.description_rounded, s.documentsLabel,
-                        () => _menuNav(const DriverDocumentsScreen())),
-                  ]),
-                  _menuSectionGroup(s.moneySectionLabel, [
-                    _menuItem(Icons.receipt_long_rounded, s.taxInfo,
-                        () => _menuNav(const TaxInfoScreen())),
-                    _menuItem(Icons.account_balance_rounded,
-                        s.payoutMethodsLabel,
-                        () => _menuNav(const PayoutMethodsScreen())),
-                  ]),
-                  _menuSectionGroup(s.resourcesSectionLabel, [
-                    _menuItem(Icons.school_rounded, s.learningCenter,
-                        () => _menuNav(const LearningCenterScreen())),
-                    _menuItem(Icons.bug_report_rounded, s.bugReporter,
-                        () => _menuNav(const BugReporterScreen())),
-                    _menuItem(Icons.info_outline_rounded, s.aboutLabel,
-                        () => _menuNav(const AboutScreen())),
-                  ]),
-                  _menuItem(Icons.logout_rounded, s.signOut, _menuSignOut,
-                      danger: true),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _menuInitial(String initial) => Center(
-        child: Text(
-          initial,
-          style: const TextStyle(
-            color: Color(0xFFE8C547),
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      );
-
-  /// Título de categoría de cada división del drawer (spec 2026-10-17:
-  /// "categoriza cada cuadro y division colocale un titulo") — reemplaza a
-  /// la hairline divisoria como separador.
-  Widget _menuSection(String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
-        child: Text(
-          title.toUpperCase(),
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.42),
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.1,
-          ),
-        ),
-      );
-
-  /// Un bloque de categoría (título + sus items) — la unidad que el Column
-  /// del drawer reparte con spaceEvenly (2026-10-18, owner spec: llenar el
-  /// panel sin scroll).
-  Widget _menuSectionGroup(String title, List<Widget> items) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [_menuSection(title), ...items],
-    );
-  }
-
-  Widget _menuItem(IconData icon, String label, VoidCallback onTap,
-      {bool danger = false}) {
-    final color = danger ? const Color(0xFFFF5252) : Colors.white;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        child: Row(
-          children: [
-            Icon(icon,
-                color: danger ? color : Colors.white.withValues(alpha: 0.85),
-                size: 20),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Sign-out desde el drawer — el mismo flujo del menú completo (offline en
-  /// backend antes del logout, luego Splash limpio).
-  Future<void> _menuSignOut() async {
-    _closeDriverMenu();
-    await Future.delayed(const Duration(milliseconds: 280));
-    if (!mounted) return;
-    final s = S.of(context);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: neuSurface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          s.signOutTitle,
-          style: const TextStyle(
-              color: Colors.white, fontWeight: FontWeight.w800),
-        ),
-        content: Text(
-          s.signOutConfirmation,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              s.cancel,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              try {
-                final user = await UserSession.getUser();
-                final id = int.tryParse(user?['userId'] ?? '');
-                if (id != null) {
-                  await ApiService.updateDriverLocation(
-                      driverId: id, lat: 0, lng: 0, isOnline: false);
-                }
-              } catch (_) {}
-              await UserSession.logout();
-              if (!context.mounted) return;
-              Navigator.of(context).pushAndRemoveUntil(
-                smoothFadeRoute(const SplashScreen()),
-                (_) => false,
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFF5252),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text(
-              s.signOutButton,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   /// The offline chrome's menu button.

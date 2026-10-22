@@ -158,7 +158,10 @@ async def test_weekly_summary_aggregates_and_is_idempotent(db, capture):
     now = datetime.now(timezone.utc)
     driver = await _user(db, "Ana")
     # Two paid trips in the past ISO week, one unpaid, one this week.
-    base = now - timedelta(days=3)
+    # "3 days ago" breaks every Thursday (it lands on Monday of THIS ISO
+    # week — failed 2026-10-22): anchor deterministically INSIDE the
+    # previous ISO week for any weekday the suite runs on.
+    base = now - timedelta(days=now.isoweekday() + 2)
     await _trip(db, driver, None, status="completed",
                 payment_status="paid", completed_at=base,
                 driver_earnings=30.0, tip_amount=5.0)

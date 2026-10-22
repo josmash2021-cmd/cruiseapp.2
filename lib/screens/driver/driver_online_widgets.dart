@@ -194,6 +194,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // The zone's "FL: <city>" label — a Flutter overlay glued per
               // frame (NOT a Mapbox SymbolLayer — see driver_online_map.dart).
               Positioned.fill(child: _zoneLabelOverlay()),
+              // Gold airport pills of the driver's working state (visual
+              // only, same flat-projection pipeline — 2026-10-22).
+              Positioned.fill(child: _airportPillOverlay()),
               // Hotspot invisible: long-press en la zona del chip de
               // earnings muestra/oculta el panel de diagnóstico de
               // movimiento (GPS/tick/cam/anot por segundo).

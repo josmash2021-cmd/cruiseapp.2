@@ -3498,4 +3498,90 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       },
     );
   }
+
+  /// Gold airport pills for the driver's working state (2026-10-22, owner
+  /// spec: "solo los grandes", VISUAL ONLY — IgnorePointer, no tap): same
+  /// flat-projection zero-IPC pipeline as the zone pills, in BOTH searching
+  /// views (offline zone map and online "Finding trips"). Hidden beyond
+  /// zoom 8.5 (map clutter) and during navigation phases.
+  Widget _airportPillOverlay() {
+    if (kIsWeb) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: _markerFrame,
+      builder: (_, __) {
+        if (_phase != _Phase.searching) return const SizedBox.shrink();
+        // Misma regla que las etiquetas de zona: nunca sobre el velo/negro
+        // de un remount.
+        if (!_mapStyleLoaded || !_firstRenderDone) {
+          return const SizedBox.shrink();
+        }
+        final cam = _onlineCamState;
+        final size = _onlineMapSize;
+        if (cam == null || size == null) return const SizedBox.shrink();
+        if (cam.zoom < 8.5) return const SizedBox.shrink();
+        final p = _pos;
+        final airports = airportsForState(
+            _driveStateCode ??
+                (p == null ? null : ZoneService.stateOfPoint(p)));
+        if (airports.isEmpty) return const SizedBox.shrink();
+        final c = cam.center.coordinates;
+        final camCenter = LatLng(c.lat.toDouble(), c.lng.toDouble());
+        final children = <Widget>[];
+        for (final a in airports) {
+          final off = FlatMapProjection.screenOffsetHeading(
+            target: LatLng(a.lat, a.lng),
+            cameraCenter: camCenter,
+            zoom: cam.zoom,
+            bearingDeg: cam.bearing,
+            pitchDeg: cam.pitch,
+            viewport: size,
+          );
+          if (off == null) continue;
+          final shifted = off + _camPadShift(cam);
+          if (!FlatMapProjection.isOnScreen(shifted, size)) continue;
+          children.add(Positioned(
+            left: shifted.dx,
+            top: shifted.dy,
+            child: IgnorePointer(
+              child: FractionalTranslation(
+                translation: const Offset(-0.5, -0.5),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF14141A),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: const Color(0xFFE8C547), width: 1.2),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black54, blurRadius: 6),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.flight_rounded,
+                          color: Color(0xFFE8C547), size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        a.code,
+                        style: const TextStyle(
+                          color: Color(0xFFE8C547),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ));
+        }
+        if (children.isEmpty) return const SizedBox.shrink();
+        return Stack(children: children);
+      },
+    );
+  }
 }

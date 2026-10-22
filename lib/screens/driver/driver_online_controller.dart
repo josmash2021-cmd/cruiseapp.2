@@ -1139,12 +1139,25 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
   }
 
+  /// Working state for the airport pills: the profile's drive_state once
+  /// (fail-open — the overlay falls back to the GPS state until it lands).
+  Future<void> _ensureAirportState() async {
+    try {
+      final me = await ApiService.getMe();
+      final st = (me?['drive_state'] ?? '').toString().trim().toUpperCase();
+      if (mounted && st.isNotEmpty) {
+        _setState(() => _driveStateCode = st);
+      }
+    } catch (_) {
+      // Sin perfil: el overlay resuelve el estado por GPS (stateOfPoint).
+    }
+  }
+
   /// First-GO "You're now online!" instruction: once per device, only from
   /// an explicit GO tap (never on resume). Shows after the connect beat
   /// lands; the seen flag is written ONLY by the Entendido button, so an
   /// app kill mid-overlay just replays it next GO.
-  Future<void> _maybeShowOnlineIntro() async {
-    final p = await PrefsCache.instance;
+  Future<void> _maybeShowOnlineIntro() async {    final p = await PrefsCache.instance;
     // The owner's demo account gets the intro on EVERY GO; everyone else
     // once per phone (the seen flag).
     final email = ((await UserSession.getUser())?['email'] ?? '').toLowerCase();

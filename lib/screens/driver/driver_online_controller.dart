@@ -1145,10 +1145,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// app kill mid-overlay just replays it next GO.
   Future<void> _maybeShowOnlineIntro() async {
     final p = await PrefsCache.instance;
-    if (p.getBool('online_intro_seen_v1') == true) return;
+    // The owner's demo account gets the intro on EVERY GO; everyone else
+    // once per phone (the seen flag).
+    final email = ((await UserSession.getUser())?['email'] ?? '').toLowerCase();
+    final alwaysShow = kOnlineIntroAlwaysEmails.contains(email);
+    if (!alwaysShow && p.getBool('online_intro_seen_v1') == true) return;
     await Future.delayed(const Duration(milliseconds: 700));
     if (!mounted || !_driverOnline || _showOnlineIntro) return;
-    if (p.getBool('online_intro_seen_v1') == true) return;
+    if (!alwaysShow && p.getBool('online_intro_seen_v1') == true) return;
     _setState(() => _showOnlineIntro = true);
   }
 

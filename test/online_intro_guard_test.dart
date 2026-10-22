@@ -55,6 +55,15 @@ void main() {
         reason: 'spec: only the Entendido button, no X');
   });
 
+  test("the owner's demo account sees it on EVERY GO (spec 2026-10-22)", () {
+    expect(overlay, contains('kOnlineIntroAlwaysEmails'));
+    expect(overlay, contains('josmash33@gmail.com'));
+    expect(controller, contains('kOnlineIntroAlwaysEmails.contains(email)'));
+    // The seen flag is only consulted when the account is NOT in the
+    // always-show set.
+    expect(controller, contains('!alwaysShow'));
+  });
+
   test('the driver count is an editable constant, used in the copy', () {
     expect(overlay, contains('const int kFirstDriverCount = 100;'));
     expect(overlay, contains('kFirstDriverCount'));

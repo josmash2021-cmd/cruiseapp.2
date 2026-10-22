@@ -16,6 +16,11 @@ import '../../services/haptic_service.dart';
 /// The first-N-drivers figure used in the copy — EDITABLE by design.
 const int kFirstDriverCount = 100;
 
+/// Accounts that see the intro EVERY time they go online (owner spec
+/// 2026-10-22 — Jhon's demo driver). Everyone else gets it once per phone.
+/// Cosmetic and client-side only, same spirit as the test-account lists.
+const Set<String> kOnlineIntroAlwaysEmails = {'josmash33@gmail.com'};
+
 class OnlineIntroOverlay extends StatefulWidget {
   const OnlineIntroOverlay({super.key, required this.onUnderstood});
 

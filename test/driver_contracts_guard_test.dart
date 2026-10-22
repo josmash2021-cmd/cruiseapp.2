@@ -130,4 +130,15 @@ void main() {
     expect(signup.contains('docLinkContracts'), isTrue);
     expect(signup.contains('DriverContractsScreen'), isTrue);
   });
+
+  test('the hero artwork sits at the top of the contracts list (2026-10-22)', () {
+    expect(File('assets/images/contracts_hero.jpg').existsSync(), isTrue);
+    expect(screen, contains("assets/images/contracts_hero.jpg"));
+    // …and it renders right after the header, before the contracts list.
+    final header = screen.indexOf('s.contractsTitle');
+    final hero = screen.indexOf('contracts_hero.jpg');
+    final list = screen.indexOf('ListView.builder(');
+    expect(header > -1 && hero > header && list > hero, isTrue,
+        reason: 'hero must render between the title header and the list');
+  });
 }

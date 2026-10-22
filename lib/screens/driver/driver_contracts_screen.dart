@@ -199,6 +199,33 @@ class _DriverContractsScreenState extends State<DriverContractsScreen> {
                   ],
                 ),
               ),
+              const SizedBox(height: 16),
+              // Hero artwork at the top (spec 2026-10-22 — same treatment
+              // as the referral page hero: rounded, gold glow).
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _contractsGold.withValues(alpha: 0.18),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(22),
+                    child: Image.asset(
+                      'assets/images/contracts_hero.jpg',
+                      width: double.infinity,
+                      height: 190,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 20),
               Expanded(
                 child: _contracts == null

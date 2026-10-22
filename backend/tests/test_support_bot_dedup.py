@@ -259,3 +259,93 @@ def test_contracts_are_explained_not_invented():
 
 def test_settle_window_covers_fast_followups():
     assert support_router._BOT_READ_SETTLE_SECONDS >= 10.0
+
+
+# ── Waitlist hears no document demands (2026-10-22, owner report) ───────────
+
+@pytest.mark.asyncio
+async def test_waitlist_context_hides_document_gaps(db, test_driver):
+    """A waitlisted driver's app shows ONLY the waiting state — the bot
+    context must not list missing docs/contracts (chat 134 demanded them)."""
+    from routers.support import _get_user_context
+
+    driver, _ = test_driver
+    driver.verification_status = "waitlist"
+    await db.commit()
+
+    ctx = await _get_user_context(driver.id, db, "es")
+    act = ctx["driver"]["activation"]
+    assert act["waitlist"] is True
+    assert act["missing"] == [] and act["under_review"] == []
+    assert act["rejected"] == []
+
+    from services.openai_support_service import _format_user_context
+    text = _format_user_context(ctx)
+    assert "WAITLISTED" in text
+    assert "Do NOT list or mention missing documents" in text
+
+    # A pending (not waitlisted) driver DOES get the actionable lists.
+    driver.verification_status = "pending"
+    await db.commit()
+    ctx2 = await _get_user_context(driver.id, db, "es")
+    act2 = ctx2["driver"]["activation"]
+    assert act2.get("waitlist") is not True
+
+
+def test_specialized_agent_naming_and_contracts_tone():
+    import inspect
+    from services import openai_support_service as ai_svc
+    src = inspect.getsource(ai_svc)
+    # Rule 13: the user always hears "agente especializado", never "humano".
+    assert 'called "agente especializado"' in src
+    assert 'NEVER "humano"' in src
+    # The waitlist hard rule and the gentle contracts phrasing.
+    assert "a waitlisted driver hears about NOTHING" in src
+    assert "as help not demand" in src
+    # The escalation tool no longer echoes "human supervisor" to the model.
+    assert "specialized agent (a human dispatcher)" in src
+
+
+# ── Typing respect: the bot waits while the customer is still typing ────────
+
+@pytest.mark.asyncio
+async def test_reply_waits_while_user_still_typing(db, test_driver, monkeypatch):
+    monkeypatch.setattr(support_router, "_BOT_READ_SETTLE_SECONDS", 0.01)
+    monkeypatch.setattr(support_router, "_BOT_TYPING_STEP_SECONDS", 0.01)
+
+    class _R:
+        def random(self):
+            return 0.99
+
+        def uniform(self, a, b):
+            return a
+    monkeypatch.setattr(support_router, "_rng", _R())
+
+    driver, _ = test_driver
+    chat = await _mk_chat(db, driver)
+    m1 = await _user_msg(db, chat.id, driver.id, "hola")
+
+    # Typing stops only on the third check — generation must not start early.
+    typing_calls = {"n": 0}
+    gen_calls = {"n": 0}
+
+    def _typing(_cid):
+        typing_calls["n"] += 1
+        return typing_calls["n"] < 3
+    monkeypatch.setattr(support_router, "_user_still_typing", _typing)
+
+    async def _gen(chat, user_msg, user_name, db):
+        gen_calls["n"] += 1
+        assert typing_calls["n"] >= 3, "generation ran while still typing"
+        return [{"role": "bot", "message": "respuesta", "sender_name": "T"}]
+    monkeypatch.setattr(support_router, "_generate_bot_replies", _gen)
+
+    await _background_bot_reply(chat.id, m1.message, "Drv", "agent_active",
+                                anchor_msg_id=m1.id)
+    assert gen_calls["n"] == 1
+    bots = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "bot",
+        ))).scalars().all()
+    assert len(bots) == 1

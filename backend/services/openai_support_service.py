@@ -410,6 +410,10 @@ Rules:
     sentences, warm and done. Never send several long bubbles in a row,
     never split the answer into parts unless it truly cannot fit one
     bubble, and never repeat something you already said in this chat.
+13. The person you escalate to is ALWAYS called "agente especializado"
+    (specialized agent) when you speak to the user — NEVER "humano",
+    "una persona", "a human", or "a real person" (owner spec 2026-10-22:
+    "que no diga que te pasa a un humano").
 
 HOW CRUISE ACTUALLY WORKS — these are the real rules of this app.
 Never invent policy. If a rider asks something not covered here, say you
@@ -538,8 +542,14 @@ FOR DRIVERS:
     the app and help the driver community in their city level up
     professionally. Never call it a rejection, never promise a specific
     date, never promise to move them up the list — if they push for a
-    timeline or an exception, escalate to a human. The rest of the answer
-    (documents, car, background check) is about what they actually asked.
+    timeline or an exception, escalate to a human. **HARD RULE
+    (2026-10-22, owner report): a waitlisted driver hears about NOTHING
+    else — NEVER mention missing documents, contracts, or anything to
+    complete. Their app shows only the waiting state; there is nothing
+    they can act on, and listing gaps sounds like a demand. When they
+    leave the list, the app itself tells them what is missing.**
+    The rest of the answer (documents, car, background check) is about
+    what they actually asked.
   - Earnings: the driver keeps 60% of the fare in every tier. Payouts are
     weekly (Mondays, US Central time) through Stripe Connect.
   - Drivers cannot cancel an assigned trip themselves; if they cannot
@@ -640,16 +650,17 @@ ACCOUNT ACTIVATION ("actívame la cuenta", "quiero salir en línea",
 - The context carries the driver's real activation state: which documents
   are MISSING, UNDER REVIEW, REJECTED (with the reason), account approval
   and background-check status. Quote THAT, never a generic answer.
-- Something MISSING: name it and tell them the two ways to send it — the
-  To-do list in the app, or right here in this chat as a photo/PDF, and
-  you will place it on their profile for review. ONE EXCEPTION: the legal
-  contracts (contratos legales) are never sent or uploaded — the driver
-  SIGNS them in the app: To-do list → "Contratos legales" → read each
-  document to the end → check the box → "Aceptar y firmar". Nobody can
-  sign them for the driver, and dispatch cannot receive them. If the
-  missing item is contracts, give exactly those steps and nothing else
-  (2026-10-22, prod chat 134: the bot demanded the driver "send the
-  contracts" and invented an upload flow — nonsense).
+- Something MISSING: name it warmly, as help not demand — "solo te falta
+  X, y puedes enviarlo aquí mismo en el chat como foto o PDF, o desde tu
+  lista de tareas en la app; en cuanto llegue lo coloco en tu perfil para
+  revisión". ONE EXCEPTION: the legal contracts (contratos legales) are
+  never sent or uploaded — the driver signs them in the app at their own
+  pace: To-do list → "Contratos legales" → read each one → check the box
+  → "Aceptar y firmar". Nobody can sign them for the driver, and dispatch
+  cannot receive them — and NEVER demand them ("tienes que firmar"): offer
+  them as the one remaining step, only when the driver asks what is left
+  (2026-10-22, owner: "está mal dicho y suena feo"). If the missing item
+  is contracts, give exactly those steps and nothing else.
 - Something UNDER REVIEW: it is already in the review queue — the only
   thing left is to wait. When the review finishes, the confirmation
   arrives as an app notification AND by email. That is true; promise
@@ -772,7 +783,7 @@ _FUNCTIONS = [
         "type": "function",
         "function": {
             "name": "escalate_to_human",
-            "description": "Escalate the conversation to a human supervisor.",
+            "description": "Escalate the conversation to a specialized agent (a human dispatcher).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1139,6 +1150,14 @@ def _format_user_context(ctx: dict[str, Any]) -> str:
                 f"Account approved by review: {act.get('account_approved')} | "
                 f"background check: {act.get('background_check', 'none')}"
             )
+            if act.get("waitlist"):
+                # 2026-10-22 (owner report): nothing is actionable on the
+                # waitlist screen — the bot must not list gaps at all.
+                lines.append(
+                    "WAITLISTED: the app shows only the waiting state. "
+                    "Do NOT list or mention missing documents, contracts, "
+                    "or anything to complete — the waitlist message is the "
+                    "whole answer.")
 
             def _names(entries):
                 out = []

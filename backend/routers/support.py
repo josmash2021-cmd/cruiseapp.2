@@ -472,23 +472,32 @@ async def _driver_context_block(user_id: int, db: AsyncSession) -> dict:
             # Activation summary (2026-10-12): the same onboarding items
             # regrouped the way a "actívame la cuenta" question needs them —
             # what is missing, what waits on review, what bounced and why.
+            #
+            # WAITLIST (2026-10-22, owner report: the bot demanded contracts
+            # from a waitlisted driver — incoherent, their app shows nothing
+            # but the waiting state): a waitlisted driver has NOTHING
+            # actionable, so the activation lists stay EMPTY for them and the
+            # bot only ever gives the waitlist speech.
+            _waitlisted = (db_user.verification_status or "").lower() == "waitlist"
             missing, under_review, rejected, approved = [], [], [], []
-            for k, v in (items or {}).items():
-                if not isinstance(v, dict):
-                    continue
-                entry = {"item": k, "label": _DOC_LABELS.get(k, (k, k))}
-                st = v.get("status")
-                if st == "pending":
-                    missing.append(entry)
-                elif st == "submitted":
-                    under_review.append(entry)
-                elif st == "rejected":
-                    rejected.append({**entry, "reason": v.get("reason")})
-                elif st == "approved":
-                    approved.append(entry)
+            if not _waitlisted:
+                for k, v in (items or {}).items():
+                    if not isinstance(v, dict):
+                        continue
+                    entry = {"item": k, "label": _DOC_LABELS.get(k, (k, k))}
+                    st = v.get("status")
+                    if st == "pending":
+                        missing.append(entry)
+                    elif st == "submitted":
+                        under_review.append(entry)
+                    elif st == "rejected":
+                        rejected.append({**entry, "reason": v.get("reason")})
+                    elif st == "approved":
+                        approved.append(entry)
             out["activation"] = {
                 "account_approved": bool(db_user.is_verified)
                 and db_user.verification_status == "approved",
+                "waitlist": _waitlisted,
                 "background_check": db_user.background_check_status or "none",
                 "missing": missing,
                 "under_review": under_review,
@@ -2132,6 +2141,11 @@ async def _followup_task(chat_id: int, user_id: int, lang: str) -> None:
 # the 4 s window still fired mid-typing).
 _BOT_READ_SETTLE_SECONDS = 10.0
 
+# Typing-respect steps (2026-10-22): after the settle, while the app still
+# reports the customer typing, the reply waits in these steps (×6 ≈ 15 s
+# extra max). A module constant so tests can shrink it.
+_BOT_TYPING_STEP_SECONDS = 2.5
+
 
 async def _bot_write_blocked(db: AsyncSession, chat_id: int,
                              anchor_id: int | None,
@@ -2174,6 +2188,32 @@ def _cancel_chat_tasks(chat_id: int) -> None:
         inactive.cancel()
 
 
+def _user_still_typing(chat_id: int) -> bool:
+    """True while the app reports the user is typing RIGHT NOW (the
+    `user_typing` flag with a `typing_updated_at` fresher than 8 s — a stale
+    flag left by a crash must never pause anything). Firestore is shared
+    across workers, so this is multi-worker safe by construction."""
+    if not _HAS_FIRESTORE:
+        return False
+    try:
+        doc = firestore_sync._fs_db.collection("support_chats").document(
+            str(chat_id)).get()
+        if not doc.exists:
+            return False
+        d = doc.to_dict() or {}
+        if not d.get("user_typing"):
+            return False
+        ts = d.get("typing_updated_at")
+        if not ts:
+            return True  # flag without a timestamp: assume alive
+        t = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - t).total_seconds() < 8
+    except Exception:
+        return False
+
+
 async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str,
                                 bot_phase: str, anchor_msg_id: int | None = None):
     """Run bot reply generation in the background so the HTTP response returns immediately.
@@ -2191,6 +2231,15 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str,
             if not chat or chat.status != "open" or \
                     (chat.bot_phase or "") in ("escalated", "dispatch_takeover"):
                 return
+
+            # Respect "typing…" (2026-10-22, owner report: the bot answers
+            # before the customer finishes writing): after the settle, if the
+            # app says the user is STILL typing, wait in short steps — up to
+            # ~15 s extra — before generating.
+            for _ in range(6):
+                if not _user_still_typing(chat_id):
+                    break
+                await asyncio.sleep(_BOT_TYPING_STEP_SECONDS)
 
             # ~10% chance of occasional slow response (agent multitasking)
             is_slow = _rng.random() < 0.10

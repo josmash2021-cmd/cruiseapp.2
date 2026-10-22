@@ -105,12 +105,14 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     // ($25 after 2 rides). What the referrer earns is never the invitee's
     // business — the old "I earn $50 when you…" line died 2026-10-22.
     //
-    // Brand domain, not the backend host: short and trustworthy. The
-    // cruiseinride.com hosting redirects /drive/* to the backend's route
-    // (which bounces new Android installs through the Play install
-    // referrer) and serves the AASA/assetlinks files so an installed app
-    // opens the link directly.
-    final link = 'https://cruiseinride.com/drive/$_code';
+    // HOST: the backend serves /drive TODAY. The brand domain is the goal,
+    // but it 404s until the cruiseinride.com hosting serves
+    // /.well-known/apple-app-site-association + assetlinks.json and
+    // redirects /drive/* to the backend — the moment those three are live,
+    // flip _shareLinkHost to https://cruiseinride.com (native already
+    // accepts both hosts, no new store build needed).
+    const shareHost = 'https://cruiseapp2-production.up.railway.app';
+    final link = '$shareHost/drive/$_code';
     final text =
         '${s.driverShareWelcome(_dollars(_refereeBonusCents), _refereeBonusRides)}\n\n'
         '${s.driverShareCodeLine(_code)}\n'

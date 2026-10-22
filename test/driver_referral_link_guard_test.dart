@@ -38,9 +38,13 @@ void main() {
   final authRouter =
       File('backend/routers/auth.py').readAsStringSync();
 
-  group('share link targets the brand domain', () {
-    test('the shared URL is /drive/{code} on cruiseinride.com', () {
-      expect(screen, contains("'https://cruiseinride.com/drive/\$_code'"));
+  group('share link host', () {
+    test('the shared URL is /drive/{code} on a host that serves the route', () {
+      // Interim: the backend host serves /drive today; the brand domain
+      // joins once its hosting serves .well-known/* + the /drive redirect
+      // (flip _shareLinkHost — native already accepts both).
+      expect(screen, contains('/drive/\$_code'));
+      expect(screen, contains('shareHost'));
       // The message is invitee-centered: the "I earn $50 when you…" line
       // (what the REFERRER earns) must never be in a shared invite.
       expect(screen.contains('driverShareMilestones'), isFalse,

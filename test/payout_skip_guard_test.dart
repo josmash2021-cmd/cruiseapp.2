@@ -21,22 +21,23 @@ void main() {
         reason: 'a successfully linked bank keeps its separate result');
   });
 
-  test('the celebration forces the complete guide only for Skip', () {
+  test('the celebration ALWAYS lands on the guide after the bank page', () {
     final s = File(
             'lib/screens/driver/onboarding/driver_approved_celebration_screen.dart')
         .readAsStringSync();
-    final pushIdx =
-        s.indexOf('PayoutMethodsScreen(autoPopOnBankLinked: true)');
-    final homeIdx =
-        s.indexOf('await _continueToHome(forceGuide: forceGuide);');
-    expect(pushIdx, greaterThan(-1));
-    expect(homeIdx, greaterThan(pushIdx),
-        reason: 'the payout result must reach the continuation');
-    expect(s, contains("forceGuide = result == 'skip';"),
-        reason: 'only the Skip result forces the guide; true/null do not');
-    expect(s, contains('!forceGuide &&'),
-        reason: 'forcing the guide overrides first_trip_guide_seen_v1');
-    expect(s, contains('FirstTripGuideScreen()'));
+    // 2026-10-22 spec: bank linked, Skip, or back — every exit continues to
+    // the mandatory guide, never straight home.
+    expect(s, contains('await _continueToHome();'));
+    expect(
+        s,
+        contains(
+            'onboardingFadeSlideRoute(const FirstTripGuideScreen())'));
+    expect(s.contains('first_trip_guide_seen_v1'), isFalse,
+        reason: 'the seen-flag bypass died: the guide is always mandatory');
+    expect(s.contains('const DriverOnlineScreen()'), isFalse,
+        reason: 'home is only reachable through the guide in this flow');
+    expect(s.contains("result == 'skip'"), isFalse,
+        reason: 'no special-casing: Skip/back/linked all land on the guide');
   });
 
   test('the celebration headline says Welcome to Cruise in Ride + name', () {

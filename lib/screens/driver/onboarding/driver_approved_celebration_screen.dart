@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
 import '../../../services/user_session.dart';
-import '../driver_online_screen.dart';
 import '../payout_methods_screen.dart';
 import 'first_trip_guide_screen.dart';
 
@@ -17,9 +15,10 @@ import 'first_trip_guide_screen.dart';
 /// "Start driving" runs the payout gate (`GET /drivers/stripe-connect/status`
 /// via [ApiService.getStripeConnectStatus]): no payout destination yet →
 /// [PayoutMethodsScreen] first (leaving without setting one up is fine — a
-/// snackbar tells them the menu path). Its Skip always forces the complete
-/// first-trip guide; otherwise the guide follows `first_trip_guide_seen_v1`.
-/// The flow ends at [DriverOnlineScreen].
+/// snackbar tells them the menu path). Whatever happens there — bank linked,
+/// Skip, or back — the flow ALWAYS continues to the mandatory first-trip
+/// guide (2026-10-22), whose own Skip only advances a page; only the
+/// guide's last page ends at DriverOnlineScreen.
 class DriverApprovedCelebrationScreen extends StatefulWidget {
   const DriverApprovedCelebrationScreen({super.key});
 
@@ -67,16 +66,14 @@ class _DriverApprovedCelebrationScreenState
     }
     if (!mounted) return;
 
-    var forceGuide = false;
     if (!configured) {
-      final result = await Navigator.of(context).push(
+      await Navigator.of(context).push(
         onboardingFadeSlideRoute(
             const PayoutMethodsScreen(autoPopOnBankLinked: true)),
       );
-      forceGuide = result == 'skip';
       if (!mounted) return;
-      // Re-check on return: success → straight to the guide/home; left
-      // without setting one up → they may continue anyway (not a prison).
+      // Re-check on return: success → straight to the guide; left without
+      // setting one up → they may continue anyway (not a prison).
       try {
         configured = _payoutConfigured(await ApiService.getStripeConnectStatus());
       } catch (_) {
@@ -94,20 +91,18 @@ class _DriverApprovedCelebrationScreenState
       }
     }
 
-    await _continueToHome(forceGuide: forceGuide);
+    await _continueToHome();
   }
 
-  /// First-trip guide once, then home. Skip on the payout gate forces the
-  /// complete guide even when another account already saw it on this phone.
-  Future<void> _continueToHome({bool forceGuide = false}) async {
-    final prefs = await SharedPreferences.getInstance();
-    final guideSeen =
-        !forceGuide && (prefs.getBool('first_trip_guide_seen_v1') ?? false);
+  /// The guide is MANDATORY after the payout gate (user spec 2026-10-22):
+  /// bank connected, Skip, or back — EVERY exit of the bank page lands on
+  /// the guide pages, never straight home. And the guide is a one-way
+  /// street: its own Skip only advances a page; only the last page
+  /// reaches home.
+  Future<void> _continueToHome() async {
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      onboardingFadeSlideRoute(
-        guideSeen ? const DriverOnlineScreen() : const FirstTripGuideScreen(),
-      ),
+      onboardingFadeSlideRoute(const FirstTripGuideScreen()),
       (_) => false,
     );
   }

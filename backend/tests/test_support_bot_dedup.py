@@ -304,6 +304,10 @@ def test_specialized_agent_naming_and_contracts_tone():
     assert "as help not demand" in src
     # The escalation tool no longer echoes "human supervisor" to the model.
     assert "specialized agent (a human dispatcher)" in src
+    # The owner's own voice is the house standard, and the waitlist answer
+    # matches the exact copy of the waitlist screen.
+    assert "OWNER'S OWN VOICE" in src
+    assert "Te notificaremos en cuanto" in src
 
 
 # ── Typing respect: the bot waits while the customer is still typing ────────

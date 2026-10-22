@@ -1,9 +1,10 @@
 """Driver locations for the Zonas page map (2026-10-18 user spec: "en
 zonas ver dónde están ubicados cada uno seleccionando por ciudad o varias
 ciudades"). /admin/driver-locations serves every driver with their last
-known position — the in-memory TTL overlay wins over the throttled columns
-— and drivers with no position at all still appear (lat/lng null) so the
-city view can count them.
+known position — the in-memory TTL overlay freshens POSITION only — and
+drivers with no position at all still appear (lat/lng null) so the city
+view can count them. is_online comes from the DB alone (2026-10-22 ghost
+fix: the overlay is per-process under UVICORN_WORKERS=4).
 """
 
 import pytest
@@ -46,6 +47,34 @@ async def test_payload_fields_and_no_position_nulls(client, db):
         "sin posición se incluye con nulls — la vista Ciudad lo cuenta")
     for field in ("phone", "photo_url", "is_online", "last_active_at"):
         assert field in row
+
+
+async def test_offline_in_db_is_never_ghosted_by_the_overlay(client, db):
+    """2026-10-22, prod report ("le di offline y en dispatch sigo activo"):
+    with UVICORN_WORKERS=4 the overlay is per-process — a worker can hold a
+    pre-offline heartbeat for up to the 1 h TTL and it overrode the DB flag.
+    The DB (written immediately by the flip) is the only is_online truth."""
+    import time
+
+    from routers import drivers as drv
+
+    d = await _driver(db, "Ghost", lat=25.0, lng=-80.0, is_online=False)
+    # Stale overlay entry from BEFORE the offline flip, as the OTHER worker
+    # would still hold it: online=True with a fresher position.
+    drv._driver_locations[d.id] = {
+        "lat": 26.0, "lng": -81.0, "is_online": True,
+        "ts": time.monotonic(),
+    }
+    try:
+        res = await client.get("/admin/driver-locations", headers=_dh())
+        assert res.status_code == 200, res.text
+        rows = {r["id"]: r for r in res.json()["drivers"]}
+        assert rows[d.id]["is_online"] is False, (
+            "the overlay must never resurrect an offline driver")
+        # …while the overlay keeps its only job: fresher POSITION.
+        assert rows[d.id]["lat"] == 26.0 and rows[d.id]["lng"] == -81.0
+    finally:
+        drv._driver_locations.pop(d.id, None)
 
 
 async def test_city_centers_anchor_the_city_view(client, db):
@@ -93,13 +122,15 @@ async def test_columns_used_and_live_overlay_wins(client, db):
     assert row["lat"] == 25.0 and row["lng"] == -80.0
     assert row["is_online"] is False
 
-    # The in-memory heartbeat overlay is fresher than the throttled columns.
+    # The in-memory heartbeat overlay freshens the throttled position
+    # columns — but NEVER the online flag (2026-10-22 ghost fix: a stale
+    # overlay entry on another worker must not resurrect an offline driver).
     _driver_locations[d.id] = {"lat": 26.1, "lng": -81.1, "is_online": True,
                                "ts": 0.0}
     try:
         res = await client.get("/admin/driver-locations", headers=_dh())
         row = {r["id"]: r for r in res.json()["drivers"]}[d.id]
         assert row["lat"] == 26.1 and row["lng"] == -81.1
-        assert row["is_online"] is True
+        assert row["is_online"] is False
     finally:
         _driver_locations.pop(d.id, None)

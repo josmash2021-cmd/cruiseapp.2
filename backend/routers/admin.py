@@ -2409,8 +2409,14 @@ async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
         live = _driver_locations.get(u.id)
         lat = live["lat"] if live is not None else u.lat
         lng = live["lng"] if live is not None else u.lng
-        is_online = bool(live["is_online"]) if live is not None else bool(
-            u.is_online)
+        # is_online comes from the DB ONLY (2026-10-22, "le di offline y en
+        # dispatch sigo activo"): prod runs UVICORN_WORKERS=4 and the
+        # overlay is per-process — the worker serving this request may hold
+        # a heartbeat from BEFORE the offline flip (TTL 1 h) and overrode
+        # the DB with a ghost "online". The flip writes the DB immediately
+        # (it bypasses the 3 s throttle), so the DB is always the freshest
+        # truth for the flag; the overlay only freshens POSITION.
+        is_online = bool(u.is_online)
         out.append({
             "id": u.id,
             "name": f"{u.first_name or ''} {u.last_name or ''}".strip(),

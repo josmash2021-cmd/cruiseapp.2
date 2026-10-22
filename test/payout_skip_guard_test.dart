@@ -38,4 +38,17 @@ void main() {
         reason: 'forcing the guide overrides first_trip_guide_seen_v1');
     expect(s, contains('FirstTripGuideScreen()'));
   });
+
+  test('the celebration headline says Welcome to Cruise in Ride + name', () {
+    final s = File(
+            'lib/screens/driver/onboarding/driver_approved_celebration_screen.dart')
+        .readAsStringSync();
+    final l10n =
+        File('lib/l10n/app_localizations.dart').readAsStringSync();
+    expect(s, contains('s.welcomeCruiseInRideTitle('),
+        reason: 'the headline is personalized with the first name');
+    expect(s, contains('s.approvedWelcomeBody'));
+    expect(l10n, contains('Welcome to Cruise in Ride, \$firstName!'));
+    expect(l10n, contains('¡Bienvenido a Cruise in Ride, \$firstName!'));
+  });
 }

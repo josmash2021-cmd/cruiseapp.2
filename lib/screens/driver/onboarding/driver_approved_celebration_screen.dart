@@ -160,7 +160,9 @@ class _DriverApprovedCelebrationScreenState
               const SizedBox(height: 36),
 
               Text(
-                s.youreApproved,
+                s.welcomeCruiseInRideTitle(
+                  _firstName.isNotEmpty ? _firstName : s.driverFallback,
+                ),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
@@ -173,9 +175,7 @@ class _DriverApprovedCelebrationScreenState
               const SizedBox(height: 16),
 
               Text(
-                s.approvedWelcomeBody(
-                  _firstName.isNotEmpty ? _firstName : s.driverFallback,
-                ),
+                s.approvedWelcomeBody,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.6),

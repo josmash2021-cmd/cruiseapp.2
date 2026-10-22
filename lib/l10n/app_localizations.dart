@@ -1951,15 +1951,17 @@ class S {
       _es ? 'Aprobación de despacho pendiente' : 'Dispatch approval pending';
   String get checkingForUpdates =>
       _es ? 'Verificando actualizaciones...' : 'Checking for updates...';
-  String get youreApproved => _es ? '¡Estás Aprobado!' : "You're Approved!";
+  String welcomeCruiseInRideTitle(String firstName) => _es
+      ? '¡Bienvenido a Cruise in Ride, $firstName!'
+      : 'Welcome to Cruise in Ride, $firstName!';
   String get welcomeDriverTeam => _es
       ? 'Bienvenido al equipo de conductores de Cruise. Ya puedes conectarte y empezar a aceptar viajes.'
       : 'Welcome to the Cruise driver team. You can now go online and start accepting rides.';
 
   // ── Driver post-approval (celebration + first-trip guide) ─────────────────
-  String approvedWelcomeBody(String firstName) => _es
-      ? 'Bienvenido a Cruise, $firstName. Tus documentos están verificados y tu verificación de antecedentes está limpia. Ya puedes empezar a ganar.'
-      : "Welcome to Cruise, $firstName. Your documents are verified and your background check is clear. You're ready to start earning.";
+  String get approvedWelcomeBody => _es
+      ? 'Tu cuenta está aprobada: documentos verificados y antecedentes limpios. Ya puedes empezar a ganar.'
+      : "Your account is approved: documents verified and background check clear. You're ready to start earning.";
   String get startDriving => _es ? 'Empezar a conducir' : 'Start driving';
   String get driverFallback => _es ? 'Conductor' : 'Driver';
   String get addPayoutLaterSnack => _es

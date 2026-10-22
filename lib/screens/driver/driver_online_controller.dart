@@ -1125,6 +1125,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _goOnlineBackend();
       } else {
         unawaited(Future.microtask(_verifyAndGoOnline));
+        // First GO on this phone → the "You're now online!" instruction
+        // (2026-10-22 spec: once per device, for newly approved AND for
+        // drivers approved long ago). Resumes never see it.
+        unawaited(_maybeShowOnlineIntro());
       }
       _startClock();
       _startPolling();
@@ -1133,6 +1137,26 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     } finally {
       _enteringOnline = false;
     }
+  }
+
+  /// First-GO "You're now online!" instruction: once per device, only from
+  /// an explicit GO tap (never on resume). Shows after the connect beat
+  /// lands; the seen flag is written ONLY by the Entendido button, so an
+  /// app kill mid-overlay just replays it next GO.
+  Future<void> _maybeShowOnlineIntro() async {
+    final p = await PrefsCache.instance;
+    if (p.getBool('online_intro_seen_v1') == true) return;
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted || !_driverOnline || _showOnlineIntro) return;
+    if (p.getBool('online_intro_seen_v1') == true) return;
+    _setState(() => _showOnlineIntro = true);
+  }
+
+  Future<void> _dismissOnlineIntro() async {
+    final p = await PrefsCache.instance;
+    await p.setBool('online_intro_seen_v1', true);
+    if (!mounted) return;
+    _setState(() => _showOnlineIntro = false);
   }
 
   /// Salir offline (el _goOffline de hoy, sin el pop): se apagan los

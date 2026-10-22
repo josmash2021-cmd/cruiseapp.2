@@ -1963,6 +1963,35 @@ class S {
       ? 'Tu cuenta está aprobada: documentos verificados y antecedentes limpios. Ya puedes empezar a ganar.'
       : "Your account is approved: documents verified and background check clear. You're ready to start earning.";
   String get startDriving => _es ? 'Empezar a conducir' : 'Start driving';
+
+  // ── First-GO "You're now online!" intro overlay (2026-10-22) ────────────────
+  String get onlineIntroTitle =>
+      _es ? '¡Ya estás en línea!' : "You're now online!";
+  String onlineIntroSub(int n) => _es
+      ? 'Gracias por ser uno de los primeros $n conductores seleccionados para ser parte del comienzo de Cruise in Ride.'
+      : 'Thank you for being one of the first $n drivers selected to be part of the beginning of Cruise in Ride.';
+  String get onlineIntroB1Title =>
+      _es ? 'Estamos comenzando' : 'We Are Getting Started';
+  String get onlineIntroB1Body => _es
+      ? 'Actualmente estamos en la fase inicial de lanzamiento y nuestro equipo está trabajando para reclutar pasajeros en tu área.'
+      : 'We are currently in the initial launch phase and our team is working to recruit passengers in your area.';
+  String get onlineIntroB2Title => _es
+      ? 'Puede haber pocos o ningún viaje al principio'
+      : 'There May Be Few or No Rides at the Beginning';
+  String get onlineIntroB2Body => _es
+      ? 'Es normal que no haya viajes o muy pocos al inicio. A medida que crezca nuestra comunidad de pasajeros, comenzarás a recibir viajes agendados e inmediatos.'
+      : "It's normal that there are no rides or very few rides at the start. As our passenger community grows, you will begin to receive scheduled and instant rides.";
+  String get onlineIntroB3Title =>
+      _es ? 'Tu paciencia importa' : 'Your Patience Matters';
+  String get onlineIntroB3Body => _es
+      ? 'Apreciamos de verdad tu paciencia durante esta etapa inicial. Cada conductor es una parte clave de este proyecto.'
+      : 'We truly appreciate your patience during this initial stage. Each driver is a key part of this project.';
+  String get onlineIntroB4Title =>
+      _es ? 'Beneficios exclusivos' : 'Exclusive Benefits';
+  String onlineIntroB4Body(int n) => _es
+      ? 'Como uno de los primeros $n conductores, tendrás beneficios exclusivos que no estarán disponibles para otros conductores en el futuro.'
+      : "As one of the first $n drivers, you will have exclusive benefits that won't be available to other drivers in the future.";
+  String get onlineIntroUnderstood => _es ? 'Entendido' : 'Got it';
   String get driverFallback => _es ? 'Conductor' : 'Driver';
   String get addPayoutLaterSnack => _es
       ? 'Puedes agregar tu método de pago más tarde desde el menú'

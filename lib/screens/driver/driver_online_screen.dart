@@ -91,6 +91,7 @@ import 'cruise_level_screen.dart';
 import 'driver_documents_screen.dart';
 import 'driver_menu_screen.dart';
 import 'driver_contracts_screen.dart';
+import 'online_intro_overlay.dart';
 import 'onboarding/driver_notifications_screen.dart';
 import 'onboarding/driver_todo_screen.dart'; // gate de aprobación en el destino
 import 'driver_waitlist_screen.dart'; // gate de aprobación en el destino
@@ -1378,6 +1379,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // El flip es in-place — sin push, sin handoff de superficie, sin snapshot.
   bool _driverOnline = false;
   bool _enteringOnline = false;
+  // First-GO "You're now online!" instruction (2026-10-22): once per device,
+  // rendered as an overlay over the online map — see _maybeShowOnlineIntro.
+  bool _showOnlineIntro = false;
   // El stream GPS se recrea en cada flip (iOS solo aplica el flag de
   // background en un request nuevo) — este latch evita recrearlo en vano.
   bool _posStreamIsBackground = false;
@@ -2960,6 +2964,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       ],
                     ),
                   ],
+                ),
+              ),
+
+            // First-GO "You're now online!" instruction — floats over the
+            // online map (never a route); once per device.
+            if (_showOnlineIntro)
+              Positioned.fill(
+                child: OnlineIntroOverlay(
+                  onUnderstood: _dismissOnlineIntro,
                 ),
               ),
           ],

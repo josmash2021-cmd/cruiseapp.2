@@ -131,39 +131,20 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
             ? const Center(
                 child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
               )
-            : Stack(
+            : Column(
                 children: [
-                  Column(
-                    children: [
-                      Expanded(
-                        child: PageView(
-                          controller: _pageCtrl,
-                          onPageChanged: (i) =>
-                              setState(() => _pageIndex = i),
-                          children: [
-                            _buildMainReferralPage(s),
-                            _buildMyReferralsPage(s),
-                          ],
-                        ),
-                      ),
-                      _buildPageDots(),
-                    ],
-                  ),
-                  // Share lives on page 1 only — it fades out sideways when
-                  // the driver swipes to My Referrals.
-                  Positioned(
-                    left: 20,
-                    right: 20,
-                    bottom: 12,
-                    child: IgnorePointer(
-                      ignoring: _pageIndex != 0,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 250),
-                        opacity: _pageIndex == 0 ? 1 : 0,
-                        child: _buildBottomShareButton(s),
-                      ),
+                  Expanded(
+                    child: PageView(
+                      controller: _pageCtrl,
+                      onPageChanged: (i) =>
+                          setState(() => _pageIndex = i),
+                      children: [
+                        _buildMainReferralPage(s),
+                        _buildMyReferralsPage(s),
+                      ],
                     ),
                   ),
+                  _buildPageDots(),
                 ],
               ),
       ),
@@ -194,90 +175,108 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     );
   }
 
-  /// Page 1 — the pitch: hero artwork, rewards, code, how it works.
+  /// Page 1 — NO scrollable of any kind (owner spec 2026-10-23: "la primera
+  /// pagina completa, sin scroll"). Same LayoutBuilder gapScale idiom as the
+  /// rider referral screen: gaps and the hero scale down on short phones,
+  /// fonts never do. On VERY short screens the hero artwork bows out — the
+  /// rewards numbers matter, the artwork is decoration. The Share button
+  /// lives IN the column (a Spacer pins it to the bottom) — the old floating
+  /// overlay + 110 bottom padding died with the scroll.
   Widget _buildMainReferralPage(S s) {
-    return RefreshIndicator(
-      color: _gold,
-      onRefresh: _load,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 110),
-        children: [
-          // ── Top bar ──
-          Row(
+    return LayoutBuilder(
+      builder: (context, box) {
+        final gapScale = (box.maxHeight / 700).clamp(0.55, 1.0);
+        double gap(double v) => v * gapScale;
+        final heroHeight = box.maxHeight < 600 ? 0.0 : 150.0 * gapScale;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+          child: Column(
             children: [
-              GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: _surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  s.referFriends,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-
-          _buildHeroArtwork(),
-          Transform.translate(
-            offset: const Offset(0, -22),
-            child: _buildRewardsCard(s),
-          ),
-          const SizedBox(height: 24),
-
-          _buildHowItWorksTimeline(s),
-
-          // Hint toward page 2 — the referrals tracker lives one swipe away.
-          if (_referees.isNotEmpty) ...[
-            const SizedBox(height: 18),
-            Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+              // ── Top bar ──
+              Row(
                 children: [
-                  Text(
-                    s.swipeToSeeReferrals,
-                    style: const TextStyle(
-                      color: Color(0xFFB0B0B6),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _surface,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.arrow_forward_rounded,
-                      color: _gold, size: 16),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      s.referFriends,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                  ),
                 ],
               ),
-            ),
-          ],
-        ],
-      ),
+              SizedBox(height: gap(14)),
+              if (heroHeight > 0 && !_heroArtMissing) ...[
+                _buildHeroArtwork(heroHeight),
+                Transform.translate(
+                  offset: const Offset(0, -16),
+                  child: _buildRewardsCard(s),
+                ),
+              ] else
+                _buildRewardsCard(s),
+              SizedBox(height: gap(12)),
+              _buildHowItWorksTimeline(s, gapScale),
+
+              // Hint toward page 2 — the referrals tracker lives one swipe
+              // away.
+              if (_referees.isNotEmpty) ...[
+                SizedBox(height: gap(10)),
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        s.swipeToSeeReferrals,
+                        style: const TextStyle(
+                          color: Color(0xFFB0B0B6),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.arrow_forward_rounded,
+                          color: _gold, size: 16),
+                    ],
+                  ),
+                ),
+              ],
+              const Spacer(),
+              _buildBottomShareButton(s),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildHeroArtwork() {
+  /// OTA patches carry no new assets (device-proven 2026-10-23): on a store
+  /// build that predates this PNG the artwork collapses cleanly instead of
+  /// leaving a blank band.
+  bool _heroArtMissing = false;
+
+  Widget _buildHeroArtwork(double height) {
     return Container(
+      height: height,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
@@ -293,9 +292,18 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
         child: Image.asset(
           'assets/images/referral_hero.png',
           width: double.infinity,
-          height: 214,
+          height: height,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+          errorBuilder: (context, error, stackTrace) {
+            if (!_heroArtMissing) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && !_heroArtMissing) {
+                  setState(() => _heroArtMissing = true);
+                }
+              });
+            }
+            return const SizedBox.shrink();
+          },
         ),
       ),
     );
@@ -427,7 +435,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     );
   }
 
-  Widget _buildHowItWorksTimeline(S s) {
+  Widget _buildHowItWorksTimeline(S s, double gapScale) {
     final steps = <({IconData icon, String title, String body})>[
       (
         // Icon glyphs must ALSO exist as plain const references elsewhere in
@@ -463,12 +471,12 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
           s.howItWorksTitle,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 28,
+            fontSize: 22,
             fontWeight: FontWeight.w900,
             letterSpacing: -0.5,
           ),
         ),
-        const SizedBox(height: 18),
+        SizedBox(height: 12 * gapScale),
         for (var i = 0; i < steps.length; i++)
           _buildTimelineRow(
             number: i + 1,
@@ -476,6 +484,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
             title: steps[i].title,
             body: steps[i].body,
             isLast: i == steps.length - 1,
+            gapScale: gapScale,
           ),
       ],
     );
@@ -487,18 +496,19 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     required String title,
     required String body,
     required bool isLast,
+    required double gapScale,
   }) {
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 34,
+            width: 30,
             child: Column(
               children: [
                 Container(
-                  width: 34,
-                  height: 34,
+                  width: 30,
+                  height: 30,
                   decoration: const BoxDecoration(
                     color: _gold,
                     shape: BoxShape.circle,
@@ -508,7 +518,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
                       '$number',
                       style: const TextStyle(
                         color: Colors.black,
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -518,22 +528,22 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Container(
-            width: 56,
-            height: 56,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
               color: const Color(0xFF1C1C24),
               shape: BoxShape.circle,
               border: Border.all(
                   color: _gold.withValues(alpha: 0.62), width: 1.3),
             ),
-            child: Icon(icon, color: _gold, size: 28),
+            child: Icon(icon, color: _gold, size: 21),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Padding(
-              padding: EdgeInsets.only(bottom: isLast ? 0 : 24),
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 12 * gapScale),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -541,17 +551,17 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
                     title,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 18,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     body,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.72),
-                      fontSize: 14.5,
-                      height: 1.38,
+                      fontSize: 13,
+                      height: 1.32,
                     ),
                   ),
                 ],

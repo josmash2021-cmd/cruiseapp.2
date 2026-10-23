@@ -184,7 +184,19 @@ void main() {
 
     test('page 1 keeps Share fixed; page 2 hides it', () {
       expect(screen, contains('_buildBottomShareButton'));
-      expect(screen, contains('ignoring: _pageIndex != 0'));
+      // 2026-10-23 (owner spec: page 1 complete, no scroll): the floating
+      // fade-out overlay DIED — Share is the LAST child of page 1's
+      // no-scroll column (a Spacer pins it to the bottom) and swiping to
+      // page 2 takes it away with the page itself.
+      expect(screen, isNot(contains('ignoring: _pageIndex != 0')));
+      final mainPage = screen
+          .split('Widget _buildMainReferralPage(S s) {')
+          .last
+          .split('/// OTA patches carry no new assets')
+          .first;
+      expect(mainPage, contains('_buildBottomShareButton(s)'));
+      final page2 = screen.split('Widget _buildMyReferralsPage(S s) {').last;
+      expect(page2, isNot(contains('_buildBottomShareButton')));
     });
 
     test('rows are privacy-safe and dated', () {

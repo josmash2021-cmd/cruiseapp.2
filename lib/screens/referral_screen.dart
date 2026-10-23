@@ -11,16 +11,21 @@ import 'transfer_cruise_cash_screen.dart';
 
 /// Invite Friends screen — Cruise Cash referral system.
 ///
-/// Layout (top to bottom):
-///   1. Back button + title
-///   2. Pending-bonus banner (only when THIS rider redeemed a code and
-///      hasn't qualified yet — their welcome bonus waiting)
-///   3. Referral code chip (tap to copy) + big Share button
-///   4. Cruise Cash balance card + Transfer
-///   5. "How it works" 3-step explainer
-///   6. Redeem-someone-else's-code mini form
-///   7. List of referees with per-row progress bar
-///   8. Recent Cruise Cash transactions
+/// 2026-10-23 (owner spec: "la primera pagina de refer friend no quiero que
+/// tenga scroll — ajusta para que se vea completa y bien adaptada"): TWO
+/// horizontal pages with the driver-guide dots idiom.
+///
+/// Page 1 (NO scroll — must always fit, down to an iPhone SE): pending-bonus
+/// banner (only when THIS rider redeemed a code and hasn't qualified yet),
+/// the referral code chip (tap to copy) + big Share button, the Cruise Cash
+/// balance card + Transfer, and "How it works" compacted to ONE neuBox card
+/// with the 3 steps as hairline-divided rows. A LayoutBuilder scales the
+/// inter-block gaps below ~640 pt; typography is never touched.
+///
+/// Page 2 (swipe right, scrolls freely): the redeem-someone-else's-code
+/// mini form, the list of referees with per-row progress bar, and the
+/// recent Cruise Cash transactions. The header stays fixed above the
+/// PageView, shared by both pages.
 ///
 /// The deal itself (amounts, qualifying fare) comes from the backend's
 /// policy payload — change it once in referrals.py and every screen,
@@ -62,6 +67,10 @@ class _ReferralScreenState extends State<ReferralScreen>
   String? _redeemError;
   String? _redeemSuccess;
 
+  /// Page 1 (content) ↔ page 2 (activity) — the driver-guide dots idiom.
+  final _pageCtrl = PageController();
+  int _page = 0;
+
   late final AnimationController _entryCtl;
 
   @override
@@ -78,6 +87,7 @@ class _ReferralScreenState extends State<ReferralScreen>
   void dispose() {
     _entryCtl.dispose();
     _redeemCtl.dispose();
+    _pageCtrl.dispose();
     super.dispose();
   }
 
@@ -232,32 +242,102 @@ class _ReferralScreenState extends State<ReferralScreen>
                 color: _gold,
                 backgroundColor: neuSurface,
                 onRefresh: _load,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-                  physics: const AlwaysScrollableScrollPhysics(
-                      parent: BouncingScrollPhysics()),
+                // Vertical pull never fights the horizontal swipe: on page 1
+                // nothing scrolls, on page 2 the ListView owns the pull.
+                child: Column(
                   children: [
-                    _buildHeader(),
-                    const SizedBox(height: 20),
-                    if (_myPendingBonus != null) ...[
-                      _entryItem(0, _buildPendingBonusBanner()),
-                      const SizedBox(height: 16),
-                    ],
-                    _entryItem(1, _buildCodeCard()),
-                    const SizedBox(height: 16),
-                    _entryItem(2, _buildBalanceCard()),
-                    const SizedBox(height: 28),
-                    _entryItem(3, _buildHowItWorks()),
-                    const SizedBox(height: 24),
-                    _entryItem(4, _buildRedeemBlock()),
-                    const SizedBox(height: 28),
-                    _entryItem(5, _buildRefereesSection()),
-                    const SizedBox(height: 24),
-                    _entryItem(6, _buildTransactionsSection()),
+                    // Fixed header — shared by both pages so page 1 is pure
+                    // content and always fits.
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                      child: _buildHeader(),
+                    ),
+                    Expanded(
+                      child: PageView(
+                        controller: _pageCtrl,
+                        physics: const BouncingScrollPhysics(),
+                        onPageChanged: (i) => setState(() => _page = i),
+                        children: [
+                          _buildMainPage(),
+                          _buildActivityPage(),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildDots(),
+                    const SizedBox(height: 14),
                   ],
                 ),
               ),
       ),
+    );
+  }
+
+  /// Page 1 — NO scrollable of any kind: the owner wants it complete at a
+  /// glance (2026-10-23). The LayoutBuilder scales the gaps on short phones
+  /// (iPhone SE = 667 pt); fonts stay put.
+  Widget _buildMainPage() {
+    return LayoutBuilder(
+      builder: (context, box) {
+        final gapScale = (box.maxHeight / 640).clamp(0.55, 1.0);
+        double gap(double v) => v * gapScale;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            children: [
+              if (_myPendingBonus != null) ...[
+                SizedBox(height: gap(16)),
+                _entryItem(0, _buildPendingBonusBanner()),
+              ],
+              SizedBox(height: gap(16)),
+              _entryItem(1, _buildCodeCard()),
+              SizedBox(height: gap(14)),
+              _entryItem(2, _buildBalanceCard()),
+              const Spacer(),
+              _entryItem(3, _buildHowItWorks()),
+              SizedBox(height: gap(8)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Page 2 — the redeem form, the referees and the activity; this one MAY
+  /// scroll (it's the swipe-over page).
+  Widget _buildActivityPage() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics()),
+      children: [
+        _entryItem(4, _buildRedeemBlock()),
+        const SizedBox(height: 24),
+        _entryItem(5, _buildRefereesSection()),
+        const SizedBox(height: 24),
+        _entryItem(6, _buildTransactionsSection()),
+      ],
+    );
+  }
+
+  /// The two dots — the driver-guide idiom: the active one is an elongated
+  /// gold pill.
+  Widget _buildDots() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(2, (i) {
+        final active = i == _page;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          width: active ? 22 : 7,
+          height: 7,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            color: active ? _gold : Colors.white.withValues(alpha: 0.22),
+          ),
+        );
+      }),
     );
   }
 
@@ -497,7 +577,7 @@ class _ReferralScreenState extends State<ReferralScreen>
     final c = AppColors.of(context);
     final s = S.of(context);
     return Container(
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: neuBox(radius: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -535,7 +615,7 @@ class _ReferralScreenState extends State<ReferralScreen>
                         style: const TextStyle(
                           fontFamily: 'Poppins',
                           color: _gold,
-                          fontSize: 36,
+                          fontSize: 30,
                           fontWeight: FontWeight.w900,
                           letterSpacing: -1.0,
                         ),
@@ -598,92 +678,117 @@ class _ReferralScreenState extends State<ReferralScreen>
     );
   }
 
+  /// ONE neuBox card holding the three steps as hairline-divided compact
+  /// rows (2026-10-23 owner spec: page 1 fits without scrolling) — the gold
+  /// number badge survives on every step.
   Widget _buildHowItWorks() {
     final s = S.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(s.howItWorksTitle),
-        _step(1, Icons.share_rounded, s.referStep1Title, s.referStep1Body),
-        _step(2, Icons.directions_car_rounded, s.referStep2Title,
-            s.referStep2Body(_tripsRequired, _deal(_minFareDollars))),
-        _step(3, Icons.savings_rounded, s.referStep3Title(_deal(_bonusDollars)),
-            s.referStep3Body),
+        Container(
+          decoration: neuBox(radius: 16),
+          child: Column(
+            children: [
+              _step(1, const Icon(Icons.share_rounded, color: _gold, size: 20),
+                  s.referStep1Title, s.referStep1Body),
+              Divider(
+                  height: 1,
+                  indent: 58,
+                  color: Colors.white.withValues(alpha: 0.05)),
+              _step(
+                  2,
+                  const Icon(Icons.directions_car_rounded,
+                      color: _gold, size: 20),
+                  s.referStep2Title,
+                  s.referStep2Body(_tripsRequired, _deal(_minFareDollars))),
+              Divider(
+                  height: 1,
+                  indent: 58,
+                  color: Colors.white.withValues(alpha: 0.05)),
+              _step(
+                  3,
+                  const Icon(Icons.savings_rounded, color: _gold, size: 20),
+                  s.referStep3Title(_deal(_bonusDollars)),
+                  s.referStep3Body),
+            ],
+          ),
+        ),
       ],
     );
   }
 
-  Widget _step(int index, IconData icon, String title, String body) {
+  /// The icon arrives as a BUILT const Icon at the call site — a loose
+  /// IconData through a helper param tree-shakes to "?" in release
+  /// (owner-confirmed on device 2026-10-23).
+  Widget _step(int index, Widget icon, String title, String body) {
     final c = AppColors.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: neuBox(radius: 16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: neuBox(radius: 14, pressed: true),
-              alignment: Alignment.center,
-              child: Icon(icon, color: _gold, size: 22),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _gold,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '$index',
-                          style: const TextStyle(
-                            fontFamily: 'Poppins',
-                            color: Colors.black,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                          ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: neuBox(radius: 12, pressed: true),
+            alignment: Alignment.center,
+            child: icon,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _gold,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '$index',
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.black,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            color: c.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    body,
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      color: c.textSecondary,
-                      fontSize: 12.5,
-                      height: 1.35,
-                      fontWeight: FontWeight.w500,
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: c.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  body,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: c.textSecondary,
+                    fontSize: 12,
+                    height: 1.3,
+                    fontWeight: FontWeight.w500,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

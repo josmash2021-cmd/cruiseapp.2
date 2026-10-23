@@ -191,3 +191,46 @@ async def test_waitlist_without_token_falls_back_to_sms(client, db, push, monkey
     assert len(sms) == 1
     assert sms[0]["phone"] == "+13055550999"
     assert "lista de espera" in sms[0]["message"]
+
+
+async def test_approve_cascades_to_docs_vehicle_and_overrides(client, db, push):
+    """2026-10-23, owner spec: 'cuando le doy aprobar debe aprobar todos los
+    documentos así hayan otros pendientes, sin darle aprobar independiente'.
+    One tap on Aprobar = account + every Document row + the active vehicle
+    + any pending/rejected onboarding override — all approved at once."""
+    import json as _json
+
+    from models.database import Document, Vehicle
+
+    u = await _mk_user(db)
+    v = Vehicle(user_id=u.id, make="Toyota", model="Camry", year=2021,
+                plate="ABC123", vehicle_type="standard",
+                approval_status="pending", is_active=True)
+    db.add(v)
+    d1 = Document(user_id=u.id, doc_type="insurance", status="pending",
+                  file_path="x")
+    d2 = Document(user_id=u.id, doc_type="registration", status="rejected",
+                  file_path="x", rejection_reason="blurry")
+    db.add_all([d1, d2])
+    u.onboarding_items = _json.dumps(
+        {"license": {"status": "rejected", "reason": "blurry"}})
+    await db.commit()
+
+    res = await client.post(
+        f"/auth/dispatch-approve/{u.id}",
+        headers=_make_auth_headers("test-dispatch-key"),
+    )
+    assert res.status_code == 200, res.text
+
+    await db.refresh(u)
+    await db.refresh(v)
+    await db.refresh(d1)
+    await db.refresh(d2)
+    assert u.verification_status == "approved" and u.is_verified
+    assert d1.status == "approved" and d2.status == "approved"
+    assert d2.rejection_reason is None
+    assert v.approval_status == "approved"
+    ov = _json.loads(u.onboarding_items)
+    assert ov["license"]["status"] == "approved"
+    # ONE notification — the account push; no per-doc spam.
+    assert push["fcm"][0]["data"]["type"] == "driver_approved"

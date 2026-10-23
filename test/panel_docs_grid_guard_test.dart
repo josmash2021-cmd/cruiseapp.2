@@ -52,7 +52,50 @@ void main() {
     expect(chunk, contains('flex-1 border-success/40 text-success'),
         reason: 'full-width Aprobar button under each image');
     expect(chunk, contains('object-contain'),
-        reason: 'photos render contained (the full document visible)');
+        reason: 'videos keep object-contain so the whole frame is visible');
+  });
+
+  test('photo cells are uniform and open a lightbox, never a new page', () {
+    expect(chunk, contains('aspectRatio:"4/3"'),
+        reason: 'every media cell (photo / video / broken) is the same 4:3 '
+            'box — no stretched "very long" photos (2026-10-22 spec)');
+    expect(chunk, contains('object-cover transition-transform'),
+        reason: 'grid photos cover their cell (crop, never deform)');
+    expect(chunk, contains('[zoom,setZoom]=m.useState(null)'),
+        reason: 'the lightbox is a local state in the person-detail '
+            'component (the open photo URL)');
+    expect(chunk, contains('onClick:()=>setZoom(url)'),
+        reason: 'tapping a photo opens the lightbox');
+    expect(chunk, isNot(contains('window.open(url')),
+        reason: 'the photo NEVER navigates away / opens another page');
+    expect(chunk, contains('position:"fixed",inset:0'),
+        reason: 'the lightbox is a full-screen overlay ON TOP of the page');
+    expect(chunk, contains('rgba(0,0,0,0.85)'),
+        reason: 'dark backdrop');
+    expect(chunk, contains('objectFit:"contain"'),
+        reason: 'the enlarged photo renders whole');
+    expect(chunk, contains('onClick:()=>setZoom(null)'),
+        reason: 'clicking the backdrop (or the ✕) closes the lightbox');
+    expect(chunk, contains('children:"✕"'),
+        reason: 'explicit close button');
+  });
+
+  test('the four account actions are a uniform grid of rectangular buttons',
+      () {
+    expect(chunk, contains('mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4'),
+        reason: 'the actions grid spans the full card width (2×2 on narrow, '
+            '4 columns on wide)');
+    expect(chunk, contains('whitespace-nowrap rounded-lg border'),
+        reason: 'rectangular one-line buttons — the round pills that split '
+            '"Lista de espera" into 3 lines are gone');
+    expect(chunk, isNot(contains('size:"sm",icon:me')),
+        reason: 'the F pill component no longer renders the account actions');
+    for (final a in ['"approve")', '"waitlist")', '"pending")']) {
+      expect(chunk, contains('act({kind:"account",id:t},$a'),
+          reason: 'account action $a keeps its endpoint');
+    }
+    expect(chunk, contains('setRejectTarget({kind:"account",id:t})'),
+        reason: 'Rechazar still opens the reason modal');
   });
 
   test('the social/background check card is reviewable', () {

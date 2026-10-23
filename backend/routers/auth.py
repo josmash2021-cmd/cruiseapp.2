@@ -3229,6 +3229,41 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     db_user.verified_at = datetime.now(timezone.utc)
     await db.commit()
     logging.info("[DISPATCH-APPROVE] SQLite updated for user %d: status=approved, is_verified=True", user_id)
+
+    # One-tap approval carries EVERYTHING (2026-10-23, owner spec: "cuando
+    # le doy aprobar debe aprobar todos los documentos así hayan otros
+    # pendientes, sin darle aprobar independiente a cada uno"): every
+    # Document row, the active vehicle, and any pending/rejected onboarding
+    # overrides — the operator's account approval IS the final review.
+    # Silent per doc: the account approval push is the only notification
+    # (5 doc pushes + the account one would be spam).
+    try:
+        docs = (await db.execute(
+            select(Document).where(Document.user_id == db_user.id,
+                                   Document.status != "approved")
+        )).scalars().all()
+        for d in docs:
+            d.status = "approved"
+            d.rejection_reason = None
+        veh = (await db.execute(
+            select(Vehicle).where(Vehicle.user_id == db_user.id,
+                                  Vehicle.archived_at.is_(None))
+            .order_by(Vehicle.created_at.desc()))).scalars().first()
+        if veh and (veh.approval_status or "") != "approved":
+            veh.approval_status = "approved"
+        ov = _load_onboarding_overrides(db_user)
+        for _k, _v in ov.items():
+            if isinstance(_v, dict) and _v.get("status") in ("pending", "rejected"):
+                _v["status"] = "approved"
+                _v["reason"] = None
+        if ov:
+            db_user.onboarding_items = json.dumps(ov)
+        if docs or veh or ov:
+            await db.commit()
+            logging.info("[DISPATCH-APPROVE] user %d: cascade approved %d docs, vehicle=%s, overrides=%d",
+                         user_id, len(docs), bool(veh), len(ov))
+    except Exception as e:
+        logging.warning("[DISPATCH-APPROVE] doc cascade failed for user %d (account IS approved): %s", user_id, e)
     # Atomic batch write to ALL 3 Firestore collections
     if _HAS_FIRESTORE:
         try:

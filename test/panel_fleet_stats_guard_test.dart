@@ -85,10 +85,11 @@ void main() {
     expect(
         chunk,
         contains(
-            'rows=fleet.drivers.filter(d=>d.tier===tier&&(cityF===null||cityKeyOf(d)===cityF))'),
+            'rows=fleet.drivers.filter(d=>d.tier===tier&&(cityFS.size===0||cityFS.has(cityKeyOf(d))))'),
         reason: 'each category computes its own doc breakdown FOLLOWING THE '
-            'SELECTED CITY (2026-10-18 spec: "la ciudad que seleccione debe '
-            'actualizar estos números") — global only when no city is active');
+            'SELECTED CITIES (2026-10-18 spec: "la ciudad que seleccione debe '
+            'actualizar estos números"; 2026-10-22: multi-select — the whole '
+            'cityFS Set, global only when empty)');
     expect(chunk, contains('chipBtn(tier,lbl,rows.length'),
         reason: 'the tier count itself is the city-filtered row count');
     expect(chunk, isNot(contains('tierBtn("standard","Standard",fleet.tiers.standard')),

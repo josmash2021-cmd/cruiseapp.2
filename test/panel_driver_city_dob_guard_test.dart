@@ -14,7 +14,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// them onto the person rows (jt Firestore / zs inherited / Ws backend
 /// roster / en queue row / Gs fillFrom / Se+Zs+w of the verification
 /// queue), shows them as person-page tiles, and the Drivers page gets a
-/// "Ciudades" chip section that filters the list per city with counts.
+/// "Ciudades por estado" chip section that filters the list per city with
+/// counts. 2026-10-22 spec: the city filter is MULTI-SELECT — the chips
+/// toggle membership in a `cityFS` Set (empty = global) and the
+/// tier/docs counts follow the whole selection.
 void main() {
   final html = File('backend/dispatch_panel/index.html')
       .readAsStringSync()
@@ -76,9 +79,24 @@ void main() {
         reason: 'per-state groups with per-city counts feed the chips');
     expect(driversPage, contains('Ciudades por estado'),
         reason: 'section header: grouped by state, then city');
-    expect(driversPage, contains('cityKeyOf(d)===cityF'),
-        reason: 'a chip filters by the compound state|city key — same city '
-            'name in two states never mixes');
+    expect(driversPage, contains('const[cityFS,setCityFS]=m.useState(new Set)'),
+        reason: 'the city filter is a Set — MULTI-select (2026-10-22 spec: '
+            '"poder marcar VARIAS ciudades… y ver el segmento combinado")');
+    expect(driversPage, contains('cityFS.has(cityKeyOf(d))'),
+        reason: 'rows match by membership in the selection Set — the '
+            'compound state|city key means same city name in two states '
+            'never mixes');
+    expect(driversPage, contains('nx.has(k)?nx.delete(k):nx.add(k)'),
+        reason: 'each city chip toggles add/delete inside the Set');
+    expect(driversPage, contains('cityFS.size===0?base'),
+        reason: 'an empty Set means every city (the old null semantics)');
+    expect(driversPage, contains('setCityFS(new Set)'),
+        reason: '"Limpiar filtro" empties the Set');
+    expect(driversPage, contains(':`\${cityFS.size} ciudades`'),
+        reason: 'the <details> summary reads "N ciudades" when several are '
+            'selected');
+    expect(driversPage, isNot(contains('cityKeyOf(d)===cityF')),
+        reason: 'the single-city filter (cityF) is gone');
     expect(driversPage, contains('d.driveCity??d.drive_city'),
         reason: 'resolvers read both the people list (camelCase) and the '
             'fleet rows (snake_case) so the tier/docs counts follow the city');

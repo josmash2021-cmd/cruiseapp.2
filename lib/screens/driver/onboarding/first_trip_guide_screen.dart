@@ -450,7 +450,7 @@ class _DressCodePageState extends State<_DressCodePage>
     );
   }
 
-  Widget _chip(IconData icon, String label) {
+  Widget _chip(Widget icon, String label) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
@@ -462,7 +462,7 @@ class _DressCodePageState extends State<_DressCodePage>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: _gold, size: 15),
+            icon,
             const SizedBox(width: 5),
             Flexible(
               child: Text(
@@ -506,14 +506,20 @@ class _DressCodePageState extends State<_DressCodePage>
               const SizedBox(height: 14),
               Row(
                 children: [
-                  _chip(Icons.auto_awesome, labels[0]),
+                  _chip(const Icon(Icons.auto_awesome, color: _gold, size: 15),
+                      labels[0]),
                   const SizedBox(width: 8),
-                  _chip(Icons.verified_user_outlined, labels[1]),
+                  _chip(
+                      const Icon(Icons.verified_user_outlined,
+                          color: _gold, size: 15),
+                      labels[1]),
                   const SizedBox(width: 8),
                   _chip(
                     widget.vip
-                        ? Icons.workspace_premium_outlined
-                        : Icons.sentiment_satisfied_alt,
+                        ? const Icon(Icons.workspace_premium_outlined,
+                            color: _gold, size: 15)
+                        : const Icon(Icons.sentiment_satisfied_alt,
+                            color: _gold, size: 15),
                     labels[2],
                   ),
                 ],
@@ -539,13 +545,11 @@ class _DressCodePageState extends State<_DressCodePage>
           top: -12,
           right: -8,
           child: _GoldCircleBadge(
-            child: Icon(
-              widget.vip
-                  ? Icons.workspace_premium_outlined
-                  : Icons.checkroom,
-              color: const Color(0xFF14141A),
-              size: 18,
-            ),
+            child: widget.vip
+                ? const Icon(Icons.workspace_premium_outlined,
+                    color: Color(0xFF14141A), size: 18)
+                : const Icon(Icons.checkroom,
+                    color: Color(0xFF14141A), size: 18),
           ),
         ),
       ],
@@ -759,7 +763,7 @@ class _SelfieVerifyPageState extends State<_SelfieVerifyPage>
   }
 
   /// Chip with the label UNDER the icon (gold circle + small white caption).
-  Widget _chip(IconData icon, String label) {
+  Widget _chip(Widget icon, String label) {
     return Expanded(
       child: Column(
         children: [
@@ -770,7 +774,7 @@ class _SelfieVerifyPageState extends State<_SelfieVerifyPage>
               shape: BoxShape.circle,
               color: _gold,
             ),
-            child: Icon(icon, color: const Color(0xFF14141A), size: 22),
+            child: icon,
           ),
           const SizedBox(height: 6),
           Text(
@@ -832,19 +836,29 @@ class _SelfieVerifyPageState extends State<_SelfieVerifyPage>
               const SizedBox(height: 16),
               Row(
                 children: [
-                  _chip(Icons.face_outlined, s.selfieChipFaceVisible),
+                  _chip(
+                      const Icon(Icons.face_outlined,
+                          color: Color(0xFF14141A), size: 22),
+                      s.selfieChipFaceVisible),
                   const SizedBox(width: 8),
                   _chip(
                     widget.vip
-                        ? Icons.workspace_premium_outlined
-                        : Icons.checkroom,
+                        ? const Icon(Icons.workspace_premium_outlined,
+                            color: Color(0xFF14141A), size: 22)
+                        : const Icon(Icons.checkroom,
+                            color: Color(0xFF14141A), size: 22),
                     widget.vip ? s.selfieChipDressVip : s.selfieChipDressStd,
                   ),
                   const SizedBox(width: 8),
-                  _chip(Icons.wb_sunny_outlined, s.selfieChipLighting),
+                  _chip(
+                      const Icon(Icons.wb_sunny_outlined,
+                          color: Color(0xFF14141A), size: 22),
+                      s.selfieChipLighting),
                   const SizedBox(width: 8),
                   _chip(
-                      Icons.visibility_off_outlined, s.selfieChipNoGlasses),
+                      const Icon(Icons.visibility_off_outlined,
+                          color: Color(0xFF14141A), size: 22),
+                      s.selfieChipNoGlasses),
                 ],
               ),
             ],
@@ -1188,10 +1202,15 @@ class _StaticOfferCardState extends State<_StaticOfferCard>
                           const SizedBox(height: 10),
                           Row(
                             children: [
-                              _metric(Icons.access_time_rounded,
+                              _metric(
+                                  const Icon(Icons.access_time_rounded,
+                                      color: _gold, size: 12),
                                   s.offerDuration(13)),
                               const SizedBox(width: 8),
-                              _metric(Icons.straighten_rounded, '6.1 mi'),
+                              _metric(
+                                  const Icon(Icons.straighten_rounded,
+                                      color: _gold, size: 12),
+                                  '6.1 mi'),
                             ],
                           ),
                         ],
@@ -1453,14 +1472,14 @@ class _StaticOfferCardState extends State<_StaticOfferCard>
     );
   }
 
-  Widget _metric(IconData icon, String value) {
+  Widget _metric(Widget icon, String value) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: neuBox(radius: 10),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: _gold, size: 12),
+          icon,
           const SizedBox(width: 5),
           Text(
             value,

@@ -99,20 +99,31 @@ void main() {
   });
 
   test('chip icons are direct const args (tree-shaker safe)', () {
-    // Icons passed straight into a widget/helper arg are kept by the
-    // release tree-shaker; the same IconData inside a record literal or a
-    // const collection is dropped and paints "?".
+    // 2026-10-23 device proof: IconData passed through a helper param or a
+    // ternary is INVISIBLE to the release tree-shaker and paints "?" — the
+    // weak version of this pin only checked the names appeared in source and
+    // the first store build shipped broken chips. The rule is const Icon(...)
+    // widgets at the call site.
     for (final i in [
-      'Icons.checkroom',
-      'Icons.workspace_premium_outlined',
-      'Icons.face_outlined',
-      'Icons.wb_sunny_outlined',
-      'Icons.visibility_off_outlined',
-      'Icons.face_retouching_natural',
-      'Icons.sentiment_satisfied_alt',
+      'const Icon(Icons.auto_awesome',
+      'const Icon(Icons.checkroom',
+      'const Icon(Icons.workspace_premium_outlined',
+      'const Icon(Icons.face_outlined',
+      'const Icon(Icons.wb_sunny_outlined',
+      'const Icon(Icons.visibility_off_outlined',
+      'const Icon(Icons.sentiment_satisfied_alt',
+      'const Icon(Icons.access_time_rounded',
+      'const Icon(Icons.straighten_rounded',
     ]) {
-      expect(src, contains(i));
+      expect(src, contains(i), reason: '$i must be a const Icon construction');
     }
+    // …and the helpers must take the built widget, never a loose IconData.
+    expect(src, isNot(contains('IconData icon')),
+        reason: 'helpers taking IconData get tree-shaken to "?" in release');
+    expect(src, isNot(contains('_chip(Icons.')));
+    expect(src, isNot(contains('_metric(Icons.')));
+    expect(src, contains('Icons.face_retouching_natural'),
+        reason: 'the gold icon circle of page 6 (already a const Icon)');
   });
 
   test('the new l10n strings exist in ES and EN', () {

@@ -283,21 +283,6 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
                     0.35,
                     0.7,
                   ),
-                  const SizedBox(height: 8),
-                  _cascade(
-                    Text(
-                      s.selfieVerifyEvery24h,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: _gold,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                    0.45,
-                    0.8,
-                  ),
                   const SizedBox(height: 14),
                   _cascade(
                     Text(

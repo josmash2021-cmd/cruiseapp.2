@@ -111,8 +111,9 @@ void main() {
         reason: '…fired when the page becomes visible (page == 5)');
     expect(card, contains('if (!widget.active && old.active) _flashFired = false;'));
     expect(card, contains('addPostFrameCallback'));
-    expect(card, contains('Icons.face_retouching_natural'),
-        reason: 'the gold icon circle of page 6');
+    expect(card, isNot(contains('Icons.face_retouching_natural')),
+        reason: 'the top-right icon circle was removed by owner spec '
+            '2026-10-23 ("el emoji de la esquina quítalo")');
   });
 
   test('chip icons are direct const args (tree-shaker safe)', () {
@@ -142,9 +143,9 @@ void main() {
     ]) {
       expect(card, contains(i), reason: '$i must be a const Icon construction');
     }
-    expect(card, contains('Icons.face_retouching_natural'),
-        reason: 'the gold icon circle of page 6 (const Icon inside '
-            '_FaceIconBadge)');
+    expect(card, isNot(contains('Icons.face_retouching_natural')),
+        reason: 'the top-right icon circle was removed by owner spec '
+            '2026-10-23 — no _FaceIconBadge anywhere');
     // …and the helpers must take the built widget, never a loose IconData.
     expect(src, isNot(contains('IconData icon')),
         reason: 'helpers taking IconData get tree-shaken to "?" in release');

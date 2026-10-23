@@ -36,7 +36,9 @@ void main() {
     expect(screen, contains('flash: false'),
         reason: 'the shutter flash stays guide-only');
     expect(screen, contains('s.selfieVerifyTitle'));
-    expect(screen, contains('s.selfieVerifyEvery24h'));
+    expect(screen, isNot(contains('s.selfieVerifyEvery24h')),
+        reason: 'owner spec 2026-10-23: the "Every 24 hours" subtitle died '
+            'on the selfie-check screen (the guide page 6 keeps it)');
     expect(screen, contains('_vip ? s.selfieBodyVip : s.selfieBodyStd'));
     expect(screen, contains('s.faceCheckTakeSelfie'),
         reason: 'the gold full-width button opens step 2');

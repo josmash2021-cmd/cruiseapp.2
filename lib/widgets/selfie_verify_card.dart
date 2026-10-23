@@ -4,8 +4,9 @@ import '../l10n/app_localizations.dart';
 
 /// The selfie-verification card (owner mockup 2026-10-23): navy card with a
 /// thin gold frame, the tier×gender photo, the gold number badge top-left,
-/// the gold face icon circle top-right, and the 4 requirement chips with
-/// their caption UNDER the icon.
+/// and the 4 requirement chips with their caption UNDER the icon. (The
+/// decorative face-icon circle top-right was removed by owner spec the same
+/// day — "el emoji de la esquina quítalo".)
 ///
 /// ONE design source — used by the first-trip guide (page 6, `flash: true`)
 /// and by the selfie-check screen (step 1, `flash: false`). Same rule as
@@ -220,34 +221,7 @@ class _SelfieVerifyCardState extends State<SelfieVerifyCard>
             ),
           ),
         ),
-        const Positioned(
-          top: -12,
-          right: -8,
-          child: _FaceIconBadge(),
-        ),
       ],
-    );
-  }
-}
-
-/// The gold circle with the face icon, top-right of the card.
-class _FaceIconBadge extends StatelessWidget {
-  const _FaceIconBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 34,
-      height: 34,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        color: SelfieVerifyCard.gold,
-      ),
-      child: const Icon(
-        Icons.face_retouching_natural,
-        color: Color(0xFF14141A),
-        size: 18,
-      ),
     );
   }
 }

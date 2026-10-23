@@ -957,7 +957,14 @@ workflows:
           # si main trae cambios nativos (MainActivity, Manifest, gradle),
           # Shorebird los rechaza y eso es CORRECTO — lo nativo jamás va
           # OTA; espera al próximo build de tienda.
-          shorebird patch android --release-version latest --allow-asset-diffs || echo "⚠️ Android patch no publicado — si el log dice 'native changes', hay cambio nativo en main y requiere build de tienda (correcto); si dice 'asset changes', revisa el flag"
+          # EXCEPCIÓN DE EMERGENCIA (2026-10-23, aprobado por el dueño): el
+          # flag va ACTIVO para que salga el parche con lo del 20→23-oct
+          # (el único Dart que depende de lo nativo nuevo es
+          # ReferralLinkService y degrada en silencio con try/catch).
+          # TODO: QUITAR el flag en cuanto este parche publique — con él
+          # permanente, un cambio nativo futuro pasaría OTA en silencio y
+          # los teléfonos "no se actualizarían" sin que nadie lo note.
+          shorebird patch android --release-version latest --allow-asset-diffs --allow-native-diffs || echo "⚠️ Android patch no publicado — revisa el log"
           shorebird patch ios --release-version latest --no-codesign --allow-asset-diffs --allow-native-diffs
     publishing:
       email:

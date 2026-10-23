@@ -132,6 +132,31 @@ void main() {
         reason: 'the endpoint ships the registration date');
   });
 
+  test('GPS dots carry a docs ring (green/red), popup line and legend', () {
+    expect(chunk, contains('docs:d.docs_ok===true?1:d.docs_ok===false?0:-1'),
+        reason: 'tri-state docs property on the GeoJSON features — only an '
+            'EXPLICIT false paints red; a cached old backend without the '
+            'field (undefined → -1) never turns the whole map red '
+            '(2026-10-22 spec)');
+    expect(chunk, contains('["==",["get","docs"],1],"#22C55E"'),
+        reason: 'green ring = docs complete (data-driven ["get","docs"])');
+    expect(chunk, contains('["==",["get","docs"],0],"#EF4444"'),
+        reason: 'red ring = docs incomplete');
+    expect(chunk, contains('"circle-stroke-width":2.5'),
+        reason: 'the ring is visible at a glance over the online/offline '
+            'fill (gold/gray kept)');
+    expect(chunk, contains('Docs completos'));
+    expect(chunk, contains('Faltan documentos'),
+        reason: 'the dot popup states the docs status');
+    expect(chunk, contains('Docs OK'));
+    expect(chunk, contains('Faltan docs'),
+        reason: 'small legend next to the view toggle');
+    expect(adminPy, contains('"docs_ok": _docs_ok(u)'),
+        reason: '/admin/driver-locations ships the per-driver docs flag '
+            '(license + insurance + registration + AL inspection, any '
+            'review state — same definition as fleet-stats)');
+  });
+
   test('popups escape user-controlled fields', () {
     expect(chunk, contains('drvEsc'),
         reason: 'driver name/photo/city go through the HTML escaper — '

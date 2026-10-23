@@ -2401,9 +2401,42 @@ async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
         select(User.id, User.first_name, User.last_name, User.phone,
                User.photo_url, User.drive_city, User.drive_state,
                User.is_online, User.lat, User.lng, User.last_active_at,
-               User.verification_status, User.created_at)
+               User.verification_status, User.created_at,
+               User.license_front_url, User.insurance_url,
+               User.vehicle_registration_url, User.inspection_url)
         .where(User.role == "driver")
     )).all()
+
+    # Docs completeness per driver (2026-10-22, owner spec: "ver en el mapa
+    # los que ya tienen documentos y los que no") — the SAME definition the
+    # Drivers page fleet stats use: license + insurance + registration
+    # (+ inspection in Alabama), on file in ANY review status, Document rows
+    # or the legacy user *_url columns.
+    doc_rows = (await db.execute(
+        select(Document.user_id, Document.doc_type)
+        .where(Document.doc_type.in_(
+            ["drivers_license", "driver_license", "license", "insurance",
+             "registration", "vehicle_registration", "vehicle_inspection",
+             "inspection"]))
+    )).all()
+    doc_types_by_driver: dict[int, set] = {}
+    for d in doc_rows:
+        doc_types_by_driver.setdefault(d.user_id, set()).add(d.doc_type)
+
+    def _docs_ok(u) -> bool:
+        have = doc_types_by_driver.get(u.id, set())
+        has_license = bool(have & {"drivers_license", "driver_license",
+                                   "license"}) or bool(u.license_front_url)
+        has_insurance = "insurance" in have or bool(u.insurance_url)
+        has_registration = bool(have & {"registration",
+                                        "vehicle_registration"}) or bool(
+                                            u.vehicle_registration_url)
+        needs_inspection = (u.drive_state or "").strip().upper() == "AL"
+        has_inspection = (not needs_inspection or
+                          bool(have & {"vehicle_inspection", "inspection"})
+                          or bool(u.inspection_url))
+        return has_license and has_insurance and has_registration \
+            and has_inspection
 
     out = []
     for u in rows:
@@ -2430,6 +2463,7 @@ async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
             "verification_status": u.verification_status,
             "created_at": (u.created_at.isoformat()
                            if u.created_at else None),
+            "docs_ok": _docs_ok(u),
             "lat": lat,
             "lng": lng,
             "last_active_at": (u.last_active_at.isoformat()

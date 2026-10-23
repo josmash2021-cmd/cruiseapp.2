@@ -46,8 +46,26 @@ async def test_payload_fields_and_no_position_nulls(client, db):
     assert row["lat"] is None and row["lng"] is None, (
         "sin posición se incluye con nulls — la vista Ciudad lo cuenta")
     for field in ("phone", "photo_url", "is_online", "last_active_at",
-                  "verification_status", "created_at"):
+                  "verification_status", "created_at", "docs_ok"):
         assert field in row
+
+
+async def test_docs_ok_follows_the_fleet_stats_definition(client, db):
+    """2026-10-22 (owner spec: "ver en el mapa los que ya tienen documentos
+    y los que no"): docs_ok = license + insurance + registration on file
+    (+ inspection only for Alabama), Document rows or legacy url columns."""
+    ok = await _driver(db, "Full", lat=25.0, lng=-80.0)
+    ok.license_front_url = "x"
+    ok.insurance_url = "x"
+    ok.vehicle_registration_url = "x"
+    bare = await _driver(db, "Bare", lat=25.1, lng=-80.1)
+    await db.commit()
+
+    res = await client.get("/admin/driver-locations", headers=_dh())
+    assert res.status_code == 200, res.text
+    rows = {r["id"]: r for r in res.json()["drivers"]}
+    assert rows[ok.id]["docs_ok"] is True
+    assert rows[bare.id]["docs_ok"] is False
 
 
 async def test_offline_in_db_is_never_ghosted_by_the_overlay(client, db):

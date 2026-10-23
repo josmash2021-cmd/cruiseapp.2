@@ -2930,6 +2930,15 @@ async def admin_approve_face_check(document_id: int, db: AsyncSession = Depends(
     await db.commit()
     _security_audit_log("ADMIN_FACE_CHECK_APPROVE", "admin",
                         f"doc={document_id} user_id={doc.user_id}")
+    # Live unlock (same socket as the reject): the app's grey "Selfie en
+    # revisión" GO clears now instead of waiting out the 30 s poll.
+    if driver:
+        try:
+            await notify_user(driver.id, "face_check_reviewed",
+                              {"approved": True})
+        except Exception as e:
+            logging.warning("[Admin] face-check approve socket failed for %s: %s",
+                            driver.id, e)
     if driver and driver.fcm_token:
         es = user_lang(driver) == "es"
         _safe_create_task(
@@ -3001,6 +3010,16 @@ async def admin_reject_face_check(document_id: int, request: Request, db: AsyncS
             pass
     _security_audit_log("ADMIN_FACE_CHECK_REJECT", "admin",
                         f"doc={document_id} user_id={doc.user_id} deferred={kick_deferred}")
+    # Instant socket to the live app (same pattern as go_online_gate_changed)
+    # — without it the driver only learned by TAPPING the push banner, and
+    # their heartbeats re-onlined them against the DB write above.
+    if driver:
+        try:
+            await notify_user(driver.id, "face_check_reviewed",
+                              {"approved": False, "deferred": kick_deferred})
+        except Exception as e:
+            logging.warning("[Admin] face-check reject socket failed for %s: %s",
+                            driver.id, e)
     if driver and driver.fcm_token:
         es = user_lang(driver) == "es"
         _safe_create_task(

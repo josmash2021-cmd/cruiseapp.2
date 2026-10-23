@@ -302,6 +302,19 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         _driver_locations.pop(driver_id, None)
         raise HTTPException(403, "go_online_disabled")
 
+    # Face-check rejection (2026-10-23, owner report: "le doy rechazar y no
+    # desconecta al driver si esta conectado"): the dispatch reject writes
+    # is_online=False — but the live app never learned and its next location
+    # PATCH (every 5 s online) re-flipped the driver online within seconds.
+    # The kick only sticks if re-online is REFUSED here. Terminal for the app
+    # (same no-retry set as go_online_disabled). The DEFERRED kick (rider
+    # aboard → face_kick_pending) keeps heartbeating until trips.py lands
+    # the cut at trip close — after that this gate applies.
+    if (body.is_online and user.face_review_required
+            and not user.face_kick_pending):
+        _driver_locations.pop(driver_id, None)
+        raise HTTPException(403, "face_review_required")
+
     # Sector connect gate (2026-10-14, user spec: "dentro del cuadro podrá
     # conectarse" — Florida AND Alabama sectors, one dataset, the one the
     # panel edits): connecting is refused inside the sector coverage region

@@ -67,6 +67,8 @@ class SocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   static var _goOnlineGateController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static var _faceCheckReviewController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// Stream of driver location updates.
   /// Payload: {trip_id, lat, lng, heading, speed, timestamp}
@@ -127,6 +129,17 @@ class SocketService {
   /// on this; the can_go_online payload stays the truth on boot/GO tap.
   static Stream<Map<String, dynamic>> get goOnlineGateStream =>
       _goOnlineGateController.stream;
+
+  /// Ping pushed when dispatch approves/rejects a driver's dress-code selfie
+  /// (2026-10-23, owner report: the reject did NOT disconnect a connected
+  /// driver — the FCM only acted on banner TAP).
+  /// Payload: {approved: bool, deferred: bool?} — rejected && !deferred
+  /// means the shift ends NOW (the DriverOnlineScreen exits online mode and
+  /// re-reads the gate flags: GO goes red "Verificar"); deferred = rider
+  /// aboard, the cut lands at trip close. The can_go_online payload stays
+  /// the truth; this event is the instant wake-up.
+  static Stream<Map<String, dynamic>> get faceCheckReviewStream =>
+      _faceCheckReviewController.stream;
 
   // ── Public API ──────────────────────────────────────────────────────
 
@@ -346,6 +359,12 @@ class SocketService {
       final map = _toMap(data);
       _goOnlineGateController.add(map);
       debugPrint('[Socket.io] GO gate changed: ${map['disabled']}');
+    });
+
+    _socket!.on('face_check_reviewed', (data) {
+      final map = _toMap(data);
+      _faceCheckReviewController.add(map);
+      debugPrint('[Socket.io] Face check reviewed: approved=${map['approved']}');
     });
 
     // Listen to network recovery to proactively reconnect.
@@ -575,6 +594,9 @@ class SocketService {
       if (_goOnlineGateController.isClosed) {
         _goOnlineGateController = StreamController<Map<String, dynamic>>.broadcast();
       }
+      if (_faceCheckReviewController.isClosed) {
+        _faceCheckReviewController = StreamController<Map<String, dynamic>>.broadcast();
+      }
       if (_connectionHealthController.isClosed) {
         _connectionHealthController = StreamController<bool>.broadcast();
       }
@@ -630,6 +652,9 @@ class SocketService {
     }
     if (!_goOnlineGateController.isClosed) {
       _goOnlineGateController.close();
+    }
+    if (!_faceCheckReviewController.isClosed) {
+      _faceCheckReviewController.close();
     }
     if (!_connectionHealthController.isClosed) {
       _connectionHealthController.close();

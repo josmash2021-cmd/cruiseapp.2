@@ -1168,6 +1168,49 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     _checkVehicleDocStatus();
   }
 
+  /// Dispatch reviewed the dress-code selfie LIVE over the socket
+  /// (face_check_reviewed — 2026-10-23 owner report: "rechazar no
+  /// desconecta si está conectado"). Rejected && !deferred = the shift
+  /// ends NOW: the backend already wrote is_online=False, so exit online
+  /// mode and let the re-read flags paint the red "Verificar" GO.
+  /// Deferred = rider aboard — trips.py lands the cut at trip close; no
+  /// exit and no dialog mid-trip. Approved = the grey review GO unlocks.
+  void _onFaceCheckReviewed(Map<String, dynamic> data) {
+    if (!mounted) return;
+    final approved = data['approved'] == true;
+    final deferred = data['deferred'] == true;
+    final wasRequired = _faceReviewRequired;
+    unawaited(_checkVehicleDocStatus());
+    if (approved || deferred) return;
+    if (_driverOnline) unawaited(_exitOnlineMode());
+    if (!wasRequired) _showFaceRejectedDialog();
+  }
+
+  /// Same copy as the rejection push (main.dart _handleFaceCheckResult) —
+  /// shown by the live socket path, where no banner tap is involved.
+  void _showFaceRejectedDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A22),
+        title: Text(
+          S.of(ctx).faceRejectedTitle,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          S.of(ctx).faceRejectedBody,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(S.of(ctx).gotIt),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// GO in the VERIFY state (dress-code rejection): the SAME liveness flow
   /// as the daily check, but the upload can land in MANUAL review —
   /// pending_review=true locks GO again ("Selfie en revisión") until

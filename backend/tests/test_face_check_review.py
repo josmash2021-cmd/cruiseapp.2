@@ -69,6 +69,19 @@ def push(monkeypatch):
     return {"fcm": sent, "drain": _drain}
 
 
+@pytest.fixture
+def socket_events(monkeypatch):
+    """Captura notify_user de routers.admin (async — se monkeypatchea
+    directo, como en test_go_online_gate)."""
+    sent = []
+
+    async def _fake_notify(user_id, event, data):
+        sent.append({"user_id": user_id, "event": event, "data": data})
+
+    monkeypatch.setattr("routers.admin.notify_user", _fake_notify)
+    return sent
+
+
 def _png_b64():
     """Un PNG REAL — validate_image_bytes lo abre con PIL."""
     import base64 as _b64
@@ -376,3 +389,80 @@ async def test_columns_in_model_and_both_migration_lists():
     # SQLite ensure-columns + _migrate_postgres.
     assert src.count('("users", "face_review_required"') == 2
     assert src.count('("users", "face_kick_pending"') == 2
+
+
+async def test_reject_and_approve_emit_socket_event(
+        client, db, test_driver, push, socket_events, no_live_activity_task):
+    """Owner report 2026-10-23: "rechazar no desconecta si está conectado".
+    El kick de DB era deshecho por el heartbeat de la app en segundos; el
+    socket face_check_reviewed es el canal instantáneo que hace a la app
+    salir del modo online (patrón go_online_gate_changed)."""
+    driver, _ = test_driver
+    driver.is_online = True
+    await db.commit()
+    doc = Document(user_id=driver.id, doc_type="selfie_check",
+                   status="pending", file_path="x")
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+
+    res = await client.post(
+        f"/admin/face-checks/{doc.id}/reject",
+        headers=_make_auth_headers("test-dispatch-key"),
+        json={},
+    )
+    assert res.status_code == 200, res.text
+    assert socket_events == [
+        {"user_id": driver.id, "event": "face_check_reviewed",
+         "data": {"approved": False, "deferred": False}}]
+
+    res = await client.post(
+        f"/admin/face-checks/{doc.id}/approve",
+        headers=_make_auth_headers("test-dispatch-key"),
+    )
+    assert res.status_code == 200, res.text
+    assert socket_events[-1] == {
+        "user_id": driver.id, "event": "face_check_reviewed",
+        "data": {"approved": True}}
+
+
+async def test_heartbeat_cannot_undo_the_kick(client, db, test_driver):
+    """El PATCH de ubicación de la app online (cada 5 s) re-onlineaba al
+    driver rechazado — el gate 403 face_review_required lo vuelve terminal.
+    La ventana diferida (rider a bordo, face_kick_pending) SIGUE pasando."""
+    driver, token = test_driver
+    driver.verification_status = "approved"
+    driver.is_online = False  # la fixture nace online — partimos del kick
+    driver.face_review_required = True
+    driver.face_kick_pending = False
+    await db.commit()
+    h = lambda: {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+
+    res = await client.patch(
+        f"/drivers/{driver.id}/location", headers=h(),
+        json={"lat": 25.7617, "lng": -80.1918, "is_online": True})
+    assert res.status_code == 403, res.text
+    assert "face_review_required" in res.text
+    await db.refresh(driver)
+    assert driver.is_online is False, "el 403 no escribe el flip"
+
+    # Ventana diferida (rider a bordo): el heartbeat SIGUE hasta que el
+    # viaje cierre y trips.py aterrice el corte.
+    driver.face_kick_pending = True
+    await db.commit()
+    res = await client.patch(
+        f"/drivers/{driver.id}/location", headers=h(),
+        json={"lat": 25.7617, "lng": -80.1918, "is_online": True})
+    assert res.status_code == 200, res.text
+
+    # Con la revisión aprobada (flag limpio) el flip vuelve a pasar.
+    driver.face_review_required = False
+    driver.face_kick_pending = False
+    driver.is_online = False
+    await db.commit()
+    res = await client.patch(
+        f"/drivers/{driver.id}/location", headers=h(),
+        json={"lat": 25.7617, "lng": -80.1918, "is_online": True})
+    assert res.status_code == 200, res.text
+    await db.refresh(driver)
+    assert driver.is_online is True

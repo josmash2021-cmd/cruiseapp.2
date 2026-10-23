@@ -1280,6 +1280,20 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }));
   }
 
+  /// The face-check 403 (2026-10-23, owner report: "rechazar no desconecta
+  /// si está conectado"): the server refuses is_online:true while
+  /// face_review_required — without this, the 5 s location stream UNDID the
+  /// dispatch kick within seconds. Terminal, same no-retry class as
+  /// go_online_disabled: roll back offline and re-read the gate flags (the
+  /// red "Verificar" GO paints from them). Silent on purpose — the socket
+  /// path (face_check_reviewed) already shows the dialog; when that channel
+  /// died, the red GO state is the message.
+  void _onFaceReviewKick() {
+    if (!mounted || !_driverOnline) return;
+    unawaited(_exitOnlineMode());
+    unawaited(_checkVehicleDocStatus());
+  }
+
   /// El flag de background del GPS va atado al modo (regla 2026-08-22):
   /// online = background-capable (el driver trabaja con el teléfono
   /// bloqueado); offline = foreground-only (nada de foreground service sin
@@ -1453,6 +1467,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         if (mounted) _showGoOnlineDisabledDialog();
         return;
       }
+      // face_review_required is terminal too (2026-10-23, owner report):
+      // dispatch rejected the dress-code selfie mid-flip — roll back and
+      // let the fresh gate read paint the red "Verificar" GO.
+      if (e is ApiException && e.message == 'face_review_required') {
+        unawaited(_exitOnlineMode());
+        unawaited(_checkVehicleDocStatus());
+        return;
+      }
       // Retry after 5s so driver doesn't stay silently offline
       Future.delayed(const Duration(seconds: 5), () {
         if (mounted && _phase == _Phase.searching) {
@@ -1524,6 +1546,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         debugPrint('[DriverOnline] Background heartbeat sent');
       } catch (e) {
         debugPrint('[DriverOnline] Background heartbeat failed: $e');
+        // The face-check 403 means dispatch kicked this driver — the
+        // heartbeat must not re-online them (owner report 2026-10-23).
+        if (e is ApiException && e.message == 'face_review_required') {
+          _onFaceReviewKick();
+        }
       }
     });
   }
@@ -1721,7 +1748,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             driverId: _driverId!,
             lat: pos.latitude,
             lng: pos.longitude,
-          ).catchError((_) => <String, dynamic>{});
+          ).catchError((e) {
+            // face_review_required 403 (2026-10-23, owner report): this 5 s
+            // stream used to UNDO the dispatch selfie-reject kick — it is
+            // terminal now, never swallowed back online.
+            if (e is ApiException && e.message == 'face_review_required') {
+              _onFaceReviewKick();
+            }
+            return <String, dynamic>{};
+          });
         }
         // Sync driver GPS to Firestore so rider tracking gets real position
         if (_tripId != null) {
@@ -3051,7 +3086,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         driverId: _driverId!,
         lat: _pos!.latitude,
         lng: _pos!.longitude,
-      ).catchError((_) => <String, dynamic>{});
+      ).catchError((e) {
+        // Same terminal face-check 403 as the 5 s GPS stream (2026-10-23).
+        if (e is ApiException && e.message == 'face_review_required') {
+          _onFaceReviewKick();
+        }
+        return <String, dynamic>{};
+      });
     }
     try {
       final offers = await ApiService.getDriverPendingOffers(_driverId!);

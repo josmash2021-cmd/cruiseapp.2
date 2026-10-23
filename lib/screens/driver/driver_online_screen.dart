@@ -1008,6 +1008,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ));
       }
     });
+    // Dispatch selfie review — instant (2026-10-23 owner report: "le doy
+    // rechazar y no desconecta al driver si esta conectado"): before this
+    // channel the live app only learned by TAPPING the push banner, so a
+    // connected driver stayed "searching" and their 5 s location PATCHes
+    // re-onlined them against the DB kick.
+    _faceCheckReviewSub =
+        SocketService.faceCheckReviewStream.listen(_onFaceCheckReviewed);
   }
 
   bool _approvalGatesOut(String status) =>
@@ -1535,6 +1542,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _approvalBounced = false;
   StreamSubscription<Map<String, dynamic>>? _approvalStatusSub;
   StreamSubscription<Map<String, dynamic>>? _goOnlineGateSub;
+  StreamSubscription<Map<String, dynamic>>? _faceCheckReviewSub;
   /// Foto real del mapa capturada al entregar la superficie (2026-10-17,
   /// cero negro al volver de otra página). El velo del remount la prefiere
   /// sobre el snapshot estático de red; se limpia cuando el remount
@@ -1788,6 +1796,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _zoneDemandTimer?.cancel();
     _approvalStatusSub?.cancel();
     _goOnlineGateSub?.cancel();
+    _faceCheckReviewSub?.cancel();
     ZoneService.sectorsChanged.removeListener(_onSectorsChanged);
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);

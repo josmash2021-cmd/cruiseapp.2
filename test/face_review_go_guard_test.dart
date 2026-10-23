@@ -23,6 +23,9 @@ void main() {
   final api = File('lib/services/api_service.dart')
       .readAsStringSync()
       .replaceAll('\r\n', '\n');
+  final socket = File('lib/services/socket_service.dart')
+      .readAsStringSync()
+      .replaceAll('\r\n', '\n');
   final main = File('lib/main.dart').readAsStringSync();
   final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
 
@@ -148,5 +151,49 @@ void main() {
     ]) {
       expect(l10n, contains(g), reason: 'missing: $g');
     }
+  });
+
+  test('the reject reaches the live app: socket channel + exit online',
+      () {
+    // Owner report 2026-10-23: "le doy rechazar y no desconecta al driver
+    // si esta conectado y el GO no se pone rojo". The kick used to live
+    // only in the DB + an FCM that acted on banner TAP — the connected
+    // app's heartbeats re-onlined the driver within seconds.
+    expect(socket, contains('_faceCheckReviewController'),
+        reason: 'the broadcast controller exists');
+    expect(socket, contains("on('face_check_reviewed'"),
+        reason: 'the socket listener is registered');
+    expect(socket, contains('faceCheckReviewStream'),
+        reason: 'the public stream exists');
+    expect(socket.split('_faceCheckReviewController.close()').length, 2,
+        reason: 'dispose() closes it (recreated on reconnect)');
+    expect(screen,
+        contains('SocketService.faceCheckReviewStream.listen(_onFaceCheckReviewed)'),
+        reason: 'DriverOnlineScreen subscribes in initState');
+    expect(screen, contains('_faceCheckReviewSub?.cancel();'),
+        reason: 'the subscription dies in dispose');
+    expect(offline, contains('void _onFaceCheckReviewed(Map<String, dynamic> data)'));
+    expect(offline, contains('void _showFaceRejectedDialog()'),
+        reason: 'the live path explains the cut (no banner tap involved)');
+    final handler = offline.split('void _onFaceCheckReviewed').last;
+    expect(handler, contains('unawaited(_exitOnlineMode())'),
+        reason: 'rejected && !deferred && online → the shift ends NOW');
+    expect(handler, contains('if (approved || deferred) return;'),
+        reason: 'approve = silent unlock; deferred = rider aboard wins, '
+            'the cut lands at trip close');
+  });
+
+  test('the heartbeats can never undo the kick (terminal 403)', () {
+    expect(controller, contains('void _onFaceReviewKick()'),
+        reason: 'rollback helper: exit online + re-read gate flags');
+    expect(
+        controller.split("e.message == 'face_review_required'").length - 1, 4,
+        reason: 'GO tap + background heartbeat + 5 s GPS stream + offers '
+            'poll heartbeat — EVERY is_online:true writer treats the 403 as '
+            'terminal (same class as go_online_disabled)');
+    final kickFn = controller.split('void _onFaceReviewKick()').last;
+    expect(kickFn, contains('unawaited(_exitOnlineMode())'));
+    expect(kickFn, contains('unawaited(_checkVehicleDocStatus())'),
+        reason: 'the fresh read sets _faceReviewRequired → GO red Verificar');
   });
 }

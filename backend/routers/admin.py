@@ -2400,7 +2400,8 @@ async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(
         select(User.id, User.first_name, User.last_name, User.phone,
                User.photo_url, User.drive_city, User.drive_state,
-               User.is_online, User.lat, User.lng, User.last_active_at)
+               User.is_online, User.lat, User.lng, User.last_active_at,
+               User.verification_status, User.created_at)
         .where(User.role == "driver")
     )).all()
 
@@ -2425,6 +2426,10 @@ async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
             "drive_city": u.drive_city,
             "drive_state": u.drive_state,
             "is_online": is_online,
+            # Waitlist view (2026-10-22): the side panel filters by this.
+            "verification_status": u.verification_status,
+            "created_at": (u.created_at.isoformat()
+                           if u.created_at else None),
             "lat": lat,
             "lng": lng,
             "last_active_at": (u.last_active_at.isoformat()

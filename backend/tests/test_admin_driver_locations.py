@@ -45,7 +45,8 @@ async def test_payload_fields_and_no_position_nulls(client, db):
     assert row["drive_state"] == "FL"
     assert row["lat"] is None and row["lng"] is None, (
         "sin posición se incluye con nulls — la vista Ciudad lo cuenta")
-    for field in ("phone", "photo_url", "is_online", "last_active_at"):
+    for field in ("phone", "photo_url", "is_online", "last_active_at",
+                  "verification_status", "created_at"):
         assert field in row
 
 

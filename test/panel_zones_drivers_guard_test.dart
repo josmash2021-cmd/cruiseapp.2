@@ -5,10 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 /// Guardian for the drivers layer on the Zonas page (user spec 2026-10-18:
 /// "en zonas ver dónde están ubicados cada uno seleccionando por ciudad o
 /// varias ciudades", ambas vistas con toggle: GPS en vivo + ciudad de
-/// trabajo). The panel is a compiled bundle whose React source lives
-/// outside this repo — the guard-pin comment is what the next rebuild must
-/// re-apply. Backend: GET /admin/driver-locations (dispatch key), with the
-/// in-memory TTL overlay winning over the throttled users.lat/lng columns.
+/// trabajo; 2026-10-22 spec: the state/city chips move OFF the map into a
+/// collapsible LEFT side panel with per-state submenus, and a 4th "Lista de
+/// espera" view lists waitlisted drivers in that same panel). The panel is
+/// a compiled bundle whose React source lives outside this repo — the
+/// guard-pin comment is what the next rebuild must re-apply. Backend:
+/// GET /admin/driver-locations (dispatch key), with the in-memory TTL
+/// overlay winning over the throttled users.lat/lng columns.
 void main() {
   final assets = Directory('backend/dispatch_panel/assets');
   final chunk = assets
@@ -85,6 +88,48 @@ void main() {
     expect(chunk, contains('fitBounds'),
         reason: 'selecting cities zooms the map to them ("con exactitud")');
     expect(chunk, contains('maxZoom:14'));
+  });
+
+  test('the state/city chips live in a collapsible LEFT side panel', () {
+    expect(chunk, contains('[drvPanel,setDrvPanel]=c.useState(!0)'),
+        reason: 'the side panel is collapsible (2026-10-22 spec: the chips '
+            'cloud covered the whole map)');
+    expect(chunk, contains('Ocultar'),
+        reason: 'collapse button of the drivers side panel');
+    expect(chunk, contains('[drvExpanded,setDrvExpanded]=c.useState(new Set)'),
+        reason: 'each state header opens a submenu with its city chips');
+    expect(chunk, contains('drvExpanded.has(g.sk)'),
+        reason: 'the city chips render inside the expanded state submenu');
+    expect(chunk, contains('Limpiar filtro'),
+        reason: 'the panel can clear the multi-city selection');
+    expect(chunk, isNot(contains('max-h-28')),
+        reason: 'the chips overlay ON the map is gone — the map stays clear '
+            'in all 4 views (2026-10-22 spec)');
+    expect(chunk, isNot(contains('pointer-events-none absolute inset-x-3 bottom-3 flex flex-col items-start gap-2",children:[l.jsxs("div",{className:"pointer-events-auto flex max-h-28')),
+        reason: 'no second overlay row under the view toggle');
+  });
+
+  test('the 4th view "Lista de espera" lists waitlisted drivers in the panel', () {
+    expect(chunk, contains('setDrvView("waitlist")'),
+        reason: 'the view toggle gains the 4th state');
+    expect(chunk, contains('Lista de espera'));
+    expect(chunk, contains('(d.verification_status??"")==="waitlist"'),
+        reason: 'the list filters drivers by verification_status from '
+            '/admin/driver-locations');
+    expect(chunk,
+        contains('String(b.created_at||"").localeCompare(String(a.created_at||""))'),
+        reason: 'most recent signups first (created_at desc — ISO strings '
+            'sort lexicographically)');
+    expect(chunk, contains('drvWaitHtml'),
+        reason: 'rows render photo/initial + name + phone + city,state + date');
+    expect(chunk, contains('dangerouslySetInnerHTML'),
+        reason: 'waitlist rows go through drvWaitHtml…');
+    expect(chunk, contains('Registro: \${drvEsc(fh)}'),
+        reason: '…and every user-controlled string passes drvEsc');
+    expect(adminPy, contains('"verification_status": u.verification_status'),
+        reason: 'the endpoint ships the field the waitlist view filters on');
+    expect(adminPy, contains('"created_at": (u.created_at.isoformat()'),
+        reason: 'the endpoint ships the registration date');
   });
 
   test('popups escape user-controlled fields', () {

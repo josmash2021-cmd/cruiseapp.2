@@ -115,18 +115,22 @@ async def _get_referral_settings(db: AsyncSession) -> dict:
 # ─────────────────────────────────────────────────────────────────────
 
 def _generate_driver_code(first_name: Optional[str]) -> str:
-    """Build a friendly code like 'MARIA-DRV-7K2D'. Caller checks unique.
+    """Build a friendly code like 'JHON-7K2D'. Caller checks unique.
 
+    2026-10-23 (owner report: codes came out "DRVR-DRV-AJGH"): the old
+    format was `{base}-DRV-{suffix}` — drivers minted while their name was
+    still empty (phone signup) got base "DRVR" and the fixed "-DRV-" infix
+    doubled it. The infix is dead: name + suffix only, short and typeable.
     Readability rules (same as the rider codes): up to 6 letters of the
     name, and a suffix alphabet without look-alikes (0/O, 1/I/L) — these
     get read aloud and typed by hand."""
     base = (first_name or "").strip().upper()
     base = "".join(ch for ch in base if ch.isalpha())[:6]
     if len(base) < 2:
-        base = "DRVR"
+        base = "CRUISE"
     alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
     suffix = "".join(secrets.choice(alphabet) for _ in range(4))
-    return f"{base}-DRV-{suffix}"
+    return f"{base}-{suffix}"
 
 
 def _normalize_driver_code(raw: str) -> str:

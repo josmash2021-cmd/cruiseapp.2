@@ -4390,29 +4390,43 @@ async def driver_referral_landing(code: str, request: Request,
             status_code=302,
         )
     html = f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>CRUISE IN RIDE — Driver invite</title>
+<title>Cruise in Ride — Invitación de conductor</title>
+<!-- Social preview (WhatsApp/iMessage read the tags, never the JS):
+     the shared card carries the brand cover image. -->
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="Cruise in Ride"/>
+<meta property="og:title" content="Conduce con Cruise — estás invitado"/>
+<meta property="og:description" content="Regístrate con el código {safe_code} y gana $25 tras tus primeros 2 viajes."/>
+<meta property="og:image" content="https://cruiseinride.com/assets/media/og-cover.png"/>
+<meta property="og:image:width" content="1200"/>
+<meta property="og:image:height" content="630"/>
+<meta name="twitter:card" content="summary_large_image"/>
 <style>
-body{{margin:0;background:#050505;color:#fff;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}}
-.card{{padding:40px 28px;max-width:360px}}
-h1{{font-family:Georgia,serif;font-size:22px;color:#E8C547;letter-spacing:4px;margin:0 0 10px}}
-p{{color:#777;font-size:14px;line-height:1.6}}
-.code{{margin:22px auto;padding:14px 18px;border:1px solid #E8C547;border-radius:16px;color:#E8C547;font-size:20px;font-weight:800;letter-spacing:1.5px}}
-a.btn,button.btn{{display:inline-block;background:#D4AF37;color:#000;border:0;text-decoration:none;padding:14px 32px;border-radius:28px;font-size:14px;font-weight:800;letter-spacing:1px;margin:5px 6px;cursor:pointer}}
-button.ghost{{background:#1C1C24;color:#E8C547;border:1px solid #E8C547}}
+body{{margin:0;background:#141414;color:#fff;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}}
+.card{{padding:36px 24px;max-width:380px;width:100%}}
+.logo{{width:min(280px,80%);margin:0 auto 22px;display:block}}
+p.sub{{color:#9a9aa2;font-size:14px;line-height:1.6;margin:0 0 18px}}
+a.btn{{display:flex;align-items:center;justify-content:center;gap:10px;background:#E8C547;color:#000;text-decoration:none;padding:15px 20px;border-radius:16px;font-size:15px;font-weight:800;letter-spacing:.3px;margin:8px 0}}
+a.btn.dark{{background:#1f1f26;color:#E8C547;border:1px solid rgba(232,197,71,.35)}}
+a.btn svg{{flex:0 0 auto}}
+.codelabel{{margin:22px 0 8px;color:#9a9aa2;font-size:12.5px;letter-spacing:.4px}}
+.code{{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 auto;padding:15px 18px;border:1.5px solid #E8C547;border-radius:16px;color:#E8C547;font-size:22px;font-weight:800;letter-spacing:1.5px;background:#1b1b21}}
+.code button{{background:none;border:0;cursor:pointer;padding:4px;display:flex;align-items:center}}
+.code button svg{{fill:#E8C547}}
 </style>
 </head>
 <body>
 <div class="card">
-<h1>CRUISE IN RIDE</h1>
-<p>Your driver invitation code is ready:</p>
-<div class="code" id="invite-code">{safe_code}</div>
-<button class="btn ghost" onclick="navigator.clipboard.writeText('{safe_code}')">Copy code</button>
-<a class="btn" href="https://apps.apple.com/app/id6760517086">App Store</a>
-<a class="btn" href="https://play.google.com/store/apps/details?id=com.cruiseinride.app">Google Play</a>
+<img class="logo" src="https://cruiseinride.com/assets/media/hero-logo.png" alt="Cruise in Ride"/>
+<p class="sub">Conduce con Cruise — estás invitado. Descarga la app:</p>
+<a class="btn" href="https://play.google.com/store/apps/details?id=com.cruiseinride.app"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3.6 2.3 13.5 12 3.6 21.7c-.4-.3-.6-.9-.6-1.6V3.9c0-.7.2-1.3.6-1.6Zm12.4 8.1L4.9 2.5l10.1 5.8-2.3 2.1 3.3 3.1 2.4-2.2c.9-.5 1.6-.1 1.6.9 0 .5-.2 1-.7 1.3l-3.3 1.9Zm0 3.2 2.4-2.1-3.3-3.2-2.4 2.2 3.3 3.1ZM4.9 21.5 15 11.4l2.4 2.1-10.1 5.8-2.4 2.2Z"/></svg>Descargar en Google Play</a>
+<a class="btn dark" href="https://apps.apple.com/app/id6760517086"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.86-3.03.38-1.02-.5-2.06-.51-3.11 0-1.31.63-2.53.48-3.48-.38C4.5 16.5 3.9 12.44 5.5 9.6c.82-1.47 2.15-2.4 3.66-2.4 1.14 0 1.91.5 2.86.5.93 0 1.64-.5 2.87-.5 1.36 0 2.66.74 3.48 1.9-3.1 1.7-2.6 5.9.66 7.02-.6 1.6-1.36 3.19-1.98 4.16Zm-5.23-14.5c.22-2.13 1.95-3.97 4.02-3.97.17 2.44-1.96 4.35-4.02 3.97Z"/></svg>Descargar en App Store</a>
+<p class="codelabel">Código referido — ingrésalo cuando te registres:</p>
+<div class="code"><span>{safe_code}</span><button onclick="navigator.clipboard.writeText('{safe_code}').then(()=>{{this.style.opacity=.4;setTimeout(()=>this.style.opacity=1,600)}})" aria-label="Copiar código"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1Zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2Zm0 16H8V7h11v14Z"/></svg></button></div>
 </div>
 </body></html>"""
     return Response(content=html, media_type="text/html")

@@ -1566,6 +1566,11 @@ _CORS_LOCALHOST_RE = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
 # -- LAYER 2: Security Headers -------------------------
 # Paths served to browsers (dispatch dashboard, photos, uploads)
 _BROWSER_PATHS = ("/dispatch", "/photos", "/uploads", "/panel")
+# Public landing pages (referral invite, email open-app): tiny self-contained
+# HTML with an inline <style> + an inline copy script. Under the strict
+# default-src 'none' they rendered UNSTYLED with the copy button dead
+# (2026-10-23, owner screenshot). They get their own relaxed CSP.
+_LANDING_PATHS = ("/drive", "/open-app")
 
 
 def _security_headers_for(path: str, method: str) -> list[tuple[bytes, bytes]]:
@@ -1605,6 +1610,17 @@ def _security_headers_for(path: str, method: str) -> list[tuple[bytes, bytes]]:
             "img-src 'self' data: blob: *; "
             "media-src 'self' blob: *; "
             "connect-src 'self' *; "
+            "frame-ancestors 'none'"
+        )
+    elif any(path.startswith(p) for p in _LANDING_PATHS):
+        # Public invite/open pages: inline <style> + inline copy script +
+        # the brand logo from the marketing domain. frame-ancestors stays
+        # 'none' (they must never be framed).
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https://cruiseinride.com; "
             "frame-ancestors 'none'"
         )
     else:

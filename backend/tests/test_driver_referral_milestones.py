@@ -131,7 +131,10 @@ async def test_legacy_rows_keep_their_flat_200_promise(db):
 class TestDriverCodeFormat:
     def test_name_keeps_up_to_six_letters(self):
         from routers.driver_referrals import _generate_driver_code
-        assert _generate_driver_code("Carlos").startswith("CARLOS-DRV-")
+        # 2026-10-23: NAME-SUFFIX only — the "-DRV-" infix died (it doubled
+        # to "DRVR-DRV-XXXX" for phone-signup drivers minted with no name).
+        assert _generate_driver_code("Carlos").startswith("CARLOS-")
+        assert "-DRV-" not in _generate_driver_code("Carlos")
 
     def test_suffix_has_no_lookalikes(self):
         from routers.driver_referrals import _generate_driver_code
@@ -143,4 +146,6 @@ class TestDriverCodeFormat:
     def test_normalization_accepts_any_format(self):
         from routers.driver_referrals import _normalize_driver_code
         assert _normalize_driver_code("carlos-drv-7k2d") == "CARLOSDRV7K2D"
+        # …and the new short format, dashes or not.
+        assert _normalize_driver_code("jhon-gexz") == "JHONGEXZ"
         assert _normalize_driver_code("CARLOS DRV 7K2D") == "CARLOSDRV7K2D"

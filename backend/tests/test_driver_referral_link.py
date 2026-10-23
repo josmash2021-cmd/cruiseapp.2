@@ -217,8 +217,14 @@ async def test_drive_link_ios_gets_copyable_code_page(client, db):
     )
     assert res.status_code == 200
     assert "LUIS-GH78" in res.text
-    assert "Copy code" in res.text
+    # 2026-10-23 branded redesign (owner spec): #141414, logo + store buttons,
+    # code below with a copy icon — the copy runs on a click handler.
+    assert 'background:#141414' in res.text
+    assert "hero-logo.png" in res.text
+    assert "navigator.clipboard.writeText" in res.text
     assert "apps.apple.com" in res.text
+    assert "play.google.com" in res.text
+    assert "Código referido" in res.text
 
 
 @pytest.mark.asyncio
@@ -227,3 +233,20 @@ async def test_aasa_and_intent_cover_drive_path(client):
     assert res.status_code == 200
     paths = res.json()["applinks"]["details"][0]["paths"]
     assert "/drive/*" in paths
+
+
+@pytest.mark.asyncio
+async def test_landing_pages_get_a_relaxed_csp(client):
+    """2026-10-23 (owner screenshot): under default-src 'none' the invite
+    page rendered UNSTYLED and the copy script never ran. The landing paths
+    carry their own CSP allowing inline style + script."""
+    res = await client.get("/drive/NOPE-0000", follow_redirects=False)
+    assert res.status_code == 302  # invalid code still redirects
+    res = await client.get(
+        "/drive/TEST",
+        headers={"user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)"},
+        follow_redirects=False,
+    )
+    csp = res.headers.get("content-security-policy", "")
+    assert "'unsafe-inline'" in csp, f"CSP too strict for the landing: {csp}"
+    assert "default-src 'none'" not in csp

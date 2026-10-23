@@ -943,15 +943,21 @@ workflows:
           # Android puede no tener release aún — no debe tumbar iOS.
           # --no-codesign: el IPA del parche solo sirve para el diff, jamás
           # se publica — firmar era lo que lo tumbaba (sin keychain aquí).
-          # --allow-asset-diffs: la fuente MaterialIcons-Regular.otf cambia
-          # sola según la versión del engine que compila (el release fue sin
-          # tree-shake y el patch con tree-shake default) — no es un cambio
-          # nuestro; nuestros assets SÍ viajan en el parche.
+          # --allow-asset-diffs (AMBAS plataformas desde 2026-10-23): la
+          # fuente MaterialIcons-Regular.otf cambia sola según el engine que
+          # compila y nuestros assets nuevos (imágenes hero) SÍ deben viajar
+          # en el parche — sin el flag, Android se tragaba el rechazo
+          # ("Not publishing") por puro churn de fuente y los drivers con
+          # Android se quedaban sin los parches que iOS sí recibía.
           # --allow-native-diffs (2026-10-14, build 6ad03744 falló solo por
           # esto): el `pod install --repo-update` de arriba regenera
           # Podfile.lock distinto del release — ruido de CI, no cambio
           # nativo; sin el flag iOS jamás publica ("Not publishing").
-          shorebird patch android --release-version latest || echo "⚠️ sin release Android aún — solo iOS"
+          # Android NO lleva --allow-native-diffs A PROPÓSITO (2026-10-23):
+          # si main trae cambios nativos (MainActivity, Manifest, gradle),
+          # Shorebird los rechaza y eso es CORRECTO — lo nativo jamás va
+          # OTA; espera al próximo build de tienda.
+          shorebird patch android --release-version latest --allow-asset-diffs || echo "⚠️ Android patch no publicado — si el log dice 'native changes', hay cambio nativo en main y requiere build de tienda (correcto); si dice 'asset changes', revisa el flag"
           shorebird patch ios --release-version latest --no-codesign --allow-asset-diffs --allow-native-diffs
     publishing:
       email:

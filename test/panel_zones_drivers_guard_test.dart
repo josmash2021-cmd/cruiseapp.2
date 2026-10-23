@@ -87,7 +87,9 @@ void main() {
         reason: 'an empty selection means every city');
     expect(chunk, contains('fitBounds'),
         reason: 'selecting cities zooms the map to them ("con exactitud")');
-    expect(chunk, contains('maxZoom:14'));
+    expect(chunk, contains('maxZoom:drvView==="waitlist"?12:14'),
+        reason: 'selecting cities zooms the map to them — GPS view keeps '
+            'maxZoom 14, the waitlist spread fits at 12');
   });
 
   test('the state/city chips live in a collapsible LEFT side panel', () {
@@ -170,6 +172,37 @@ void main() {
         reason: '/admin/driver-locations ships the per-driver docs flag '
             '(license + insurance + registration + AL inspection, any '
             'review state — same definition as fleet-stats)');
+  });
+
+  test('the waitlist view draws one ringed circle per person on the map', () {
+    expect(chunk, contains('"drv-wait"'), reason: 'dedicated GeoJSON source');
+    expect(chunk, contains('"drv-wait-dots"'),
+        reason: 'dedicated circle layer (2026-10-22 spec: "que me los '
+            'muestre así en círculos cada persona")');
+    expect(
+        chunk,
+        contains(
+            'map.setLayoutProperty("drv-wait-dots","visibility",drvView==="waitlist"?"visible":"none")'),
+        reason: 'the layer is visible ONLY in the waitlist view');
+    expect(chunk, contains('for(const d of drvWaitlist)'),
+        reason: 'one feature per person from the filtered waitlist memo — '
+            'the side-panel filter applies to the map too');
+    expect(chunk, contains('wc=cc[k]'),
+        reason: 'each circle anchors to the GeoNames city center (the same '
+            'city_centers payload as drv-cities); unknown city = list only');
+    expect(chunk, contains('const ang=i*2.39996,rr=0.010*Math.sqrt(i)'),
+        reason: 'deterministic golden-angle spiral offset — drivers sharing '
+            'a city stay distinguishable and stable between polls');
+    expect(chunk, contains('const drvDotPopup=e=>'),
+        reason: 'single shared popup builder…');
+    expect(chunk, contains('s.on("click","drv-wait-dots",drvDotPopup)'),
+        reason: '…registered for the waitlist circles too (photo/name/'
+            'phone/city via drvEsc + docs line)');
+    expect(chunk, contains('drvView+":"+[...drvSel].sort().join(";")'),
+        reason: 'the fit signature includes the view — fitBounds fires on '
+            'selection/view change, NEVER on every 30 s poll');
+    expect(chunk, contains('maxZoom:drvView==="waitlist"?12:14'),
+        reason: 'waitlist fits at maxZoom 12 (city-level spread)');
   });
 
   test('popups escape user-controlled fields', () {

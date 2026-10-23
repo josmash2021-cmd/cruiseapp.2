@@ -121,6 +121,26 @@ void main() {
         reason: 'the scanner\u2019s permanently-denied dialog, then pop null');
   });
 
+  test('step 2 wears the license scanner design (owner spec 2026-10-23)', () {
+    // "El mismo diseño de tomarle foto a la licencia en el registro": the
+    // scanner's top bar (X left, centered title, 40 px balance right),
+    // frame radius 12, hint at bottom:180 — the flash toggle stays out
+    // (front cameras have no torch; a dead button would be a lie).
+    expect(screen, contains('const Spacer(),\n                  Text('),
+        reason: 'the scanner top bar: X + centered title + spacer');
+    expect(screen, contains('S.of(context).selfieVerifyTitle'),
+        reason: 'the centered top-bar title');
+    expect(screen, contains('const SizedBox(width: 40)'),
+        reason: 'the right 40 px balance where the scanner has the flash');
+    expect(screen, isNot(contains('flash_on_rounded')),
+        reason: 'NO flash toggle on the front camera');
+    expect(screen, isNot(contains('_toggleFlash')));
+    expect(screen, contains('BorderRadius.circular(12)'),
+        reason: 'the scanner frame radius (was 24)');
+    expect(screen, contains('bottom: 180'),
+        reason: 'the hint sits where the scanner instruction sits');
+  });
+
   test('the GO call sites swapped to SelfieCheckScreen', () {
     expect(offline.split('const SelfieCheckScreen()').length, 3,
         reason: 'the daily gate AND _onFaceVerifyTap');

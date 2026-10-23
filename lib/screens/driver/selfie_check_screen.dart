@@ -371,36 +371,58 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
           ),
         ),
 
-        // X — cancel pops null (the GO call sites read that as "no GO").
+        // Top bar — the license scanner's design (2026-10-23 owner spec:
+        // "el mismo diseño de tomarle foto a la licencia en el registro"):
+        // X left (cancel pops null — the GO call sites read that as "no
+        // GO"), centered title, and a 40 px spacer on the right where the
+        // scanner keeps its flash toggle (front cameras have no torch — a
+        // dead button there would be a lie).
         Positioned(
           top: 0,
           left: 0,
+          right: 0,
           child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: GestureDetector(
-                onTap: () => Navigator.of(context).pop(null),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    shape: BoxShape.circle,
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(null),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.close_rounded,
-                    color: Colors.white,
-                    size: 24,
+                  const Spacer(),
+                  Text(
+                    S.of(context).selfieVerifyTitle,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
+                    ),
                   ),
-                ),
+                  const Spacer(),
+                  const SizedBox(width: 40),
+                ],
               ),
             ),
           ),
         ),
 
-        // Hint under the frame
+        // Hint under the frame (same height as the scanner's instruction)
         Positioned(
-          bottom: 170,
+          bottom: 180,
           left: 24,
           right: 24,
           child: Text(
@@ -503,7 +525,9 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
               child: Container(color: Colors.black.withValues(alpha: 0.62)),
             ),
 
-            // Frame border — the gold breathes with the corner animation
+            // Frame border — the gold breathes with the corner animation.
+            // Radius 12 like the license scanner's card frame (owner spec
+            // 2026-10-23: same design language, portrait for a face).
             Positioned(
               top: frameTop,
               left: frameLeft,
@@ -511,7 +535,7 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
                 width: frameW,
                 height: frameH,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: _gold.withValues(alpha: 0.5 + 0.5 * glow),
                     width: 2,

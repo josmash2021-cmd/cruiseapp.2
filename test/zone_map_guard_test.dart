@@ -172,6 +172,13 @@ void main() {
         contains("final gradientColor = off ? '#7F858E' : '#E8C547';"),
         reason: 'stopping the wave restores the actual off/active color');
     expect(s, contains('_stopZoneWave'));
+    // The wave runs in BOTH modes (owner spec 2026-10-23: "cuando selecciono
+    // una zona debe brillar el borde animado… siempre dorado") — the old
+    // offline-only gate died.
+    final waveFn = s.indexOf('void _syncZoneWave()');
+    final waveRegion = s.substring(waveFn, waveFn + 700);
+    expect(waveRegion.contains('!_driverOnline'), isFalse,
+        reason: 'the selection wave runs offline AND online — never black');
     final baseStart = s.indexOf('Future<void> _paintZoneWaveBase');
     final baseEnd = s.indexOf('void _tickZoneWave', baseStart);
     expect(baseStart, isNonNegative);

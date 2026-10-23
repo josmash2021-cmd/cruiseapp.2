@@ -2851,16 +2851,21 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   // iluminara en tendra animacion de onda smooth y fluida") — el fill gold
   // de selección murió; el borde del sector elegido se enciende y una banda
   // brillante lo recorre en loop (lineGradient sobre line-progress; el
-  // source nace con lineMetrics: true). Solo offline + searching. Los campos
+  // source nace con lineMetrics: true). Offline Y online (owner spec
+  // 2026-10-23: "siempre dorado con el brillo animado") — el borde NUNCA es
+  // negro. Los campos
   // (`_zoneWaveTimer`/`_zoneWaveSectorId`/`_zoneWavePhase`) viven en la clase
   // State — una extension no declara campos.
   void _syncZoneWave() {
     final sel = _selectedZoneName;
+    // Offline Y online (owner spec 2026-10-23: "cuando selecciono una zona
+    // debe brillar el borde animado… siempre dorado") — la onda corre en
+    // ambos modos mientras se busca; online el spotlight dim convive (el
+    // borde brilla dentro del hueco).
     final active = _map != null &&
         !kIsWeb &&
         _mapMounted &&
         _zoneLayersReady &&
-        !_driverOnline &&
         _phase == _Phase.searching &&
         sel != null &&
         ZoneService.demand[sel]?.off != true;

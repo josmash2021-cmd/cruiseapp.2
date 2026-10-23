@@ -93,6 +93,7 @@ import 'driver_menu_screen.dart';
 import 'driver_contracts_screen.dart';
 import '../../data/us_airports_geo.dart';
 import 'online_intro_overlay.dart';
+import '../face_liveness_screen.dart';
 import 'onboarding/driver_notifications_screen.dart';
 import 'onboarding/driver_todo_screen.dart'; // gate de aprobación en el destino
 import 'driver_waitlist_screen.dart'; // gate de aprobación en el destino
@@ -177,6 +178,11 @@ class DriverOnlineScreen extends StatefulWidget {
   /// is how the LIVE screen learns it — the app may have been open on the
   /// searching map when the push landed.
   static final ValueNotifier<int> shiftEndedNotifier = ValueNotifier(0);
+
+  /// Dispatch decided the pending dress-code selfie (pushes
+  /// `face_check_rejected` / `face_check_approved`, 2026-10-23): the live
+  /// screen re-reads can_go_online so the GO state flips without a restart.
+  static final ValueNotifier<int> faceReviewNotifier = ValueNotifier(0);
 
   const DriverOnlineScreen({
     super.key,
@@ -1071,6 +1077,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     DriverOnlineScreen.removeOfferNotifier
         .addListener(_applyRemoveInjectedOffer);
     DriverOnlineScreen.shiftEndedNotifier.addListener(_onShiftEndedPush);
+    DriverOnlineScreen.faceReviewNotifier.addListener(_onFaceReviewPush);
     // A chained ride handed over by a cancelled trip: already locked on the
     // backend, so it runs the accept flow without re-locking — the same
     // route _handoffChainedOffer takes. Consumed once, never replayed.
@@ -1387,6 +1394,22 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // Working state for the airport pills ('AL'/'FL', from the profile's
   // drive_state — GPS state is the fallback when the profile hasn't landed).
   String? _driveStateCode;
+  // Daily face check (2026-10-23, owner spec "selfie cada 24h" — REAL): the
+  // fresh can_go_online payload drives it; at the GO tap the liveness
+  // screen runs before connecting.
+  bool _faceCheckDue = false;
+  // Dress-code rejection path (2026-10-23, owner spec): the next selfie
+  // needs MANUAL dispatch review (required) or is already sitting in review
+  // (pending). The GO button reads both — verify → red "Verificar" pill,
+  // pending → disabled grey "Selfie en revisión" with a 30 s canGoOnline
+  // poll until dispatch approves.
+  bool _faceReviewRequired = false;
+  bool _faceCheckPending = false;
+  Timer? _faceReviewTimer;
+  // The "You're now online!" intro fires ~10 s after the shift is truly
+  // live (owner spec 2026-10-23) — armed at the end of _enterOnlineMode,
+  // no longer keyed off the GO tap.
+  Timer? _introTimer;
   // El stream GPS se recrea en cada flip (iOS solo aplica el flag de
   // background en un request nuevo) — este latch evita recrearlo en vano.
   bool _posStreamIsBackground = false;
@@ -1749,6 +1772,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     DriverOnlineScreen.removeOfferNotifier
         .removeListener(_applyRemoveInjectedOffer);
     DriverOnlineScreen.shiftEndedNotifier.removeListener(_onShiftEndedPush);
+    DriverOnlineScreen.faceReviewNotifier.removeListener(_onFaceReviewPush);
+    _faceReviewTimer?.cancel();
+    _introTimer?.cancel();
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;

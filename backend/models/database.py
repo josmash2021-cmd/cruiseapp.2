@@ -286,6 +286,21 @@ class User(Base):
     # weekly cadence and the never-more-than-one-per-week rule.
     onboard_nudge_count = Column(Integer, default=0)
     onboard_nudge_last_at = Column(DateTime(timezone=True), nullable=True)
+    # Driver gender for the guide's dress-code variant (2026-10-23, owner
+    # spec: VIP/std × hombre/mujer pick the photo). Collected at driver
+    # signup next to the DOB. Null for legacy drivers → men's variant.
+    gender = Column(String(20), nullable=True)
+    # Daily face check (2026-10-23, owner spec: "verificación de selfie cada
+    # 24h"): stamped by POST /drivers/face-check; can_go_online reports
+    # face_check_due when it's null or older than 24 h.
+    last_face_verified_at = Column(DateTime(timezone=True), nullable=True)
+    # Face-check dispatch review (2026-10-23, owner spec): the daily selfie
+    # auto-approves by default; a dispatch REJECT flips face_review_required
+    # so the next selfie stays pending until dispatch approves it, and
+    # face_kick_pending defers the offline cut while a rider is aboard.
+    # Boot lists below (trampa #0).
+    face_review_required = Column(Boolean, default=False, nullable=False)
+    face_kick_pending = Column(Boolean, default=False, nullable=False)
     # Contracts e-acceptance (2026-10-21, user spec Uber-style): stamped
     # when the whole REQUIRED set of legal documents is accepted at current
     # versions. The per-document evidence lives in consent_logs.
@@ -1210,6 +1225,13 @@ async def migrate_add_columns(conn):
         ("users", "onboard_nudge_count", "INTEGER DEFAULT 0"),
         ("users", "onboard_nudge_last_at", "DATETIME"),
         ("users", "contracts_accepted_at", "DATETIME"),
+        # Driver gender (guide dress-code variant) + daily face check
+        # (2026-10-23) — boot lists or prod never gets them (trampa #0).
+        ("users", "gender", "VARCHAR(20)"),
+        ("users", "last_face_verified_at", "DATETIME"),
+        # Face-check dispatch review (2026-10-23) — boot lists (trampa #0).
+        ("users", "face_review_required", "BOOLEAN DEFAULT 0"),
+        ("users", "face_kick_pending", "BOOLEAN DEFAULT 0"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1463,6 +1485,11 @@ async def migrate_postgres(conn):
         ("users", "onboard_nudge_count", "INTEGER DEFAULT 0"),
         ("users", "onboard_nudge_last_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "contracts_accepted_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "gender", "VARCHAR(20)"),
+        ("users", "last_face_verified_at", "TIMESTAMP WITH TIME ZONE"),
+        # Face-check dispatch review (2026-10-23) — boot list (trampa #0).
+        ("users", "face_review_required", "BOOLEAN DEFAULT FALSE"),
+        ("users", "face_kick_pending", "BOOLEAN DEFAULT FALSE"),
     ]
     for table, col, col_type in migrations:
         try:

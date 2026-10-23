@@ -38,6 +38,10 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
   static const int _minAge = 25;
   DateTime? _dob;
 
+  /// Gender — required for drivers; the first-trip guide picks the dress
+  /// photo by tier×gender (server default: men's variant).
+  String? _gender;
+
   String get _dobIso {
     final d = _dob!;
     return '${d.year.toString().padLeft(4, '0')}-'
@@ -68,7 +72,8 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
   void _validate() {
     final ok = _firstCtrl.text.trim().isNotEmpty &&
         _lastCtrl.text.trim().isNotEmpty &&
-        _dob != null;
+        _dob != null &&
+        _gender != null;
     if (ok != _canContinue || _errorText != null) {
       setState(() {
         _canContinue = ok;
@@ -110,6 +115,7 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
         'first_name': first,
         'last_name': last,
         'date_of_birth': _dobIso,
+        'gender': _gender,
       });
       await UserSession.saveUser(
         firstName: first,
@@ -249,6 +255,30 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    // Gender — required, next to the DOB (same spec batch).
+                    Text(
+                      S.of(context).genderSectionLabel,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.65),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child:
+                              _genderChip('male', S.of(context).genderMale),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _genderChip(
+                              'female', S.of(context).genderFemale),
+                        ),
+                      ],
+                    ),
                     if (_errorText != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 12, left: 4),
@@ -307,6 +337,38 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _genderChip(String value, String label) {
+    final selected = _gender == value;
+    return GestureDetector(
+      onTap: () {
+        setState(() => _gender = value);
+        _validate();
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+              color:
+                  selected ? _gold : Colors.white.withValues(alpha: 0.14)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.3),
+              fontSize: 17,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
         ),
       ),
     );

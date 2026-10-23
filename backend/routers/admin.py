@@ -2879,6 +2879,143 @@ async def admin_dismiss_expiry_suggestion(document_id: int, db: AsyncSession = D
     return {"document": _doc_dict(doc)}
 
 
+# ── Daily face-check review (2026-10-23, owner spec): the selfie
+# AUTO-APPROVES by default; dispatch reviews it here after the fact. A
+# reject takes the driver offline (deferred while a rider is aboard — same
+# rule as the 12 h shift cap) and puts their NEXT selfie on manual review;
+# an approve clears that flag and hands the auto-approve back. ────────────
+
+@router.get("/admin/face-checks/pending", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_list_pending_face_checks(db: AsyncSession = Depends(get_db)):
+    """Selfies waiting on dispatch review (drivers whose last selfie was
+    rejected once — their checks stop auto-approving)."""
+    r = await db.execute(
+        select(Document, User.first_name, User.last_name, User.photo_url)
+        .join(User, Document.user_id == User.id)
+        .where(Document.doc_type == "selfie_check",
+               Document.status == "pending")
+        .order_by(Document.created_at.desc()))
+    out = []
+    for doc, first, last, photo in r.all():
+        out.append({
+            "id": doc.id,
+            "user_id": doc.user_id,
+            "driver_name": f"{first or ''} {last or ''}".strip(),
+            "photo_url": photo,
+            "file_path": doc.file_path,
+            "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        })
+    return {"face_checks": out}
+
+
+@router.post("/admin/face-checks/{document_id}/approve", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_approve_face_check(document_id: int, db: AsyncSession = Depends(get_db)):
+    """Approve a pending selfie: stamps the daily check and hands the
+    auto-approve back (a deferred kick, if any, dies with the review)."""
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc.doc_type != "selfie_check":
+        raise HTTPException(400, "Not a face check document")
+    doc.status = "approved"
+    doc.rejection_reason = None
+    doc.updated_at = datetime.now(timezone.utc)
+    u_r = await db.execute(select(User).where(User.id == doc.user_id))
+    driver = u_r.scalar_one_or_none()
+    if driver:
+        driver.last_face_verified_at = utc_now()
+        driver.face_review_required = False
+        driver.face_kick_pending = False
+    await db.commit()
+    _security_audit_log("ADMIN_FACE_CHECK_APPROVE", "admin",
+                        f"doc={document_id} user_id={doc.user_id}")
+    if driver and driver.fcm_token:
+        es = user_lang(driver) == "es"
+        _safe_create_task(
+            _send_fcm_push_async(
+                driver.fcm_token,
+                "✅ Selfie aprobada" if es else "✅ Selfie approved",
+                "Ya puedes conectarte y recibir viajes" if es
+                else "You can go online and receive rides now",
+                {"type": "face_check_approved"},
+            ),
+            name=f"face_check_approved_{driver.id}",
+        )
+    return {"document": _doc_dict(doc)}
+
+
+@router.post("/admin/face-checks/{document_id}/reject", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_reject_face_check(document_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Reject a selfie (dress code): the driver goes offline NOW — unless a
+    rider is aboard, in which case face_kick_pending defers the cut to the
+    trip's end (trips.py applies it) — and their next selfie stops
+    auto-approving until dispatch approves one."""
+    try:
+        body = await request.json()
+        reason = body.get("reason") if isinstance(body, dict) else None
+    except Exception:
+        reason = None
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc.doc_type != "selfie_check":
+        raise HTTPException(400, "Not a face check document")
+    doc.status = "rejected"
+    doc.rejection_reason = reason
+    doc.updated_at = datetime.now(timezone.utc)
+    u_r = await db.execute(select(User).where(User.id == doc.user_id))
+    driver = u_r.scalar_one_or_none()
+    kick_deferred = False
+    if driver:
+        driver.face_review_required = True
+        # Rider aboard wins (the SAME set the 12 h shift cap uses to keep a
+        # driver online): a committed trip defers the cut to its end —
+        # trips.py applies face_kick_pending when the trip closes.
+        _COMMITTED_TRIP_STATUSES = (
+            "accepted", "driver_en_route", "arrived", "in_trip",
+            "scheduled_accepted", "scheduled_active",
+        )
+        active = await db.execute(
+            select(Trip.id).where(
+                and_(Trip.driver_id == driver.id,
+                     Trip.status.in_(_COMMITTED_TRIP_STATUSES))).limit(1))
+        if active.scalar_one_or_none():
+            # Rider aboard wins — the cut lands when the trip closes.
+            driver.face_kick_pending = True
+            kick_deferred = True
+        else:
+            # Same retirement as a manual offline: no pending offer outlives
+            # the flip (expire also drops the Live Activity offer card).
+            driver.face_kick_pending = False
+            driver.is_online = False
+            driver.online_since = None
+            from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+            await expire_pending_offers_for_driver(db, driver.id, "face check rejected")
+    await db.commit()
+    if driver and not kick_deferred and _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_driver_location(driver.id, driver.lat or 0, driver.lng or 0, False)
+        except Exception:
+            pass
+    _security_audit_log("ADMIN_FACE_CHECK_REJECT", "admin",
+                        f"doc={document_id} user_id={doc.user_id} deferred={kick_deferred}")
+    if driver and driver.fcm_token:
+        es = user_lang(driver) == "es"
+        _safe_create_task(
+            _send_fcm_push_async(
+                driver.fcm_token,
+                "📷 Selfie rechazada" if es else "📷 Selfie rejected",
+                "No cumple con las normas de vestimenta" if es
+                else "Does not meet the dress code rules",
+                {"type": "face_check_rejected"},
+            ),
+            name=f"face_check_rejected_{driver.id}",
+        )
+    return {"document": _doc_dict(doc), "kick_deferred": kick_deferred}
+
+
 # ── Digital contracts admin (2026-10-21, user spec — Uber-style): consult
 # acceptances, download receipt PDFs, update the documents (version bump →
 # re-acceptance wave), and read the version history ──────────────────────

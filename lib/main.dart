@@ -577,6 +577,17 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // Driver: dispatch rejected the dress-code selfie / approved the pending
+  // one (2026-10-23) — dialog + the live screen re-reads the GO gate.
+  if (type == 'face_check_rejected') {
+    _handleFaceCheckResult(approved: false);
+    return;
+  }
+  if (type == 'face_check_approved') {
+    _handleFaceCheckResult(approved: true);
+    return;
+  }
+
   // Driver: dispatch moved the account to the waitlist (user spec
   // 2026-10-13) — open the waitlist page.
   if (type == 'driver_waitlisted') {
@@ -664,6 +675,42 @@ void _handleDriversAvailablePush() {
     nav.pushAndRemoveUntil(
       smoothFadeRoute(const HomeScreen()),
       (_) => false,
+    );
+  });
+}
+
+/// Driver pushed a face-check decision (dress-code review, 2026-10-23):
+/// rejected = the selfie failed the dress code (the backend already flips
+/// them offline); approved = the pending selfie passed and GO works again.
+/// Role-gated driver like every driver push; the notifier refreshes the
+/// live DriverOnlineScreen gate state.
+void _handleFaceCheckResult({required bool approved}) {
+  UserSession.getMode().then((mode) {
+    if (mode != 'driver') return;
+    DriverOnlineScreen.faceReviewNotifier.value++;
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+    showDialog(
+      context: nav.context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A22),
+        title: Text(
+          approved
+              ? S.of(ctx).faceApprovedTitle
+              : S.of(ctx).faceRejectedTitle,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          approved ? S.of(ctx).faceApprovedBody : S.of(ctx).faceRejectedBody,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(S.of(ctx).gotIt),
+          ),
+        ],
+      ),
     );
   });
 }

@@ -366,6 +366,8 @@ def _user_dict(u) -> dict:
         "email_verified": u.email_verified or False,
         "email_verified_at": u.email_verified_at.isoformat() if u.email_verified_at else None,
         "date_of_birth": u.date_of_birth.isoformat() if getattr(u, 'date_of_birth', None) else None,
+        # Variante de la guía (vestimenta/selfie) la lee del perfil (2026-10-23).
+        "gender": getattr(u, 'gender', None),
         "background_check_status": u.background_check_status or "none",
         "background_check_completed_at": u.background_check_completed_at.isoformat() if u.background_check_completed_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,

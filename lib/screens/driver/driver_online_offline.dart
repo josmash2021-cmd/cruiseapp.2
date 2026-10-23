@@ -245,6 +245,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
               ?.map((e) => e.toString())
               .toList() ??
           const <String>[];
+      // Daily face check (2026-10-23): a signal, never a blocker — the GO
+      // tap reads it fresh and runs the liveness screen before connecting.
+      final faceDue = result['face_check_due'] == true;
+      // Dress-code rejection path (2026-10-23): required = the next selfie
+      // needs manual dispatch review; pending = one is already in review.
+      final faceReview = result['face_review_required'] == true;
+      final facePending = result['face_check_pending'] == true;
 
       // Sync approval status locally
       if (result['approved'] == true) {
@@ -257,8 +264,12 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         _hasExpiredDocs = expired;
         _plateChangePending = platePending;
         _contractsPending = pending;
+        _faceCheckDue = faceDue;
+        _faceReviewRequired = faceReview;
+        _faceCheckPending = facePending;
         _docStatusLoaded = true;
       });
+      _syncFaceReviewPoll();
     } catch (e) {
       debugPrint('[DriverOnline] _checkVehicleDocStatus error: $e');
       // On error, fail-closed: require docs to be explicitly approved
@@ -1049,15 +1060,48 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       return;
     }
 
-    // The "You're now online!" instruction keys off the TAP (owner spec
-    // 2026-10-22: "cuando presionan activarse") — NOT the resuming branch
-    // of _enterOnlineMode: a phone remembering an open shift enters with
-    // resuming=true and the first version never showed the intro.
-    unawaited(_maybeShowOnlineIntro());
+    // Daily face check (2026-10-23, owner spec — REAL, not a promise): >24 h
+    // without a verified selfie → the liveness screen runs BEFORE connecting;
+    // cancelling = no GO. A failed UPLOAD doesn't lock the driver out
+    // (fail-open: retried on the next GO tap). Runs after the active-trip
+    // resume so a mid-trip driver is never gated.
+    if (_docStatusLoaded && _faceCheckDue) {
+      HapticService.mediumImpact();
+      final res = await Navigator.of(context).push<Map?>(
+        MaterialPageRoute<Map?>(
+          fullscreenDialog: true,
+          builder: (_) => const FaceLivenessScreen(),
+        ),
+      );
+      if (!mounted) return;
+      final photoPath = res?['photo']?.toString();
+      if (photoPath == null || photoPath.isEmpty) return; // cancelled — no GO
+      final resp = await ApiService.submitFaceCheck(photoPath);
+      if (!mounted) return;
+      if (resp != null) {
+        _setState(() => _faceCheckDue = false);
+        // Race: the review flag was set between canGoOnline and this upload
+        // — the selfie went to MANUAL review; no connect until it clears.
+        if (resp['pending_review'] == true) {
+          _setState(() {
+            _faceReviewRequired = true;
+            _faceCheckPending = true;
+          });
+          _syncFaceReviewPoll();
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(S.of(context).faceReviewPending),
+            duration: const Duration(seconds: 3),
+          ));
+          return;
+        }
+      }
+    }
 
     // The flip itself: GPS background mode, FCM token, backend online,
     // haptic + chime — all owned by _enterOnlineMode. `resuming` is the
     // pref read at boot: a shift that never closed is resumed, not started.
+    // The "You're now online!" intro no longer fires here (2026-10-23 owner
+    // spec): it is armed by _enterOnlineMode itself, 10 s into the shift.
     await _enterOnlineMode(resuming: _driverWasOnlineAtBoot);
   }
 
@@ -1085,6 +1129,71 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         ],
       ),
     );
+  }
+
+  /// The GO face states (2026-10-23, owner spec): 0 normal · 1 verify (red
+  /// "Verificar") · 2 pending review (disabled grey). The collapsed GO
+  /// circle does NOT render in a non-normal state (circle rule).
+  int get _faceGateState =>
+      _faceCheckPending ? 2 : _faceReviewRequired ? 1 : 0;
+
+  /// While a selfie sits in manual review, a 30 s canGoOnline poll
+  /// auto-clears the pending state when dispatch approves. Cancelled on
+  /// dispose and as soon as the state clears.
+  void _syncFaceReviewPoll() {
+    if (_faceCheckPending && !_driverOnline) {
+      _faceReviewTimer ??= Timer.periodic(const Duration(seconds: 30), (_) {
+        _checkVehicleDocStatus();
+      });
+    } else {
+      _faceReviewTimer?.cancel();
+      _faceReviewTimer = null;
+    }
+  }
+
+  /// Dispatch decided the pending selfie (push face_check_rejected /
+  /// face_check_approved): re-read the gate flags.
+  void _onFaceReviewPush() {
+    if (!mounted) return;
+    _checkVehicleDocStatus();
+  }
+
+  /// GO in the VERIFY state (dress-code rejection): the SAME liveness flow
+  /// as the daily check, but the upload can land in MANUAL review —
+  /// pending_review=true locks GO again ("Selfie en revisión") until
+  /// dispatch approves; false means the flag cleared and we connect.
+  Future<void> _onFaceVerifyTap() async {
+    if (_enteringOnline || _driverOnline) return;
+    HapticService.mediumImpact();
+    final res = await Navigator.of(context).push<Map?>(
+      MaterialPageRoute<Map?>(
+        fullscreenDialog: true,
+        builder: (_) => const FaceLivenessScreen(),
+      ),
+    );
+    if (!mounted) return;
+    final photoPath = res?['photo']?.toString();
+    if (photoPath == null || photoPath.isEmpty) return; // cancelled — no GO
+    final resp = await ApiService.submitFaceCheck(photoPath);
+    if (!mounted || resp == null) return; // upload failed — retry next tap
+    if (resp['pending_review'] == true) {
+      _setState(() {
+        _faceCheckPending = true;
+        _faceCheckDue = false;
+      });
+      _syncFaceReviewPoll();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(S.of(context).faceReviewPending),
+        duration: const Duration(seconds: 3),
+      ));
+      return;
+    }
+    // Auto-approved while the flag was stale — connect the normal way.
+    _setState(() {
+      _faceReviewRequired = false;
+      _faceCheckDue = false;
+    });
+    _onGoTap();
   }
 
   /// The driver stands in a sector dispatch switched OFF (2026-10-17, owner
@@ -1132,6 +1241,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   /// in-between.
   Widget _buildMorphingGoButton(EdgeInsets pad, {bool hidden = false}) {
     final t = (_panelFrac / _kSheetRestFrac).clamp(0.0, 1.0);
+    // Circle rule (2026-10-23, owner spec literal): in the VERIFY or REVIEW
+    // face states the collapsed GO circle/pill does NOT render with the
+    // sheet closed — the button only exists inside the open sheet.
+    final faceGateHidden = _faceGateState != 0 && t < 0.99;
     final height = ui.lerpDouble(_kGoCircleD, _kGoPillH, t)!;
     // estilo píldora (2026-10-15): esquinas = mitad de la altura
     final radius = ui.lerpDouble(_kGoCircleD / 2, _kGoPillH / 2, t)!;
@@ -1159,10 +1272,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       // INSIDE the Positioned: anything between a Positioned and its Stack
       // is a StackParentData cast crash on every rebuild (2026-08-28).
       child: IgnorePointer(
-        ignoring: hidden,
+        ignoring: hidden || faceGateHidden,
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 250),
-          opacity: hidden ? 0.0 : 1.0,
+          opacity: (hidden || faceGateHidden) ? 0.0 : 1.0,
           child: FadeTransition(
             opacity: _goFabScale ?? const AlwaysStoppedAnimation<double>(1.0),
             child: Container(
@@ -1256,16 +1369,23 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   //  FLOATING GO BUTTON — inner pulse glow
   // ═══════════════════════════════════════════════════
   Widget _buildGoButton({double radius = 16.0, double morph = 1.0}) {
+    final faceState = _faceGateState;
     return GestureDetector(
-      onTap: _isVerified
-          ? _onGoTap
-          : () async {
-              // El primer tap no puede morir en "marcar verificado" (user
-              // report 2026-10-16-noche: "al boton de go online hay que
-              // darle dos veces para que se conecte") — verificar y
-              // CONTINUAR al flip en el mismo tap.
-              if (await _ensureVerified()) _onGoTap();
-            },
+      // Face gate (2026-10-23 owner spec): pending review = dead button;
+      // verify = the red "Verificar" runs the liveness flow, not the flip.
+      onTap: faceState == 2
+          ? null
+          : faceState == 1
+              ? _onFaceVerifyTap
+              : _isVerified
+                  ? _onGoTap
+                  : () async {
+                      // El primer tap no puede morir en "marcar verificado" (user
+                      // report 2026-10-16-noche: "al boton de go online hay que
+                      // darle dos veces para que se conecte") — verificar y
+                      // CONTINUAR al flip en el mismo tap.
+                      if (await _ensureVerified()) _onGoTap();
+                    },
       child: AnimatedBuilder(
         animation: Listenable.merge([
           if (_goPulseAnim != null) _goPulseAnim!,
@@ -1305,6 +1425,18 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           final botColor = dimmed
               ? Color.lerp(goldBot, const Color(0xFF4A4A4F), 0.55)!
               : goldBot;
+          // Face gate paint (2026-10-23 owner spec): verify = RED, pending
+          // review = disabled grey — the gold stays for the normal state.
+          final topPaint = faceState == 1
+              ? const Color(0xFFD32F2F)
+              : faceState == 2
+                  ? const Color(0xFF6B6B70)
+                  : topColor;
+          final botPaint = faceState == 1
+              ? const Color(0xFF9A1B1B)
+              : faceState == 2
+                  ? const Color(0xFF4A4A4F)
+                  : botColor;
           const glowColor = Color(0xFFE8C547);
 
           // Black on gold — muted while dimmed.
@@ -1330,13 +1462,17 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // (2026-10-11 spec).
           final pillLabel = _enteringOnline
               ? 'GOING ONLINE...'
-              : dimmed
-                  ? S.of(context).zoneSelectAction
-                  : !docsOk
-                      ? S.of(context).viewIssue
-                      : _goShowsResume
-                          ? S.of(context).resumeOnline
-                          : S.of(context).goOnline;
+              : faceState == 1
+                  ? S.of(context).goVerify
+                  : faceState == 2
+                      ? S.of(context).faceReviewPending
+                      : dimmed
+                          ? S.of(context).zoneSelectAction
+                          : !docsOk
+                              ? S.of(context).viewIssue
+                              : _goShowsResume
+                                  ? S.of(context).resumeOnline
+                                  : S.of(context).goOnline;
 
           return Transform.scale(
             scale: igniteScale * throb,
@@ -1387,7 +1523,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                               color: glowColor.withValues(
                                   alpha: ui.lerpDouble(
                                           0.12, 0.3 + 0.15 * p, morph)! *
-                                      (dimmed ? 0.3 : 1.0)),
+                                      (dimmed ? 0.3 : 1.0) *
+                                      (faceState == 2 ? 0.25 : 1.0)),
                               blurRadius: ui.lerpDouble(8, 16 + 8 * p, morph)!,
                               spreadRadius: 0,
                               offset: const Offset(0, 3),
@@ -1401,7 +1538,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                           gradient: LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
-                            colors: [topColor, botColor],
+                            colors: [topPaint, botPaint],
                           ),
                         ),
                   child: Row(

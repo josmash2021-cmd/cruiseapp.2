@@ -27,6 +27,9 @@ class RegisterIn(BaseModel):
     # optional for riders in this legacy payload (the phone onboarding
     # collects it at the name step) but age-gated 18+ whenever present.
     date_of_birth: Optional[str] = None
+    # Driver gender (2026-10-23, owner spec): the guide's dress-code variant
+    # (VIP/std × hombre/mujer) reads it. male/female; anything else ignored.
+    gender: Optional[str] = None
 
     @field_validator('first_name', 'last_name')
     @classmethod

@@ -1727,6 +1727,36 @@ async def confirm_pickup_pin(trip_id: int, body: PickupPinIn,
     return {"status": "ok", "synced": True}
 
 
+async def _apply_deferred_face_kick(db: AsyncSession, driver_id: Optional[int]) -> None:
+    """Face-check cut deferred while a rider was aboard (2026-10-23, owner
+    spec — same rule as the 12 h shift cap: the rider wins, the cut lands
+    when the trip closes). Dispatch sets face_kick_pending on the reject;
+    every path that frees the driver calls this. Fail-soft: a kick that
+    errors must never break the trip close itself."""
+    if not driver_id:
+        return
+    try:
+        res = await db.execute(select(User).where(User.id == driver_id))
+        drv = res.scalar_one_or_none()
+        if not drv or not drv.face_kick_pending:
+            return
+        drv.face_kick_pending = False
+        drv.is_online = False
+        drv.online_since = None
+        from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+        await expire_pending_offers_for_driver(db, drv.id, "face check rejected")
+        await db.commit()
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_driver_location(drv.id, drv.lat or 0, drv.lng or 0, False)
+            except Exception:
+                pass
+        logging.info("[FaceCheck] deferred kick landed — driver %s offline", driver_id)
+    except Exception as _kick_err:
+        logging.warning("[FaceCheck] deferred kick failed for driver %s: %s",
+                        driver_id, _kick_err)
+
+
 @router.patch("/trips/{trip_id}/status", dependencies=[Depends(_verify_api_key)])
 async def update_trip_status(trip_id: int, request: Request, status: str = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # ── Idempotency pre-check: if the same (trip, status) pair arrived in
@@ -2247,6 +2277,12 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
         except Exception as e:
             logging.warning("[CruiseLevel] Post-trip evaluation failed for driver %s: %s", trip.driver_id, e)
 
+    # Deferred face-check kick (2026-10-23, owner spec): a selfie rejected
+    # while a rider was aboard takes the driver offline the moment the trip
+    # closes — never mid-trip.
+    if canonical_new in ("completed", "cancelled"):
+        await _apply_deferred_face_kick(db, trip.driver_id)
+
     return _trip_dict_for_user(trip, user)
 
 # ---====================================================
@@ -2537,6 +2573,10 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # still sees it come down. Fail-soft inside.
     _safe_create_task(_push_ride_live_activity(trip.id, "cancelled"))
 
+    # Deferred face-check kick (2026-10-23): the rider's cancel also ends
+    # the trip for the assigned driver — the cut lands here.
+    await _apply_deferred_face_kick(db, trip.driver_id)
+
     return {**_trip_dict_for_user(trip, user), "cancellation_fee": cancellation_fee, "payment_status": trip.payment_status}
 
 # ---====================================================
@@ -2639,6 +2679,9 @@ async def driver_cancel_trip(
             logging.warning("[DriverCancel] in-trip rider FCM failed for trip %d: %s", trip.id, _fcm_err)
         # The rider's lock-screen card dies with the trip (2026-09-23).
         _safe_create_task(_push_ride_live_activity(trip.id, "cancelled"))
+        # Deferred face-check kick (2026-10-23): the trip closed — a selfie
+        # rejected mid-trip takes the driver offline now.
+        await _apply_deferred_face_kick(db, user.id)
         return {"status": "ok", "in_trip_cancelled": True}
     if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
@@ -2763,6 +2806,10 @@ async def driver_cancel_trip(
             "[DriverCancel] rematch failed for trip %d: %s — left as requested for retry agent",
             trip.id, _rematch_err,
         )
+
+    # Deferred face-check kick (2026-10-23): the cancelling driver is free —
+    # a selfie rejected mid-trip takes them offline now.
+    await _apply_deferred_face_kick(db, user.id)
 
     return {
         "status": "cancelled_by_driver",

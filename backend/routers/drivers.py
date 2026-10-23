@@ -3078,6 +3078,28 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         and not pending_contracts
     )
 
+    # Daily face check (2026-10-23, owner spec: "verificación de selfie cada
+    # 24h" — the guide's last page promises it, so it's REAL): due when never
+    # stamped or older than 24 h. A SIGNAL, never a blocker — the app reads
+    # it fresh at the GO tap and runs the liveness screen before connecting
+    # (a hard can_go=False would strand drivers if the camera fails).
+    _last_face = user.last_face_verified_at
+    if _last_face is not None and _last_face.tzinfo is None:
+        # SQLite devuelve naive — se normaliza a UTC para comparar.
+        _last_face = _last_face.replace(tzinfo=timezone.utc)
+    face_due = _last_face is None or (utc_now() - _last_face) > timedelta(hours=24)
+
+    # Dispatch-review signals (2026-10-23, owner spec): face_review_required
+    # = the next selfie goes to manual review; face_check_pending = one is
+    # already waiting on dispatch. SIGNALS, never blockers — they don't go
+    # in reasons; the real cut is the reject itself.
+    face_pending = bool((await db.execute(
+        select(func.count(Document.id)).where(
+            Document.user_id == user.id,
+            Document.doc_type == "selfie_check",
+            Document.status == "pending",
+        ))).scalar())
+
     return {
         "can_go_online": can_go,
         "approved": approved,
@@ -3089,8 +3111,58 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         "plate_change_pending": plate_pending,
         "missing_vehicle_docs": missing_docs,
         "contracts_pending": pending_contracts,
+        "face_check_due": face_due,
+        "face_review_required": bool(user.face_review_required),
+        "face_check_pending": face_pending,
         "reasons": reasons,
     }
+
+
+@router.post("/drivers/face-check", dependencies=[Depends(_verify_api_key)])
+async def driver_face_check(request: Request,
+                            user: User = Depends(_get_current_user),
+                            db: AsyncSession = Depends(get_db)):
+    """Daily face check (2026-10-23, owner spec: "verificación de selfie cada
+    24h" — the guide's last page promises it, so it's REAL). The GO tap runs
+    the liveness screen when can_go_online reports face_check_due; its
+    success lands here: the selfie is stored for the record (dispatch sees
+    it in the person file) and last_face_verified_at is stamped."""
+    if (user.role or "").lower() != "driver":
+        raise HTTPException(403, "Drivers only")
+    body = await request.json()
+    photo_b64 = (body.get("photo_b64") or "").strip()
+    if not photo_b64:
+        raise HTTPException(400, "photo_b64 required")
+    if len(photo_b64) > 30_000_000:
+        raise HTTPException(413, "Photo too large")
+    import base64 as _b64
+    import time as _time
+    try:
+        decoded = _b64.b64decode(photo_b64, validate=True)
+    except Exception:
+        raise HTTPException(400, "Invalid photo data")
+    validate_image_bytes(decoded)
+    from utils.image_validation import shrink_image_bytes
+    decoded = shrink_image_bytes(decoded)
+    fb_path = f"drivers/{user.id}/face_check_{int(_time.time())}.jpg"
+    fb_url = firestore_sync.upload_to_firebase_storage(decoded, fb_path, "image/jpeg")
+    if not fb_url:
+        raise HTTPException(503, "Document storage unavailable. Please try again later.")
+    # Dispatch review (2026-10-23, owner spec): the selfie AUTO-APPROVES by
+    # default; a driver dispatch rejected once is on manual review — their
+    # selfie stays PENDING (no stamp, no connect) until dispatch approves.
+    if user.face_review_required:
+        db.add(Document(user_id=user.id, doc_type="selfie_check",
+                        status="pending", file_path=fb_url))
+        await db.commit()
+        return {"ok": True, "pending_review": True}
+    user.last_face_verified_at = utc_now()
+    # Informational row — dispatch sees the daily checks in the person file.
+    db.add(Document(user_id=user.id, doc_type="selfie_check",
+                    status="approved", file_path=fb_url))
+    await db.commit()
+    return {"ok": True, "pending_review": False,
+            "last_face_verified_at": user.last_face_verified_at.isoformat()}
 
 
 @router.post("/drivers/vehicle/plate", dependencies=[Depends(_verify_api_key)])

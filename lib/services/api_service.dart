@@ -800,6 +800,7 @@ class ApiService {
     String? photoUrl,
     String role = 'rider',
     String? dateOfBirth,
+    String? gender,
   }) async {
     final res = await _client
         .post(
@@ -816,6 +817,7 @@ class ApiService {
             'role': role,
             if (dateOfBirth != null && dateOfBirth.isNotEmpty)
               'date_of_birth': dateOfBirth,
+            if (gender != null && gender.isNotEmpty) 'gender': gender,
           }),
         )
         .timeout(const Duration(seconds: 10));
@@ -3934,6 +3936,32 @@ class ApiService {
         )
         .timeout(const Duration(seconds: 20));
     return _parse(res);
+  }
+
+  /// Daily face check (2026-10-23, owner spec): the liveness photo goes to
+  /// the server, which stores it and stamps last_face_verified_at. The 200
+  /// body is `{ok, pending_review}` — pending_review=true means the selfie
+  /// landed in MANUAL dispatch review (dress-code rejection path): the
+  /// driver must NOT connect until it clears.
+  /// null = upload failed, retry on the next GO tap (fail-open).
+  static Future<Map<String, dynamic>?> submitFaceCheck(
+      String photoPath) async {
+    try {
+      final bytes = await File(photoPath).readAsBytes();
+      final token = await getToken();
+      if (token == null) return null;
+      final res = await _client
+          .post(Uri.parse('$_baseUrl/drivers/face-check'),
+              headers: _jsonHeaders(token),
+              body: jsonEncode({'photo_b64': base64Encode(bytes)}))
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      return data is Map<String, dynamic> ? data : const {'ok': true};
+    } catch (e) {
+      debugPrint('submitFaceCheck failed: $e');
+      return null;
+    }
   }
 
   /// Check if driver can go online (backend single source of truth).

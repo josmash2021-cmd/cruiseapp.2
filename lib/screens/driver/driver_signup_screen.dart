@@ -304,6 +304,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   DateTime? _dob;
   static const int _minDriverAge = 25;
 
+  // Gender — required for drivers; the first-trip guide picks the dress
+  // photo by tier×gender (server default: men's variant).
+  String? _gender;
+
   // ── Inline duplicate-check state ───────────────────────────────────────────
   String? _emailError;
   String? _phoneError;
@@ -461,6 +465,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         return _firstNameCtrl.text.trim().length >= 2 &&
             _lastNameCtrl.text.trim().length >= 2 &&
             _dob != null &&
+            _gender != null &&
             (_driverAge ?? 0) >= _minDriverAge &&
             _emailRe.hasMatch(_emailCtrl.text.trim()) &&
             _phoneCtrl.text.replaceAll(_nonDigitRe, '').length >= 10 &&
@@ -919,6 +924,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         password: _passwordCtrl.text,
         role: 'driver',
         dateOfBirth: _dobIso,
+        gender: _gender,
       );
 
       final user = result['user'] as Map<String, dynamic>;
@@ -1350,6 +1356,20 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 ],
               ),
             ),
+          // Gender — required, right next to the DOB (same spec batch).
+          if (_gender == null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 6),
+              child: Text(
+                S.of(context).fieldHintGender,
+                style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          _buildGenderPicker(),
           const SizedBox(height: 16),
           _field(
             ctrl: _emailCtrl,
@@ -1578,6 +1598,47 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  /// Gender selector — two neu chips next to the DOB tile; required before
+  /// step 0 can continue.
+  Widget _buildGenderPicker() {
+    final c = AppColors.of(context);
+    Widget chip(String value, String label) {
+      final selected = _gender == value;
+      return Expanded(
+        child: InkWell(
+          onTap: () => setState(() => _gender = value),
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+            decoration: neuBox(
+              radius: 16,
+              pressed: true,
+              borderColor: selected ? _gold : null,
+            ),
+            child: Center(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: selected ? c.textPrimary : c.textTertiary,
+                  fontSize: 15,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        chip('male', S.of(context).genderMale),
+        const SizedBox(width: 12),
+        chip('female', S.of(context).genderFemale),
       ],
     );
   }

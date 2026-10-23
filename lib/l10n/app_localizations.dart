@@ -974,6 +974,8 @@ class S {
       _es ? 'Coloca tu apellido' : 'Enter your last name';
   String get fieldHintDob =>
       _es ? 'Coloca tu fecha de nacimiento' : 'Enter your date of birth';
+  String get fieldHintGender =>
+      _es ? 'Selecciona tu género' : 'Select your gender';
   String get fieldHintEmail =>
       _es ? 'Coloca tu correo electrónico' : 'Enter your email address';
   String get fieldHintPhone =>
@@ -2013,6 +2015,51 @@ class S {
   String get guideFinishBody => _es
       ? 'Desliza para terminar el viaje al llegar al destino. Tus ganancias se depositan cada lunes, o al instante a tu tarjeta de débito.'
       : 'Slide to finish the trip at the destination. Your earnings pay out every Monday, or instantly to your debit card.';
+
+  // ── First-trip guide: dress code + selfie verification (2026-10-23) ───────
+  String get dressVipTitle =>
+      _es ? 'Vestimenta VIP requerida' : 'VIP Dress Code Required';
+  String get dressStdTitle =>
+      _es ? 'Vestimenta requerida' : 'Dress Code Required';
+  String get dressBodyVipM => _es
+      ? 'Como Chofer Profesional VIP, tu presentación es parte del servicio. Traje o saco formal negro, camisa elegante, zapatos de vestir y una imagen impecable en cada viaje.'
+      : 'As a VIP Professional Driver, your presentation is part of the service. A formal black suit or blazer, an elegant shirt, dress shoes, and an impeccable image on every trip.';
+  String get dressBodyVipF => _es
+      ? 'Como Chofer Profesional VIP, tu presentación es parte del servicio. Traje o blazer formal negro, blusa elegante, zapatos de vestir y una imagen impecable en cada viaje.'
+      : 'As a VIP Professional Driver, your presentation is part of the service. A formal black suit or blazer, an elegant blouse, dress shoes, and an impeccable image on every trip.';
+  String get dressBodyStdM => _es
+      ? 'Tu presentación es parte del servicio. Polo o camisa negra, pantalón de vestir oscuro, cinturón y zapatos limpios en cada viaje.'
+      : 'Your presentation is part of the service. A black polo or shirt, dark dress pants, a belt, and clean shoes on every trip.';
+  String get dressBodyStdF => _es
+      ? 'Tu presentación es parte del servicio. Blusa o top negro profesional, pantalón oscuro, chaqueta opcional y calzado cómodo y limpio en cada viaje.'
+      : 'Your presentation is part of the service. A professional black blouse or top, dark pants, an optional jacket, and comfortable, clean footwear on every trip.';
+  String get dressChipElegant => _es ? 'Elegante' : 'Elegant';
+  String get dressChipProfessional => _es ? 'Profesional' : 'Professional';
+  String get dressChipPremium => _es ? 'Premium' : 'Premium';
+  String get dressChipCleanM => _es ? 'Limpio' : 'Clean';
+  String get dressChipCleanF => _es ? 'Limpia' : 'Clean';
+  String get dressChipPresentable => _es ? 'Presentable' : 'Presentable';
+  String get dressChipComfortable => _es ? 'Cómoda' : 'Comfortable';
+  String get selfieVerifyTitle =>
+      _es ? 'Verificación de selfie' : 'Selfie Verification';
+  String get selfieVerifyEvery24h =>
+      _es ? 'Cada 24 horas' : 'Every 24 hours';
+  String get selfieBodyStd => _es
+      ? 'Para mantener tu cuenta activa, debes tomar una selfie clara de tu rostro y verificar que tengas la vestimenta adecuada y profesional requerida para seguir con las reglas de la app.'
+      : "To keep your account active, you must take a clear selfie of your face and verify that you are wearing the proper, professional attire required to keep following the app's rules.";
+  String get selfieBodyVip => _es
+      ? 'Para mantener tu cuenta activa en la categoría Chofer Profesional VIP, debes tomar una selfie clara de tu rostro y verificar que tengas la vestimenta elegante, adecuada y profesional requerida para seguir con las reglas de la app.'
+      : "To keep your account active in the VIP Professional Driver category, you must take a clear selfie of your face and verify that you are wearing the elegant, proper, professional attire required to keep following the app's rules.";
+  String get selfieChipFaceVisible =>
+      _es ? 'Rostro visible y claro' : 'Face visible and clear';
+  String get selfieChipDressStd =>
+      _es ? 'Vestimenta profesional adecuada' : 'Proper professional attire';
+  String get selfieChipDressVip =>
+      _es ? 'Vestimenta VIP profesional' : 'Professional VIP attire';
+  String get selfieChipLighting =>
+      _es ? 'Buena iluminación' : 'Good lighting';
+  String get selfieChipNoGlasses =>
+      _es ? 'Sin gafas ni filtros' : 'No glasses or filters';
 
   // ── Notifications Screen ───────────────────────────────────────────────────
   String get helpUsKeepInformed =>
@@ -3491,6 +3538,20 @@ class S {
   String get licenseBackLabel => _es ? 'Licencia Reverso' : 'License Back';
   String get ssnShortLabel => _es ? 'SSN' : 'SSN';
   String get faceCheckLabel => _es ? 'Verificación Facial' : 'Face Check';
+  // GO button face-review states + pushes (2026-10-23, owner spec)
+  String get goVerify => _es ? 'Verificar' : 'Verify';
+  String get faceReviewPending =>
+      _es ? 'Selfie en revisión' : 'Selfie under review';
+  String get faceRejectedTitle =>
+      _es ? 'Selfie rechazada' : 'Selfie rejected';
+  String get faceRejectedBody => _es
+      ? 'No cumple con las normas de vestimenta. Tómate otra foto con la vestimenta requerida.'
+      : 'Does not meet the dress code rules. Take a new photo with the required attire.';
+  String get faceApprovedTitle =>
+      _es ? '✅ Selfie aprobada' : '✅ Selfie approved';
+  String get faceApprovedBody => _es
+      ? 'Ya puedes conectarte y recibir viajes'
+      : 'You can go online and receive rides now';
   String get uploadedStatus => _es ? 'Subido ✓' : 'Uploaded ✓';
   String get missingStatus => _es ? 'Faltante' : 'Missing';
   String get providedStatus => _es ? 'Proporcionado ✓' : 'Provided ✓';
@@ -6043,8 +6104,8 @@ class S {
       ? 'Tómate una foto de perfil para ayudar a los conductores a encontrarte.'
       : 'Take a profile photo to help drivers find you.';
   String get genderSectionLabel => _es ? 'Género' : 'Gender';
-  String get genderMale => _es ? 'Masculino' : 'Male';
-  String get genderFemale => _es ? 'Femenino' : 'Female';
+  String get genderMale => _es ? 'Hombre' : 'Male';
+  String get genderFemale => _es ? 'Mujer' : 'Female';
   String get genderOther => _es ? 'Otro' : 'Other';
   String get instructionsTitle => _es ? 'Instrucciones' : 'Instructions';
   String get takePhotoButton => _es ? 'Tomar foto' : 'Take a photo';

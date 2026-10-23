@@ -1130,6 +1130,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _startPolling();
       _startScheduledPoll();
       _startMarketplacePoll();
+      // "You're now online!" ~10 s AFTER the shift is truly live (owner
+      // spec 2026-10-23: "debe salir después de unos 10 segundos de estar
+      // activado, no cuando se le da al botón GO") — and it cures the old
+      // 700 ms race that checked _driverOnline before the flip landed and
+      // let the overlay die silently.
+      _introTimer?.cancel();
+      _introTimer =
+          Timer(const Duration(seconds: 10), _maybeShowOnlineIntro);
     } finally {
       _enteringOnline = false;
     }
@@ -1149,19 +1157,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
   }
 
-  /// First-GO "You're now online!" instruction: once per device, only from
-  /// an explicit GO tap (never on resume). Shows after the connect beat
-  /// lands; the seen flag is written ONLY by the Entendido button, so an
-  /// app kill mid-overlay just replays it next GO.
-  Future<void> _maybeShowOnlineIntro() async {    final p = await PrefsCache.instance;
-    // The owner's demo account gets the intro on EVERY GO; everyone else
-    // once per phone (the seen flag).
+  /// First-GO "You're now online!" instruction: once per device, fired by
+  /// the 10 s `_introTimer` armed at the end of _enterOnlineMode (owner
+  /// spec 2026-10-23 — after 10 s online, not on the GO tap). The seen
+  /// flag is written ONLY by the Entendido button, so an app kill
+  /// mid-overlay just replays it next activation.
+  Future<void> _maybeShowOnlineIntro() async {
+    final p = await PrefsCache.instance;
+    // The owner's demo account gets the intro on EVERY activation; everyone
+    // else once per phone (the seen flag).
     final email = ((await UserSession.getUser())?['email'] ?? '').toLowerCase();
     final alwaysShow = kOnlineIntroAlwaysEmails.contains(email);
     if (!alwaysShow && p.getBool('online_intro_seen_v1') == true) return;
-    await Future.delayed(const Duration(milliseconds: 700));
     if (!mounted || !_driverOnline || _showOnlineIntro) return;
-    if (!alwaysShow && p.getBool('online_intro_seen_v1') == true) return;
     _setState(() => _showOnlineIntro = true);
   }
 
@@ -1179,6 +1187,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Silence every isOnline:true writer BEFORE the offline write leaves —
     // the other order let a queued heartbeat flip the driver back online.
     _wentOffline = true;
+    // A pending intro timer dies with the shift — it must never fire over
+    // the offline map.
+    _introTimer?.cancel();
+    _introTimer = null;
     // El turno se cerró de verdad (user report 2026-09-27, "el botón de GO
     // se queda en RESUME"): el pref ya queda apagado abajo, pero el snapshot
     // del boot sobrevivía y el GO seguía leyendo RESUME para siempre.

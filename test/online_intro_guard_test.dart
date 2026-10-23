@@ -33,20 +33,27 @@ void main() {
     expect(screen, contains('OnlineIntroOverlay('));
   });
 
-  test('fires on the GO tap, once per device (always for the owner)', () {
-    // The trigger is the GO TAP itself (owner spec 2026-10-22: "cuando
-    // presionan activarse"). It lived in _enterOnlineMode's fresh-GO branch
-    // first — but a phone remembering an open shift enters that with
-    // resuming=true and the intro never showed (owner report 2026-10-23).
+  test('fires ~10 s after the shift is live, once per device (always for '
+      'the owner)', () {
+    // The trigger moved OFF the GO tap (owner spec 2026-10-23: "debe salir
+    // después de unos 10 segundos de estar activado, no cuando se le da al
+    // botón GO") — a Timer armed at the END of _enterOnlineMode, which also
+    // cures the 700 ms race that checked _driverOnline before the flip
+    // landed and let the overlay die silently.
     final goTap = offline.indexOf('void _onGoTap()');
     expect(goTap, greaterThan(-1));
     final tapRegion = offline.substring(goTap, goTap + 7000);
-    expect(tapRegion, contains('_maybeShowOnlineIntro()'));
-    // …and the flip's own branches no longer carry it (no double-fire).
+    expect(tapRegion.contains('_maybeShowOnlineIntro()'), isFalse,
+        reason: 'the tap no longer triggers it — the 10 s timer does');
     final fn = controller.indexOf('Future<void> _enterOnlineMode');
     final region = controller.substring(fn, fn + 5500);
-    expect(region.contains('_maybeShowOnlineIntro()'), isFalse,
-        reason: 'the trigger lives in the GO tap, not the flip branches');
+    expect(
+        region,
+        contains('Timer(const Duration(seconds: 10), _maybeShowOnlineIntro)'),
+        reason: 'armed once the online mode is truly live');
+    expect(controller, contains('_introTimer?.cancel();'),
+        reason: 'cancelled on exit/dispose — never fires over the '
+            'offline map');
     expect(controller, contains("getBool('online_intro_seen_v1')"));
     expect(controller, contains("setBool('online_intro_seen_v1', true)"));
   });

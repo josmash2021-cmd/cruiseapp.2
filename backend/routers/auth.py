@@ -201,6 +201,16 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
             dob = parse_date_of_birth(body.date_of_birth)
         except ValueError as e:
             raise HTTPException(400, str(e))
+    # Driver gender for the guide's dress-code variant (2026-10-23, owner
+    # spec): the app sends male/female; anything else is ignored (null →
+    # men's variant in the guide).
+    gender = None
+    if body.gender:
+        _g = body.gender.strip().lower()
+        if _g in ("male", "hombre", "m"):
+            gender = "male"
+        elif _g in ("female", "mujer", "f"):
+            gender = "female"
     # Check duplicates per role ï¿½ allow same email/phone for different roles (driver vs rider)
     if body.email:
         exists = await db.execute(select(User).where(func.lower(User.email) == body.email.strip().lower(), User.role == role))
@@ -217,6 +227,8 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.deletion_requested_at = None
                 if dob is not None:
                     existing.date_of_birth = dob
+                if gender is not None:
+                    existing.gender = gender
                 await db.commit()
                 await db.refresh(existing)
                 try:
@@ -241,6 +253,8 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.deletion_requested_at = None
                 if dob is not None:
                     existing.date_of_birth = dob
+                if gender is not None:
+                    existing.gender = gender
                 await db.commit()
                 await db.refresh(existing)
                 try:
@@ -261,6 +275,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         photo_url=body.photo_url,
         role=role,
         date_of_birth=dob,
+        gender=gender,
     )
     db.add(user)
     try:
@@ -1773,7 +1788,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     if not db_user:
         raise HTTPException(404, "User not found")
     # Only allow safe fields - NEVER role, is_verified, verification_status
-    _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type")
+    _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type", "gender")
     # Device tracking fields (always allowed)
     _DEVICE_FIELDS = ("app_version", "device_model", "os_version", "platform")
     # Privacy preference fields (always allowed)
@@ -2937,6 +2952,11 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
             db_user.id_photo_url = id_photo_url
         if selfie_url:
             db_user.selfie_url = selfie_url
+        # The signup liveness counts as the FIRST daily face check
+        # (2026-10-23): without the stamp, a driver who JUST did the face
+        # verification would get the 24 h liveness screen at their first GO.
+        if selfie_url or video_url:
+            db_user.last_face_verified_at = utc_now()
         if saved_urls.get("license_front"):
             db_user.license_front_url = saved_urls["license_front"]
         if saved_urls.get("license_back"):

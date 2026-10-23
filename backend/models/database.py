@@ -301,6 +301,11 @@ class User(Base):
     # Boot lists below (trampa #0).
     face_review_required = Column(Boolean, default=False, nullable=False)
     face_kick_pending = Column(Boolean, default=False, nullable=False)
+    # Dispatch GO gate (2026-10-23, owner spec "un botón para desactivar y
+    # activar el go online de cada driver, instantáneo"): while True the GO
+    # button is dead, the online flip 403s, and the live app is told over the
+    # go_online_gate_changed socket event.
+    go_online_disabled = Column(Boolean, default=False, nullable=False)
     # Contracts e-acceptance (2026-10-21, user spec Uber-style): stamped
     # when the whole REQUIRED set of legal documents is accepted at current
     # versions. The per-document evidence lives in consent_logs.
@@ -1232,6 +1237,7 @@ async def migrate_add_columns(conn):
         # Face-check dispatch review (2026-10-23) — boot lists (trampa #0).
         ("users", "face_review_required", "BOOLEAN DEFAULT 0"),
         ("users", "face_kick_pending", "BOOLEAN DEFAULT 0"),
+        ("users", "go_online_disabled", "BOOLEAN DEFAULT 0"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1490,6 +1496,7 @@ async def migrate_postgres(conn):
         # Face-check dispatch review (2026-10-23) — boot list (trampa #0).
         ("users", "face_review_required", "BOOLEAN DEFAULT FALSE"),
         ("users", "face_kick_pending", "BOOLEAN DEFAULT FALSE"),
+        ("users", "go_online_disabled", "BOOLEAN DEFAULT FALSE"),
     ]
     for table, col, col_type in migrations:
         try:

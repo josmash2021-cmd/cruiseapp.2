@@ -1444,6 +1444,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _bounceToApprovalScreen('pending');
         return;
       }
+      // go_online_disabled is terminal as well (2026-10-23, owner spec —
+      // the dispatch GO switch): the panel paused this driver mid-flip.
+      // Roll back, mark the gate, explain — never retry-loop the 403.
+      if (e is ApiException && e.message == 'go_online_disabled') {
+        unawaited(_exitOnlineMode());
+        _setState(() => _goOnlineDisabled = true);
+        if (mounted) _showGoOnlineDisabledDialog();
+        return;
+      }
       // Retry after 5s so driver doesn't stay silently offline
       Future.delayed(const Duration(seconds: 5), () {
         if (mounted && _phase == _Phase.searching) {

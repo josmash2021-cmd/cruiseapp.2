@@ -3016,6 +3016,48 @@ async def admin_reject_face_check(document_id: int, request: Request, db: AsyncS
     return {"document": _doc_dict(doc), "kick_deferred": kick_deferred}
 
 
+# ── Dispatch GO switch (2026-10-23, owner spec — "un botón para desactivar
+# y activar el botón de go online de cada driver y que funcione instantaneo")
+@router.post("/admin/users/{user_id}/go-online-gate", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_go_online_gate(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """disabled=True kills the driver's online state on the spot (pending
+    offers expire, Live Activity offer drops, Firestore goes offline) and
+    the live app is told over the socket; the GO button then stays dead
+    (can_go_online blocks + the online flip 403s) until re-enabled here."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    disabled = body.get("disabled") if isinstance(body, dict) else None
+    if not isinstance(disabled, bool):
+        raise HTTPException(400, "disabled (bool) required")
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    user.go_online_disabled = disabled
+    if disabled:
+        user.is_online = False
+        user.online_since = None
+        from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+        await expire_pending_offers_for_driver(db, user.id, "go online disabled by dispatch")
+    await db.commit()
+    if disabled and _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_driver_location(user.id, user.lat or 0, user.lng or 0, False)
+        except Exception:
+            pass
+    _security_audit_log("ADMIN_GO_ONLINE_GATE", "admin",
+                        f"user_id={user_id} disabled={disabled}")
+    try:
+        await notify_user(user.id, "go_online_gate_changed",
+                          {"disabled": disabled})
+    except Exception as e:
+        logging.warning("[Admin] go-online gate socket failed for %s: %s",
+                        user.id, e)
+    return {"ok": True, "disabled": disabled}
+
+
 # ── Digital contracts admin (2026-10-21, user spec — Uber-style): consult
 # acceptances, download receipt PDFs, update the documents (version bump →
 # re-acceptance wave), and read the version history ──────────────────────

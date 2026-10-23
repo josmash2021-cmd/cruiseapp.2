@@ -52,8 +52,9 @@ void main() {
         reason: 'the verify state says Verificar/Verify');
     expect(offline, contains('S.of(context).faceReviewPending'),
         reason: 'the pending state says Selfie en revisión');
-    expect(offline, contains('faceState == 2\n          ? null'),
-        reason: 'pending review = dead button (onTap null)');
+    expect(offline, contains(': faceState == 2\n              ? null'),
+        reason: 'pending review = dead button (onTap null) — the dispatch '
+            'GO gate outranks it but never resurrects the flip');
     expect(offline, contains("const Color(0xFFD32F2F)"),
         reason: 'the verify state paints RED');
     expect(offline, contains('? _onFaceVerifyTap'),

@@ -65,6 +65,8 @@ class SocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   static var _zonesUpdatedController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static var _goOnlineGateController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// Stream of driver location updates.
   /// Payload: {trip_id, lat, lng, heading, speed, timestamp}
@@ -117,6 +119,14 @@ class SocketService {
   /// payload — the event is only a wake-up, the REST answer is the truth.
   static Stream<Map<String, dynamic>> get zonesUpdatedStream =>
       _zonesUpdatedController.stream;
+
+  /// Ping pushed when dispatch pauses/resumes a driver's GO (2026-10-23,
+  /// owner spec "que funcione instantáneo").
+  /// Payload: {disabled: bool} — directed at the single user, same channel
+  /// as `account_status_changed`. The DriverOnlineScreen flips its GO state
+  /// on this; the can_go_online payload stays the truth on boot/GO tap.
+  static Stream<Map<String, dynamic>> get goOnlineGateStream =>
+      _goOnlineGateController.stream;
 
   // ── Public API ──────────────────────────────────────────────────────
 
@@ -330,6 +340,12 @@ class SocketService {
       final map = _toMap(data);
       _zonesUpdatedController.add(map);
       debugPrint('[Socket.io] Zones updated: v${map['version']}');
+    });
+
+    _socket!.on('go_online_gate_changed', (data) {
+      final map = _toMap(data);
+      _goOnlineGateController.add(map);
+      debugPrint('[Socket.io] GO gate changed: ${map['disabled']}');
     });
 
     // Listen to network recovery to proactively reconnect.
@@ -556,6 +572,9 @@ class SocketService {
       if (_zonesUpdatedController.isClosed) {
         _zonesUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
       }
+      if (_goOnlineGateController.isClosed) {
+        _goOnlineGateController = StreamController<Map<String, dynamic>>.broadcast();
+      }
       if (_connectionHealthController.isClosed) {
         _connectionHealthController = StreamController<bool>.broadcast();
       }
@@ -608,6 +627,9 @@ class SocketService {
     }
     if (!_accountStatusController.isClosed) {
       _accountStatusController.close();
+    }
+    if (!_goOnlineGateController.isClosed) {
+      _goOnlineGateController.close();
     }
     if (!_connectionHealthController.isClosed) {
       _connectionHealthController.close();

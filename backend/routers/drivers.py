@@ -295,6 +295,13 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         _driver_locations.pop(driver_id, None)
         raise HTTPException(403, "account_not_approved")
 
+    # Dispatch GO switch (2026-10-23, owner spec — instant): a driver paused
+    # from the panel can never flip online. Terminal for the app (it joins
+    # the zone_disabled/account_not_approved no-retry set).
+    if body.is_online and user.go_online_disabled:
+        _driver_locations.pop(driver_id, None)
+        raise HTTPException(403, "go_online_disabled")
+
     # Sector connect gate (2026-10-14, user spec: "dentro del cuadro podrá
     # conectarse" — Florida AND Alabama sectors, one dataset, the one the
     # panel edits): connecting is refused inside the sector coverage region
@@ -3069,6 +3076,14 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     if pending_contracts:
         reasons.append("contracts_not_accepted")
 
+    # 6. Dispatch GO switch (2026-10-23, owner spec — instant per-driver
+    # kill/restore from the panel). This one IS a blocker, unlike the
+    # face-check signals: a paused driver can never go online until
+    # dispatch re-enables him.
+    go_disabled = bool(user.go_online_disabled)
+    if go_disabled:
+        reasons.append("go_online_disabled")
+
     can_go = (
         approved
         and vehicle_ok
@@ -3076,6 +3091,7 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         and not has_expired
         and not plate_pending
         and not pending_contracts
+        and not go_disabled
     )
 
     # Daily face check (2026-10-23, owner spec: "verificación de selfie cada
@@ -3114,6 +3130,7 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         "face_check_due": face_due,
         "face_review_required": bool(user.face_review_required),
         "face_check_pending": face_pending,
+        "go_online_disabled": go_disabled,
         "reasons": reasons,
     }
 

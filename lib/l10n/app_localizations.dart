@@ -3544,6 +3544,15 @@ class S {
       : 'Center your face inside the frame';
   // GO button face-review states + pushes (2026-10-23, owner spec)
   String get goVerify => _es ? 'Verificar' : 'Verify';
+  // Dispatch GO switch (2026-10-23, owner spec — instant per-driver pause).
+  String get goOnlineDisabledTitle =>
+      _es ? 'Cuenta pausada' : 'Account paused';
+  String get goOnlineDisabledBody => _es
+      ? 'Dispatch pausó tu capacidad de conectarte. Contacta soporte si crees que es un error.'
+      : 'Dispatch paused your ability to go online. Contact support if you think this is a mistake.';
+  String get goOnlineEnabledBody => _es
+      ? 'Ya puedes conectarte de nuevo'
+      : 'You can go online again';
   String get faceReviewPending =>
       _es ? 'Selfie en revisión' : 'Selfie under review';
   String get faceRejectedTitle =>

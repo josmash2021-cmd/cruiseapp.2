@@ -252,6 +252,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       // needs manual dispatch review; pending = one is already in review.
       final faceReview = result['face_review_required'] == true;
       final facePending = result['face_check_pending'] == true;
+      // Dispatch GO switch (2026-10-23): a blocker, unlike the face signals.
+      final goDisabled = result['go_online_disabled'] == true;
 
       // Sync approval status locally
       if (result['approved'] == true) {
@@ -267,6 +269,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         _faceCheckDue = faceDue;
         _faceReviewRequired = faceReview;
         _faceCheckPending = facePending;
+        _goOnlineDisabled = goDisabled;
         _docStatusLoaded = true;
       });
       _syncFaceReviewPoll();
@@ -934,6 +937,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   void _onGoTap() async {
     // The mode flip dedups itself; two taps must not run the gates twice.
     if (_enteringOnline || _driverOnline) return;
+    // Dispatch GO switch (2026-10-23, owner spec — instant): a paused GO
+    // never even starts the gates — the tap only explains.
+    if (_goOnlineDisabled) {
+      HapticService.mediumImpact();
+      _showGoOnlineDisabledDialog();
+      return;
+    }
     // Zone selection gate (2026-10-11, user spec: "si no ha seleccionado o
     // tocado una zona se quedará el botón apagado") — with the zone layer
     // ON, the GO tap needs a tapped city first; the hint says so.
@@ -1221,6 +1231,32 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     );
   }
 
+  /// Dispatch GO switch (2026-10-23, owner spec — instant): the tap on a
+  /// paused GO never flips — it only explains. The socket listener and the
+  /// terminal 403 path land here too.
+  void _showGoOnlineDisabledDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A22),
+        title: Text(
+          S.of(ctx).goOnlineDisabledTitle,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          S.of(ctx).goOnlineDisabledBody,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(S.of(ctx).gotIt),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ═══════════════════════════════════════════════════
   //  GO BUTTON (ported from home; clocks renamed `_go*` —
   //  `_pulseCtrl`/`_pulseAnim` here belong to the offer card)
@@ -1371,12 +1407,16 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   Widget _buildGoButton({double radius = 16.0, double morph = 1.0}) {
     final faceState = _faceGateState;
     return GestureDetector(
+      // Dispatch GO switch (2026-10-23 owner spec): paused = the tap ONLY
+      // explains, never flips — and it outranks even the face gate.
       // Face gate (2026-10-23 owner spec): pending review = dead button;
       // verify = the red "Verificar" runs the liveness flow, not the flip.
-      onTap: faceState == 2
-          ? null
-          : faceState == 1
-              ? _onFaceVerifyTap
+      onTap: _goOnlineDisabled
+          ? _showGoOnlineDisabledDialog
+          : faceState == 2
+              ? null
+              : faceState == 1
+                  ? _onFaceVerifyTap
               : _isVerified
                   ? _onGoTap
                   : () async {
@@ -1427,16 +1467,21 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
               : goldBot;
           // Face gate paint (2026-10-23 owner spec): verify = RED, pending
           // review = disabled grey — the gold stays for the normal state.
-          final topPaint = faceState == 1
-              ? const Color(0xFFD32F2F)
-              : faceState == 2
-                  ? const Color(0xFF6B6B70)
-                  : topColor;
-          final botPaint = faceState == 1
-              ? const Color(0xFF9A1B1B)
-              : faceState == 2
-                  ? const Color(0xFF4A4A4F)
-                  : botColor;
+          // Dispatch GO switch paints the same dead grey and outranks both.
+          final topPaint = _goOnlineDisabled
+              ? const Color(0xFF6B6B70)
+              : faceState == 1
+                  ? const Color(0xFFD32F2F)
+                  : faceState == 2
+                      ? const Color(0xFF6B6B70)
+                      : topColor;
+          final botPaint = _goOnlineDisabled
+              ? const Color(0xFF4A4A4F)
+              : faceState == 1
+                  ? const Color(0xFF9A1B1B)
+                  : faceState == 2
+                      ? const Color(0xFF4A4A4F)
+                      : botColor;
           const glowColor = Color(0xFFE8C547);
 
           // Black on gold — muted while dimmed.

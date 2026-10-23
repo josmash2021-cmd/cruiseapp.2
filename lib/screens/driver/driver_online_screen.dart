@@ -989,6 +989,25 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _bounceToApprovalScreen(s);
       }
     });
+    // Dispatch pause/resume of THIS driver's GO — instant, no boot wait
+    // (2026-10-23, owner spec "que funcione instantáneo"). The REST payload
+    // (can_go_online) stays the truth on boot and on every GO tap.
+    _goOnlineGateSub =
+        SocketService.goOnlineGateStream.listen((data) {
+      final disabled = data['disabled'] == true;
+      if (!mounted) return;
+      _setState(() => _goOnlineDisabled = disabled);
+      if (disabled) {
+        // Paused while ONLINE: the shift ends now, same dialog as the tap.
+        if (_driverOnline) unawaited(_exitOnlineMode());
+        _showGoOnlineDisabledDialog();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(S.of(context).goOnlineEnabledBody),
+          duration: const Duration(seconds: 3),
+        ));
+      }
+    });
   }
 
   bool _approvalGatesOut(String status) =>
@@ -1406,6 +1425,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _faceReviewRequired = false;
   bool _faceCheckPending = false;
   Timer? _faceReviewTimer;
+  // Dispatch GO switch (2026-10-23, owner spec — instant): True = the panel
+  // paused THIS driver's GO. The button paints grey, the tap only explains,
+  // and the socket event lands it live (even kicking an online driver off).
+  bool _goOnlineDisabled = false;
   // The "You're now online!" intro fires ~10 s after the shift is truly
   // live (owner spec 2026-10-23) — armed at the end of _enterOnlineMode,
   // no longer keyed off the GO tap.
@@ -1511,6 +1534,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // caliente).
   bool _approvalBounced = false;
   StreamSubscription<Map<String, dynamic>>? _approvalStatusSub;
+  StreamSubscription<Map<String, dynamic>>? _goOnlineGateSub;
   /// Foto real del mapa capturada al entregar la superficie (2026-10-17,
   /// cero negro al volver de otra página). El velo del remount la prefiere
   /// sobre el snapshot estático de red; se limpia cuando el remount
@@ -1763,6 +1787,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     mapRouteObserver.unsubscribe(this);
     _zoneDemandTimer?.cancel();
     _approvalStatusSub?.cancel();
+    _goOnlineGateSub?.cancel();
     ZoneService.sectorsChanged.removeListener(_onSectorsChanged);
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);

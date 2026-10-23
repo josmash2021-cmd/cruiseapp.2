@@ -3555,6 +3555,14 @@ class S {
       : 'You can go online again';
   String get faceReviewPending =>
       _es ? 'Selfie en revisión' : 'Selfie under review';
+  // The verifying wait inside the selfie screen (2026-10-23, owner spec):
+  // after the retaken photo the page does NOT close — it holds this loading
+  // until dispatch's decision lands, then closes already-connecting.
+  String get faceCheckVerifyingTitle =>
+      _es ? 'Verificando tu selfie' : 'Verifying your selfie';
+  String get faceCheckVerifyingBody => _es
+      ? 'Estamos revisando que cumplas con la vestimenta correcta y profesional. Esto toma unos segundos.'
+      : 'We are reviewing that you meet the correct, professional attire rules. This takes a few seconds.';
   String get faceRejectedTitle =>
       _es ? 'Selfie rechazada' : 'Selfie rejected';
   String get faceRejectedBody => _es

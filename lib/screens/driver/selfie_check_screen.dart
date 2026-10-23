@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
+import '../../services/socket_service.dart';
 import '../../utils/app_platform.dart';
 import '../../utils/selfie_variant.dart';
 import '../../widgets/selfie_verify_card.dart';
@@ -14,9 +18,17 @@ import '../../widgets/selfie_verify_card.dart';
 /// (the SHARED SelfieVerifyCard; the shutter flash stays guide-only), step
 /// 2 a FRONT-camera manual still with the license scanner's frame design.
 ///
-/// Output contract is identical to the old FaceLivenessScreen flow: pops
-/// `{'photo': path}` on success, null on cancel — the GO call sites keep
-/// their logic untouched.
+/// The screen uploads the shot ITSELF (owner spec 2026-10-23: "no se
+/// cerrara y aparecera un loading"). When the selfie lands in MANUAL review
+/// (a driver dispatch rejected once), step 3 holds a verifying loader until
+/// dispatch's decision lands over the live socket (REST poll as the net,
+/// 90 s ceiling) — approve pops already-`approved` so the caller connects
+/// with ZERO home detour.
+///
+/// Output contract: pops `{'photo': path, 'approved': true|false}` on a
+/// decision, `{'photo': path, 'pending': true}` when dispatch has not
+/// decided (timeout / X escape), a bare `{'photo': path}` when the upload
+/// itself failed (callers stay fail-open), and null on cancel.
 class SelfieCheckScreen extends StatefulWidget {
   const SelfieCheckScreen({super.key});
 
@@ -29,7 +41,7 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   static const _gold = Color(0xFFE8C547);
   static const _navy = Color(0xFF14141A);
 
-  int _step = 0; // 0 = instructions card · 1 = front camera
+  int _step = 0; // 0 = instructions card · 1 = front camera · 2 = verifying
   String _variant = 'std_m';
   bool _vip = false;
 
@@ -41,6 +53,15 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   CameraController? _ctrl;
   bool _initialized = false;
   bool _capturing = false;
+
+  // Step 2 "verifying" (manual dispatch review): the page HOLDS until the
+  // decision lands — live socket first, a 5 s REST poll as the net, a 90 s
+  // ceiling so nobody is trapped. `_reviewDone` latches the first outcome.
+  StreamSubscription<Map<String, dynamic>>? _reviewSub;
+  Timer? _reviewPoll;
+  Timer? _reviewTimeout;
+  String? _reviewPhotoPath;
+  bool _reviewDone = false;
 
   /// Animated gold frame corners — the scanner's 1400 ms repeat-reverse.
   late final AnimationController _cornerAnim;
@@ -103,6 +124,9 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
     _entry.dispose();
     _cornerAnim.dispose();
     _shotFlash.dispose();
+    _reviewSub?.cancel();
+    _reviewPoll?.cancel();
+    _reviewTimeout?.cancel();
     // Null-swap: la animación de salida de la ruta rebuilda este widget
     // DESPUÉS de dispose() — con el campo en null el build cae al
     // placeholder en vez de llamar buildPreview sobre un controller
@@ -193,7 +217,10 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   }
 
   /// Manual capture — no OCR, no ML Kit, no auto-capture: takePicture() on
-  /// the tap, a brief white flash as the feedback, then pop the result.
+  /// the tap, a brief white flash as the feedback, then STRAIGHT into the
+  /// verifying step (owner spec 2026-10-23: the page no longer closes here
+  /// to reconnect 1-3 s later at home — it closes when the selfie is
+  /// APPROVED and the driver is already activating).
   Future<void> _capture() async {
     if (_ctrl == null || !_ctrl!.value.isInitialized || _capturing) return;
     setState(() => _capturing = true);
@@ -203,17 +230,153 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
       _shotFlash.forward(from: 0);
       await Future.delayed(const Duration(milliseconds: 300));
       if (!mounted) return;
-      Navigator.of(context).pop({'photo': xFile.path});
+      _uploadAndVerify(xFile.path);
     } catch (_) {
       if (mounted) setState(() => _capturing = false);
     }
   }
 
+  /// Step 2 → 3: the upload runs under the verifying loader; the answer
+  /// decides the exit. Auto-approved (the daily check, or the review flag
+  /// cleared in the meantime) closes the page already approved — the caller
+  /// connects on the spot.
+  Future<void> _uploadAndVerify(String photoPath) async {
+    setState(() {
+      _step = 2;
+      _reviewPhotoPath = photoPath;
+      _reviewDone = false;
+    });
+    final resp = await ApiService.submitFaceCheck(photoPath);
+    if (!mounted || _reviewDone) return;
+    if (resp == null) {
+      // Upload failed — the callers stay fail-open: bare photo pops and
+      // their old logic decides (daily gate still connects; verify retries).
+      _reviewDone = true;
+      Navigator.of(context).pop({'photo': photoPath});
+      return;
+    }
+    if (resp['pending_review'] != true) {
+      _finishReview(true);
+      return;
+    }
+    _startReviewWait();
+  }
+
+  /// Manual review wait: the live socket (face_check_reviewed) answers
+  /// instantly; a 5 s canGoOnline poll is the net under a dead socket; a
+  /// 90 s ceiling pops "pending" so the driver is never trapped (the grey
+  /// review GO + 30 s poll take over from there).
+  void _startReviewWait() {
+    _reviewSub =
+        SocketService.faceCheckReviewStream.listen((data) {
+      _finishReview(data['approved'] == true);
+    });
+    _reviewPoll = Timer.periodic(const Duration(seconds: 5), (_) async {
+      try {
+        final r = await ApiService.canGoOnline()
+            .timeout(const Duration(seconds: 10));
+        if (!mounted || _reviewDone) return;
+        if (r['face_check_pending'] == true) return; // still on the desk
+        _finishReview(r['face_review_required'] == true ? false : true);
+      } catch (_) {}
+    });
+    _reviewTimeout = Timer(const Duration(seconds: 90), () {
+      _finishReview(null);
+    });
+  }
+
+  /// One outcome, once: true approved · false rejected · null still pending
+  /// (timeout or the escape X on the verifying view).
+  void _finishReview(bool? approved) {
+    if (_reviewDone) return;
+    _reviewDone = true;
+    _reviewSub?.cancel();
+    _reviewPoll?.cancel();
+    _reviewTimeout?.cancel();
+    if (!mounted) return;
+    final path = _reviewPhotoPath;
+    if (path == null) {
+      Navigator.of(context).pop(null);
+      return;
+    }
+    Navigator.of(context).pop({
+      'photo': path,
+      if (approved == null) 'pending': true else 'approved': approved,
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _step == 0 ? _navy : Colors.black,
-      body: _step == 0 ? _buildInstructions() : _buildCamera(),
+      backgroundColor: _step == 1 ? Colors.black : _navy,
+      body: switch (_step) {
+        1 => _buildCamera(),
+        2 => _buildVerifying(),
+        _ => _buildInstructions(),
+      },
+    );
+  }
+
+  // ── Step 3: verifying — the page HOLDS until dispatch decides ──
+
+  Widget _buildVerifying() {
+    final s = S.of(context);
+    return SafeArea(
+      child: Stack(
+        children: [
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: CircularProgressIndicator(
+                        color: _gold, strokeWidth: 3),
+                  ),
+                  const SizedBox(height: 26),
+                  Text(
+                    s.faceCheckVerifyingTitle,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    s.faceCheckVerifyingBody,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.65),
+                      fontSize: 15,
+                      height: 1.55,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Escape hatch (never trapped): pops "pending" — the caller's
+          // grey review GO + 30 s poll take it from there.
+          Positioned(
+            top: 0,
+            left: 0,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8, top: 4),
+              child: IconButton(
+                onPressed: () => _finishReview(null),
+                icon: const Icon(Icons.close_rounded,
+                    color: Colors.white, size: 24),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

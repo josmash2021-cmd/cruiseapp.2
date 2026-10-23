@@ -1086,25 +1086,42 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       if (!mounted) return;
       final photoPath = res?['photo']?.toString();
       if (photoPath == null || photoPath.isEmpty) return; // cancelled — no GO
-      final resp = await ApiService.submitFaceCheck(photoPath);
-      if (!mounted) return;
-      if (resp != null) {
-        _setState(() => _faceCheckDue = false);
-        // Race: the review flag was set between canGoOnline and this upload
-        // — the selfie went to MANUAL review; no connect until it clears.
-        if (resp['pending_review'] == true) {
-          _setState(() {
-            _faceReviewRequired = true;
-            _faceCheckPending = true;
-          });
-          _syncFaceReviewPoll();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(S.of(context).faceReviewPending),
-            duration: const Duration(seconds: 3),
-          ));
-          return;
-        }
+      // The screen uploaded the shot itself and held the verifying loader
+      // (owner spec 2026-10-23): an approval closes the page with the
+      // driver ALREADY connecting — no 1-3 s home detour.
+      if (res!['pending'] == true) {
+        // Dispatch has not decided (wait ceiling / escape X) — grey review
+        // GO + 30 s poll; no connect until it clears.
+        _setState(() {
+          _faceReviewRequired = true;
+          _faceCheckPending = true;
+          _faceCheckDue = false;
+        });
+        _syncFaceReviewPoll();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(S.of(context).faceReviewPending),
+          duration: const Duration(seconds: 3),
+        ));
+        return;
       }
+      if (res['approved'] == false) {
+        _setState(() {
+          _faceReviewRequired = true;
+          _faceCheckPending = false;
+          _faceCheckDue = false;
+        });
+        _showFaceRejectedDialog();
+        return;
+      }
+      if (res['approved'] == true) {
+        _setState(() {
+          _faceReviewRequired = false;
+          _faceCheckPending = false;
+          _faceCheckDue = false;
+        });
+      }
+      // A bare photo = upload failed — fail-open: the GO proceeds and the
+      // check retries on a later tap (same rule as before).
     }
 
     // The flip itself: GPS background mode, FCM token, backend online,
@@ -1141,9 +1158,11 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     );
   }
 
-  /// The GO face states (2026-10-23, owner spec): 0 normal · 1 verify (red
-  /// "Verificar") · 2 pending review (disabled grey). The collapsed GO
-  /// circle does NOT render in a non-normal state (circle rule).
+  /// The GO face states (2026-10-23, owner spec): 0 normal · 1 verify
+  /// (GREY "Verificar", no animation — the owner killed the red the same
+  /// day: animation belongs to GO ONLINE only) · 2 pending review (disabled
+  /// grey). The collapsed GO circle does NOT render in a non-normal state
+  /// (circle rule).
   int get _faceGateState =>
       _faceCheckPending ? 2 : _faceReviewRequired ? 1 : 0;
 
@@ -1211,10 +1230,11 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     );
   }
 
-  /// GO in the VERIFY state (dress-code rejection): the SAME liveness flow
-  /// as the daily check, but the upload can land in MANUAL review —
-  /// pending_review=true locks GO again ("Selfie en revisión") until
-  /// dispatch approves; false means the flag cleared and we connect.
+  /// GO in the VERIFY state (dress-code rejection): the SAME selfie flow as
+  /// the daily check, but the shot lands in MANUAL review — the screen holds
+  /// its verifying loader until dispatch decides (owner spec 2026-10-23: the
+  /// page closes with the driver ALREADY activating on approve; never a home
+  /// detour). Undecided (ceiling/escape) → the grey review GO + poll.
   Future<void> _onFaceVerifyTap() async {
     if (_enteringOnline || _driverOnline) return;
     HapticService.mediumImpact();
@@ -1227,9 +1247,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     if (!mounted) return;
     final photoPath = res?['photo']?.toString();
     if (photoPath == null || photoPath.isEmpty) return; // cancelled — no GO
-    final resp = await ApiService.submitFaceCheck(photoPath);
-    if (!mounted || resp == null) return; // upload failed — retry next tap
-    if (resp['pending_review'] == true) {
+    if (res!['pending'] == true) {
       _setState(() {
         _faceCheckPending = true;
         _faceCheckDue = false;
@@ -1241,12 +1259,27 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       ));
       return;
     }
-    // Auto-approved while the flag was stale — connect the normal way.
-    _setState(() {
-      _faceReviewRequired = false;
-      _faceCheckDue = false;
-    });
-    _onGoTap();
+    if (res['approved'] == false) {
+      // Rejected again — back to the grey Verificar GO + the why dialog.
+      _setState(() {
+        _faceReviewRequired = true;
+        _faceCheckPending = false;
+      });
+      _showFaceRejectedDialog();
+      return;
+    }
+    if (res['approved'] == true) {
+      // Approved: connect NOW — the chime and the flip ride with the page
+      // closing (owner spec: "se cerrara ya activando al driver").
+      _setState(() {
+        _faceReviewRequired = false;
+        _faceCheckPending = false;
+        _faceCheckDue = false;
+      });
+      _onGoTap();
+      return;
+    }
+    // Bare photo = upload failed — fail-open: retry on the next tap.
   }
 
   /// The driver stands in a sector dispatch switched OFF (2026-10-17, owner
@@ -1508,23 +1541,21 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           final botColor = dimmed
               ? Color.lerp(goldBot, const Color(0xFF4A4A4F), 0.55)!
               : goldBot;
-          // Face gate paint (2026-10-23 owner spec): verify = RED, pending
-          // review = disabled grey — the gold stays for the normal state.
-          // Dispatch GO switch paints the same dead grey and outranks both.
+          // Face gate paint (2026-10-23 owner spec, REVISED same day):
+          // verify = GREY and static like pending review ("en vez de rojo
+          // será gris y no tendrá animación — la animación es solo para GO
+          // ONLINE") — the gold stays for the normal state. The dispatch GO
+          // switch paints the same dead grey and outranks both.
           final topPaint = _goOnlineDisabled
               ? const Color(0xFF6B6B70)
-              : faceState == 1
-                  ? const Color(0xFFD32F2F)
-                  : faceState == 2
-                      ? const Color(0xFF6B6B70)
-                      : topColor;
+              : faceState != 0
+                  ? const Color(0xFF6B6B70)
+                  : topColor;
           final botPaint = _goOnlineDisabled
               ? const Color(0xFF4A4A4F)
-              : faceState == 1
-                  ? const Color(0xFF9A1B1B)
-                  : faceState == 2
-                      ? const Color(0xFF4A4A4F)
-                      : botColor;
+              : faceState != 0
+                  ? const Color(0xFF4A4A4F)
+                  : botColor;
           const glowColor = Color(0xFFE8C547);
 
           // Black on gold — muted while dimmed.
@@ -1533,8 +1564,12 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           final fgColor =
               dimmed ? Colors.white54 : Colors.white;
 
-          // The ignite pop when a zone selection lights the GO up.
-          final igniteScale = _goIgniteAnim?.value ?? 1.0;
+          // The ignite pop when a zone selection lights the GO up. Fired
+          // ONLY in the normal state — a face-gated or dispatch-paused
+          // button is static by owner spec (2026-10-23).
+          final igniteScale = faceState == 0 && !_goOnlineDisabled
+              ? (_goIgniteAnim?.value ?? 1.0)
+              : 1.0;
 
           // The heartbeat lives on the OPEN PILL only (2026-10-14 user spec:
           // with the sheet closed and the button just "GO", it carries the
@@ -1612,7 +1647,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                                   alpha: ui.lerpDouble(
                                           0.12, 0.3 + 0.15 * p, morph)! *
                                       (dimmed ? 0.3 : 1.0) *
-                                      (faceState == 2 ? 0.25 : 1.0)),
+                                      (faceState != 0 ? 0.25 : 1.0)),
                               blurRadius: ui.lerpDouble(8, 16 + 8 * p, morph)!,
                               spreadRadius: 0,
                               offset: const Offset(0, 3),
@@ -1781,8 +1816,14 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 // Brillo SOLO con el sheet abierto (user spec 2026-10-15:
                 // "la animación brillante solo cuando el sheet esté
                 // abierto"): una banda de luz barre la píldora; el disco
-                // cerrado conserva su radar de siempre.
-                if (_goGlossCtrl != null && !dimmed && morph > 0.5)
+                // cerrado conserva su radar de siempre. Y SOLO en el estado
+                // normal (owner spec 2026-10-23: la animación es del GO
+                // ONLINE — verify/pending/paused son grises y quietos).
+                if (_goGlossCtrl != null &&
+                    !dimmed &&
+                    morph > 0.5 &&
+                    faceState == 0 &&
+                    !_goOnlineDisabled)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: ClipRRect(
@@ -1814,8 +1855,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 // Radar sweep — SOLO en el disco cerrado (user spec
                 // 2026-10-14: "cuando el sheet esté cerrado y el botón
                 // solo diga GO, la animación que tenía antes"). El
-                // pill abierto palpita.
-                if (_goRadarCtrl != null && !dimmed && morph <= 0.5)
+                // pill abierto palpita. Y solo en el estado normal — el
+                // verify/pending/paused gris no anima (2026-10-23).
+                if (_goRadarCtrl != null &&
+                    !dimmed &&
+                    morph <= 0.5 &&
+                    faceState == 0 &&
+                    !_goOnlineDisabled)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: CustomPaint(

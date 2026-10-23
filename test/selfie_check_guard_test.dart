@@ -93,10 +93,46 @@ void main() {
     expect(screen, contains('HapticService.mediumImpact();'));
     expect(screen, contains('_shotFlash.forward(from: 0)'),
         reason: 'brief white flash as capture feedback');
-    expect(screen, contains("Navigator.of(context).pop({'photo': xFile.path})"),
-        reason: 'the output contract is identical to the old flow');
+    expect(screen, contains('_uploadAndVerify(xFile.path)'),
+        reason: 'the capture no longer pops — the screen uploads and holds '
+            'the verifying loader (owner spec 2026-10-23)');
     expect(screen, contains('Navigator.of(context).pop(null)'),
         reason: 'cancel pops null — the GO call sites read that as no-GO');
+  });
+
+  test('step 3 verifying: the page holds until dispatch decides', () {
+    // Owner spec 2026-10-23, literal: "no se cerrara y aparecera un loading
+    // diciendo estan verificando… y en lo que dispatch apruebe se cerrara ya
+    // activando al driver — no 1-3 s en el home y luego se activa".
+    expect(screen, contains('_step == 1 ? Colors.black : _navy'));
+    expect(screen, contains('2 => _buildVerifying()'));
+    expect(screen, contains('ApiService.submitFaceCheck(photoPath)'),
+        reason: 'the upload moved INSIDE the screen');
+    expect(screen, contains("resp['pending_review'] != true"),
+        reason: 'auto-approve pops approved on the spot');
+    expect(screen, contains('SocketService.faceCheckReviewStream.listen'),
+        reason: 'the live socket answers instantly');
+    expect(screen, contains('Timer.periodic(const Duration(seconds: 5)'),
+        reason: 'REST poll as the net under a dead socket');
+    expect(screen, contains("r['face_check_pending'] == true"),
+        reason: 'still pending = still waiting');
+    expect(screen, contains('Timer(const Duration(seconds: 90)'),
+        reason: 'the 90 s ceiling — nobody is trapped on the loader');
+    expect(screen, contains("if (approved == null) 'pending': true else 'approved': approved"),
+        reason: 'the three-way result contract');
+    expect(screen, contains('onPressed: () => _finishReview(null)'),
+        reason: 'the escape X pops pending (grey review GO takes over)');
+    expect(screen, contains('s.faceCheckVerifyingTitle'));
+    expect(screen, contains('s.faceCheckVerifyingBody'),
+        reason: '"revisando… vestimenta correcta y profesional"');
+    for (final g in [
+      "String get faceCheckVerifyingTitle =>",
+      "String get faceCheckVerifyingBody =>",
+      'vestimenta correcta y profesional',
+      'professional attire rules',
+    ]) {
+      expect(l10n, contains(g), reason: 'missing: $g');
+    }
   });
 
   test('the known camera traps are pinned in place', () {

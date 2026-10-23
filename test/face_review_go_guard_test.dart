@@ -3,13 +3,16 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Guardian for the dress-code face-review GO states (owner spec
-/// 2026-10-23): a driver rejected for attire gets a red "Verificar" GO that
-/// re-runs liveness; while the selfie sits in manual dispatch review the GO
+/// 2026-10-23): a driver rejected for attire gets a GREY static
+/// "Verificar" GO (the owner killed the red the same day — "en vez de rojo
+/// gris, sin animación; la animación es solo del GO ONLINE") that re-runs
+/// the selfie flow; while the selfie sits in manual dispatch review the GO
 /// is a disabled grey "Selfie en revisión" with a 30 s canGoOnline poll;
 /// and the collapsed GO circle does not render in either state (the circle
-/// rule). Plus: the "You're now online!" intro trigger moved to a 10 s
-/// timer inside _enterOnlineMode, and both face-check pushes route in
-/// main.dart.
+/// rule). The selfie screen HOLDS a verifying loader after the shot and
+/// closes already-connecting on approve. Plus: the "You're now online!"
+/// intro trigger moved to a 10 s timer inside _enterOnlineMode, and both
+/// face-check pushes route in main.dart.
 void main() {
   final offline = File('lib/screens/driver/driver_online_offline.dart')
       .readAsStringSync()
@@ -48,7 +51,7 @@ void main() {
         reason: 'the bool signature is gone');
   });
 
-  test('GO state machine: red Verificar / grey disabled pending', () {
+  test('GO state machine: grey static Verificar / grey disabled pending', () {
     expect(offline, contains('int get _faceGateState =>'),
         reason: '0 normal · 1 verify · 2 pending');
     expect(offline, contains('S.of(context).goVerify'),
@@ -58,16 +61,37 @@ void main() {
     expect(offline, contains(': faceState == 2\n              ? null'),
         reason: 'pending review = dead button (onTap null) — the dispatch '
             'GO gate outranks it but never resurrects the flip');
-    expect(offline, contains("const Color(0xFFD32F2F)"),
-        reason: 'the verify state paints RED');
+    expect(offline, isNot(contains("const Color(0xFFD32F2F)")),
+        reason: 'the RED verify died by owner spec 2026-10-23');
+    expect(offline, isNot(contains("const Color(0xFF9A1B1B)")),
+        reason: 'the red gradient bottom died with it');
+    expect(offline, contains('faceState != 0\n                  ? const Color(0xFF6B6B70)'),
+        reason: 'verify AND pending paint the same dead grey');
+    expect(offline, contains('faceState != 0\n                  ? const Color(0xFF4A4A4F)'),
+        reason: 'grey gradient bottom too');
     expect(offline, contains('? _onFaceVerifyTap'),
-        reason: 'verify routes to the liveness flow, never the flip');
+        reason: 'verify routes to the selfie flow, never the flip');
   });
 
-  test('the verify tap runs liveness and locks GO on pending_review', () {
+  test('animation belongs to GO ONLINE only (owner spec 2026-10-23)', () {
+    expect(
+        offline,
+        contains('final igniteScale = faceState == 0 && !_goOnlineDisabled\n'
+            '              ? (_goIgniteAnim?.value ?? 1.0)\n'
+            '              : 1.0;'),
+        reason: 'no ignite pop in verify/pending/paused');
+    expect(offline, contains('morph > 0.5 &&\n                    faceState == 0 &&\n                    !_goOnlineDisabled'),
+        reason: 'no gloss sweep on a grey face-gated GO');
+    expect(offline, contains('morph <= 0.5 &&\n                    faceState == 0 &&\n                    !_goOnlineDisabled'),
+        reason: 'no radar sweep on a grey face-gated GO');
+    expect(offline, contains('(faceState != 0 ? 0.25 : 1.0)'),
+        reason: 'the glow dims in BOTH non-normal face states');
+  });
+
+  test('the verify tap connects the moment the screen says approved', () {
     expect(offline, contains('Future<void> _onFaceVerifyTap() async {'));
     expect(offline, contains('const SelfieCheckScreen()'),
-        reason: 'the SAME selfie check as the daily gate — one front-photo '
+        reason: 'the SAME selfie check as the daily GO gate — one front-photo '
             'screen, never the 4-step biometric page (2026-10-23 spec)');
     expect(offline, isNot(contains('FaceLivenessScreen')),
         reason: 'the biometric 4-step page is signup-only now');
@@ -78,9 +102,22 @@ void main() {
         3,
         reason: 'BOTH call sites (the daily GO gate and _onFaceVerifyTap) '
             'use it');
-    expect(offline, contains("resp['pending_review'] == true"),
-        reason: 'manual review = do NOT connect');
+    // Owner spec 2026-10-23: the page HOLDS its verifying loader until the
+    // decision — approve closes already-connecting, pending falls back to
+    // the grey review GO, rejected-again re-arms verify with the dialog.
+    expect(offline, isNot(contains('ApiService.submitFaceCheck')),
+        reason: 'the upload moved INSIDE the selfie screen');
+    expect(offline, contains("res!['pending'] == true"),
+        reason: 'dispatch undecided (ceiling/escape) = do NOT connect');
+    expect(offline, contains("res['approved'] == false"));
+    expect(offline, contains("res['approved'] == true"));
     expect(offline, contains('_faceCheckPending = true;'));
+    final verifyFn = offline.split('Future<void> _onFaceVerifyTap()').last;
+    final approvedIdx = verifyFn.indexOf("res['approved'] == true");
+    final goIdx = verifyFn.indexOf('_onGoTap();', approvedIdx);
+    expect(goIdx, greaterThan(approvedIdx),
+        reason: 'approved → _onGoTap in the same breath (chime + flip ride '
+            'with the page closing — zero home detour)');
     expect(offline, contains('Timer.periodic(const Duration(seconds: 30)'),
         reason: 'the 30 s poll auto-clears when dispatch approves');
     expect(offline, contains('_faceReviewTimer?.cancel();'),

@@ -11,6 +11,12 @@ void main() {
       File('lib/screens/driver/onboarding/first_trip_guide_screen.dart')
           .readAsStringSync()
           .replaceAll('\r\n', '\n');
+  final card = File('lib/widgets/selfie_verify_card.dart')
+      .readAsStringSync()
+      .replaceAll('\r\n', '\n');
+  final variantUtil = File('lib/utils/selfie_variant.dart')
+      .readAsStringSync()
+      .replaceAll('\r\n', '\n');
   final l10n = File('lib/l10n/app_localizations.dart')
       .readAsStringSync()
       .replaceAll('\r\n', '\n');
@@ -58,7 +64,13 @@ void main() {
 
   test('the 8 variant assets exist and are referenced by interpolation', () {
     expect(src, contains('guide_dress_\$variant.png'));
-    expect(src, contains('guide_selfie_\$variant.png'));
+    expect(card, contains('guide_selfie_\${widget.variant}.png'),
+        reason: 'page 6 renders the SHARED SelfieVerifyCard — the selfie '
+            'asset is referenced there');
+    expect(src, contains('SelfieVerifyCard('));
+    expect(src, contains('flash: true'),
+        reason: 'the guide keeps its shutter flash; the selfie-check screen '
+            'passes false');
     expect(
         src,
         contains("'\${widget.vip ? 'vip' : 'std'}_\${widget.female ? 'f' : 'm'}'"),
@@ -78,23 +90,28 @@ void main() {
 
   test('the variant resolves from the active vehicle tier + cached gender',
       () {
-    expect(src, contains("tier == 'vip' || tier == 'black'"),
+    // One shared source (utils/selfie_variant.dart) — the guide AND the
+    // selfie-check screen resolve through it, never inline.
+    expect(src, contains('resolveSelfieVariant()'));
+    expect(variantUtil, contains("tier == 'vip' || tier == 'black'"),
         reason: 'VIP = the ACTIVE vehicle is vip or black');
-    expect(src, contains("v['is_active'] == true"));
-    expect(src, contains("u?['gender'] == 'female'"),
+    expect(variantUtil, contains("v['is_active'] == true"));
+    expect(variantUtil, contains("u?['gender'] == 'female'"),
         reason: 'female from the cached profile; null/other → men variant');
   });
 
   test('the selfie page flashes once per entry, never in a loop', () {
-    expect(src, contains('Tween<double>(begin: 0, end: 0.55)'),
+    // The flash machinery lives in the shared card (flash: true from the
+    // guide, false from the selfie-check screen).
+    expect(card, contains('Tween<double>(begin: 0, end: 0.55)'),
         reason: 'the shutter flash peaks at ~0.55 white');
-    expect(src, contains('bool _flashFired = false;'),
+    expect(card, contains('bool _flashFired = false;'),
         reason: 'one shot per entry…');
-    expect(src, contains('if (widget.active && !old.active) _fireFlash();'),
+    expect(card, contains('if (widget.active && !old.active) _fireFlash();'),
         reason: '…fired when the page becomes visible (page == 5)');
-    expect(src, contains('if (!widget.active && old.active) _flashFired = false;'));
-    expect(src, contains('addPostFrameCallback'));
-    expect(src, contains("Icons.face_retouching_natural"),
+    expect(card, contains('if (!widget.active && old.active) _flashFired = false;'));
+    expect(card, contains('addPostFrameCallback'));
+    expect(card, contains('Icons.face_retouching_natural'),
         reason: 'the gold icon circle of page 6');
   });
 
@@ -108,22 +125,33 @@ void main() {
       'const Icon(Icons.auto_awesome',
       'const Icon(Icons.checkroom',
       'const Icon(Icons.workspace_premium_outlined',
-      'const Icon(Icons.face_outlined',
-      'const Icon(Icons.wb_sunny_outlined',
-      'const Icon(Icons.visibility_off_outlined',
       'const Icon(Icons.sentiment_satisfied_alt',
       'const Icon(Icons.access_time_rounded',
       'const Icon(Icons.straighten_rounded',
     ]) {
       expect(src, contains(i), reason: '$i must be a const Icon construction');
     }
+    // The page-6 icons moved WITH the card to the shared widget (2026-10-23
+    // extraction — one design source with the selfie-check screen).
+    for (final i in [
+      'const Icon(Icons.face_outlined',
+      'const Icon(Icons.checkroom',
+      'const Icon(Icons.workspace_premium_outlined',
+      'const Icon(Icons.wb_sunny_outlined',
+      'const Icon(Icons.visibility_off_outlined',
+    ]) {
+      expect(card, contains(i), reason: '$i must be a const Icon construction');
+    }
+    expect(card, contains('Icons.face_retouching_natural'),
+        reason: 'the gold icon circle of page 6 (const Icon inside '
+            '_FaceIconBadge)');
     // …and the helpers must take the built widget, never a loose IconData.
     expect(src, isNot(contains('IconData icon')),
         reason: 'helpers taking IconData get tree-shaken to "?" in release');
+    expect(card, isNot(contains('IconData icon')));
     expect(src, isNot(contains('_chip(Icons.')));
+    expect(card, isNot(contains('_chip(Icons.')));
     expect(src, isNot(contains('_metric(Icons.')));
-    expect(src, contains('Icons.face_retouching_natural'),
-        reason: 'the gold icon circle of page 6 (already a const Icon)');
   });
 
   test('the new l10n strings exist in ES and EN', () {

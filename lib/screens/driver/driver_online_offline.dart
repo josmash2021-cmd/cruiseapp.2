@@ -1070,7 +1070,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       final res = await Navigator.of(context).push<Map?>(
         MaterialPageRoute<Map?>(
           fullscreenDialog: true,
-          builder: (_) => const FaceLivenessScreen(),
+          builder: (_) => const SelfieCheckScreen(),
         ),
       );
       if (!mounted) return;
@@ -1168,7 +1168,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     final res = await Navigator.of(context).push<Map?>(
       MaterialPageRoute<Map?>(
         fullscreenDialog: true,
-        builder: (_) => const FaceLivenessScreen(),
+        builder: (_) => const SelfieCheckScreen(),
       ),
     );
     if (!mounted) return;

@@ -62,8 +62,18 @@ void main() {
 
   test('the verify tap runs liveness and locks GO on pending_review', () {
     expect(offline, contains('Future<void> _onFaceVerifyTap() async {'));
-    expect(offline, contains('const FaceLivenessScreen()'),
-        reason: 'the SAME liveness screen as the daily check');
+    expect(offline, contains('const SelfieCheckScreen()'),
+        reason: 'the SAME selfie check as the daily gate — one front-photo '
+            'screen, never the 4-step biometric page (2026-10-23 spec)');
+    expect(offline, isNot(contains('FaceLivenessScreen')),
+        reason: 'the biometric 4-step page is signup-only now');
+    expect(
+        offline
+            .split('const SelfieCheckScreen()')
+            .length,
+        3,
+        reason: 'BOTH call sites (the daily GO gate and _onFaceVerifyTap) '
+            'use it');
     expect(offline, contains("resp['pending_review'] == true"),
         reason: 'manual review = do NOT connect');
     expect(offline, contains('_faceCheckPending = true;'));

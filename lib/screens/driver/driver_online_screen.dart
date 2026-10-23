@@ -93,7 +93,7 @@ import 'driver_menu_screen.dart';
 import 'driver_contracts_screen.dart';
 import '../../data/us_airports_geo.dart';
 import 'online_intro_overlay.dart';
-import '../face_liveness_screen.dart';
+import 'selfie_check_screen.dart';
 import 'onboarding/driver_notifications_screen.dart';
 import 'onboarding/driver_todo_screen.dart'; // gate de aprobación en el destino
 import 'driver_waitlist_screen.dart'; // gate de aprobación en el destino

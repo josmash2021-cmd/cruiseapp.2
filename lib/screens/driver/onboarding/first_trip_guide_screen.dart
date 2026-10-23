@@ -3,9 +3,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
-import '../../../services/api_service.dart';
-import '../../../services/user_session.dart';
+import '../../../utils/selfie_variant.dart';
 import '../../../widgets/neu_style.dart';
+import '../../../widgets/selfie_verify_card.dart';
 import '../driver_online_screen.dart';
 
 /// First-trip guide — 6 swipeable pages shown after approval. Since
@@ -64,24 +64,12 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
   }
 
   Future<void> _resolveVariant() async {
-    var female = false;
-    var vip = false;
-    try {
-      final u = await UserSession.getUser();
-      female = u?['gender'] == 'female';
-    } catch (_) {}
-    try {
-      final vehicles = await ApiService.getVehicles();
-      if (vehicles.isNotEmpty) {
-        final active = vehicles.firstWhere(
-          (v) => v['is_active'] == true,
-          orElse: () => vehicles.first,
-        );
-        final tier = (active['vehicle_type'] ?? '').toString().toLowerCase();
-        vip = tier == 'vip' || tier == 'black';
-      }
-    } catch (_) {}
+    // One shared source (utils/selfie_variant.dart) — the selfie-check
+    // screen resolves the exact same way.
+    final variant = await resolveSelfieVariant();
     if (!mounted) return;
+    final vip = variant.startsWith('vip');
+    final female = variant.endsWith('_f');
     if (female != _isFemale || vip != _isVip) {
       setState(() {
         _isFemale = female;
@@ -675,9 +663,10 @@ class _DressCodePageState extends State<_DressCodePage>
   }
 }
 
-/// Page 6 — the 24 h selfie verification (owner mockup 2026-10-23): same
-/// card frame as page 1, and a one-shot white FLASH over the photo (camera
-/// shutter) each time the page comes into view — never in a loop.
+/// Page 6 — the 24 h selfie verification (owner mockup 2026-10-23): the
+/// SHARED SelfieVerifyCard (one design source with the selfie-check
+/// screen), here with its one-shot white shutter flash over the photo —
+/// fired by the card itself, once per entry into view, never in a loop.
 class _SelfieVerifyPage extends StatefulWidget {
   final bool vip;
   final bool female;
@@ -696,15 +685,8 @@ class _SelfieVerifyPage extends StatefulWidget {
 class _SelfieVerifyPageState extends State<_SelfieVerifyPage>
     with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
-  static const _cardNavy = Color(0xFF1C1C24);
 
   late final AnimationController _entry;
-  late final AnimationController _flash;
-  late final Animation<double> _flashOpacity;
-
-  /// Fires the flash once per entry into this page; reset when the page
-  /// leaves view so the NEXT entry flashes again (once — never a loop).
-  bool _flashFired = false;
 
   @override
   void initState() {
@@ -713,36 +695,11 @@ class _SelfieVerifyPageState extends State<_SelfieVerifyPage>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     )..forward();
-    _flash = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _flashOpacity = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween<double>(begin: 0, end: 0.55), weight: 40),
-      TweenSequenceItem(tween: Tween<double>(begin: 0.55, end: 0), weight: 60),
-    ]).animate(CurvedAnimation(parent: _flash, curve: Curves.easeOut));
-    if (widget.active) _fireFlash();
-  }
-
-  @override
-  void didUpdateWidget(covariant _SelfieVerifyPage old) {
-    super.didUpdateWidget(old);
-    if (widget.active && !old.active) _fireFlash();
-    if (!widget.active && old.active) _flashFired = false;
-  }
-
-  void _fireFlash() {
-    if (_flashFired) return;
-    _flashFired = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _flash.forward(from: 0);
-    });
   }
 
   @override
   void dispose() {
     _entry.dispose();
-    _flash.dispose();
     super.dispose();
   }
 
@@ -762,137 +719,6 @@ class _SelfieVerifyPageState extends State<_SelfieVerifyPage>
     );
   }
 
-  /// Chip with the label UNDER the icon (gold circle + small white caption).
-  Widget _chip(Widget icon, String label) {
-    return Expanded(
-      child: Column(
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: _gold,
-            ),
-            child: icon,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              height: 1.25,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCard(String variant, S s) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
-          decoration: BoxDecoration(
-            color: _cardNavy,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: _gold.withValues(alpha: 0.55)),
-          ),
-          child: Column(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: SizedBox(
-                  height: 230,
-                  width: double.infinity,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.asset(
-                        'assets/images/onboarding/guide_selfie_$variant.png',
-                        fit: BoxFit.cover,
-                      ),
-                      // The shutter flash — one sweep up to ~0.55 and back,
-                      // fired once per page entry.
-                      IgnorePointer(
-                        child: AnimatedBuilder(
-                          animation: _flashOpacity,
-                          builder: (ctx, _) => Opacity(
-                            opacity: _flashOpacity.value,
-                            child: const ColoredBox(color: Colors.white),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  _chip(
-                      const Icon(Icons.face_outlined,
-                          color: Color(0xFF14141A), size: 22),
-                      s.selfieChipFaceVisible),
-                  const SizedBox(width: 8),
-                  _chip(
-                    widget.vip
-                        ? const Icon(Icons.workspace_premium_outlined,
-                            color: Color(0xFF14141A), size: 22)
-                        : const Icon(Icons.checkroom,
-                            color: Color(0xFF14141A), size: 22),
-                    widget.vip ? s.selfieChipDressVip : s.selfieChipDressStd,
-                  ),
-                  const SizedBox(width: 8),
-                  _chip(
-                      const Icon(Icons.wb_sunny_outlined,
-                          color: Color(0xFF14141A), size: 22),
-                      s.selfieChipLighting),
-                  const SizedBox(width: 8),
-                  _chip(
-                      const Icon(Icons.visibility_off_outlined,
-                          color: Color(0xFF14141A), size: 22),
-                      s.selfieChipNoGlasses),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const Positioned(
-          top: -12,
-          left: -8,
-          child: _GoldCircleBadge(
-            child: Text(
-              '6',
-              style: TextStyle(
-                color: Color(0xFF14141A),
-                fontWeight: FontWeight.w800,
-                fontSize: 15,
-              ),
-            ),
-          ),
-        ),
-        const Positioned(
-          top: -12,
-          right: -8,
-          child: _GoldCircleBadge(
-            child: Icon(
-              Icons.face_retouching_natural,
-              color: Color(0xFF14141A),
-              size: 18,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
@@ -906,7 +732,17 @@ class _SelfieVerifyPageState extends State<_SelfieVerifyPage>
         child: Column(
           children: [
             const SizedBox(height: 20),
-            _cascade(_buildCard(variant, s), 0.0, 0.45),
+            _cascade(
+              SelfieVerifyCard(
+                variant: variant,
+                vip: widget.vip,
+                flash: true,
+                active: widget.active,
+                badge: '6',
+              ),
+              0.0,
+              0.45,
+            ),
             const SizedBox(height: 26),
             _cascade(
               Text(

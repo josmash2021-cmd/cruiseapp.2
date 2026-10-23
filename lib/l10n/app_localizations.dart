@@ -3538,6 +3538,10 @@ class S {
   String get licenseBackLabel => _es ? 'Licencia Reverso' : 'License Back';
   String get ssnShortLabel => _es ? 'SSN' : 'SSN';
   String get faceCheckLabel => _es ? 'Verificación Facial' : 'Face Check';
+  String get faceCheckTakeSelfie => _es ? 'Tomar selfie' : 'Take a selfie';
+  String get faceCheckFrameHint => _es
+      ? 'Centra tu rostro dentro del marco'
+      : 'Center your face inside the frame';
   // GO button face-review states + pushes (2026-10-23, owner spec)
   String get goVerify => _es ? 'Verificar' : 'Verify';
   String get faceReviewPending =>

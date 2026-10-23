@@ -1410,6 +1410,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // 403 every 5 s forever — the dialog explains and they stay offline.
       if (e is ApiException &&
           (e.message == 'zone_disabled' || e.message == 'outside_service_area')) {
+        // A refused flip rolls the UI back OFFLINE (2026-10-23, owner
+        // report): _driverOnline was set optimistically at flip start —
+        // without the rollback the screen claimed "searching" while the
+        // backend had the driver OFFLINE (a ghost in reverse).
+        unawaited(_exitOnlineMode());
         if (mounted) {
           if (e.message == 'zone_disabled') {
             _showZoneDisabledDialog();
@@ -1417,6 +1422,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             _showZoneOutsideDialog();
           }
         }
+        return;
+      }
+      // account_not_approved is terminal too (2026-10-23, owner report:
+      // "firmé todo y el GO no me dejaba sin cerrar la app"): the old code
+      // retried the 403 every 5 s FOREVER in silence — the driver stared at
+      // a dead GO with no clue why. Roll back offline, refresh the gates
+      // with fresh data, and bounce to the correct status screen instead of
+      // looping.
+      if (e is ApiException && e.message == 'account_not_approved') {
+        unawaited(_exitOnlineMode());
+        unawaited(_checkVehicleDocStatus());
+        _bounceToApprovalScreen('pending');
         return;
       }
       // Retry after 5s so driver doesn't stay silently offline

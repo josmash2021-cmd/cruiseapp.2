@@ -991,6 +991,19 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     // splash/login gates to be standing on this screen at all.
     if (!_isVerified) _setState(() => _isVerified = true);
 
+    // Re-verify FRESH before bouncing on a stale boot snapshot (2026-10-23,
+    // owner report: firmé los contratos y el GO seguía negando con la lista
+    // cacheada del boot — tuve que cerrar la app): the gates below trust the
+    // last _checkVehicleDocStatus result; when it says "blocked", re-run it
+    // NOW — a driver who JUST signed/approved must pass on the first tap.
+    if (_docStatusLoaded &&
+        (_hasExpiredDocs ||
+            !_vehicleDocsApproved ||
+            _contractsPending.isNotEmpty)) {
+      await _checkVehicleDocStatus();
+      if (!mounted) return;
+    }
+
     // If doc status has loaded, enforce doc gates synchronously (no await):
     // docs expired or the active vehicle not approved → documents page on
     // the problem car, and re-check on return.

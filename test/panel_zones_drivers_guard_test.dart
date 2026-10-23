@@ -132,6 +132,21 @@ void main() {
         reason: 'the endpoint ships the registration date');
   });
 
+  test('the waitlist renders FIRST in the side panel, before the accordion',
+      () {
+    final header = chunk.indexOf('children:"Ocultar"');
+    final waitlist = chunk.indexOf('"Lista de espera · "');
+    final accordion = chunk.indexOf('drvGroups.map(g=>l.jsxs("div"');
+    expect(header, greaterThan(-1));
+    expect(waitlist, greaterThan(header),
+        reason: 'in the waitlist view the list renders right after the '
+            '"Drivers · N" header — with Florida expanded the list used to '
+            'sit below the fold and the owner saw nobody (prod report '
+            '2026-10-22)');
+    expect(accordion, greaterThan(waitlist),
+        reason: 'the state/city accordion comes AFTER the waitlist rows');
+  });
+
   test('GPS dots carry a docs ring (green/red), popup line and legend', () {
     expect(chunk, contains('docs:d.docs_ok===true?1:d.docs_ok===false?0:-1'),
         reason: 'tri-state docs property on the GeoJSON features — only an '

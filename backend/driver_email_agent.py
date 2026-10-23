@@ -150,13 +150,20 @@ async def _onboarding_nudges(now: datetime, db) -> None:
     missing (pending/rejected onboarding items) — items merely submitted
     are OUR queue, never their fault. Approved cadence: journey day 1/3/7
     then weekly x3, gaps enforced so a legacy driver never gets a burst,
-    total silence after the 6th touch."""
+    total silence after the 6th touch.
+
+    WAITLIST IS EXCLUDED (2026-10-22, owner catch): their app shows only
+    the waiting state — nothing is actionable, so 'completa tu cuenta' is
+    the same incoherent demand the support bot used to make. When they
+    leave the list, the cadence picks up from their CURRENT journey day."""
     if now.date() < _NUDGE_START_DATE or _nudge_quiet_hours(now):
         return
     r = await db.execute(
         select(User).where(
             User.role == "driver",
             (User.status.is_(None)) | (User.status.notin_(_NUDGE_BLOCKED)),
+            (User.verification_status.is_(None))
+            | (func.lower(User.verification_status) != "waitlist"),
             User.created_at <= now - timedelta(days=1),
             (User.onboard_nudge_count.is_(None))
             | (User.onboard_nudge_count < _NUDGE_MAX),

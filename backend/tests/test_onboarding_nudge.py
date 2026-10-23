@@ -159,6 +159,20 @@ async def test_submitted_only_or_complete_drivers_are_left_alone(db, channels):
         assert await _inbox(db, u.id) == []
 
 
+async def test_waitlisted_drivers_are_never_nudged(db, channels):
+    """2026-10-22 owner catch: the waitlist app shows ONLY the waiting
+    state — nothing is actionable, so 'completa tu cuenta' is the same
+    incoherent demand the support bot made. No push, no inbox, no email,
+    and the count stays untouched for when they leave the list."""
+    d = await _driver(db, "Wait", verification_status="waitlist",
+                      created_at=NOW - timedelta(days=3))
+    await agent._onboarding_nudges(NOW, db)
+    assert await _inbox(db, d.id) == []
+    assert channels["email"] == [] and channels["sms"] == []
+    await db.refresh(d)
+    assert (d.onboard_nudge_count or 0) == 0
+
+
 async def test_spanish_nudge_lists_the_missing_items(db, channels):
     d = await _driver(db, "Luís", locale="es",
                       created_at=NOW - timedelta(days=2))

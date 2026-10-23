@@ -9,6 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final overlay =
       File('lib/screens/driver/online_intro_overlay.dart').readAsStringSync();
+  final offline = File('lib/screens/driver/driver_online_offline.dart')
+      .readAsStringSync();
   final screen =
       File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
   final controller = File('lib/screens/driver/driver_online_controller.dart')
@@ -18,6 +20,9 @@ void main() {
   test('the transparent PNG is bundled and referenced', () {
     expect(File('assets/images/online_intro_hero.png').existsSync(), isTrue);
     expect(overlay, contains('assets/images/online_intro_hero.png'));
+    // A Shorebird patch can exclude the new asset — the card must render
+    // anyway (2026-10-23: Patch 7 shipped the Dart but not the image).
+    expect(overlay, contains('errorBuilder'));
   });
 
   test('it is an overlay, never a route', () {
@@ -28,17 +33,20 @@ void main() {
     expect(screen, contains('OnlineIntroOverlay('));
   });
 
-  test('fires only on an explicit fresh GO, once per device', () {
-    // The trigger lives in the fresh-GO branch of _enterOnlineMode — the
-    // resuming branch (shift resume) never shows it.
+  test('fires on the GO tap, once per device (always for the owner)', () {
+    // The trigger is the GO TAP itself (owner spec 2026-10-22: "cuando
+    // presionan activarse"). It lived in _enterOnlineMode's fresh-GO branch
+    // first — but a phone remembering an open shift enters that with
+    // resuming=true and the intro never showed (owner report 2026-10-23).
+    final goTap = offline.indexOf('void _onGoTap()');
+    expect(goTap, greaterThan(-1));
+    final tapRegion = offline.substring(goTap, goTap + 7000);
+    expect(tapRegion, contains('_maybeShowOnlineIntro()'));
+    // …and the flip's own branches no longer carry it (no double-fire).
     final fn = controller.indexOf('Future<void> _enterOnlineMode');
     final region = controller.substring(fn, fn + 5500);
-    expect(region, contains('_maybeShowOnlineIntro()'));
-    final trigger = region.indexOf('_maybeShowOnlineIntro()');
-    final elseBranch = region.lastIndexOf('} else {', trigger);
-    expect(elseBranch, greaterThan(-1));
-    expect(elseBranch, greaterThan(region.indexOf('if (resuming) {')),
-        reason: 'the trigger must be in the fresh-GO else, not in resuming');
+    expect(region.contains('_maybeShowOnlineIntro()'), isFalse,
+        reason: 'the trigger lives in the GO tap, not the flip branches');
     expect(controller, contains("getBool('online_intro_seen_v1')"));
     expect(controller, contains("setBool('online_intro_seen_v1', true)"));
   });

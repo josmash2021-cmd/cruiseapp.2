@@ -1125,10 +1125,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _goOnlineBackend();
       } else {
         unawaited(Future.microtask(_verifyAndGoOnline));
-        // First GO on this phone → the "You're now online!" instruction
-        // (2026-10-22 spec: once per device, for newly approved AND for
-        // drivers approved long ago). Resumes never see it.
-        unawaited(_maybeShowOnlineIntro());
       }
       _startClock();
       _startPolling();

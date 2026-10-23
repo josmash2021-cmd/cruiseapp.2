@@ -1049,6 +1049,12 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       return;
     }
 
+    // The "You're now online!" instruction keys off the TAP (owner spec
+    // 2026-10-22: "cuando presionan activarse") — NOT the resuming branch
+    // of _enterOnlineMode: a phone remembering an open shift enters with
+    // resuming=true and the first version never showed the intro.
+    unawaited(_maybeShowOnlineIntro());
+
     // The flip itself: GPS background mode, FCM token, backend online,
     // haptic + chime — all owned by _enterOnlineMode. `resuming` is the
     // pref read at boot: a shift that never closed is resumed, not started.

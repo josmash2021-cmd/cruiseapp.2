@@ -121,6 +121,11 @@ class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
                               'assets/images/online_intro_hero.png',
                               height: 170,
                               fit: BoxFit.contain,
+                              // A Shorebird patch can ship WITHOUT the new
+                              // asset (asset diffs excluded) — the card must
+                              // render anyway, image or no image.
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const SizedBox(height: 12),
                             ),
                           ),
                           const SizedBox(height: 6),

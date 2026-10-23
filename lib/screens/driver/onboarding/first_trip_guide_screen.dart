@@ -489,12 +489,30 @@ class _DressCodePageState extends State<_DressCodePage>
                 child: Image.asset(
                   'assets/images/onboarding/guide_dress_$variant.png',
                   fit: BoxFit.contain,
+                  // OTA patches do NOT carry new assets (proven on device
+                  // 2026-10-23): on a store build that predates this PNG the
+                  // photo is simply missing — a dignified stand-in beats an
+                  // empty void until the next store build lands.
+                  errorBuilder: (context, error, stackTrace) => Center(
+                    child: Icon(
+                      Icons.person_outline_rounded,
+                      color: _gold.withValues(alpha: 0.7),
+                      size: 96,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 14),
               Row(
                 children: [
-                  _chip(const Icon(Icons.auto_awesome, color: _gold, size: 15),
+                  // Store-font rule (2026-10-23, proven on the owner's
+                  // phone): the installed build carries a tree-shaken
+                  // MaterialIcons font — glyphs first used by OTA code paint
+                  // "?". Every icon below exists in the store-era font
+                  // (auto_awesome_ROUNDED was in; auto_awesome was not).
+                  _chip(
+                      const Icon(Icons.auto_awesome_rounded,
+                          color: _gold, size: 15),
                       labels[0]),
                   const SizedBox(width: 8),
                   _chip(
@@ -504,9 +522,9 @@ class _DressCodePageState extends State<_DressCodePage>
                   const SizedBox(width: 8),
                   _chip(
                     widget.vip
-                        ? const Icon(Icons.workspace_premium_outlined,
+                        ? const Icon(Icons.workspace_premium_rounded,
                             color: _gold, size: 15)
-                        : const Icon(Icons.sentiment_satisfied_alt,
+                        : const Icon(Icons.thumb_up_rounded,
                             color: _gold, size: 15),
                     labels[2],
                   ),
@@ -533,10 +551,13 @@ class _DressCodePageState extends State<_DressCodePage>
           top: -12,
           right: -8,
           child: _GoldCircleBadge(
+            // Glyphs that EXIST in the store-era subsetted font (2026-10-23
+            // device proof: workspace_premium_outlined/checkroom painted
+            // "?" — the _rounded/person variants are in).
             child: widget.vip
-                ? const Icon(Icons.workspace_premium_outlined,
+                ? const Icon(Icons.workspace_premium_rounded,
                     color: Color(0xFF14141A), size: 18)
-                : const Icon(Icons.checkroom,
+                : const Icon(Icons.person_outline_rounded,
                     color: Color(0xFF14141A), size: 18),
           ),
         ),

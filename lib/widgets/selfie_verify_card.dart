@@ -149,6 +149,19 @@ class _SelfieVerifyCardState extends State<SelfieVerifyCard>
                       Image.asset(
                         'assets/images/onboarding/guide_selfie_${widget.variant}.png',
                         fit: BoxFit.cover,
+                        // OTA patches do NOT carry new assets (proven on
+                        // device 2026-10-23): on a store build that predates
+                        // this PNG the photo is simply missing — a dignified
+                        // stand-in beats an empty void until the next store
+                        // build lands.
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Center(
+                          child: Icon(
+                            Icons.face_retouching_natural,
+                            color: SelfieVerifyCard.gold,
+                            size: 72,
+                          ),
+                        ),
                       ),
                       // The shutter flash — one sweep up to ~0.55 and back,
                       // fired once per page entry (guide only).
@@ -168,25 +181,28 @@ class _SelfieVerifyCardState extends State<SelfieVerifyCard>
               ),
               const SizedBox(height: 16),
               Row(
+                // Store-font rule (2026-10-23, device-proven): glyphs first
+                // used by OTA-delivered code paint "?" — every icon below
+                // exists in the store-era subsetted font.
                 children: [
                   _chip(
-                      const Icon(Icons.face_outlined,
+                      const Icon(Icons.face_retouching_natural,
                           color: Color(0xFF14141A), size: 22),
                       s.selfieChipFaceVisible),
                   const SizedBox(width: 8),
                   if (widget.vip)
                     _chip(
-                        const Icon(Icons.workspace_premium_outlined,
+                        const Icon(Icons.workspace_premium_rounded,
                             color: Color(0xFF14141A), size: 22),
                         s.selfieChipDressVip)
                   else
                     _chip(
-                        const Icon(Icons.checkroom,
+                        const Icon(Icons.person_outline_rounded,
                             color: Color(0xFF14141A), size: 22),
                         s.selfieChipDressStd),
                   const SizedBox(width: 8),
                   _chip(
-                      const Icon(Icons.wb_sunny_outlined,
+                      const Icon(Icons.lightbulb_outline_rounded,
                           color: Color(0xFF14141A), size: 22),
                       s.selfieChipLighting),
                   const SizedBox(width: 8),

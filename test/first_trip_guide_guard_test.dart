@@ -111,41 +111,57 @@ void main() {
         reason: '…fired when the page becomes visible (page == 5)');
     expect(card, contains('if (!widget.active && old.active) _flashFired = false;'));
     expect(card, contains('addPostFrameCallback'));
-    expect(card, isNot(contains('Icons.face_retouching_natural')),
-        reason: 'the top-right icon circle was removed by owner spec '
-            '2026-10-23 ("el emoji de la esquina quítalo")');
+    expect(card, isNot(contains('_FaceIconBadge')),
+        reason: 'the top-right icon circle stays removed (owner spec '
+            '2026-10-23) — the face_retouching glyph itself came BACK for '
+            'chip 1 and the photo stand-in (it exists in the store font)');
   });
 
-  test('chip icons are direct const args (tree-shaker safe)', () {
+  test('chip icons are direct const args AND in the store-era font', () {
     // 2026-10-23 device proof: IconData passed through a helper param or a
     // ternary is INVISIBLE to the release tree-shaker and paints "?" — the
     // weak version of this pin only checked the names appeared in source and
     // the first store build shipped broken chips. The rule is const Icon(...)
     // widgets at the call site.
     for (final i in [
-      'const Icon(Icons.auto_awesome',
-      'const Icon(Icons.checkroom',
-      'const Icon(Icons.workspace_premium_outlined',
-      'const Icon(Icons.sentiment_satisfied_alt',
+      'const Icon(Icons.auto_awesome_rounded',
+      'const Icon(Icons.workspace_premium_rounded',
+      'const Icon(Icons.thumb_up_rounded',
       'const Icon(Icons.access_time_rounded',
       'const Icon(Icons.straighten_rounded',
     ]) {
       expect(src, contains(i), reason: '$i must be a const Icon construction');
     }
-    // The page-6 icons moved WITH the card to the shared widget (2026-10-23
-    // extraction — one design source with the selfie-check screen).
+    // SECOND RULE, same date, device-proven on the owner's phone: the store
+    // build's MaterialIcons font is TREE-SHAKEN — a glyph first used by
+    // OTA-delivered code paints "?". Every icon must ALSO exist in the
+    // store-era font (auto_awesome_rounded was in; auto_awesome was NOT;
+    // verified_user_outlined and visibility_off_outlined rendered).
     for (final i in [
-      'const Icon(Icons.face_outlined',
-      'const Icon(Icons.checkroom',
-      'const Icon(Icons.workspace_premium_outlined',
-      'const Icon(Icons.wb_sunny_outlined',
+      'const Icon(Icons.face_retouching_natural',
+      'const Icon(Icons.person_outline_rounded',
+      'const Icon(Icons.workspace_premium_rounded',
+      'const Icon(Icons.lightbulb_outline_rounded',
       'const Icon(Icons.visibility_off_outlined',
     ]) {
       expect(card, contains(i), reason: '$i must be a const Icon construction');
     }
-    expect(card, isNot(contains('Icons.face_retouching_natural')),
-        reason: 'the top-right icon circle was removed by owner spec '
-            '2026-10-23 — no _FaceIconBadge anywhere');
+    // The glyphs that painted "?" on store-font devices stay OUT.
+    for (final dead in [
+      'Icons.checkroom',
+      'Icons.sentiment_satisfied_alt',
+      'Icons.workspace_premium_outlined',
+      'Icons.face_outlined',
+      'Icons.wb_sunny_outlined',
+    ]) {
+      expect(src, isNot(contains(dead)),
+          reason: '$dead is not in the store-era font');
+      expect(card, isNot(contains(dead)),
+          reason: '$dead is not in the store-era font');
+    }
+    expect(card, isNot(contains('_FaceIconBadge')),
+        reason: 'the top-right icon circle stays removed (owner spec '
+            '2026-10-23: "el emoji de la esquina quítalo")');
     // …and the helpers must take the built widget, never a loose IconData.
     expect(src, isNot(contains('IconData icon')),
         reason: 'helpers taking IconData get tree-shaken to "?" in release');
@@ -153,6 +169,18 @@ void main() {
     expect(src, isNot(contains('_chip(Icons.')));
     expect(card, isNot(contains('_chip(Icons.')));
     expect(src, isNot(contains('_metric(Icons.')));
+  });
+
+  test('missing-photo stand-in: OTA patches carry no new assets', () {
+    // Proven on the owner's phone 2026-10-23: a store build that predates
+    // the guide_selfie/guide_dress PNGs shows an empty void. errorBuilder
+    // keeps the page dignified until the next store build lands the files.
+    expect(src, contains('errorBuilder: (context, error, stackTrace)'),
+        reason: 'the dress card never paints a void');
+    expect(card, contains('errorBuilder: (context, error, stackTrace)'),
+        reason: 'the selfie card never paints a void');
+    expect(src, contains('guide_dress_\$variant.png'));
+    expect(card, contains('guide_selfie_\${widget.variant}.png'));
   });
 
   test('the new l10n strings exist in ES and EN', () {

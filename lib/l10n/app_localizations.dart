@@ -2022,17 +2022,17 @@ class S {
   String get dressStdTitle =>
       _es ? 'Vestimenta requerida' : 'Dress Code Required';
   String get dressBodyVipM => _es
-      ? 'Como Chofer Profesional VIP, tu presentación es parte del servicio. Traje o saco formal negro, camisa elegante, zapatos de vestir y una imagen impecable en cada viaje.'
-      : 'As a VIP Professional Driver, your presentation is part of the service. A formal black suit or blazer, an elegant shirt, dress shoes, and an impeccable image on every trip.';
+      ? 'Los pasajeros VIP pagan por una experiencia premium y tu imagen es parte de ella. En cada viaje debes vestir: traje o saco negro, camisa elegante, zapatos de vestir y una presentación impecable. Antes de conectarte, una selfie diaria confirma tu vestimenta — sin ella no puedes recibir viajes.'
+      : 'VIP passengers pay for a premium experience and your image is part of it. On every trip you must wear: a black suit or blazer, an elegant shirt, dress shoes, and an impeccable presentation. Before going online, a daily selfie confirms your attire — without it you cannot receive rides.';
   String get dressBodyVipF => _es
-      ? 'Como Chofer Profesional VIP, tu presentación es parte del servicio. Traje o blazer formal negro, blusa elegante, zapatos de vestir y una imagen impecable en cada viaje.'
-      : 'As a VIP Professional Driver, your presentation is part of the service. A formal black suit or blazer, an elegant blouse, dress shoes, and an impeccable image on every trip.';
+      ? 'Los pasajeros VIP pagan por una experiencia premium y tu imagen es parte de ella. En cada viaje debes vestir: traje o blazer negro, blusa elegante, zapatos de vestir y una presentación impecable. Antes de conectarte, una selfie diaria confirma tu vestimenta — sin ella no puedes recibir viajes.'
+      : 'VIP passengers pay for a premium experience and your image is part of it. On every trip you must wear: a black suit or blazer, an elegant blouse, dress shoes, and an impeccable presentation. Before going online, a daily selfie confirms your attire — without it you cannot receive rides.';
   String get dressBodyStdM => _es
-      ? 'Tu presentación es parte del servicio. Polo o camisa negra, pantalón de vestir oscuro, cinturón y zapatos limpios en cada viaje.'
-      : 'Your presentation is part of the service. A black polo or shirt, dark dress pants, a belt, and clean shoes on every trip.';
+      ? 'Tu imagen es parte del servicio y de la calificación que recibes de cada pasajero. En cada viaje debes vestir: polo o camisa negra, pantalón de vestir oscuro, cinturón y zapatos limpios. Antes de conectarte, una selfie diaria confirma tu vestimenta — sin ella no puedes recibir viajes.'
+      : 'Your image is part of the service and of the rating each passenger gives you. On every trip you must wear: a black polo or shirt, dark dress pants, a belt, and clean shoes. Before going online, a daily selfie confirms your attire — without it you cannot receive rides.';
   String get dressBodyStdF => _es
-      ? 'Tu presentación es parte del servicio. Blusa o top negro profesional, pantalón oscuro, chaqueta opcional y calzado cómodo y limpio en cada viaje.'
-      : 'Your presentation is part of the service. A professional black blouse or top, dark pants, an optional jacket, and comfortable, clean footwear on every trip.';
+      ? 'Tu imagen es parte del servicio y de la calificación que recibes de cada pasajera y pasajero. En cada viaje debes vestir: blusa o top negro profesional, pantalón oscuro y calzado cómodo y limpio. Antes de conectarte, una selfie diaria confirma tu vestimenta — sin ella no puedes recibir viajes.'
+      : 'Your image is part of the service and of the rating each passenger gives you. On every trip you must wear: a professional black blouse or top, dark pants, and comfortable, clean footwear. Before going online, a daily selfie confirms your attire — without it you cannot receive rides.';
   String get dressChipElegant => _es ? 'Elegante' : 'Elegant';
   String get dressChipProfessional => _es ? 'Profesional' : 'Professional';
   String get dressChipPremium => _es ? 'Premium' : 'Premium';

@@ -945,10 +945,13 @@ workflows:
           # se publica — firmar era lo que lo tumbaba (sin keychain aquí).
           # --allow-asset-diffs (AMBAS plataformas desde 2026-10-23): la
           # fuente MaterialIcons-Regular.otf cambia sola según el engine que
-          # compila y nuestros assets nuevos (imágenes hero) SÍ deben viajar
-          # en el parche — sin el flag, Android se tragaba el rechazo
-          # ("Not publishing") por puro churn de fuente y los drivers con
-          # Android se quedaban sin los parches que iOS sí recibía.
+          # compila — sin el flag el parche se rechaza por puro churn de
+          # fuente. OJO, probado en dispositivo 2026-10-23: los assets
+          # NUEVOS (PNGs) y los GLIFOS nuevos NO viajan en el parche — el
+          # flag solo deja PUBLICAR a pesar del diff; los assets nuevos
+          # esperan al build de tienda (por eso el código OTA usa íconos de
+          # la fuente tree-shaken de la tienda y errorBuilder en imágenes
+          # nuevas).
           # --allow-native-diffs (2026-10-14, build 6ad03744 falló solo por
           # esto): el `pod install --repo-update` de arriba regenera
           # Podfile.lock distinto del release — ruido de CI, no cambio

@@ -186,6 +186,27 @@ void main() {
     expect(card, contains('guide_selfie_\${widget.variant}.png'));
   });
 
+  test('review mode: the menu Learning Center opens the guide ungated', () {
+    // Owner spec 2026-10-23: the driver menu's Learning Center must show
+    // the instruction pages. Review mode = no Entendido gate (done at
+    // approval) and finishing POPS back to the menu.
+    expect(src, contains('this.reviewMode = false'));
+    expect(src, contains('if (widget.reviewMode) _dressAcknowledged = true;'),
+        reason: 'review mode pre-satisfies the Entendido gate');
+    expect(
+        src,
+        contains(
+            'if (widget.reviewMode) {\n      Navigator.of(context).pop();'),
+        reason: 'finishing pops back to the menu, never a stack reset');
+    final menu = File('lib/screens/driver/driver_menu_screen.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    expect(menu, contains('FirstTripGuideScreen(reviewMode: true)'),
+        reason: 'the Learning Center menu item opens the instruction pages');
+    expect(menu, isNot(contains('const LearningCenterScreen()')),
+        reason: 'the text-topics screen no longer rides the menu option');
+  });
+
   test('the new l10n strings exist in ES and EN', () {
     for (final g in [
       "String get dressVipTitle =>",

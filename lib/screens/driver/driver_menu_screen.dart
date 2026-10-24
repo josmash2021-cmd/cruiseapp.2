@@ -20,6 +20,7 @@ import 'driver_documents_screen.dart';
 import 'driver_settings_screen.dart';
 import 'driver_profile_screen.dart';
 import 'driver_info_pages.dart';
+import 'onboarding/first_trip_guide_screen.dart';
 import 'driver_referral_screen.dart';
 import 'driver_earnings_screen.dart';
 import 'cruise_level_screen.dart';
@@ -471,8 +472,11 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                       Icons.school_rounded,
                       s.learningCenter,
                       s.tipsAndGuides,
-                      () => Navigator.of(context)
-                          .push(slideFromRightRoute(const LearningCenterScreen())),
+                      // 2026-10-23 (owner spec): the Learning Center opens
+                      // the INSTRUCTION PAGES (the 6-page first-trip guide)
+                      // in review mode — free to browse, pop back here.
+                      () => Navigator.of(context).push(slideFromRightRoute(
+                          const FirstTripGuideScreen(reviewMode: true))),
                     ),
                     _item(
                       Icons.bug_report_rounded,

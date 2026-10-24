@@ -34,7 +34,12 @@ import '../driver_online_screen.dart';
 /// rail (gold pickup dot joined to the white dropoff ring), the rider row,
 /// and the car inside a gold countdown ring (frozen — no live timer).
 class FirstTripGuideScreen extends StatefulWidget {
-  const FirstTripGuideScreen({super.key});
+  /// Review mode (2026-10-23, owner spec): opened from the driver menu's
+  /// Learning Center — the Entendido gate arrives already satisfied (the
+  /// driver acknowledged it at approval) and finishing POPS back to the
+  /// menu instead of landing on the online screen.
+  final bool reviewMode;
+  const FirstTripGuideScreen({super.key, this.reviewMode = false});
 
   @override
   State<FirstTripGuideScreen> createState() => _FirstTripGuideScreenState();
@@ -60,6 +65,9 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
   @override
   void initState() {
     super.initState();
+    // Review mode (menu → Learning Center): the Entendido gate was already
+    // satisfied at approval — the pages are free to browse.
+    if (widget.reviewMode) _dressAcknowledged = true;
     _resolveVariant();
   }
 
@@ -90,6 +98,12 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
       await prefs.setBool('first_trip_guide_seen_v1', true);
     } catch (_) {}
     if (!mounted) return;
+    // Review mode (menu → Learning Center): back to the menu, never a reset
+    // of the navigation stack.
+    if (widget.reviewMode) {
+      Navigator.of(context).pop();
+      return;
+    }
     Navigator.of(context).pushAndRemoveUntil(
       onboardingFadeSlideRoute(const DriverOnlineScreen()),
       (_) => false,

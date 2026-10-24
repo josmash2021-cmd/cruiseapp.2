@@ -40,8 +40,7 @@ void main() {
             'of the out-of-repo React source re-applies it');
   });
 
-  test('the editor stays generic — draw, save and heat work for any state',
-      () {
+  test('the editor stays generic — draw, save and heat work for any state', () {
     // Nothing in the editor or the backend PUT restricts geography: Alabama
     // polygons save through the same path Florida's did.
     expect(chunk, contains('/admin/zones/sectors'),
@@ -56,21 +55,21 @@ void main() {
     // User spec 2026-10-14: "las zonas que dibujo se tienen que actualizar
     // esto" — the heat screen's rows were a hardcoded copy of the 13 Florida
     // sectors (const ve=[{id:"broward_north",…}]), so panel-drawn sectors
-    // (Alabama) could never get heat. The rows now come from /zones/sectors.
+    // (Alabama) could never get heat. The rows now come from
+    // /admin/zones/sectors using the Dispatch session.
     final demandChunk = Directory('backend/dispatch_panel/assets')
         .listSync()
         .whereType<File>()
         .where((f) => f.path.contains('index-') && f.path.endsWith('.js'))
         .map((f) => f.readAsStringSync())
-        .firstWhere((s) => s.contains('Sectores del mapa'),
-            orElse: () => '');
+        .firstWhere((s) => s.contains('Sectores del mapa'), orElse: () => '');
     expect(demandChunk, isNotEmpty,
         reason: 'no built chunk carries the demand screen');
     expect(demandChunk, contains('liveSectorRows'),
         reason: 'the rows read the live sector list state');
-    expect(demandChunk, contains('Ie("/zones/sectors")'),
-        reason: 'the live list is fetched from the same endpoint the '
-            'editor saves through');
+    expect(demandChunk, contains('Ie("/admin/zones/sectors")'),
+        reason: 'the live list uses the Dispatch session, not the public '
+            'signed-app endpoint');
     expect(demandChunk, contains('(liveSectorRows??ve).map('),
         reason: 'the baked list survives only as the offline fallback');
   });
@@ -86,8 +85,7 @@ void main() {
         .whereType<File>()
         .where((f) => f.path.contains('index-') && f.path.endsWith('.js'))
         .map((f) => f.readAsStringSync())
-        .firstWhere((s) => s.contains('Sectores del mapa'),
-            orElse: () => '');
+        .firstWhere((s) => s.contains('Sectores del mapa'), orElse: () => '');
     expect(demandChunk, isNotEmpty);
     expect(demandChunk, contains('function nt(e,a,l){return(l??ve).filter('),
         reason: 'the dirty-diff walks the live list, not the baked one');

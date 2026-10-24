@@ -2879,7 +2879,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _zoneWavePhase = 0;
       _paintZoneWaveBase(sel);
     }
-    _zoneWaveTimer ??= Timer.periodic(const Duration(milliseconds: 100), (_) {
+    _zoneWaveTimer ??= Timer.periodic(const Duration(milliseconds: 200), (_) {
       _tickZoneWave();
     });
   }
@@ -2912,8 +2912,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // volver — una escritura nativa por tick con la app tapada es gasto
     // puro).
     if (!_appInForeground) return;
-    // Una vuelta en ~5 s a 100 ms por tick — lento y fluido, no un strobe.
-    _zoneWavePhase = (_zoneWavePhase + 0.02) % 1.0;
+    // Una vuelta en ~5 s a 200 ms por tick (era 100 ms — heat report
+    // 2026-10-23: diez escrituras de estilo nativas por segundo recalentaban
+    // los teléfonos en turnos largos; 5/s con el paso doblado conserva la
+    // misma velocidad visual con la mitad de trabajo nativo).
+    _zoneWavePhase = (_zoneWavePhase + 0.04) % 1.0;
     _guardedStyleWrite(map.style.setStyleLayerProperty(
         'sec-line-$sid', 'line-gradient', _zoneWaveStops(_zoneWavePhase)));
   }

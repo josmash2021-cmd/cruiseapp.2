@@ -189,6 +189,14 @@ void main() {
     expect(base, contains('_zoneWaveStops(_zoneWavePhase)'),
         reason: 'selection writes a gold gradient immediately, never a stale '
             'black gradient while the first tick is pending');
+    // Heat report 2026-10-23 ("los teléfonos se están recalentando mucho"):
+    // the wave was a NATIVE style write at 10 Hz for the whole shift. Now
+    // 5 Hz with the doubled phase step — identical visual speed, half the
+    // native work.
+    expect(s, contains('Timer.periodic(const Duration(milliseconds: 200)'),
+        reason: 'the wave ticks at 5 Hz, never 10');
+    expect(s, contains('_zoneWavePhase + 0.04'),
+        reason: 'phase step doubled to keep the same 5 s lap');
 
     // Labels/pills are FLUTTER OVERLAYS, never a native text layer
     // (2026-10-11 black-map incident).

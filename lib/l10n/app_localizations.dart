@@ -3554,7 +3554,7 @@ class S {
       _es ? 'No puedes conectarte' : 'You can\'t go online';
   String get goOnlineDisabledBody => _es
       ? 'No puedes conectarte en este momento. Contacta soporte si crees que es un error.'
-      : 'You can't go online right now. Contact support if you think this is a mistake.';
+      : 'You can\'t go online right now. Contact support if you think this is a mistake.';
   String get goOnlineEnabledBody => _es
       ? 'Ya puedes conectarte de nuevo'
       : 'You can go online again';

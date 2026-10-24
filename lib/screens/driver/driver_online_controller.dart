@@ -1130,14 +1130,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _startPolling();
       _startScheduledPoll();
       _startMarketplacePoll();
-      // "You're now online!" ~10 s AFTER the shift is truly live (owner
-      // spec 2026-10-23: "debe salir después de unos 10 segundos de estar
-      // activado, no cuando se le da al botón GO") — and it cures the old
-      // 700 ms race that checked _driverOnline before the flip landed and
-      // let the overlay die silently.
+      _introEpoch++;
+      _introRetryAfter = null;
       _introTimer?.cancel();
-      _introTimer =
-          Timer(const Duration(seconds: 10), _maybeShowOnlineIntro);
+      _introTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (timer.tick < 10 || _introBusy) return;
+        final retryAfter = _introRetryAfter;
+        if (retryAfter != null && DateTime.now().isBefore(retryAfter)) return;
+        unawaited(_maybeShowOnlineIntro());
+      });
     } finally {
       _enteringOnline = false;
     }
@@ -1157,28 +1158,61 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
   }
 
-  /// First-GO "You're now online!" instruction: once per device, fired by
-  /// the 10 s `_introTimer` armed at the end of _enterOnlineMode (owner
-  /// spec 2026-10-23 — after 10 s online, not on the GO tap). The seen
-  /// flag is written ONLY by the Entendido button, so an app kill
-  /// mid-overlay just replays it next activation.
   Future<void> _maybeShowOnlineIntro() async {
-    final p = await PrefsCache.instance;
-    // The owner's demo account gets the intro on EVERY activation; everyone
-    // else once per phone (the seen flag). The match accepts the account
-    // email OR the phone number (2026-10-23, owner spec "debe ser para este
-    // telefono 3854612042") — a phone-created account can have an empty
-    // cached email and the email-only rule never matched.
-    final u = await UserSession.getUser();
-    final email = (u?['email'] ?? '').toLowerCase();
-    final phoneDigits = (u?['phone'] ?? '').replaceAll(RegExp(r'\D'), '');
-    final alwaysShow = kOnlineIntroAlwaysEmails.contains(email) ||
-        kOnlineIntroAlwaysPhones.any((p) => phoneDigits.endsWith(p));
-    debugPrint('[OnlineIntro] alwaysShow=$alwaysShow '
-        'seen=${p.getBool('online_intro_seen_v1')} online=$_driverOnline');
-    if (!alwaysShow && p.getBool('online_intro_seen_v1') == true) return;
-    if (!mounted || !_driverOnline || _showOnlineIntro) return;
-    _setState(() => _showOnlineIntro = true);
+    if (_introBusy || !mounted || !_driverOnline || _showOnlineIntro) return;
+    final epoch = _introEpoch;
+    _introBusy = true;
+    try {
+      final p = await PrefsCache.instance;
+      Map<String, dynamic>? me;
+      try {
+        me = await ApiService.getMe().timeout(const Duration(seconds: 4));
+      } catch (e) {
+        debugPrint('[OnlineIntro] live profile unavailable: $e');
+      }
+      final u = await UserSession.getUser();
+      final freshEmail = (me?['email'] ?? '').toString().trim();
+      final cachedEmail = (u?['email'] ?? '').toString();
+      final email = (freshEmail.isNotEmpty ? freshEmail : cachedEmail)
+          .toLowerCase();
+      final freshPhone = (me?['phone'] ?? '').toString();
+      final phoneDigits = (freshPhone.isNotEmpty
+              ? freshPhone
+              : (u?['phone'] ?? ''))
+          .replaceAll(RegExp(r'\D'), '');
+      final alwaysShow = kOnlineIntroAlwaysEmails.contains(email) ||
+          kOnlineIntroAlwaysPhones.any((p) => phoneDigits.endsWith(p));
+      final seen = p.getBool('online_intro_seen_v1') == true;
+      if (epoch != _introEpoch ||
+          !mounted ||
+          !_driverOnline ||
+          _showOnlineIntro) {
+        return;
+      }
+      debugPrint('[OnlineIntro] alwaysShow=$alwaysShow seen=$seen '
+          'online=$_driverOnline profileFresh=${me != null}');
+      if (!alwaysShow && seen) {
+        if (me == null && u == null) {
+          _introRetryAfter =
+              DateTime.now().add(const Duration(seconds: 5));
+          return;
+        }
+        _introTimer?.cancel();
+        _introTimer = null;
+        return;
+      }
+      _introTimer?.cancel();
+      _introTimer = null;
+      _setState(() => _showOnlineIntro = true);
+    } catch (e) {
+      if (epoch == _introEpoch && mounted && _driverOnline) {
+        _introRetryAfter =
+            DateTime.now().add(const Duration(seconds: 5));
+      }
+      debugPrint('[OnlineIntro] show attempt failed: $e');
+    } finally {
+      _introBusy = false;
+    }
   }
 
   Future<void> _dismissOnlineIntro() async {
@@ -1197,6 +1231,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _wentOffline = true;
     // A pending intro timer dies with the shift — it must never fire over
     // the offline map.
+    _introEpoch++;
     _introTimer?.cancel();
     _introTimer = null;
     // El turno se cerró de verdad (user report 2026-09-27, "el botón de GO

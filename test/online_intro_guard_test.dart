@@ -49,8 +49,18 @@ void main() {
     final region = controller.substring(fn, fn + 5500);
     expect(
         region,
-        contains('Timer(const Duration(seconds: 10), _maybeShowOnlineIntro)'),
-        reason: 'armed once the online mode is truly live');
+        contains('Timer.periodic(const Duration(seconds: 1)'),
+        reason: 'retries after ten seconds online instead of depending on '
+            'one callback that can be lost with the screen lifecycle');
+    expect(region, contains('timer.tick < 10'));
+    expect(region, contains('_introEpoch++'));
+    final trigger = controller.indexOf('Future<void> _maybeShowOnlineIntro()');
+    final triggerRegion = controller.substring(trigger, trigger + 4000);
+    expect(triggerRegion, contains('me = await ApiService.getMe()'),
+        reason: 'the demo phone is resolved from the live profile inside the '
+            'intro trigger, not only from potentially stale local session data');
+    expect(triggerRegion, contains('epoch != _introEpoch'));
+    expect(triggerRegion, contains('_introRetryAfter'));
     expect(controller, contains('_introTimer?.cancel();'),
         reason: 'cancelled on exit/dispose — never fires over the '
             'offline map');
@@ -91,8 +101,10 @@ void main() {
         reason: 'the phone is normalized to digits before matching');
     expect(
         controller,
-        contains('kOnlineIntroAlwaysPhones.contains(phoneDigits)'),
-        reason: 'email OR phone number grants always-show');
+        contains('kOnlineIntroAlwaysPhones.any((p) => phoneDigits.endsWith(p))'),
+        reason: 'email OR phone number grants always-show — and endsWith() '
+            'accepts the +1 country-code prefix that the plain equality '
+            'missed (3854612042 vs +13854612042)');
     expect(controller, contains('||'),
         reason: 'the two identifiers are OR-ed, not AND-ed');
     expect(controller, contains('[OnlineIntro] alwaysShow='),

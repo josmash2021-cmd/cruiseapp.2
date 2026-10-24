@@ -142,10 +142,10 @@ void main() {
   test('the online intro fires 10 s into the shift, not on the GO tap', () {
     expect(
         controller,
-        contains('Timer(const Duration(seconds: 10), _maybeShowOnlineIntro)'));
+        contains('Timer.periodic(const Duration(seconds: 1)'));
+    expect(controller, contains('timer.tick < 10'));
     final enterFn = controller.indexOf('Future<void> _enterOnlineMode');
-    final timerIdx =
-        controller.indexOf('Timer(const Duration(seconds: 10)');
+    final timerIdx = controller.indexOf('Timer.periodic(const Duration(seconds: 1)');
     expect(timerIdx, greaterThan(enterFn),
         reason: 'armed at the END of _enterOnlineMode');
     expect(offline, isNot(contains('unawaited(_maybeShowOnlineIntro())')),

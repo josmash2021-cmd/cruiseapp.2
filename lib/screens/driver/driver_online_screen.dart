@@ -1446,6 +1446,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // live (owner spec 2026-10-23) — armed at the end of _enterOnlineMode,
   // no longer keyed off the GO tap.
   Timer? _introTimer;
+  bool _introBusy = false;
+  int _introEpoch = 0;
+  DateTime? _introRetryAfter;
   // El stream GPS se recrea en cada flip (iOS solo aplica el flag de
   // background en un request nuevo) — este latch evita recrearlo en vano.
   bool _posStreamIsBackground = false;

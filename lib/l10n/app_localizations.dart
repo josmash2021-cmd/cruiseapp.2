@@ -3537,6 +3537,13 @@ class S {
   String get ssnShortLabel => _es ? 'SSN' : 'SSN';
   String get faceCheckLabel => _es ? 'Verificación Facial' : 'Face Check';
   String get faceCheckTakeSelfie => _es ? 'Tomar selfie' : 'Take a selfie';
+  // The shared capture camera (2026-10-23, owner spec: every camera wears
+  // the license-capture design) — doc hint + profile photo title.
+  String get captureDocHint => _es
+      ? 'Asegúrate de que el documento se vea completo, claro y con buena iluminación'
+      : 'Make sure the whole document is clear, well-lit, and easy to read';
+  String get captureProfilePhotoTitle =>
+      _es ? 'Toma tu foto de perfil' : 'Take your profile photo';
   String get faceCheckFrameHint => _es
       ? 'Asegúrate de que tu rostro se vea claro, centrado y con buena iluminación'
       : 'Make sure your face is clear, centered, and well-lit';

@@ -19,6 +19,7 @@ import '../../services/meta_app_events_service.dart';
 import '../../services/referral_link_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/capture_camera_view.dart';
 import '../face_liveness_screen.dart';
 import '../biometric_consent_screen.dart';
 import '../privacy_policy_screen.dart';
@@ -708,23 +709,33 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
   // ── Image helpers ──────────────────────────────────────────────────────────
 
-  Future<String?> _pickCamera() async {
-    final picker = ImagePicker();
-    final xFile = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1920,
-      imageQuality: 92,
-      preferredCameraDevice: CameraDevice.rear,
+  Future<String?> _pickCamera(String title) async {
+    // The SHARED in-app camera (owner spec 2026-10-23: every document camera
+    // wears the license-capture design) — the native camera app is gone from
+    // the driver docs flow. The quality gate below is unchanged.
+    final path = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        fullscreenDialog: true,
+        builder: (routeCtx) => Scaffold(
+          backgroundColor: neuBase,
+          body: CaptureCameraView(
+            title: title,
+            hint: S.of(context).captureDocHint,
+            onPhoto: (p) => Navigator.of(routeCtx).pop(p),
+            onCancel: () => Navigator.of(routeCtx).pop(),
+          ),
+        ),
+      ),
     );
-    if (xFile == null) return null;
-    final file = File(xFile.path);
+    if (path == null) return null;
+    final file = File(path);
     final bytes = await file.length();
     final decoded = await decodeImageFromList(await file.readAsBytes());
     if (decoded.width < 640 || decoded.height < 400 || bytes < 40000) {
       if (mounted) _showQualityDialog();
       return null;
     }
-    return xFile.path;
+    return path;
   }
 
   Future<String?> _pickGallery() async {
@@ -829,7 +840,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 label: S.of(context).useCamera,
                 onTap: () async {
                   Navigator.pop(ctx);
-                  final path = await _pickCamera();
+                  final path = await _pickCamera(title);
                   if (path != null) onPicked(path);
                 },
               ),

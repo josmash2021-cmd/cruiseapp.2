@@ -106,8 +106,9 @@ void main() {
         'lib/screens/card_scan_screen.dart': '_ctrl',
         'lib/screens/driver/license_scanner_screen.dart': '_ctrl',
         'lib/screens/driver/onboarding/license_capture_screen.dart': '_ctrl',
-        'lib/screens/driver/onboarding/profile_photo_capture_screen.dart':
-            '_ctrl',
+        // 2026-10-23: la foto de perfil ya NO tiene controller propio — la
+        // cámara vive en el widget compartido; el null-swap va ahí.
+        'lib/widgets/capture_camera_view.dart': '_ctrl',
       };
       fields.forEach((path, field) {
         final src = _read(path);

@@ -664,5 +664,3 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
     );
   }
 }
-
-}

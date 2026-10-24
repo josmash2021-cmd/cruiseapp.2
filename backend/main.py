@@ -1702,7 +1702,7 @@ async def _rate_limit_check(path: str, method: str, client_ip: str) -> tuple[int
         # This runs BEFORE the global DDoS cap below and provides per-category limits.
         # The limiter may be sync (in-memory) or async (Redis) — handle both.
         try:
-            if "/auth/" in path:
+            if "/auth/" in path or path in ("/panel/login", "/dispatch/login"):
                 # Auth endpoints: 20 req/min per IP (prevents brute-force/OTP spam)
                 _check = _tiered_rate_limiter.check(f"auth:{client_ip}", max_requests=20, window_seconds=60)
             elif "/payments/" in path or "/webhooks/" in path:
@@ -1738,12 +1738,19 @@ _MAX_VERIFY_SIZE = 30 * 1024 * 1024  # 30 MB for verification (photos + video)
 _LARGE_BODY_PATHS = {"/auth/verify-request", "/drivers/documents", "/drivers/documents/upload"}
 
 
-def _body_size_check(path: str, method: str, headers) -> tuple[int, dict] | None:
-    """Body-size gate (ported verbatim from request_size_limit_middleware)."""
-    # GET/HEAD/OPTIONS/Socket.io/hot paths never have meaningful bodies — skip entirely
-    if method in ("GET", "HEAD", "OPTIONS") or path.startswith("/socket.io") or _is_hot_path(path):
+def _body_size_limit(path: str, method: str) -> int | None:
+    # Preserve the existing exemptions for GET/SSE/socket.io and hot paths.
+    if (method in ("GET", "HEAD", "OPTIONS") or path.startswith("/socket.io")
+            or _is_hot_path(path)):
         return None
-    limit = _MAX_VERIFY_SIZE if path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
+    return _MAX_VERIFY_SIZE if path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
+
+
+def _body_size_check(path: str, method: str, headers) -> tuple[int, dict] | None:
+    """Early Content-Length gate; the receive wrapper caps chunked bodies."""
+    limit = _body_size_limit(path, method)
+    if limit is None:
+        return None
     content_length = None
     for k, v in headers:
         if k.lower() == b"content-length":
@@ -1751,11 +1758,33 @@ def _body_size_check(path: str, method: str, headers) -> tuple[int, dict] | None
             break
     if content_length:
         try:
-            if int(content_length) > limit:
+            declared = int(content_length)
+            if declared < 0:
+                return 400, {"detail": "Invalid content-length"}
+            if declared > limit:
                 return 413, {"detail": "Request body too large"}
         except ValueError:
             return 400, {"detail": "Invalid content-length"}
     return None
+
+
+class _RequestBodyTooLarge(Exception):
+    pass
+
+
+def _body_limited_receive(receive, limit: int):
+    received = 0
+
+    async def limited_receive():
+        nonlocal received
+        message = await receive()
+        if message.get("type") == "http.request":
+            received += len(message.get("body") or b"")
+            if received > limit:
+                raise _RequestBodyTooLarge
+        return message
+
+    return limited_receive
 
 
 # Hot paths that should skip expensive middleware operations (checksum, etc.)
@@ -1801,6 +1830,8 @@ async def _asgi_json_response(send, payload: dict, status: int) -> None:
         "headers": [
             (b"content-type", b"application/json"),
             (b"content-length", str(len(body)).encode()),
+            (b"cache-control", b"no-store"),
+            (b"x-content-type-options", b"nosniff"),
         ],
     })
     await send({"type": "http.response.body", "body": body})
@@ -1817,8 +1848,8 @@ class CoreGatewayMiddleware:
     starlette/middleware/base.py call_next (py-spy): with ~600 requests in
     flight, each task hop queued behind hundreds of coroutines, and p50
     hit 3 s while CPU, DB pool and Postgres all idled. One pure-ASGI layer
-    makes the exact same decisions with zero task hops. Every check above
-    is ported verbatim from the middleware it replaces.
+    makes these decisions with zero task hops. The body gate checks both the
+    declared Content-Length and the actual bytes delivered through receive.
     """
 
     def __init__(self, app):
@@ -1845,6 +1876,9 @@ class CoreGatewayMiddleware:
         if too_big is not None:
             await _asgi_json_response(send, too_big[1], too_big[0])
             return
+        body_limit = _body_size_limit(path, method)
+        if body_limit is not None:
+            receive = _body_limited_receive(receive, body_limit)
 
         # ── Layers 0/1/2: crash guard + security headers + timing ──
         t0 = time.perf_counter()
@@ -1869,6 +1903,11 @@ class CoreGatewayMiddleware:
 
         try:
             await self.app(scope, receive, send_with_headers)
+        except _RequestBodyTooLarge:
+            if not headers_sent:
+                await _asgi_json_response(
+                    send, {"detail": "Request body too large"}, 413,
+                )
         except Exception as e:
             import traceback as _tb
             _tb_text = _tb.format_exc()

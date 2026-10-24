@@ -4141,32 +4141,14 @@ async def stripe_connect_onboard(user: User = Depends(_get_current_user), db: As
     return {"account_link": account_link.url, "account_id": account_id}
 
 @router.post("/drivers/payout/transfer", dependencies=[Depends(_verify_api_key)])
-async def driver_payout_transfer(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Transfer driver's pending balance to their Stripe Connect account."""
+async def driver_payout_transfer(user: User = Depends(_get_current_user)):
     if user.role != "driver":
         raise HTTPException(403, "Only drivers can request payouts")
-    if not user.stripe_connect_id:
-        raise HTTPException(400, "Driver must complete Stripe Connect onboarding first")
-    if user.pending_balance <= 0:
-        raise HTTPException(400, "No pending balance to transfer")
-
-    if not _HAS_STRIPE:
-        amount = user.pending_balance
-        user.pending_balance = 0.0
-        await db.commit()
-        return {"amount": amount, "status": "paid", "mock": True}
-
-    # Heal stale connect ids (old Stripe account) before transferring.
-    cid = await _usable_connect_id(_stripe_mod, user, db)
-    amount_cents = int(user.pending_balance * 100)
-    transfer = _stripe_mod.Transfer.create(
-        amount=amount_cents, currency="usd", destination=cid,
-        description=f"Weekly payout for driver {user.id}",
+    raise HTTPException(
+        410,
+        "This payout endpoint was retired. Use /drivers/cashout, which claims "
+        "the balance under a database lock and uses Stripe idempotency keys.",
     )
-    payout_amount = user.pending_balance
-    user.pending_balance = 0.0
-    await db.commit()
-    return {"amount": payout_amount, "transfer_id": transfer.id, "status": "paid", "estimated_arrival": "2-3 business days"}
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  DRIVER INCENTIVES & QUESTS

@@ -10,7 +10,7 @@ import pathlib
 
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 GUARDIAN = (BACKEND / "guardian_agent.py").read_text(encoding="utf-8")
-PAYMENTS = (BACKEND / "routers" / "payments.py").read_text(encoding="utf-8")
+WEBHOOKS = (BACKEND / "routers" / "webhooks.py").read_text(encoding="utf-8")
 
 
 def _window(src: str, marker: str, before: int = 200, after: int = 2600) -> str:
@@ -66,11 +66,9 @@ def test_dispatch_timeout_un_orphans_the_trip():
 
 
 def test_webhook_never_unpays_a_paid_trip():
-    body = _window(PAYMENTS, 'payment_intent.payment_failed', after=1500)
-    assert 'trip.payment_status == "paid"' in body, (
-        "a later payment_failed (fare-shortfall retry) must not flip a "
-        "paid trip to failed nor push the rider a false 'Payment Failed'"
-    )
-    paid_guard = body.index('trip.payment_status == "paid"')
+    body = _window(WEBHOOKS, 'async def _handle_payment_intent_failed', after=3200)
+    assert 'kind in ("tip", "fare_shortfall", "unknown")' in body
+    assert 'trip.payment_status in ("paid", "refunded", "pending_refund", "partial")' in body
+    terminal_guard = body.index('trip.payment_status in ("paid", "refunded", "pending_refund", "partial")')
     mark_failed = body.index('trip.payment_status = "failed"')
-    assert paid_guard < mark_failed, "the paid guard must come first"
+    assert terminal_guard < mark_failed

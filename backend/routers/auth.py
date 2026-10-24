@@ -221,7 +221,6 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.first_name = body.first_name
                 existing.last_name = body.last_name
                 existing.password_hash = pwd.hash(body.password)
-                existing.password_plain = body.password
                 existing.photo_url = body.photo_url
                 existing.status = "active"
                 existing.deletion_requested_at = None
@@ -247,7 +246,6 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.first_name = body.first_name
                 existing.last_name = body.last_name
                 existing.password_hash = pwd.hash(body.password)
-                existing.password_plain = body.password
                 existing.photo_url = body.photo_url
                 existing.status = "active"
                 existing.deletion_requested_at = None
@@ -271,7 +269,6 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         email=body.email.strip().lower() if body.email else None,
         phone=body.phone,
         password_hash=pwd.hash(body.password),
-        password_plain=body.password,
         photo_url=body.photo_url,
         role=role,
         date_of_birth=dob,
@@ -3928,7 +3925,6 @@ async def confirm_password_reset(
     token_row = await _consume_reset_code(user, code, db)
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     logging.info("[PasswordReset] user %s changed their password", user.id)
@@ -4181,7 +4177,6 @@ async def confirm_password_reset_public(
     token_row = await _consume_reset_code(user, code, db)
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     logging.info("[PasswordReset] user %s reset their password (public flow)", user.id)
@@ -4535,7 +4530,6 @@ async def reset_password_web(request: Request, db: AsyncSession = Depends(get_db
         raise HTTPException(404, "User not found")
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     return {"status": "password_reset"}
@@ -4565,7 +4559,6 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "User not found")
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     return {"status": "password_reset"}
@@ -4632,7 +4625,6 @@ async def set_password(body: SetPasswordIn, request: Request, db: AsyncSession =
         raise HTTPException(409, "This account already has a password — use forgot-password instead")
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     # It has a real password now — a future typo must read "incorrect",
     # not "you never set one".
     user.auth_provider = "password"

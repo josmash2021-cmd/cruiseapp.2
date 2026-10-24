@@ -91,6 +91,9 @@ def _validate_upload(data: bytes, content_type: str) -> str:
         # Trust sniffed type over declared
         content_type = sniffed
 
+    if content_type == "application/pdf" and sniffed != "application/pdf":
+        raise ValueError("Invalid PDF file signature")
+
     if content_type not in _ALLOWED_CONTENT_TYPES:
         raise ValueError(f"Unsupported file type: {content_type}")
 

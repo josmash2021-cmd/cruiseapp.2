@@ -196,6 +196,16 @@ class CreateTripIn(BaseModel):
     stop_address: Optional[str] = None
 
 
+class RateTripIn(BaseModel):
+    stars: int = Field(..., ge=1, le=5)
+    comment: Optional[str] = Field(default=None, max_length=500)
+    tip_amount: float = 0.0
+
+
+class TripTipIn(BaseModel):
+    tip_amount: float
+
+
 class AcceptTripIn(BaseModel):
     driver_id: int
 

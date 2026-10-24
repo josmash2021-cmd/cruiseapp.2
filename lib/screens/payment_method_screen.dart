@@ -4,6 +4,7 @@ import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
+import '../services/feature_flags.dart';
 import '../services/payment_service.dart';
 import '../services/analytics_service.dart';
 import '../widgets/neu_style.dart';
@@ -53,6 +54,7 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
 
   void _addMethod(String id) async {
     if (id == 'paypal') {
+      if (!FeatureFlags.paypalEnabled) return;
       await _openPayPal();
       return;
     }

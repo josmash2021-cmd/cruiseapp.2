@@ -1,8 +1,9 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib
 from datetime import datetime, timedelta, timezone
+from html import escape
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
-from fastapi.responses import JSONResponse, FileResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, Response, StreamingResponse
 from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
@@ -14,16 +15,17 @@ from models.schemas import OwnerLogin, DispatchRequestIn
 import jwt
 from utils.security import (
     pwd, _get_current_user, _verify_api_key, _require_dispatch_auth,
-    _dispatch_sessions, _security_audit_log,
+    _enforce_dispatch_ip, _require_dispatch_cookie_origin, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
 from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES, _active_destination, user_lang
+from services import dispatch_sessions
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
 from config import (
     OWNER_EMAIL, OWNER_PASSWORD_HASH,
-    DISPATCH_ALLOWED_IPS, PUBLIC_URL,
+    PUBLIC_URL,
     _pending_cache, _PENDING_CACHE_TTL, OFFER_TIMEOUT_SECONDS,
     firestore_sync, _HAS_FIRESTORE,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER,
@@ -1382,106 +1384,202 @@ async def _create_refund_request(user_id: int, trip_id: int, reason: str, db: As
 
 
 # -- Dispatch Web Interface (owner-only, multi-layer protection) ---------
-@router.post("/dispatch/login")
-async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
-    """Exclusive owner login with email/password + IP whitelist."""
-    client_ip = request.client.host if request.client else "unknown"
-    
-    # LAYER 1: IP Whitelist check
-    if DISPATCH_ALLOWED_IPS:
-        allowed = [ip.strip() for ip in DISPATCH_ALLOWED_IPS.split(",")]
-        if client_ip not in allowed:
-            _security_audit_log("dispatch_ip_blocked", client_ip, f"email={credentials.email}")
-            raise HTTPException(403, "Access denied from this IP address")
-    
-    # LAYER 2: Owner credentials verification
+def _dispatch_request_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+async def _owner_session_token(credentials: OwnerLogin, client_ip: str) -> str:
+    _enforce_dispatch_ip(client_ip)
     if not OWNER_EMAIL or not OWNER_PASSWORD_HASH:
         _security_audit_log("dispatch_not_configured", client_ip, "owner credentials missing")
         raise HTTPException(503, "Dispatch authentication not configured")
-    
-    if credentials.email != OWNER_EMAIL:
-        _security_audit_log("dispatch_wrong_email", client_ip, f"tried={credentials.email}")
-        raise HTTPException(401, "Invalid credentials")
-    
-    # Verify password with bcrypt (plaintext fallback removed for security)
+
     password_ok = pwd.verify(credentials.password, OWNER_PASSWORD_HASH)
-    if not password_ok:
-        _security_audit_log("dispatch_wrong_password", client_ip, f"email={credentials.email}")
+    email_ok = secrets.compare_digest(credentials.email.encode(), OWNER_EMAIL.encode())
+    if not email_ok or not password_ok:
+        _security_audit_log("dispatch_invalid_credentials", client_ip, "owner login rejected")
         raise HTTPException(401, "Invalid credentials")
-    
-    # LAYER 3: Create owner JWT with restricted claims
+
     now = datetime.now(timezone.utc)
+    jti = secrets.token_hex(32)
     token = jwt.encode(
         {
             "sub": "owner",
             "email": OWNER_EMAIL,
             "role": "owner",
             "type": "dispatch",
+            "jti": jti,
             "iat": now,
-            "exp": now + timedelta(hours=8),  # 8 hour session max
-            "ip": client_ip,  # Bind to IP
+            "exp": now + timedelta(seconds=dispatch_sessions.DISPATCH_SESSION_TTL_SECONDS),
+            "ip": client_ip,
         },
         JWT_SECRET,
         algorithm=JWT_ALGORITHM,
     )
-    
-    # Track active session
-    _dispatch_sessions.add(token)
-    
-    _security_audit_log("dispatch_owner_login", client_ip, f"email={OWNER_EMAIL}")
-    return {"token": token, "expires_in": 28800}  # 8 hours in seconds
+    try:
+        await dispatch_sessions.create_session(jti)
+    except dispatch_sessions.DispatchSessionUnavailableError:
+        _security_audit_log("dispatch_session_store_unavailable", client_ip, "login failed closed")
+        raise HTTPException(503, "Dispatch session store unavailable") from None
+    _security_audit_log("dispatch_owner_login", client_ip, "owner session created")
+    return token
+
+
+def _panel_cookie_secure(request: Request) -> bool:
+    local_test = (
+        os.getenv("DISPATCH_PANEL_TEST_INSECURE_COOKIE") == "1"
+        and os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}
+        and request.url.hostname in {"test", "localhost", "127.0.0.1", "::1"}
+    )
+    return not local_test
+
+
+def _set_panel_cookie(response: Response, request: Request, token: str) -> None:
+    response.set_cookie(
+        dispatch_sessions.DISPATCH_PANEL_COOKIE,
+        token,
+        max_age=dispatch_sessions.DISPATCH_SESSION_TTL_SECONDS,
+        path="/",
+        secure=_panel_cookie_secure(request),
+        httponly=True,
+        samesite="strict",
+    )
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _clear_panel_cookie(response: Response, request: Request) -> None:
+    response.delete_cookie(
+        dispatch_sessions.DISPATCH_PANEL_COOKIE,
+        path="/",
+        secure=_panel_cookie_secure(request),
+        httponly=True,
+        samesite="strict",
+    )
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _panel_login_page(error: str = "", status_code: int = 200) -> HTMLResponse:
+    error_html = f'<p role="alert" class="error">{escape(error)}</p>' if error else ""
+    html = f"""<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow">
+<title>Cruise Dispatch — Acceso</title><style>
+body{{margin:0;background:#0a1128;color:#f7f7fb;font:16px system-ui,sans-serif;display:grid;min-height:100vh;place-items:center}}
+main{{width:min(90vw,380px);padding:32px;border:1px solid #8c6b2f;border-radius:18px;background:#14141a}}
+h1{{font-size:24px}}label{{display:block;margin:18px 0 6px}}input{{box-sizing:border-box;width:100%;padding:12px;border-radius:8px;border:1px solid #777;background:#fff;color:#111}}
+button{{width:100%;margin-top:24px;padding:13px;border:0;border-radius:8px;background:#e8c547;color:#111;font-weight:700;cursor:pointer}}.error{{color:#ffb4a8}}
+</style></head><body><main><h1>Cruise Dispatch</h1><p>Acceso exclusivo del operador.</p>{error_html}
+<form method="post" action="/panel/login"><label for="email">Correo</label>
+<input id="email" name="email" type="email" autocomplete="username" required>
+<label for="password">Contraseña</label><input id="password" name="password" type="password" autocomplete="current-password" required>
+<button type="submit">Iniciar sesión</button></form></main></body></html>"""
+    return HTMLResponse(html, status_code=status_code, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/panel", include_in_schema=False)
+@router.get("/panel/", include_in_schema=False)
+async def dispatch_panel_home(request: Request):
+    token = request.cookies.get(dispatch_sessions.DISPATCH_PANEL_COOKIE, "")
+    if not token:
+        return RedirectResponse("/panel/login", status_code=302)
+    from utils.security import _validate_dispatch_token
+    try:
+        await _validate_dispatch_token(token, _dispatch_request_ip(request))
+    except HTTPException as exc:
+        if exc.status_code in (401, 403):
+            return RedirectResponse("/panel/login", status_code=302)
+        raise
+    return FileResponse(os.path.join(
+        os.path.dirname(__file__), "..", "dispatch_panel", "index.html"))
+
+
+@router.get("/panel/login", include_in_schema=False)
+async def dispatch_panel_login_form():
+    return _panel_login_page()
+
+
+@router.post("/panel/login", include_in_schema=False)
+async def dispatch_panel_login(request: Request):
+    _require_dispatch_cookie_origin(request)
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type != "application/x-www-form-urlencoded":
+        raise HTTPException(415, "Form-encoded login required")
+    form = await request.form()
+    credentials = OwnerLogin(
+        email=str(form.get("email", "")),
+        password=str(form.get("password", "")),
+    )
+    try:
+        token = await _owner_session_token(credentials, _dispatch_request_ip(request))
+    except HTTPException as exc:
+        message = "Credenciales inválidas." if exc.status_code == 401 else "No se pudo iniciar sesión. Inténtalo de nuevo."
+        return _panel_login_page(message, exc.status_code)
+    response = RedirectResponse("/panel", status_code=303)
+    _set_panel_cookie(response, request, token)
+    return response
+
+
+@router.post("/dispatch/login")
+async def dispatch_owner_login(request: Request, credentials: OwnerLogin):
+    token = await _owner_session_token(credentials, _dispatch_request_ip(request))
+    return {"token": token, "expires_in": dispatch_sessions.DISPATCH_SESSION_TTL_SECONDS}
+
+
+async def _revoke_dispatch_logout_tokens(tokens: list[str], client_ip: str) -> None:
+    for token in dict.fromkeys(token for token in tokens if token):
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except jwt.InvalidTokenError:
+            continue
+        jti = payload.get("jti", "")
+        if payload.get("type") != "dispatch" or payload.get("role") != "owner":
+            continue
+        if not isinstance(jti, str) or not re.fullmatch(r"[0-9a-f]{64}", jti):
+            continue
+        try:
+            await dispatch_sessions.revoke_session(jti)
+        except dispatch_sessions.DispatchSessionUnavailableError:
+            _security_audit_log("dispatch_session_store_unavailable", client_ip, "logout failed closed")
+            raise HTTPException(503, "Dispatch session store unavailable") from None
+
 
 @router.post("/dispatch/logout")
 async def dispatch_owner_logout(request: Request, authorization: str = Header(None)):
-    """Logout owner and invalidate session."""
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ")[1]
-        _dispatch_sessions.discard(token)
-    client_ip = request.client.host if request.client else "unknown"
-    _security_audit_log("dispatch_owner_logout", client_ip, "")
-    return {"ok": True}
+    client_ip = _dispatch_request_ip(request)
+    bearer_token = authorization[7:].strip() if authorization and authorization.startswith("Bearer ") else ""
+    cookie_token = request.cookies.get(dispatch_sessions.DISPATCH_PANEL_COOKIE, "")
+    if cookie_token:
+        _require_dispatch_cookie_origin(request)
+    await _revoke_dispatch_logout_tokens([bearer_token, cookie_token], client_ip)
+    response = JSONResponse({"ok": True}, headers={"Cache-Control": "no-store"})
+    if cookie_token:
+        _clear_panel_cookie(response, request)
+    _security_audit_log("dispatch_owner_logout", client_ip, "owner session revoked")
+    return response
+
+
+@router.post("/panel/logout", include_in_schema=False)
+async def dispatch_panel_logout(request: Request):
+    _require_dispatch_cookie_origin(request)
+    client_ip = _dispatch_request_ip(request)
+    cookie_token = request.cookies.get(dispatch_sessions.DISPATCH_PANEL_COOKIE, "")
+    await _revoke_dispatch_logout_tokens([cookie_token], client_ip)
+    response = RedirectResponse("/panel/login", status_code=303)
+    _clear_panel_cookie(response, request)
+    _security_audit_log("dispatch_owner_logout", client_ip, "panel session revoked")
+    return response
+
 
 @router.get("/dispatch")
 async def dispatch_interface(
     request: Request,
-    authorization: str = Header(None),
+    _dispatch_auth: dict = Depends(_require_dispatch_auth),
 ):
-    """Serve the dispatch web interface HTML file. OWNER ONLY - requires valid JWT."""
-    client_ip = request.client.host if request.client else "unknown"
-    
-    # Verify Authorization header
-    if not authorization or not authorization.startswith("Bearer "):
-        _security_audit_log("dispatch_no_auth", client_ip, "missing bearer token")
-        raise HTTPException(401, "Authorization required")
-    
-    token = authorization.split(" ")[1]
-    
-    # Verify token is active
-    if token not in _dispatch_sessions:
-        _security_audit_log("dispatch_invalid_session", client_ip, "token not in active sessions")
-        raise HTTPException(401, "Session expired or logged out")
-    
-    # Verify JWT
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        # Verify role
-        if payload.get("role") != "owner":
-            _security_audit_log("dispatch_wrong_role", client_ip, f"role={payload.get('role')}")
-            raise HTTPException(403, "Owner access required")
-        # Verify IP binding
-        if payload.get("ip") != client_ip:
-            _security_audit_log("dispatch_ip_mismatch", client_ip, f"expected={payload.get('ip')}")
-            raise HTTPException(403, "IP address changed - please login again")
-    except jwt.InvalidTokenError:
-        _security_audit_log("dispatch_jwt_error", client_ip, "invalid token")
-        raise HTTPException(401, "Invalid token")
-    
-    # Serve the HTML file
-    import os
+    client_ip = _dispatch_request_ip(request)
     web_dir = os.path.join(os.path.dirname(__file__), "..", "web")
     filepath = os.path.join(web_dir, "dispatch.html")
     if os.path.exists(filepath):
-        _security_audit_log("dispatch_html_served", client_ip, f"owner={OWNER_EMAIL}")
+        _security_audit_log("dispatch_html_served", client_ip, "owner interface served")
         return FileResponse(filepath, media_type="text/html")
     raise HTTPException(404, "Dispatch interface not found")
 
@@ -1662,76 +1760,55 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     }
     pi_id = data.get("stripe_payment_intent_id")
     hold_intent = None
-    if not is_sandbox and user.id not in _tester_ids and _HAS_STRIPE:
-        # A rider with a card on file must hold the fare up front — no
-        # hold means a free ride when the completion charge fails.
-        pm_r = await db.execute(
-            select(RiderPaymentMethod).where(
-                RiderPaymentMethod.user_id == user.id,
-                # Wallet-saved cards count as cards on file (2026-08-29).
-                RiderPaymentMethod.method_type.in_(
-                    ("stripe_card", "apple_pay", "google_pay")),
-                RiderPaymentMethod.stripe_pm_id.isnot(None),
-            )
+    from routers.misc import routing_preview
+    quote = await routing_preview(
+        pickup_lat=data["pickup_lat"], pickup_lng=data["pickup_lng"],
+        dropoff_lat=data["dropoff_lat"], dropoff_lng=data["dropoff_lng"],
+        vehicle_type=data.get("vehicle_type") or "comfort",
+        is_scheduled=bool(data.get("scheduled_at")),
+        is_airport=bool(data.get("is_airport")),
+        meet_inside=bool(data.get("meet_inside")), db=db,
+    )
+    fare_info = quote.get("fare_estimate") or {}
+    fare_total = fare_info.get("total")
+    if not isinstance(fare_total, (int, float)) or fare_total <= 0:
+        raise HTTPException(502, "Could not calculate the ride price")
+    data["fare"] = round(float(fare_total), 2)
+    data["scheduled_surcharge"] = float(fare_info.get("scheduled_surcharge") or 0.0)
+    data["airport_fee_applied"] = float(fare_info.get("airport_fee") or 0.0)
+    data["meet_greet_fee"] = float(fare_info.get("meet_greet_fee") or 0.0)
+
+    if not pi_id and not is_sandbox and user.id not in _tester_ids:
+        from models.database import CruiseCashBalance
+        balance_result = await db.execute(
+            select(CruiseCashBalance).where(CruiseCashBalance.user_id == user.id)
         )
-        has_card = pm_r.scalar_one_or_none() is not None
-        if has_card and not pi_id:
+        balance = balance_result.scalar_one_or_none()
+        balance_cents = getattr(balance, "balance_cents", 0) or 0
+        fare_cents = int(round(fare_total * 100))
+        covered_cents = min(balance_cents, fare_cents, 5000)
+        if covered_cents < fare_cents:
             raise HTTPException(
                 402,
                 "A payment hold is required before requesting a ride. Please retry payment.",
             )
-        if pi_id:
-            try:
-                hold_intent = _stripe_mod.PaymentIntent.retrieve(pi_id)
-                if hold_intent.status != "requires_capture":
-                    raise HTTPException(
-                        402,
-                        f"Payment hold is not valid (status: {hold_intent.status}). Please retry payment."
-                    )
-            except _stripe_mod.error.StripeError as e:
-                logging.warning("[Dispatch] Invalid PaymentIntent %s: %s", pi_id, e)
-                raise HTTPException(402, "Payment verification failed. Please retry.")
 
-    # ── Apply fare surcharges ──────────────────────────────────
-    fare = float(data.get("fare") or 0)
-    scheduled_surcharge = 0.0
-    airport_fee_applied = 0.0
-    meet_greet_fee = 0.0
-    if fare > 0:
-        # Scheduled ride surcharge (percentage)
-        if data.get("scheduled_at"):
-            pct = _pricing_config.get("scheduled_surcharge_pct", 0.0)
-            scheduled_surcharge = round(fare * pct, 2)
-            fare += scheduled_surcharge
-        # Airport flat fee
-        if data.get("is_airport"):
-            af = _pricing_config.get("airport_fee", 0.0)
-            airport_fee_applied = af
-            fare += af
-            # Meet & greet inside terminal
-            if data.get("meet_inside"):
-                mgf = _pricing_config.get("airport_meet_greet_fee", 0.0)
-                meet_greet_fee = mgf
-                fare += mgf
-        data["fare"] = round(fare, 2)
-    data["scheduled_surcharge"] = scheduled_surcharge
-    data["airport_fee_applied"] = airport_fee_applied
-    data["meet_greet_fee"] = meet_greet_fee
-
-    # ── Extend the hold if surcharges pushed the fare past it ────
-    # Not all issuers support incremental authorization — on Stripe
-    # error log and continue; the completion shortfall charge in
-    # _charge_trip remains the backstop for the uncovered amount.
-    if hold_intent is not None and data.get("fare"):
-        fare_total_cents = int(round(float(data["fare"]) * 100))
-        if fare_total_cents > int(getattr(hold_intent, "amount", 0) or 0):
-            try:
-                _stripe_mod.PaymentIntent.increment_authorization(
-                    pi_id, amount=fare_total_cents,
-                )
-            except Exception as e:
-                logging.warning(
-                    "[Dispatch] increment_authorization failed for %s: %s", pi_id, e)
+    if pi_id and not is_sandbox and user.id not in _tester_ids:
+        from services.payment_security import validate_trip_hold
+        hold_intent = await validate_trip_hold(
+            db,
+            payment_intent_id=pi_id,
+            rider=user,
+            expected_cents=int(round(fare_total * 100)),
+            increment_if_needed=True,
+            stripe_module=_stripe_mod,
+        )
+        from services.payment_security import stripe_value
+        if stripe_value(hold_intent, "status", "") == "succeeded":
+            raise HTTPException(
+                402,
+                "Payment has already been captured. Please use a new payment hold.",
+            )
 
     # 4-digit pickup handshake for the rider's Find-My screen (2026-09-12)
     data["pickup_pin"] = _gen_pickup_pin()
@@ -1745,10 +1822,12 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     await db.commit()
     await db.refresh(trip)
 
-    # If a PaymentIntent hold was provided, mark payment_status as "held"
-    # so the backend knows a hold exists for proper cancellation handling.
     if trip.stripe_payment_intent_id and trip.payment_status == "unpaid":
-        trip.payment_status = "held"
+        if hold_intent is not None:
+            from services.payment_security import payment_status_for_intent
+            trip.payment_status = payment_status_for_intent(hold_intent)
+        else:
+            trip.payment_status = "held"
         await db.commit()
         await db.refresh(trip)
 
@@ -1771,6 +1850,21 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
                 # number. Original fare is recoverable from the
                 # cruise_cash_transactions row tied to this trip.
                 trip.fare = round(remaining_cents / 100.0, 2)
+                if remaining_cents == 0 and not is_sandbox and user.id not in _tester_ids:
+                    if trip.stripe_payment_intent_id:
+                        from services.payment_security import stripe_value
+                        if hold_intent and stripe_value(hold_intent, "status", "") == "requires_capture":
+                            from routers.trips import _release_or_capture_fee_on_cancel
+                            released = await _release_or_capture_fee_on_cancel(trip)
+                            trip.payment_status = (
+                                "paid" if released == "cancelled" else "pending_refund"
+                            )
+                        else:
+                            trip.payment_status = "pending_refund"
+                    else:
+                        trip.payment_status = "paid"
+                else:
+                    trip.payment_status = "paid"
                 await db.commit()
                 await db.refresh(trip)
                 logging.info("[cruise-cash] applied %s cents to trip %s (remaining %s)",

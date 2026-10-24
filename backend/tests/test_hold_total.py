@@ -78,6 +78,7 @@ async def _add_card(db, rider):
         is_default=True,
         created_at=datetime.now(timezone.utc),
     )
+    rider.stripe_customer_id = "cus_test_rider"
     db.add(pm)
     await db.commit()
     return pm
@@ -88,6 +89,9 @@ def _mock_held_pi(amount_cents=2550, pi_id="pi_hold_123"):
     pi.id = pi_id
     pi.status = "requires_capture"
     pi.amount = amount_cents
+    pi.currency = "usd"
+    pi.customer = "cus_test_rider"
+    pi.metadata = {"rider_id": "1", "kind": "fare"}
     return pi
 
 
@@ -131,9 +135,12 @@ async def test_dispatch_surcharge_extends_hold(client: AsyncClient, db, test_rid
     rider, token = test_rider
     await _add_card(db, rider)
 
-    held = _mock_held_pi(amount_cents=2550)  # hold covers only the base fare
+    held = _mock_held_pi(amount_cents=50)
+    def _increase(_pi_id, amount, **_kwargs):
+        held.amount = amount
+        return held
     with patch("stripe.PaymentIntent.retrieve", return_value=held), \
-         patch("stripe.PaymentIntent.increment_authorization") as mock_inc, \
+         patch("stripe.PaymentIntent.increment_authorization", side_effect=_increase) as mock_inc, \
          patch("routers.dispatch._pricing_config", {"airport_fee": 10.0}), \
          patch("routers.dispatch._find_nearest_drivers", new=AsyncMock(return_value=[])):
         resp = await client.post(
@@ -142,8 +149,11 @@ async def test_dispatch_surcharge_extends_hold(client: AsyncClient, db, test_rid
                   "stripe_payment_intent_id": "pi_hold_123"},
             headers=_headers(token))
     assert resp.status_code == 200, resp.text
-    # fare 25.50 + airport fee 10.00 = 35.50 → hold extended to the total
-    mock_inc.assert_called_once_with("pi_hold_123", amount=3550)
+    expected_cents = int(round(resp.json()["fare"] * 100))
+    assert expected_cents > 50
+    mock_inc.assert_called_once()
+    assert mock_inc.call_args.args == ("pi_hold_123",)
+    assert mock_inc.call_args.kwargs["amount"] == expected_cents
 
 
 async def test_dispatch_within_hold_no_increment(client: AsyncClient, db, test_rider, monkeypatch):
@@ -196,6 +206,7 @@ async def _add_wallet_pm(db, rider, method_type="apple_pay"):
         is_default=True,
         created_at=datetime.now(timezone.utc),
     )
+    rider.stripe_customer_id = "cus_test_rider"
     db.add(pm)
     await db.commit()
     return pm
@@ -255,6 +266,20 @@ async def test_create_trip_with_valid_hold_is_held(client: AsyncClient, db, test
         trip = (await s.execute(select(Trip).where(Trip.rider_id == rider.id))).scalar_one()
     assert trip.stripe_payment_intent_id == "pi_hold_123"
     assert trip.payment_status == "held"
+
+
+async def test_create_trip_prices_on_server_not_client_fare(client: AsyncClient, db, test_rider, monkeypatch):
+    _prod(monkeypatch)
+    rider, token = test_rider
+    await _add_card(db, rider)
+    with patch("stripe.PaymentIntent.retrieve", return_value=_mock_held_pi(amount_cents=5000)):
+        resp = await client.post(
+            "/trips",
+            json={**_TRIP_BODY, "fare": 0.01, "stripe_payment_intent_id": "pi_hold_123"},
+            headers=_headers(token),
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["fare"] > 1.0
 
 
 # ── (d) wait-time fee extends the hold on the in_trip transition ─

@@ -33,7 +33,8 @@ _PDF = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
 
 
 async def _fake_upload(*_a, **_k):
-    return {"key": "support/x.pdf", "signed_url": "https://x"}
+    folder = _k.get("folder", "support/0")
+    return {"key": f"{folder}/x.pdf", "signed_url": "https://x"}
 
 
 @pytest.fixture

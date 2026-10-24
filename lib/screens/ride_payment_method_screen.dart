@@ -1,4 +1,5 @@
 import '../utils/app_platform.dart';
+import '../services/feature_flags.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -255,7 +256,7 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
 
     // Tap to Pay - NFC Contactless Payment. Android only — iOS requires
     // Apple's proximity-reader entitlement (per-app, pending approval).
-    if (AppPlatform.isAndroid) {
+    if (AppPlatform.isAndroid && FeatureFlags.tapToPayEnabled) {
       rows.add(_MethodRow(
         selected: _selected == PaymentMethodId.tapToPay,
         iconBg: const Color(0xFF1A237E),

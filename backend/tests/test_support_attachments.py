@@ -21,6 +21,7 @@ from routers.support import (
     _get_chat_history,
     _maybe_file_chat_document,
     _strip_markdown,
+    support_attachment_key,
 )
 from tests.conftest import _make_auth_headers
 
@@ -126,6 +127,18 @@ def test_note_tolerates_query_string():
     assert _attachment_note("||ATT||support/9/a.pdf?X-Amz-Signature=abc", "en") == "[User sent a PDF document]"
 
 
+def test_attachment_key_is_pinned_to_one_chat_folder():
+    assert support_attachment_key(5, "support/5/a.png") == "support/5/a.png"
+    assert support_attachment_key(5, " support/5/abc-DEF_1.pdf ") == "support/5/abc-DEF_1.pdf"
+    for bad in (
+        "support/6/a.png", "support/55/a.png", "backups/private.ndjson",
+        "support/5/../backup", "support/5/nested/a.png",
+        "support/5/%2e%2e%2fbackup", "https://x/support/5/a.png",
+        "support/5/", "support/5/a..png", None,
+    ):
+        assert support_attachment_key(5, bad) is None
+
+
 # ── 2. _strip_markdown ─────────────────────────────────────────────────────
 
 def test_strip_bold():
@@ -162,6 +175,64 @@ async def test_history_translates_attachments(db, test_rider):
     assert {"role": "assistant", "content": "déjame revisar"} in history
 
 
+async def test_user_cannot_inject_attachment_marker(client, db, test_rider):
+    rider, token = test_rider
+    chat = await _chat(rider, db)
+
+    res = await client.post(
+        f"/support/chats/{chat.id}/messages",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+        json={"message": "||ATT||backups/private.ndjson"},
+    )
+
+    assert res.status_code == 400, res.text
+    rows = (await db.execute(
+        select(SupportMessage).where(SupportMessage.chat_id == chat.id)
+    )).scalars().all()
+    assert rows == []
+
+
+async def test_listing_never_signs_cross_chat_or_backup_keys(
+    client, db, test_rider, monkeypatch,
+):
+    from routers import support as support_router
+
+    rider, token = test_rider
+    chat = await _chat(rider, db)
+    valid = await _user_msg(
+        chat, rider, db, f"||ATT||support/{chat.id}/ok.png", role="rider",
+    )
+    cross = await _user_msg(
+        chat, rider, db, f"||ATT||support/{chat.id + 1}/other.png", role="rider",
+    )
+    backup = await _user_msg(
+        chat, rider, db, "||ATT||backups/private.ndjson", role="rider",
+    )
+    traversal = await _user_msg(
+        chat, rider, db, f"||ATT||support/{chat.id}/../private", role="rider",
+    )
+    signed = []
+
+    async def _record_signed_url(key, expiration=3600):
+        signed.append(key)
+        return f"https://signed.test/{key}"
+
+    monkeypatch.setattr(support_router, "get_signed_url", _record_signed_url)
+    res = await client.get(
+        f"/support/chats/{chat.id}/messages",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+    )
+
+    assert res.status_code == 200, res.text
+    messages = {row["id"]: row["message"] for row in res.json()}
+    assert messages[valid.id] == f"||ATT||https://signed.test/support/{chat.id}/ok.png"
+    assert messages[cross.id] == "||ATT||"
+    assert messages[backup.id] == "||ATT||"
+    assert messages[traversal.id] == "||ATT||"
+    assert signed == [f"support/{chat.id}/ok.png"]
+    assert "private.ndjson" not in res.text
+
+
 # ── 4. attachment-url endpoint ─────────────────────────────────────────────
 
 async def test_attachment_url_requires_dispatch_auth(client):
@@ -192,7 +263,10 @@ async def test_attachment_url_signs_chat_own_key(client, monkeypatch):
 
 
 async def test_attachment_url_rejects_foreign_and_traversal_keys(client):
-    for bad in ("support/6/a.png", "support/55/a.png", "support/5/../secret", "drivers/1/x.jpg"):
+    for bad in (
+        "support/6/a.png", "support/55/a.png", "support/5/../secret",
+        "drivers/1/x.jpg", "backups/private.ndjson", "support/5/nested/a.png",
+    ):
         res = await client.get(
             "/support/chats/5/attachment-url", params={"key": bad},
             headers=_make_auth_headers("test-dispatch-key"),  # fresh nonce per request
@@ -246,6 +320,10 @@ async def test_rider_attachment_triggers_bot_reply(client, db, test_rider, monke
     )
     assert res.status_code == 200, res.text
     assert calls == [(chat.id, "[El usuario envió una foto]")]
+    stored = (await db.execute(
+        select(SupportMessage).where(SupportMessage.chat_id == chat.id)
+    )).scalar_one()
+    assert stored.message == f"||ATT||support/{chat.id}/x.png"
 
 
 async def test_driver_doc_filing_skips_generic_ack(client, db, test_driver, fake_storage, monkeypatch):

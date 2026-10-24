@@ -12,6 +12,7 @@ import collections
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlsplit
 
 import bcrypt as _bcrypt
 import jwt
@@ -19,7 +20,9 @@ from fastapi import Depends, HTTPException, Header, Request
 from sqlalchemy import select, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import DISPATCH_ALLOWED_IPS
 from models.database import User, RevokedToken, AuditLog, SessionLocal, get_db
+from services import dispatch_sessions
 from utils.bounded_cache import TTLCache
 
 # -- Config --
@@ -668,8 +671,86 @@ def _verify_api_key(
     raise HTTPException(401, "Invalid signature")
 
 
-# dispatch_sessions is shared with main.py â€” set by main module
-_dispatch_sessions: set[str] = set()
+# Kept only so main.py's legacy import does not fail. This is not a session store.
+_dispatch_sessions = None
+
+
+def _dispatch_client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_dispatch_ip(client_ip: str) -> None:
+    allowed = {ip.strip() for ip in DISPATCH_ALLOWED_IPS.split(",") if ip.strip()}
+    if allowed and client_ip not in allowed:
+        _security_audit_log("dispatch_ip_blocked", client_ip, "dispatch IP allowlist")
+        raise HTTPException(403, "Access denied from this IP address")
+
+
+def _require_dispatch_cookie_origin(request: Request) -> None:
+    fetch_site = request.headers.get("sec-fetch-site", "").strip().lower()
+    origin = request.headers.get("origin", "").strip()
+    if not fetch_site and not origin:
+        raise HTTPException(403, "Same-origin verification required")
+    if fetch_site and fetch_site != "same-origin":
+        raise HTTPException(403, "Cross-site request rejected")
+    if not origin:
+        return
+
+    try:
+        supplied = urlsplit(origin)
+        expected = urlsplit(str(request.base_url))
+        supplied_port = supplied.port or (443 if supplied.scheme == "https" else 80)
+        expected_port = expected.port or (443 if expected.scheme == "https" else 80)
+    except ValueError:
+        raise HTTPException(403, "Invalid request origin") from None
+    if (
+        supplied.scheme.lower() != expected.scheme.lower()
+        or (supplied.hostname or "").lower() != (expected.hostname or "").lower()
+        or supplied_port != expected_port
+        or supplied.path not in ("", "/")
+        or supplied.query
+        or supplied.fragment
+    ):
+        raise HTTPException(403, "Request origin does not match")
+
+
+def _decode_dispatch_token(token: str, client_ip: str) -> dict:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "dispatch":
+            raise HTTPException(401, "Invalid token type")
+        if payload.get("role") != "owner":
+            raise HTTPException(403, "Owner access required")
+        jti = payload.get("jti", "")
+        if not isinstance(jti, str) or not re.fullmatch(r"[0-9a-f]{64}", jti):
+            raise HTTPException(401, "Invalid dispatch session")
+        if payload.get("ip") != client_ip:
+            _security_audit_log("dispatch_ip_mismatch", client_ip, "session IP changed")
+            raise HTTPException(403, "IP address changed - please login again")
+        lifetime = int(payload["exp"]) - int(payload["iat"])
+        if lifetime <= 0 or lifetime > dispatch_sessions.DISPATCH_SESSION_TTL_SECONDS:
+            raise HTTPException(401, "Invalid dispatch session lifetime")
+    except HTTPException:
+        raise
+    except (jwt.InvalidTokenError, KeyError, TypeError, ValueError):
+        _security_audit_log("dispatch_jwt_error", client_ip, "invalid token on admin endpoint")
+        raise HTTPException(401, "Invalid token") from None
+    if _is_jti_revoked_memory(jti):
+        raise HTTPException(401, "Token has been revoked")
+    return payload
+
+
+async def _validate_dispatch_token(token: str, client_ip: str) -> dict:
+    payload = _decode_dispatch_token(token, client_ip)
+    try:
+        active = await dispatch_sessions.is_session_active(payload["jti"])
+    except dispatch_sessions.DispatchSessionUnavailableError:
+        _security_audit_log("dispatch_session_store_unavailable", client_ip, "validation failed closed")
+        raise HTTPException(503, "Dispatch session store unavailable") from None
+    if not active:
+        _security_audit_log("dispatch_invalid_session", client_ip, "session is not active")
+        raise HTTPException(401, "Session expired - please login again")
+    return payload
 
 
 async def _require_dispatch_auth(
@@ -682,65 +763,49 @@ async def _require_dispatch_auth(
     x_device_fp: str = Header(default=""),
     x_client_version: str = Header(default=""),
 ):
-    """Require dispatch/owner authentication.
+    client_ip = _dispatch_client_ip(request)
+    _enforce_dispatch_ip(client_ip)
 
-    Two valid paths:
-    1. HMAC-signed request with the EXACT DISPATCH_API_KEY (not any valid API key).
-    2. Valid Bearer JWT with role="owner" and an active dispatch session.
-
-    General mobile-app API keys are REJECTED — they must NOT access admin endpoints.
-    """
-    client_ip = request.client.host if request.client else "unknown"
-
-    # PATH 1: HMAC signature with DISPATCH_API_KEY only
+    # Legacy external HMAC integrations remain available only until cutover.
     if x_api_key and x_timestamp and x_nonce and x_signature:
         try:
             _verify_api_key(request, x_api_key, x_timestamp, x_nonce,
                             x_signature, x_device_fp, x_client_version)
-            # CRITICAL: Verify this is the DISPATCH_API_KEY, not just any valid API key
-            if DISPATCH_API_KEY and x_api_key != DISPATCH_API_KEY:
-                _record_violation(client_ip)
-                _security_audit_log("admin_unauthorized", client_ip,
-                                    f"non-dispatch key used on admin endpoint: {x_api_key[:8]}...")
-                raise HTTPException(403, "Admin access required — dispatch key only")
-            return
         except HTTPException:
-            pass  # Fall through to Bearer token check
+            pass
+        else:
+            if not DISPATCH_API_KEY or not hmac.compare_digest(
+                x_api_key.encode("utf-8"), DISPATCH_API_KEY.encode("utf-8"),
+            ):
+                _record_violation(client_ip)
+                _security_audit_log("admin_unauthorized", client_ip, "non-dispatch key on admin endpoint")
+                raise HTTPException(403, "Admin access required — dispatch key only")
+            _security_audit_log("dispatch_legacy_hmac", client_ip, "retire at cutover")
+            return {"type": "legacy_dispatch_hmac"}
 
-    # PATH 2: Bearer JWT with owner role and active dispatch session
-    if not authorization or not authorization.startswith("Bearer "):
+    bearer = authorization.startswith("Bearer ") if authorization else False
+    token = authorization[7:].strip() if bearer else request.cookies.get(dispatch_sessions.DISPATCH_PANEL_COOKIE, "")
+    if not token:
         raise HTTPException(401, "Owner authorization required")
-    token = authorization.split(" ")[1]
-    if token not in _dispatch_sessions:
-        _security_audit_log("dispatch_invalid_session", client_ip, "admin endpoint - token not active")
-        raise HTTPException(401, "Session expired - please login again")
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        if payload.get("role") != "owner":
-            raise HTTPException(403, "Owner access required")
-        jti = payload.get("jti", "")
-        if jti and _is_jti_revoked_memory(jti):
-            raise HTTPException(401, "Token has been revoked")
-    except jwt.InvalidTokenError:
-        _security_audit_log("dispatch_jwt_error", client_ip, "invalid token on admin endpoint")
-        raise HTTPException(401, "Invalid token")
+    if not bearer and request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+        _require_dispatch_cookie_origin(request)
+    return await _validate_dispatch_token(token, client_ip)
 
 
-def _verify_dispatch_key(
+async def _verify_dispatch_key(
     request: Request,
-    x_api_key: str = Header(...),
-    x_timestamp: str = Header(...),
-    x_nonce: str = Header(...),
-    x_signature: str = Header(...),
-    x_device_fp: str = Header(""),
-    x_client_version: str = Header(""),
+    authorization: str = Header(None),
+    x_api_key: str = Header(default=""),
+    x_timestamp: str = Header(default=""),
+    x_nonce: str = Header(default=""),
+    x_signature: str = Header(default=""),
+    x_device_fp: str = Header(default=""),
+    x_client_version: str = Header(default=""),
 ):
-    _verify_api_key(request, x_api_key, x_timestamp, x_nonce, x_signature, x_device_fp, x_client_version)
-    if DISPATCH_API_KEY and x_api_key != DISPATCH_API_KEY:
-        client_ip = request.client.host if request.client else "unknown"
-        _record_violation(client_ip)
-        _security_audit_log("admin_unauthorized", client_ip, "non-dispatch key used on admin endpoint")
-        raise HTTPException(403, "Admin access required")
+    return await _require_dispatch_auth(
+        request, authorization, x_api_key, x_timestamp, x_nonce,
+        x_signature, x_device_fp, x_client_version,
+    )
 
 
 # NOTE: API_KEY, HMAC_SECRET, JWT_SECRET, DISPATCH_API_KEY are defined at the top of this file (lines 24-43).

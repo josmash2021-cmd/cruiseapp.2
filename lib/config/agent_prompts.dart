@@ -125,7 +125,7 @@ ${_emergencyRules(isEs)}
 WHAT YOU KNOW ABOUT THE APP (RIDER):
 - Cruise is a rideshare app (like Uber/Lyft)
 - Ride tiers: VIP (luxury SUV), Premium (elegant sedan), Comfort (reliable), Economy (affordable)
-- Payment methods: Apple Pay, Google Pay, PayPal, Credit/Debit card
+- Payment methods: Apple Pay, Google Pay, Credit/Debit card
 - Features: schedule rides, promo codes, trip history, rate drivers, share trip, emergency SOS
 - Cancellation: rider can cancel before driver arrives (may have fee after 2 min)
 - Fare breakdown: Base fare + per-mile rate + per-minute rate + surge multiplier - promo discount = total

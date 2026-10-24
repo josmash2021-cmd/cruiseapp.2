@@ -2774,6 +2774,27 @@ async def list_all_support_chats(db: AsyncSession = Depends(get_db)):
 # URL on the way out.
 _ATTACH_PREFIX = "||ATT||"
 
+
+def support_attachment_key(chat_id: int, key: object) -> str | None:
+    """Return a durable attachment key only when it belongs to this chat.
+
+    Reuse this validator in every presigning path (app, dispatch and web).
+    Uploaded names are UUID-based, so one conservative path segment keeps
+    encoded separators, traversal and foreign bucket prefixes out.
+    """
+    if not isinstance(key, str):
+        return None
+    key = key.strip()
+    prefix = f"support/{chat_id}/"
+    if not key.startswith(prefix):
+        return None
+    filename = key[len(prefix):]
+    if (".." in filename or not filename
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", filename) is None):
+        return None
+    return key
+
+
 # ── Filing a chat attachment as a driver document (2026-10-12) ──────────────
 # A driver asking "actívame la cuenta" can send the missing document right
 # here. Deterministic rules, not the model: the file goes through the same
@@ -2950,11 +2971,16 @@ async def send_support_attachment(
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
+    stored_key = support_attachment_key(chat_id, result.get("key"))
+    if stored_key is None:
+        logging.error("[support] storage returned an invalid key for chat %s", chat_id)
+        raise HTTPException(status_code=502, detail="Invalid attachment storage key")
+
     row = SupportMessage(
         chat_id=chat_id,
         sender_id=user.id,
         sender_role=(user.role or "rider"),
-        message=f"{_ATTACH_PREFIX}{result['key']}",
+        message=f"{_ATTACH_PREFIX}{stored_key}",
     )
     db.add(row)
     # A photo is user activity just like a typed message: bump the chat so it
@@ -3023,10 +3049,11 @@ async def get_support_attachment_url(chat_id: int, key: str = Query(...)):
     folder — without that check this would sign reads of ANY object in the
     bucket.
     """
-    if not key.startswith(f"support/{chat_id}/") or ".." in key:
+    safe_key = support_attachment_key(chat_id, key)
+    if safe_key is None:
         raise HTTPException(status_code=400, detail="Invalid attachment key")
     try:
-        return {"signed_url": await get_signed_url(key)}
+        return {"signed_url": await get_signed_url(safe_key)}
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -3089,14 +3116,19 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
         # local HMAC work, not a round trip, so doing it per poll is cheap.
         raw = d.get("message") or ""
         if raw.startswith(_ATTACH_PREFIX):
-            key = raw[len(_ATTACH_PREFIX):].strip()
-            try:
-                d["message"] = _ATTACH_PREFIX + await get_signed_url(key)
-            except Exception as e:
-                logging.warning("[support] presign failed for %s: %s", key, e)
-                # Marker with no URL — the client renders "unavailable" rather
-                # than a broken image or, worse, the raw S3 key as chat text.
+            key = support_attachment_key(chat_id, raw[len(_ATTACH_PREFIX):])
+            if key is None:
                 d["message"] = _ATTACH_PREFIX
+            else:
+                try:
+                    d["message"] = _ATTACH_PREFIX + await get_signed_url(key)
+                except Exception as e:
+                    logging.warning(
+                        "[support] presign failed for chat %s message %s: %s",
+                        chat_id, m.id, e,
+                    )
+                    # Marker with no URL renders "unavailable", never raw text.
+                    d["message"] = _ATTACH_PREFIX
         output.append(d)
     return output
 
@@ -3152,7 +3184,12 @@ async def get_support_messages_dispatch(chat_id: int, db: AsyncSession = Depends
                 name = "Soporte Cruise"
         else:
             name = sender_names.get(m.sender_id, "Unknown")
-        output.append(_support_msg_dict(m, name))
+        d = _support_msg_dict(m, name)
+        raw = d.get("message") or ""
+        if (raw.startswith(_ATTACH_PREFIX)
+                and support_attachment_key(chat_id, raw[len(_ATTACH_PREFIX):]) is None):
+            d["message"] = _ATTACH_PREFIX
+        output.append(d)
     return output
 
 @router.post("/support/chats/{chat_id}/messages", dependencies=[Depends(_verify_api_key)])
@@ -3172,6 +3209,8 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
     msg_text = (body.get("message") or "").strip()
     if not msg_text:
         raise HTTPException(400, "Message cannot be empty")
+    if _ATTACH_PREFIX in msg_text:
+        raise HTTPException(400, "Attachment marker is reserved")
 
     chat_result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
     chat = chat_result.scalar_one_or_none()

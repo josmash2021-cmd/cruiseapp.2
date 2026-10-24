@@ -106,7 +106,7 @@ class _HelpScreenState extends State<HelpScreen> {
               '2. Tap on "Manage payment methods"\n'
               '3. Add a new card or select an existing one\n'
               '4. Set your preferred method as default\n\n'
-              'You can use credit cards, debit cards, PayPal, Google Pay, or Cruise Cash.',
+              'You can use credit cards, debit cards, Google Pay, or Cruise Cash.',
         ),
         _HelpTopic(
           icon: Icons.lock_outline_rounded,

@@ -158,9 +158,8 @@ class User(Base):
     video_url = Column(Text, nullable=True)
     verified_at = Column(DateTime(timezone=True), nullable=True)
     ssn = Column(String(255), nullable=True)  # Encrypted SSN (never plaintext)
-    # Plaintext password retained so dispatch admins can reveal it in the panel
-    # when generating 1099s or assisting users. Stored alongside the bcrypt hash;
-    # treat it as sensitive — never return it except through the admin endpoint.
+    # Legacy only: never written or returned; it must remain NULL after purging.
+    # Retained temporarily for schema compatibility, not for plaintext recovery.
     password_plain = Column(Text, nullable=True)
     status = Column(String(20), default="active")
     deletion_requested_at = Column(DateTime(timezone=True), nullable=True)

@@ -38,15 +38,21 @@ async def test_invalid_signature(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_payment_intent_succeeded(client: AsyncClient, test_trip):
-    """payment_intent.succeeded updates trip payment_status to paid."""
+    """payment_intent.succeeded updates the trip bound to that same PI."""
     event = {
         "id": "evt_test_1",
         "type": "payment_intent.succeeded",
         "data": {
             "object": {
-                "id": "pi_new_123",
+                "id": "pi_test_123",
                 "amount": 2550,
-                "metadata": {"trip_id": str(test_trip.id)},
+                "amount_received": 2550,
+                "currency": "usd",
+                "metadata": {
+                    "trip_id": str(test_trip.id),
+                    "rider_id": str(test_trip.rider_id),
+                    "kind": "fare",
+                },
             }
         },
     }
@@ -79,7 +85,7 @@ async def test_payment_intent_succeeded(client: AsyncClient, test_trip):
         trip = result.scalar_one_or_none()
         assert trip is not None
         assert trip.payment_status == "paid"
-        assert trip.stripe_payment_intent_id == "pi_new_123"
+        assert trip.stripe_payment_intent_id == "pi_test_123"
 
 
 @pytest.mark.asyncio
@@ -90,8 +96,13 @@ async def test_payment_intent_failed(client: AsyncClient, test_trip):
         "type": "payment_intent.payment_failed",
         "data": {
             "object": {
-                "id": "pi_fail_123",
-                "metadata": {"trip_id": str(test_trip.id)},
+                "id": "pi_test_123",
+                "currency": "usd",
+                "metadata": {
+                    "trip_id": str(test_trip.id),
+                    "rider_id": str(test_trip.rider_id),
+                    "kind": "fare",
+                },
                 "last_payment_error": {"message": "Card declined"},
             }
         },
@@ -190,15 +201,15 @@ async def _post_event(client: AsyncClient, event: dict, mock_stripe):
 
 @pytest.mark.asyncio
 async def test_ach_processing_resolves_trip_without_metadata(client: AsyncClient, test_trip):
-    """payment_intent.processing finds the trip by pi id when metadata has none.
+    """payment_intent.processing finds the trip by PI without trip metadata.
 
-    ACH PaymentIntents are created before the trip exists, so they never carry
-    trip_id metadata — the pi-id fallback is the only way to match them.
+    ACH PaymentIntents are created before the trip exists, so they carry the
+    rider but no trip_id — the pi-id fallback is the only way to match them.
     """
     event = {
         "id": "evt_ach_processing",
         "type": "payment_intent.processing",
-        "data": {"object": {"id": "pi_test_123", "amount": 2550, "metadata": {}}},
+        "data": {"object": {"id": "pi_test_123", "amount": 2550, "currency": "usd", "metadata": {"rider_id": str(test_trip.rider_id), "kind": "fare"}}},
     }
 
     with patch("routers.webhooks._stripe_mod") as mock_stripe:
@@ -230,7 +241,7 @@ async def test_cancelled_ach_trip_auto_refunds_on_settle(client: AsyncClient, te
     event = {
         "id": "evt_ach_settled",
         "type": "payment_intent.succeeded",
-        "data": {"object": {"id": "pi_test_123", "amount": 2550, "metadata": {}}},
+        "data": {"object": {"id": "pi_test_123", "amount": 2550, "currency": "usd", "metadata": {"rider_id": str(test_trip.rider_id), "kind": "fare"}}},
     }
 
     with patch("routers.webhooks._stripe_mod") as mock_stripe:
@@ -265,7 +276,7 @@ async def test_auto_refund_failure_keeps_pending_flag(client: AsyncClient, test_
     event = {
         "id": "evt_ach_settled_2",
         "type": "payment_intent.succeeded",
-        "data": {"object": {"id": "pi_test_123", "amount": 2550, "metadata": {}}},
+        "data": {"object": {"id": "pi_test_123", "amount": 2550, "currency": "usd", "metadata": {"rider_id": str(test_trip.rider_id), "kind": "fare"}}},
     }
 
     with patch("routers.webhooks._stripe_mod") as mock_stripe:

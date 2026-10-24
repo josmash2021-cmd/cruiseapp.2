@@ -174,16 +174,27 @@ void main() {
     expect(src, isNot(contains('_metric(Icons.')));
   });
 
-  test('missing-photo stand-in: OTA patches carry no new assets', () {
-    // Proven on the owner's phone 2026-10-23: a store build that predates
-    // the guide_selfie/guide_dress PNGs shows an empty void. errorBuilder
-    // keeps the page dignified until the next store build lands the files.
-    expect(src, contains('errorBuilder: (context, error, stackTrace)'),
-        reason: 'the dress card never paints a void');
-    expect(card, contains('errorBuilder: (context, error, stackTrace)'),
-        reason: 'the selfie card never paints a void');
+  test('onboarding photos: backend /static + bundled fallback, never a void',
+      () {
+    // Owner report 2026-10-23: the photos never arrived via OTA (new assets
+    // don't ride patches). Now they load from the backend's /static mount
+    // FIRST, the bundled asset is the offline fallback, and a gold icon is
+    // the last resort — the page never shows an empty void.
+    expect(src, contains('OnboardingImage('),
+        reason: 'the dress card uses the shared network+asset loader');
+    expect(card, contains('OnboardingImage('),
+        reason: 'the selfie card uses it too');
     expect(src, contains('guide_dress_\$variant.png'));
     expect(card, contains('guide_selfie_\${widget.variant}.png'));
+    final loader = File('lib/widgets/onboarding_image.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    expect(loader, contains('Image.network('));
+    expect(loader, contains('Image.asset('));
+    expect(loader, contains('publicBaseUrl'));
+    expect(loader, contains('/static/onboarding/'));
+    expect(loader, contains('errorBuilder: (context, error, stackTrace)'),
+        reason: 'the gold stand-in is still there if both sources fail');
   });
 
   test('review mode: the menu Learning Center opens the guide ungated', () {

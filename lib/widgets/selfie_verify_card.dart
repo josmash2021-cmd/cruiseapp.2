@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import 'onboarding_image.dart';
 
 /// The selfie-verification photo card (owner mockup 2026-10-23, "foto 4"):
 /// the tier×gender photo fills the card edge-to-edge under a thin gold
@@ -111,20 +112,9 @@ class _SelfieVerifyCardState extends State<SelfieVerifyCard>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.asset(
-                  'assets/images/onboarding/guide_selfie_${widget.variant}.png',
-                  fit: BoxFit.cover,
-                  // OTA patches do NOT carry new assets (proven on device
-                  // 2026-10-23): on a store build that predates this PNG the
-                  // photo is simply missing — a dignified stand-in beats an
-                  // empty void until the next store build lands.
-                  errorBuilder: (context, error, stackTrace) => const Center(
-                    child: Icon(
-                      Icons.face_retouching_natural,
-                      color: SelfieVerifyCard.gold,
-                      size: 72,
-                    ),
-                  ),
+                OnboardingImage(
+                  filename: 'guide_selfie_${widget.variant}.png',
+                  fallbackIcon: Icons.face_retouching_natural,
                 ),
                 // The shutter flash — one sweep up to ~0.55 and back,
                 // fired once per page entry (guide only).

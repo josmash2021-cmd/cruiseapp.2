@@ -5,6 +5,7 @@ import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../utils/selfie_variant.dart';
 import '../../../widgets/neu_style.dart';
+import '../../../widgets/onboarding_image.dart';
 import '../../../widgets/selfie_verify_card.dart';
 import '../driver_online_screen.dart';
 
@@ -500,20 +501,10 @@ class _DressCodePageState extends State<_DressCodePage>
             children: [
               SizedBox(
                 height: 210,
-                child: Image.asset(
-                  'assets/images/onboarding/guide_dress_$variant.png',
+                child: OnboardingImage(
+                  filename: 'guide_dress_$variant.png',
                   fit: BoxFit.contain,
-                  // OTA patches do NOT carry new assets (proven on device
-                  // 2026-10-23): on a store build that predates this PNG the
-                  // photo is simply missing — a dignified stand-in beats an
-                  // empty void until the next store build lands.
-                  errorBuilder: (context, error, stackTrace) => Center(
-                    child: Icon(
-                      Icons.person_outline_rounded,
-                      color: _gold.withValues(alpha: 0.7),
-                      size: 96,
-                    ),
-                  ),
+                  fallbackIcon: Icons.person_outline_rounded,
                 ),
               ),
               const SizedBox(height: 14),

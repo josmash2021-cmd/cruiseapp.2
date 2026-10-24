@@ -1173,7 +1173,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final email = (u?['email'] ?? '').toLowerCase();
     final phoneDigits = (u?['phone'] ?? '').replaceAll(RegExp(r'\D'), '');
     final alwaysShow = kOnlineIntroAlwaysEmails.contains(email) ||
-        kOnlineIntroAlwaysPhones.contains(phoneDigits);
+        kOnlineIntroAlwaysPhones.any((p) => phoneDigits.endsWith(p));
     debugPrint('[OnlineIntro] alwaysShow=$alwaysShow '
         'seen=${p.getBool('online_intro_seen_v1')} online=$_driverOnline');
     if (!alwaysShow && p.getBool('online_intro_seen_v1') == true) return;

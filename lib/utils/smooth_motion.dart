@@ -63,24 +63,23 @@ class SmoothMotion {
   /// by a quarter; the adaptive decay in [setBearing] kills the rest.
   static const double _maxBearingLeadSec = 0.75;
 
+  /// Critically-damped second-order correction (2026-10-23, owner ask:
+  /// "mucho más smooth"). The old first-order low-pass closed each residual
+  /// with an exponential tail and no physical shape. A spring with damping
+  /// ratio 1 has ZERO overshoot and a natural start/stop: position and
+  /// heading arrive as one continuous motion, not a burst then a plateau.
+  /// The constant-velocity leg above stays — that is what keeps the glide
+  /// alive between fixes (0% stalled frames).
+  static const double _springOmega = 12.0; // rad/s → ~0.4 s settle to 2%
+  double _corrVelLat = 0;
+  double _corrVelLng = 0;
+  double _corrVelBrg = 0;
+
   DateTime? _lastTargetAt;
 
   /// Capture timestamp (epoch millis) of the last accepted fix, when the
   /// feed carries one. Arrival time paces a feed that doesn't.
   double? _lastTargetTsMs;
-
-  /// How much of the remaining angular gap to close per second when applying
-  /// the low-pass filter on bearing. Higher = more responsive turns.
-  /// 2.5 → 3.5: the arrow visibly trailed the car's turns by ~half a second.
-  static const double _bearingLerpPerSec = 3.5;
-
-  /// How much of the residual lat/lng gap to close per second via
-  /// proportional correction. Higher = more responsive, follows GPS closer.
-  /// 1.8 → 1.2 made it silky but put the marker ~0.8 s behind the car —
-  /// "fluid, but late". 2.4 halves that constant (~0.4 s) while the
-  /// constant-velocity leg keeps the glide, so it reads as real-time
-  /// without the snap of raw GPS.
-  static const double _correctionPerSec = 2.4;
 
   /// Freeze velocity after this many seconds without a fresh GPS fix.
   /// 5 s covers the real gaps seen on cellular (tower handoffs, burst
@@ -103,33 +102,6 @@ class SmoothMotion {
   /// target on the extrapolated lead. A city car accelerates at 2–4 m/s²;
   /// 8 is generous headroom that still absorbs the bogus spike.
   static const double _maxAccelMps2 = 8.0;
-
-  /// The fraction of the remaining gap to close in [dtSec], for a filter that
-  /// closes [ratePerSec] of it per second, at any frame rate.
-  ///
-  /// This used to be written `1 - pow(1 - ratePerSec, dtSec)`, which is only
-  /// defined while the rate is below 1. Both rates above are over 1, so the
-  /// base was negative — and Dart's `pow` returns NaN for a negative base
-  /// raised to a fractional power, which every frame delta is. So the factor
-  /// was NaN on every single tick.
-  ///
-  /// NaN does not announce itself. It multiplies into the step, adds into
-  /// the position, and the overshoot clamps in [tick] wave it through because
-  /// every comparison against NaN is false. Downstream, `safePoint` drops
-  /// the annotation update and the overlay's `canvas.rotate(NaN)` draws
-  /// nothing — which is the arrow that "disappears and comes back", and the
-  /// dot that has to be nudged by watchdogs to move at all. The marker only
-  /// ever looked alive because `snapTo` and first-fix seeding kept resetting
-  /// it to a real number between ticks.
-  ///
-  /// `1 - exp(-rate * dt)` is the continuous form of the same idea and is
-  /// defined for every positive rate. Clamped because a huge dt should mean
-  /// "close all of it", never more.
-  static double _lerpFactor(double ratePerSec, double dtSec) {
-    final f = 1.0 - math.exp(-ratePerSec * dtSec);
-    if (f.isNaN) return 0.0;
-    return f < 0.0 ? 0.0 : (f > 1.0 ? 1.0 : f);
-  }
 
   double? get lat => _lat;
   double? get lng => _lng;
@@ -236,7 +208,6 @@ class SmoothMotion {
     final now = DateTime.now();
     // Wall-clock sanity for the capture timestamp: future or prehistoric
     // timestamps are ignored and the arrival time paces that fix instead.
-    final nowMs = now.millisecondsSinceEpoch.toDouble();
     final double? fixTsMs =
         (timestampMs != null && timestampMs.isFinite && timestampMs > 0)
             ? timestampMs
@@ -366,6 +337,23 @@ class SmoothMotion {
           return;
         }
 
+        // Speed fusion (2026-10-23, owner ask "mucho más smooth"): median
+        // of the last 3 implied speeds caps one-off ghost spikes at 2.5×
+        // the recent norm (never below 12 m/s so a real launch isn't
+        // clipped), and the blend weight further down is accuracy-adaptive
+        // — a fix that declares 3 m pulls hard, one that declares 40 m
+        // only nudges the velocity estimate.
+        var fusedSpeed = impliedSpeed;
+        if (_speedHist.length == 3) {
+          final sorted = [..._speedHist]..sort();
+          final ceiling = math.max(12.0, sorted[1] * 2.5);
+          if (fusedSpeed > ceiling) fusedSpeed = ceiling;
+        }
+        _speedHist.add(impliedSpeed);
+        if (_speedHist.length > 3) _speedHist.removeAt(0);
+        final fusionRatio =
+            impliedSpeed > 0 ? fusedSpeed / impliedSpeed : 1.0;
+
         // A stopped or crawling car's GPS heading is noise — it swings
         // 30-90° between fixes at a traffic light, and applying it made the
         // arrow tremble while parked. Only a fix that shows real movement
@@ -378,8 +366,8 @@ class SmoothMotion {
         // for 6 s and the delta reads as one slow slide. Left uncapped,
         // the blended velocity keeps the marker gliding far past the fix.
         // 12 m/s ≈ 43 km/h: a city car between fixes, never a flight.
-        final speedScale = dtSec > 5.0 && impliedSpeed > 12.0
-            ? 12.0 / impliedSpeed
+        final speedScale = dtSec > 5.0 && fusedSpeed > 12.0
+            ? 12.0 / fusedSpeed
             : 1.0;
 
         // Standstill jitter hold: while essentially parked, ignore position
@@ -445,8 +433,8 @@ class SmoothMotion {
         }
         _consecutiveHolds = 0;
 
-        final newVLat = dLat / dtSec * speedScale;
-        final newVLng = dLng / dtSec * speedScale;
+        final newVLat = dLat / dtSec * speedScale * fusionRatio;
+        final newVLng = dLng / dtSec * speedScale * fusionRatio;
         // Acceleration cap — see _maxAccelMps2. Applied to the fresh
         // measurement before the blend, so a single bogus delta cannot put
         // a highway speed into the extrapolation lead.
@@ -457,6 +445,17 @@ class SmoothMotion {
               math.pow(dvLat * 110540.0, 2),
         );
         final maxDv = _maxAccelMps2 * dtSec;
+        // Accuracy-adaptive blend weight (2026-10-23): a fix that declares
+        // 3 m pulls hard (0.8, the old constant), one that declares 40 m
+        // only nudges the estimate (0.35) — noisy GPS never yanks the
+        // glide speed around.
+        final accForBlend =
+            (accuracyM != null && accuracyM.isFinite && accuracyM > 0)
+                ? accuracyM
+                : 15.0;
+        final wNew = accForBlend <= 8.0
+            ? 0.8
+            : (0.8 - (accForBlend - 8.0) * (0.45 / 17.0)).clamp(0.35, 0.8);
         if (dvMps > maxDv && dvMps > 0) {
           final k = maxDv / dvMps;
           final cappedVLat = _vLat + dvLat * k;
@@ -464,11 +463,11 @@ class SmoothMotion {
           // Exponential average — absorbs GPS jitter without overfitting.
           // 0.3/0.7 → 0.2/0.8: the fresher the speed estimate, the less the
           // extrapolated glide runs behind (or ahead of) the car.
-          _vLat = _vLat * 0.2 + cappedVLat * 0.8;
-          _vLng = _vLng * 0.2 + cappedVLng * 0.8;
+          _vLat = _vLat * (1 - wNew) + cappedVLat * wNew;
+          _vLng = _vLng * (1 - wNew) + cappedVLng * wNew;
         } else {
-          _vLat = _vLat * 0.2 + newVLat * 0.8;
-          _vLng = _vLng * 0.2 + newVLng * 0.8;
+          _vLat = _vLat * (1 - wNew) + newVLat * wNew;
+          _vLng = _vLng * (1 - wNew) + newVLng * wNew;
         }
       } else if (bearing != null) {
         // No usable spacing (duplicate ts, huge gap): no speed to judge by,
@@ -491,6 +490,12 @@ class SmoothMotion {
       _bearing = _targetBearing;
     }
   }
+
+  /// Last 3 implied speeds for the outlier gate (2026-10-23): a single
+  /// bogus delta (tower hop, GPS warm-up) can read 40 m/s out of a parked
+  /// car. The median caps the fresh measurement at 2.5× the recent norm,
+  /// floored at 12 m/s so a real launch is never clipped.
+  final List<double> _speedHist = <double>[];
 
   /// Aim the marker at [bearing] without touching its position.
   ///
@@ -602,9 +607,14 @@ class SmoothMotion {
     final aim = _aimPoint();
     final residualLat = aim.$1 - _lat!;
     final residualLng = aim.$2 - _lng!;
-    final corrFactor = _lerpFactor(_correctionPerSec, dtSec);
-    stepLat += residualLat * corrFactor;
-    stepLng += residualLng * corrFactor;
+    final aLat = _springOmega * _springOmega * residualLat -
+        2 * _springOmega * _corrVelLat;
+    _corrVelLat += aLat * dtSec;
+    final aLng = _springOmega * _springOmega * residualLng -
+        2 * _springOmega * _corrVelLng;
+    _corrVelLng += aLng * dtSec;
+    stepLat += _corrVelLat * dtSec;
+    stepLng += _corrVelLng * dtSec;
 
     // Never overshoot past the aim point on either axis. The aim point is
     // moving (see above), so this clamps the marker onto the extrapolated
@@ -679,8 +689,10 @@ class SmoothMotion {
     while (dBrg < -180) {
       dBrg += 360;
     }
-    final brgFactor = _lerpFactor(_bearingLerpPerSec, dtSec);
-    var stepBrg = vBrg * dtSec + dBrg * brgFactor;
+    final aBrg = _springOmega * _springOmega * dBrg -
+        2 * _springOmega * _corrVelBrg;
+    _corrVelBrg += aBrg * dtSec;
+    var stepBrg = vBrg * dtSec + _corrVelBrg * dtSec;
     // Never overshoot the (moving) aim — same clamp shape as position.
     if (dBrg > 0) {
       if (stepBrg > dBrg) stepBrg = dBrg;
@@ -746,6 +758,9 @@ class SmoothMotion {
     _vLat = 0;
     _vLng = 0;
     _vBearing = 0;
+    _corrVelLat = 0;
+    _corrVelLng = 0;
+    _corrVelBrg = 0;
     _lastBearingAt = null;
     _consecutiveHolds = 0;
     _stationary = false;
@@ -755,6 +770,7 @@ class SmoothMotion {
     _frozenSkipTsMs = null;
     _lastTargetAt = DateTime.now();
     _lastTargetTsMs = null;
+    _speedHist.clear();
   }
 
   /// Reset to an uninitialised state (driver went offline, trip cancelled).
@@ -766,6 +782,9 @@ class SmoothMotion {
     _vLat = 0;
     _vLng = 0;
     _vBearing = 0;
+    _corrVelLat = 0;
+    _corrVelLng = 0;
+    _corrVelBrg = 0;
     _lastBearingAt = null;
     _bearing = 0;
     _targetBearing = 0;
@@ -777,5 +796,6 @@ class SmoothMotion {
     _frozenSkipTsMs = null;
     _lastTargetAt = null;
     _lastTargetTsMs = null;
+    _speedHist.clear();
   }
 }

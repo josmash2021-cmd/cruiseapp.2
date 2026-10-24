@@ -938,6 +938,9 @@ workflows:
       - *shorebird_setup
       - name: Publish OTA patch (Android + iOS)
         script: |
+          # Sin el token el parche sale con el mapa MUERTO (2026-10-23):
+          # falla fuerte y no publiques nada.
+          if [ -z "${MAPBOX_ACCESS_TOKEN:-}" ]; then echo "❌ MAPBOX_ACCESS_TOKEN vacío — el parche saldría con mapa negro/azul"; exit 1; fi
           # Patch = diff Dart contra el release instalado; Shorebird usa la
           # versión de Flutter DEL release automáticamente (3.38.9 hoy).
           # Android puede no tener release aún — no debe tumbar iOS.
@@ -967,8 +970,15 @@ workflows:
           # TODO: QUITAR el flag en cuanto este parche publique — con él
           # permanente, un cambio nativo futuro pasaría OTA en silencio y
           # los teléfonos "no se actualizarían" sin que nadie lo note.
-          shorebird patch android --release-version latest --allow-asset-diffs --allow-native-diffs || echo "⚠️ Android patch no publicado — revisa el log"
-          shorebird patch ios --release-version latest --no-codesign --allow-asset-diffs --allow-native-diffs
+          # --dart-define=MAPBOX_TOKEN (2026-10-23, reporte del dueño "el
+          # mapa sale en azul"): el patch NUNCA llevó el define — el token
+          # Dart quedaba VACÍO en cada parche (iOS sobrevivía por el
+          # MBXAccessToken del Info.plist; Android quedaba con el mapa
+          # muerto desde el parche #1 del 17-oct). Shorebird exige los
+          # mismos dart-defines del release: sin esto, static maps,
+          # geocoding y el mapa nativo mueren en los teléfonos parcheados.
+          shorebird patch android --release-version latest --allow-asset-diffs --allow-native-diffs --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN || echo "⚠️ Android patch no publicado — revisa el log"
+          shorebird patch ios --release-version latest --no-codesign --allow-asset-diffs --allow-native-diffs --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN
     publishing:
       email:
         recipients:

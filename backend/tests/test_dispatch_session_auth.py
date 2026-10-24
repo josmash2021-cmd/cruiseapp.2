@@ -329,6 +329,30 @@ async def test_panel_login_rejects_missing_or_cross_site_origin(monkeypatch, ses
         assert not session_env.shared.values
 
 
+async def test_panel_login_accepts_null_origin_only_with_fetch_metadata(
+        monkeypatch, session_env):
+    app = _app()
+    _use_worker(monkeypatch, session_env, 0)
+    async with _client(app, base_url="https://panel.test") as client:
+        response = await client.post(
+            "/panel/login", data=_login_json(),
+            headers={"Origin": "null", "Sec-Fetch-Site": "same-origin"},
+        )
+        assert response.status_code == 303
+        assert client.cookies.get(dispatch_sessions.DISPATCH_PANEL_COOKIE)
+        assert len(session_env.shared.values) == 1
+
+        for headers in (
+            {"Origin": "null", "Sec-Fetch-Site": "cross-site"},
+            {"Origin": "null"},
+        ):
+            response = await client.post(
+                "/panel/login", data=_login_json(), headers=headers,
+            )
+            assert response.status_code == 403
+        assert len(session_env.shared.values) == 1
+
+
 async def test_admin_requires_a_cookie_or_bearer(session_env):
     app = _app()
     async with _client(app) as client:

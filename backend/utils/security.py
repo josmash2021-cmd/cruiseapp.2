@@ -693,6 +693,11 @@ def _require_dispatch_cookie_origin(request: Request) -> None:
         raise HTTPException(403, "Same-origin verification required")
     if fetch_site and fetch_site != "same-origin":
         raise HTTPException(403, "Cross-site request rejected")
+    if origin.lower() == "null":
+        # Browsers may suppress Origin for privacy; Fetch Metadata is the proof.
+        if fetch_site != "same-origin":
+            raise HTTPException(403, "Origin null requires same-origin fetch metadata")
+        return
     if not origin:
         return
 

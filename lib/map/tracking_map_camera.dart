@@ -383,6 +383,15 @@ class TrackingMapCamera {
   /// the animation it is chasing.
   bool _frameInFlight = false;
 
+  /// Last chase pose actually pushed to native, for the coalescing gate
+  /// (2026-10-23, owner ask "mucho más smooth"): nearly-identical frames are
+  /// skipped so the native map stops re-rendering the same view while the
+  /// overlay keeps its 60 fps.
+  LatLng? _lastWrittenCenter;
+  double? _lastWrittenBearing;
+  double? _lastWrittenZoom;
+  DateTime? _lastWrittenAt;
+
   // ── Continuous route framing (approach AND trip) ──
   // Null until the first frame seeds it, so the view opens already correct
   // instead of gliding in from a default zoom. The target (the bounding box
@@ -919,6 +928,29 @@ class TrackingMapCamera {
       debugPrint('[TrackingMapCamera] chase frame skipped — non-finite camera');
       return;
     }
+    // Coalescing gate (2026-10-23, owner ask): only push a native write when
+    // the pose really changed (>0.3 m, >0.5°, >0.02 zoom) or 100 ms passed
+    // since the last one. Nearly-identical frames are skipped — the arrow
+    // overlay still runs at 60 fps, the native map does less work (less GPU,
+    // less heat on long shifts).
+    final last = _lastWrittenCenter;
+    final now = DateTime.now();
+    final dtMs = _lastWrittenAt == null
+        ? 1000
+        : now.difference(_lastWrittenAt!).inMilliseconds;
+    if (last != null && dtMs < 100) {
+      final dLatM = (center.latitude - last.latitude).abs() * 110540.0;
+      final dLngM = (center.longitude - last.longitude).abs() * 111320.0;
+      final dBrg = (_navBearing - (_lastWrittenBearing ?? 0)).abs();
+      final dZoom = (_navZoom - (_lastWrittenZoom ?? 0)).abs();
+      if (dLatM < 0.3 && dLngM < 0.3 && dBrg < 0.5 && dZoom < 0.02) {
+        return;
+      }
+    }
+    _lastWrittenCenter = center;
+    _lastWrittenBearing = _navBearing;
+    _lastWrittenZoom = _navZoom;
+    _lastWrittenAt = now;
     _frameInFlight = true;
     try {
       _map!

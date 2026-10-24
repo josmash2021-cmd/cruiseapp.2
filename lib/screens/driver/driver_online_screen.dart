@@ -776,6 +776,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// instance fields (web build caught it).
   mapbox.CameraOptions? _pendingCamWrite;
 
+  /// Last chase pose actually pushed to native, for the coalescing gate
+  /// (2026-10-23): nearly-identical frames are skipped. Also lives here and
+  /// not in the controller extension (same instance-field rule).
+  mapbox.CameraOptions? _lastCamWriteOpts;
+  DateTime? _lastCamWriteAt;
+
   /// The camera as Mapbox last reported it, pushed to us by
   /// onCameraChangeListener so the projection never has to ask for it.
   mapbox.CameraState? _onlineCamState;

@@ -70,7 +70,7 @@ class SmoothMotion {
   /// heading arrive as one continuous motion, not a burst then a plateau.
   /// The constant-velocity leg above stays — that is what keeps the glide
   /// alive between fixes (0% stalled frames).
-  static const double _springOmega = 12.0; // rad/s → ~0.4 s settle to 2%
+  static const double _springOmega = 10.0; // rad/s → ~0.45 s settle to 2%
   double _corrVelLat = 0;
   double _corrVelLng = 0;
   double _corrVelBrg = 0;

@@ -1825,6 +1825,33 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
     final map = _map;
     if (map == null) return;
+    // Coalesce nearly-identical frames (owner ask 2026-10-23 "mucho más
+    // smooth"): a native write only goes out when the pose really changed —
+    // >0.3 m or >0.5° or >0.02 zoom, or 100 ms have passed since the last
+    // write. The arrow overlay still runs at 60 fps; the native map just
+    // stops re-rendering identical frames (less GPU, less heat).
+    final center = options.center?.coordinates;
+    if (center != null) {
+      final last = _lastCamWriteOpts;
+      final lastC = last?.center?.coordinates;
+      final dtMs = _lastCamWriteAt == null
+          ? 1000
+          : DateTime.now().difference(_lastCamWriteAt!).inMilliseconds;
+      if (lastC != null && dtMs < 100) {
+        final dLatM = (center.lat - lastC.lat).abs() * 110540.0;
+        final dLngM = (center.lng - lastC.lng).abs() * 111320.0;
+        final dBrg = (options.bearing ?? 0) - (last?.bearing ?? 0);
+        final dZoom = (options.zoom ?? 0) - (last?.zoom ?? 0);
+        if (dLatM < 0.3 &&
+            dLngM < 0.3 &&
+            dBrg.abs() < 0.5 &&
+            dZoom.abs() < 0.02) {
+          return;
+        }
+      }
+    }
+    _lastCamWriteOpts = options;
+    _lastCamWriteAt = DateTime.now();
     _pendingCamWrite = options;
     if (_camWriteBusy) return; // the in-flight write flushes the newest
     _flushCameraWrite(map);

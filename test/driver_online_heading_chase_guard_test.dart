@@ -538,12 +538,20 @@ void main() {
           reason: 'the heartbeat is dead — the button holds a fixed scale');
       expect(offline, contains('_goGlossCtrl!.value'),
           reason: 'the shine sweep drives off the gloss clock');
-      expect(offline, contains('!dimmed && morph > 0.5'),
+      expect(
+          offline,
+          contains('!dimmed &&\n                    morph > 0.5 &&'
+              '\n                    faceState == 0'),
           reason: '2026-10-15 spec: the bright sweep paints ONLY on the open '
-              'pill ("la animación brillante solo cuando el sheet esté abierto")');
-      expect(offline, contains('!dimmed && morph <= 0.5'),
-          reason: 'the radar rings live on the closed disc only ("la '
-              'animación que tenía antes")');
+              'pill ("la animación brillante solo cuando el sheet esté '
+              'abierto") — and 2026-10-23: NEVER on the grey face-gated or '
+              'paused GO (the animation belongs to GO ONLINE)');
+      expect(
+          offline,
+          contains('!dimmed &&\n                    morph <= 0.5 &&'
+              '\n                    faceState == 0'),
+          reason: 'the radar rings live on the closed disc only, same '
+              'normal-state gate ("la animación que tenía antes")');
       expect(offline, contains('_GoRadarPainter('),
           reason: 'the radar painter is back on the disc');
       expect(offline, contains('Colors.white, BlendMode.srcIn'),

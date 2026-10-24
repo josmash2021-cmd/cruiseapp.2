@@ -2041,7 +2041,7 @@ class S {
   String get dressChipPresentable => _es ? 'Presentable' : 'Presentable';
   String get dressChipComfortable => _es ? 'Cómoda' : 'Comfortable';
   String get selfieVerifyTitle =>
-      _es ? 'Verificación de selfie' : 'Selfie Verification';
+      _es ? 'Verificación facial' : 'Facial Verification';
   String get selfieBodyStd => _es
       ? 'Para mantener tu cuenta activa, debes tomar una selfie clara de tu rostro y verificar que tengas la vestimenta adecuada y profesional requerida para seguir con las reglas de la app.'
       : "To keep your account active, you must take a clear selfie of your face and verify that you are wearing the proper, professional attire required to keep following the app's rules.";
@@ -3538,8 +3538,8 @@ class S {
   String get faceCheckLabel => _es ? 'Verificación Facial' : 'Face Check';
   String get faceCheckTakeSelfie => _es ? 'Tomar selfie' : 'Take a selfie';
   String get faceCheckFrameHint => _es
-      ? 'Centra tu rostro dentro del marco'
-      : 'Center your face inside the frame';
+      ? 'Asegúrate de que tu rostro se vea claro, centrado y con buena iluminación'
+      : 'Make sure your face is clear, centered, and well-lit';
   // GO button face-review states + pushes (2026-10-23, owner spec)
   String get goVerify => _es ? 'Verificar' : 'Verify';
   // Dispatch GO switch (2026-10-23, owner spec — instant per-driver pause).

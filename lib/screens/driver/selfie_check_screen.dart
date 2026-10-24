@@ -16,7 +16,9 @@ import '../../widgets/selfie_verify_card.dart';
 /// The 24 h GO selfie check (owner spec 2026-10-23): NOT the 4-step
 /// biometric liveness page — step 1 is the guide's own instruction card
 /// (the SHARED SelfieVerifyCard; the shutter flash stays guide-only), step
-/// 2 a FRONT-camera manual still with the license scanner's frame design.
+/// 2 a FRONT-camera manual still with the LICENSE-CAPTURE page design
+/// (`license_capture_screen.dart`: rounded preview card, X inside the
+/// frame, copy below, gold shutter + flash toggle).
 ///
 /// The screen uploads the shot ITSELF (owner spec 2026-10-23: "no se
 /// cerrara y aparecera un loading"). When the selfie lands in MANUAL review
@@ -37,7 +39,7 @@ class SelfieCheckScreen extends StatefulWidget {
 }
 
 class _SelfieCheckScreenState extends State<SelfieCheckScreen>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   static const _navy = Color(0xFF14141A);
 
@@ -53,6 +55,7 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   CameraController? _ctrl;
   bool _initialized = false;
   bool _capturing = false;
+  FlashMode _flashMode = FlashMode.off;
 
   // Step 2 "verifying" (manual dispatch review): the page HOLDS until the
   // decision lands — live socket first, a 5 s REST poll as the net, a 90 s
@@ -62,14 +65,6 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   Timer? _reviewTimeout;
   String? _reviewPhotoPath;
   bool _reviewDone = false;
-
-  /// Animated gold frame corners — the scanner's 1400 ms repeat-reverse.
-  late final AnimationController _cornerAnim;
-
-  /// Capture feedback flash (the guide's shutter idiom, reused for the
-  /// manual shot).
-  late final AnimationController _shotFlash;
-  late final Animation<double> _shotFlashOpacity;
 
   /// Capture preset — copied from license_scanner_screen.dart's
   /// doc-comment: iOS runs ultraHigh, NEVER max (the plugin's .max branch
@@ -94,18 +89,6 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     )..forward();
-    _cornerAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
-    _shotFlash = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _shotFlashOpacity = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween<double>(begin: 0, end: 0.55), weight: 40),
-      TweenSequenceItem(tween: Tween<double>(begin: 0.55, end: 0), weight: 60),
-    ]).animate(CurvedAnimation(parent: _shotFlash, curve: Curves.easeOut));
     _resolveVariant();
   }
 
@@ -122,8 +105,6 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   @override
   void dispose() {
     _entry.dispose();
-    _cornerAnim.dispose();
-    _shotFlash.dispose();
     _reviewSub?.cancel();
     _reviewPoll?.cancel();
     _reviewTimeout?.cancel();
@@ -217,23 +198,33 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   }
 
   /// Manual capture — no OCR, no ML Kit, no auto-capture: takePicture() on
-  /// the tap, a brief white flash as the feedback, then STRAIGHT into the
-  /// verifying step (owner spec 2026-10-23: the page no longer closes here
-  /// to reconnect 1-3 s later at home — it closes when the selfie is
-  /// APPROVED and the driver is already activating).
+  /// the gold shutter tap, then STRAIGHT into the verifying step (owner spec
+  /// 2026-10-23: the page no longer closes here to reconnect 1-3 s later at
+  /// home — it closes when the selfie is APPROVED and the driver is already
+  /// activating).
   Future<void> _capture() async {
     if (_ctrl == null || !_ctrl!.value.isInitialized || _capturing) return;
     setState(() => _capturing = true);
     HapticService.mediumImpact();
     try {
       final xFile = await _ctrl!.takePicture();
-      _shotFlash.forward(from: 0);
-      await Future.delayed(const Duration(milliseconds: 300));
       if (!mounted) return;
       _uploadAndVerify(xFile.path);
     } catch (_) {
       if (mounted) setState(() => _capturing = false);
     }
+  }
+
+  /// Flash toggle — same spot as the license-capture design. Front cameras
+  /// usually have no torch unit: a failed write just leaves the mode as-is.
+  Future<void> _toggleFlash() async {
+    final c = _ctrl;
+    if (c == null || !c.value.isInitialized) return;
+    final next = _flashMode == FlashMode.off ? FlashMode.torch : FlashMode.off;
+    try {
+      await c.setFlashMode(next);
+      if (mounted) setState(() => _flashMode = next);
+    } catch (_) {}
   }
 
   /// Step 2 → 3: the upload runs under the verifying loader; the answer
@@ -308,7 +299,7 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _step == 1 ? Colors.black : _navy,
+      backgroundColor: _navy,
       body: switch (_step) {
         1 => _buildCamera(),
         2 => _buildVerifying(),
@@ -502,278 +493,176 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
     );
   }
 
-  // ── Step 2: front camera with the scanner's frame design ──
+  // ── Step 2: front camera with the LICENSE-CAPTURE design (owner spec
+  // 2026-10-23: "así debe ser cuando se van a tomar la foto" — the SAME
+  // layout as the registration's license photo page: rounded preview card,
+  // X inside the frame, copy below, gold shutter + flash toggle) ──
 
   Widget _buildCamera() {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Camera preview or loading
-        if (_initialized && _ctrl != null)
-          SizedBox.expand(
-            child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: _ctrl!.value.previewSize!.height,
-                height: _ctrl!.value.previewSize!.width,
-                child: CameraPreview(_ctrl!),
-              ),
+    final s = S.of(context);
+    final size = MediaQuery.of(context).size;
+    final pad = MediaQuery.of(context).padding;
+
+    final preview = _initialized && _ctrl != null
+        ? FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _ctrl!.value.previewSize!.height,
+              height: _ctrl!.value.previewSize!.width,
+              child: CameraPreview(_ctrl!),
             ),
           )
-        else
-          const Center(
-            child: CircularProgressIndicator(color: _gold, strokeWidth: 2.5),
-          ),
-
-        // Dark overlay with the animated gold face frame
-        if (_initialized) _buildOverlay(context),
-
-        // Capture feedback flash over the whole preview
-        IgnorePointer(
-          child: AnimatedBuilder(
-            animation: _shotFlashOpacity,
-            builder: (ctx, _) => Opacity(
-              opacity: _shotFlashOpacity.value,
-              child: const ColoredBox(color: Colors.white),
+        : const ColoredBox(
+            color: Colors.black,
+            child: Center(
+              child: CircularProgressIndicator(color: _gold, strokeWidth: 2.5),
             ),
-          ),
-        ),
+          );
 
-        // Top bar — the license scanner's design (2026-10-23 owner spec:
-        // "el mismo diseño de tomarle foto a la licencia en el registro"):
-        // X left (cancel pops null — the GO call sites read that as "no
-        // GO"), centered title, and a 40 px spacer on the right where the
-        // scanner keeps its flash toggle (front cameras have no torch — a
-        // dead button there would be a lie).
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: pad.top + 12),
+        // Rounded preview card (~57% of the screen) — the X rides INSIDE
+        // the frame (cancel pops null — the GO call sites read "no GO").
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: SizedBox(
+            height: size.height * 0.57,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(null),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        color: Colors.white,
-                        size: 24,
+                  preview,
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).pop(null),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
                       ),
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    S.of(context).selfieVerifyTitle,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
-                    ),
-                  ),
-                  const Spacer(),
-                  const SizedBox(width: 40),
                 ],
               ),
             ),
           ),
         ),
-
-        // Hint under the frame (same height as the scanner's instruction)
-        Positioned(
-          bottom: 180,
-          left: 24,
-          right: 24,
-          child: Text(
-            S.of(context).faceCheckFrameHint,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              height: 1.4,
-              shadows: const [Shadow(color: Colors.black87, blurRadius: 8)],
+        // Copy below the preview — the license page's rhythm.
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(28, 26, 28, 0),
+            child: Column(
+              children: [
+                Text(
+                  s.selfieVerifyTitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 23,
+                    height: 1.25,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  s.faceCheckFrameHint,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.65),
+                    fontSize: 14.5,
+                    height: 1.45,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-
-        // Gold manual shutter — always visible
-        Positioned(
-          bottom: 56,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: GestureDetector(
-              onTap: _initialized ? _capture : null,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: _capturing ? 68 : 74,
-                height: _capturing ? 68 : 74,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _gold,
-                  boxShadow: [
-                    BoxShadow(
-                      color: _gold.withValues(alpha: 0.45),
-                      blurRadius: 20,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: _capturing
-                    ? const Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(
-                          color: Colors.black,
-                          strokeWidth: 2.5,
+        // Gold shutter + flash toggle (front cameras usually lack a torch —
+        // a failed write just leaves the mode as-is, see _toggleFlash).
+        Padding(
+          padding: EdgeInsets.only(bottom: pad.bottom + 28, top: 8),
+          child: SizedBox(
+            height: 74,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                GestureDetector(
+                  onTap: _initialized ? _capture : null,
+                  child: Container(
+                    width: 74,
+                    height: 74,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _gold,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _gold.withValues(alpha: 0.45),
+                          blurRadius: 20,
+                          spreadRadius: 2,
                         ),
-                      )
-                    : const Icon(
-                        Icons.camera_alt_rounded,
-                        color: Colors.black,
-                        size: 32,
+                      ],
+                    ),
+                    child: _capturing
+                        ? const Padding(
+                            padding: EdgeInsets.all(20),
+                            child: CircularProgressIndicator(
+                              color: Colors.black,
+                              strokeWidth: 2.5,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.camera_alt_rounded,
+                            color: Colors.black,
+                            size: 32,
+                          ),
+                  ),
+                ),
+                Positioned(
+                  right: 36,
+                  child: GestureDetector(
+                    onTap: _toggleFlash,
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C24),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.08),
+                        ),
                       ),
-              ),
+                      child: Icon(
+                        _flashMode == FlashMode.off
+                            ? Icons.flash_off_rounded
+                            : Icons.flash_on_rounded,
+                        color: _flashMode == FlashMode.off
+                            ? Colors.white
+                            : _gold,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ],
     );
   }
-
-  Widget _buildOverlay(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final frameW = size.width * 0.72;
-    final frameH = frameW * 1.3; // portrait face frame
-    final frameLeft = (size.width - frameW) / 2;
-    final frameTop = (size.height - frameH) / 2 - 30;
-
-    return AnimatedBuilder(
-      animation: _cornerAnim,
-      builder: (_, __) {
-        final glow = _cornerAnim.value;
-        return Stack(
-          children: [
-            // Semi-transparent overlay (4 rects = top, bottom, left, right)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: frameTop,
-              child: Container(color: Colors.black.withValues(alpha: 0.62)),
-            ),
-            Positioned(
-              top: frameTop + frameH,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(color: Colors.black.withValues(alpha: 0.62)),
-            ),
-            Positioned(
-              top: frameTop,
-              left: 0,
-              width: frameLeft,
-              height: frameH,
-              child: Container(color: Colors.black.withValues(alpha: 0.62)),
-            ),
-            Positioned(
-              top: frameTop,
-              left: frameLeft + frameW,
-              right: 0,
-              height: frameH,
-              child: Container(color: Colors.black.withValues(alpha: 0.62)),
-            ),
-
-            // Frame border — the gold breathes with the corner animation.
-            // Radius 12 like the license scanner's card frame (owner spec
-            // 2026-10-23: same design language, portrait for a face).
-            Positioned(
-              top: frameTop,
-              left: frameLeft,
-              child: Container(
-                width: frameW,
-                height: frameH,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _gold.withValues(alpha: 0.5 + 0.5 * glow),
-                    width: 2,
-                  ),
-                ),
-              ),
-            ),
-
-            // Corner accents
-            ..._corners(frameLeft, frameTop, frameW, frameH, glow),
-          ],
-        );
-      },
-    );
-  }
-
-  List<Widget> _corners(double l, double t, double w, double h, double glow) {
-    const len = 22.0;
-    const thick = 3.0;
-    final color = Color.lerp(const Color(0xFFF5D990), _gold, glow)!;
-    return [
-      Positioned(
-          top: t, left: l, child: _corner(color, len, thick, true, true)),
-      Positioned(
-          top: t,
-          left: l + w - len,
-          child: _corner(color, len, thick, false, true)),
-      Positioned(
-          top: t + h - len,
-          left: l,
-          child: _corner(color, len, thick, true, false)),
-      Positioned(
-          top: t + h - len,
-          left: l + w - len,
-          child: _corner(color, len, thick, false, false)),
-    ];
-  }
-
-  Widget _corner(Color c, double len, double thick, bool left, bool top) {
-    return SizedBox(
-      width: len,
-      height: len,
-      child: CustomPaint(painter: _FaceCornerPainter(c, thick, left, top)),
-    );
-  }
 }
 
-/// The scanner's corner tick, repainted for the face frame.
-class _FaceCornerPainter extends CustomPainter {
-  final Color color;
-  final double thick;
-  final bool left;
-  final bool top;
-  const _FaceCornerPainter(this.color, this.thick, this.left, this.top);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = thick
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    final x = left ? 0.0 : size.width;
-    final y = top ? 0.0 : size.height;
-    final hx = left ? size.width : 0.0;
-    final vy = top ? size.height : 0.0;
-    canvas.drawLine(Offset(x, y), Offset(hx, y), paint);
-    canvas.drawLine(Offset(x, y), Offset(x, vy), paint);
-  }
-
-  @override
-  bool shouldRepaint(_FaceCornerPainter old) => old.color != color;
 }

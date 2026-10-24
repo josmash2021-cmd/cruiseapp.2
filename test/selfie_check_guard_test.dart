@@ -91,8 +91,9 @@ void main() {
     expect(screen, contains('takePicture()'),
         reason: 'manual capture on the gold shutter tap');
     expect(screen, contains('HapticService.mediumImpact();'));
-    expect(screen, contains('_shotFlash.forward(from: 0)'),
-        reason: 'brief white flash as capture feedback');
+    expect(screen, isNot(contains('_shotFlash')),
+        reason: 'the capture flash died with the license-capture redesign — '
+            'the verifying view IS the feedback (owner spec 2026-10-23)');
     expect(screen, contains('_uploadAndVerify(xFile.path)'),
         reason: 'the capture no longer pops — the screen uploads and holds '
             'the verifying loader (owner spec 2026-10-23)');
@@ -104,7 +105,9 @@ void main() {
     // Owner spec 2026-10-23, literal: "no se cerrara y aparecera un loading
     // diciendo estan verificando… y en lo que dispatch apruebe se cerrara ya
     // activando al driver — no 1-3 s en el home y luego se activa".
-    expect(screen, contains('_step == 1 ? Colors.black : _navy'));
+    expect(screen, contains('backgroundColor: _navy,'),
+        reason: 'the camera step is navy like the license page, never '
+            'full-bleed black');
     expect(screen, contains('2 => _buildVerifying()'));
     expect(screen, contains('ApiService.submitFaceCheck(photoPath)'),
         reason: 'the upload moved INSIDE the screen');
@@ -144,37 +147,40 @@ void main() {
     expect(screen, contains('final c = _ctrl;\n    _ctrl = null;\n    c?.dispose();'),
         reason: 'dispose null-swap — the route exit animation rebuilds '
             'AFTER dispose (Crashlytics 2026-10-17)');
-    expect(screen, contains('if (_initialized && _ctrl != null)'),
-        reason: 'build never touches a disposed controller');
+    expect(screen, contains('_initialized && _ctrl != null\n        ? FittedBox('),
+        reason: 'build never touches a disposed controller (the preview '
+            'ternary gates on it)');
     expect(screen, contains('if (!mounted) return;'),
         reason: 'the init retry checks mounted after the delay');
-    expect(screen, contains('_cornerAnim'),
-        reason: 'the scanner\u2019s animated gold corners (1400 ms '
-            'repeat-reverse)');
-    expect(screen, contains('duration: const Duration(milliseconds: 1400)'));
+    expect(screen, isNot(contains('_cornerAnim')),
+        reason: 'the corner machinery died with the license-capture redesign '
+            '(2026-10-23) — no frame overlay at all');
     expect(screen, contains('faceCheckFrameHint'));
     expect(screen, contains('cameraPermissionPermanentlyDenied'),
         reason: 'the scanner\u2019s permanently-denied dialog, then pop null');
   });
 
-  test('step 2 wears the license scanner design (owner spec 2026-10-23)', () {
-    // "El mismo diseño de tomarle foto a la licencia en el registro": the
-    // scanner's top bar (X left, centered title, 40 px balance right),
-    // frame radius 12, hint at bottom:180 — the flash toggle stays out
-    // (front cameras have no torch; a dead button would be a lie).
-    expect(screen, contains('const Spacer(),\n                  Text('),
-        reason: 'the scanner top bar: X + centered title + spacer');
-    expect(screen, contains('S.of(context).selfieVerifyTitle'),
-        reason: 'the centered top-bar title');
-    expect(screen, contains('const SizedBox(width: 40)'),
-        reason: 'the right 40 px balance where the scanner has the flash');
-    expect(screen, isNot(contains('flash_on_rounded')),
-        reason: 'NO flash toggle on the front camera');
-    expect(screen, isNot(contains('_toggleFlash')));
-    expect(screen, contains('BorderRadius.circular(12)'),
-        reason: 'the scanner frame radius (was 24)');
-    expect(screen, contains('bottom: 180'),
-        reason: 'the hint sits where the scanner instruction sits');
+  test('step 2 wears the LICENSE-CAPTURE design (owner spec 2026-10-23)', () {
+    // "Así debe ser cuando se van a tomar la foto" — the SAME layout as the
+    // registration's license photo page (license_capture_screen.dart): the
+    // rounded preview card, X INSIDE the frame, copy below, gold shutter +
+    // flash toggle. The scanner frame/corners overlay died here.
+    expect(screen, contains('height: size.height * 0.57'),
+        reason: 'the rounded preview card takes ~57% of the screen');
+    expect(screen, contains('BorderRadius.circular(20)'),
+        reason: 'the license page\u2019s card radius');
+    expect(screen, contains('top: 12,\n                    left: 12,'),
+        reason: 'the X rides inside the preview card');
+    expect(screen, contains('s.selfieVerifyTitle'),
+        reason: 'the title below the preview');
+    expect(screen, contains('s.faceCheckFrameHint'));
+    expect(screen, contains('onTap: _toggleFlash'),
+        reason: 'the flash toggle is back, in the capture page\u2019s spot');
+    expect(screen, contains('Icons.flash_off_rounded'));
+    expect(screen, isNot(contains('_FaceCornerPainter')),
+        reason: 'no frame corners in this design');
+    expect(screen, isNot(contains('const Spacer(),\n                  Text(')),
+        reason: 'the scanner top bar died — the title lives below the card');
   });
 
   test('the GO call sites swapped to SelfieCheckScreen', () {
@@ -188,10 +194,17 @@ void main() {
             'only this import died');
   });
 
-  test('the two new l10n strings exist ES/EN', () {
+  test('the new l10n strings exist ES/EN', () {
     expect(l10n,
         contains("String get faceCheckTakeSelfie => _es ? 'Tomar selfie' : 'Take a selfie';"));
-    expect(l10n, contains('Centra tu rostro dentro del marco'));
-    expect(l10n, contains('Center your face inside the frame'));
+    expect(l10n, contains('buena iluminación'));
+    expect(l10n, contains('clear, centered, and well-lit'));
+    // Owner spec 2026-10-23: "todas las páginas de verificación de selfie
+    // digan mejor verificación facial".
+    expect(l10n, contains("'Verificación facial'"));
+    expect(l10n, contains("'Facial Verification'"));
+    expect(l10n, isNot(contains("'Verificación de selfie'")),
+        reason: 'the old title died on every selfie-verification page');
+    expect(l10n, isNot(contains("'Selfie Verification'")));
   });
 }

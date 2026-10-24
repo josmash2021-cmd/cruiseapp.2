@@ -28,17 +28,14 @@ void main() {
       ? ''
       : File('backend/dispatch_panel/assets/${match.group(1)}')
           .readAsStringSync();
-  final driversPage =
-      File('backend/dispatch_panel/assets/index-azyIyM-i.js')
-          .readAsStringSync();
+  final driversPage = File('backend/dispatch_panel/assets/index-azyIyM-i.js')
+      .readAsStringSync();
   final verificationPage =
       File('backend/dispatch_panel/assets/index-jhlVlbS1.js')
           .readAsStringSync();
-  final adminPy =
-      File('backend/routers/admin.py').readAsStringSync();
+  final adminPy = File('backend/routers/admin.py').readAsStringSync();
 
-  test('the entry bundle maps driveCity/driveState/dateOfBirth everywhere',
-      () {
+  test('the entry bundle maps driveCity/driveState/dateOfBirth everywhere', () {
     expect(bundle, contains('panel_driver_city_dob_guard_test'),
         reason: 'the guard-pin comment must survive — a panel rebuild must '
             're-apply these edits (source lives outside this repo)');
@@ -79,9 +76,13 @@ void main() {
         reason: 'per-state groups with per-city counts feed the chips');
     expect(driversPage, contains('Ciudades por estado'),
         reason: 'section header: grouped by state, then city');
-    expect(driversPage, contains('const[cityFS,setCityFS]=m.useState(new Set)'),
+    expect(
+        driversPage,
+        contains(
+            'const[cityFS,setCityFS]=m.useState(()=>new Set(savedView?.cities??[]))'),
         reason: 'the city filter is a Set — MULTI-select (2026-10-22 spec: '
-            '"poder marcar VARIAS ciudades… y ver el segmento combinado")');
+            '"poder marcar VARIAS ciudades… y ver el segmento combinado"), '
+            'restored after returning from a person profile');
     expect(driversPage, contains('cityFS.has(cityKeyOf(d))'),
         reason: 'rows match by membership in the selection Set — the '
             'compound state|city key means same city name in two states '
@@ -110,7 +111,8 @@ void main() {
   test('the backend payloads carry the three fields', () {
     expect(adminPy, contains('"drive_city": getattr(u, \'drive_city\', None),'),
         reason: '/admin/verifications rows carry drive_city');
-    expect(adminPy, contains('"drive_state": getattr(u, \'drive_state\', None),'));
+    expect(
+        adminPy, contains('"drive_state": getattr(u, \'drive_state\', None),'));
     expect(adminPy, contains('"date_of_birth": u.date_of_birth.isoformat()'),
         reason: 'both /admin/verifications and _user_dict ship the DOB');
   });

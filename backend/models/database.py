@@ -442,6 +442,8 @@ class Trip(Base):
     vip_menu_sent_at = Column(DateTime(timezone=True), nullable=True)
     driver_earnings = Column(Float, nullable=True)
     platform_fee = Column(Float, nullable=True)
+    # New trips snapshot 90%; NULL on pre-policy rows retains their old split.
+    driver_share_rate = Column(Float, nullable=True, default=0.90)
     refund_status = Column(String(20), nullable=True)
     refund_amount = Column(Float, default=0.0)
     refund_reason = Column(Text, nullable=True)
@@ -1153,6 +1155,7 @@ async def migrate_add_columns(conn):
         ("trips", "completed_at", "DATETIME"),
         ("trips", "driver_earnings", "FLOAT"),
         ("trips", "platform_fee", "FLOAT"),
+        ("trips", "driver_share_rate", "FLOAT"),
         ("trips", "updated_at", "DATETIME"),
         ("trips", "pickup_pin", "VARCHAR(4)"),
         ("ratings", "tip_amount", "FLOAT DEFAULT 0.0"),
@@ -1392,6 +1395,7 @@ async def migrate_postgres(conn):
         ("trips", "completed_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "driver_earnings", "FLOAT"),
         ("trips", "platform_fee", "FLOAT"),
+        ("trips", "driver_share_rate", "FLOAT"),
         ("trips", "refund_status", "VARCHAR(20)"),
         ("trips", "refund_amount", "FLOAT DEFAULT 0.0"),
         ("trips", "refund_reason", "TEXT"),

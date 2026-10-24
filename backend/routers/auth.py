@@ -1660,7 +1660,7 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
             trips = result.scalars().all()
             total = user.total_earnings or 0.0
             if not total and trips:
-                total = round(sum((t.driver_earnings or (t.fare or 0) * 0.72) for t in trips), 2)
+                total = round(sum((t.driver_earnings or (t.fare or 0) * vehicle_tiers.driver_share_for_trip(t)) for t in trips), 2)
 
             # Daily breakdown (last 7 days)
             now = datetime.now(timezone.utc)
@@ -1670,7 +1670,7 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
                 day = (now - timedelta(days=i)).date()
                 day_labels.append(day.strftime("%a"))
                 day_total = sum(
-                    (t.driver_earnings or (t.fare or 0) * 0.72)
+                    (t.driver_earnings or (t.fare or 0) * vehicle_tiers.driver_share_for_trip(t))
                     for t in trips if t.created_at and t.created_at.date() == day
                 )
                 daily_earnings.append(round(day_total, 2))

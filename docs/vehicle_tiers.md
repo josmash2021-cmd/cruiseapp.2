@@ -35,27 +35,29 @@ Standard.
 
 ## Commission
 
-Flat 60/40 everywhere, per the 2026-10-06 pricing policy (user spec: "40%
-para cruise y 60% para el driver para todos"). It replaced the flat 70/30
-of August — itself the replacement of the 60–70% ladder this section used to
-describe; `COMMISSION` and `LEGACY_COMMISSION` in
-`backend/services/vehicle_tiers.py` both read `0.40 / 0.60` on every row.
+New trips pay a flat 90/10 everywhere: 90% to the driver and 10% to the
+platform. `COMMISSION` and `LEGACY_COMMISSION` in
+`backend/services/vehicle_tiers.py` both read `0.10 / 0.90` on every row.
 
 | Tier | Driver keeps |
 |---|---|
-| Standard | 60% |
-| Compact | 60% |
-| Premium | 60% |
-| VIP | 60% |
+| Standard | 90% |
+| Compact | 90% |
+| Electric Pro | 90% |
+| Premium | 90% |
+| VIP | 90% |
 
-Legacy strings (`sedan`, `comfort`, `suv_xl`, `black`, `luxury`) resolve
-to the same flat 60%.
+Legacy vehicle strings (`sedan`, `comfort`, `suv_xl`, `black`, `luxury`)
+resolve to the same current rate.
 
-### The estimate on the offer card uses the same flat rate
+### The rate is snapshotted per trip
 
-`DRIVER_SHARE_RATE = 0.70` in `dispatch.py` and `guardian_agent.py`
-computes the figure the driver reads on the offer card — the same 70%
-the payout split uses, so card and payout no longer disagree.
+`trips.driver_share_rate` defaults to `0.90` on new ORM inserts. Existing
+rows keep `NULL`, which means the previous 60% driver share when an old trip
+is finally settled. This prevents the new policy from changing historical
+trips, balances or payouts. `commission_for_trip()` is the shared reader for
+real-money splits, cancellation fees and estimates; offer cards and payouts
+therefore use the same rate. There is no historical backfill.
 
 ## What this touches
 
@@ -95,11 +97,11 @@ Order of work, and it matters:
    reader already accepted both.
 4. Both apps.
 
-### The migration no longer changes anyone's split
+### Tier migration does not change anyone's split
 
-Under the flat 60/40 policy every tier pays the driver the same 60%, so
-reclassifying a car changes which requests it is offered, never its split
-of the fare.
+Every tier pays the same current 90%, and each trip keeps the rate stored at
+creation, so reclassifying a car changes which requests it is offered, never
+the split of an existing fare.
 
 ### Rating no longer moves a tier
 
@@ -167,7 +169,7 @@ ladder: Standard < Compact < Electric Pro < Premium < VIP.
   other tier. The scheduled-cancel fee is $20 (the Standard/Premium
   midpoint), in `SCHEDULED_CANCEL_FEE_BY_TIER` and its app mirror
   `kScheduledCancelFeesUsd`.
-- **Commission.** The same flat 60/40 as every tier.
+- **Commission.** The same flat 90/10 as every tier for new trips.
 
 Existing EVs reclassify the next time `classify()` runs for them
 (vehicle save / tier re-eval) — no data migration is needed for the rule

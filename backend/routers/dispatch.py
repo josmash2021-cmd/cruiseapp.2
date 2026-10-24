@@ -39,7 +39,7 @@ from utils.bounded_cache import TTLCache, BoundedDict
 
 router = APIRouter()
 
-DRIVER_SHARE_RATE = 0.70
+DRIVER_SHARE_RATE = vehicle_tiers.DRIVER_SHARE_RATE
 
 # Local dict to track action-request reminder tasks (avoids cross-router import)
 # Bounded: max 2,000 tasks
@@ -848,7 +848,7 @@ async def _send_offer_to_driver(
         await db.refresh(offer)
 
     _pending_cache.pop(driver.id, None)
-    estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+    estimated_driver_fare = round(float(trip.fare or 0.0) * vehicle_tiers.driver_share_for_trip(trip), 2)
 
     # Chaining: a driver offered a ride while still finishing another one
     # gets the offer flagged so the app can show it over the trip screen
@@ -2118,7 +2118,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     for offer, trip, rider in rows:
         rider_name, rider_phone = _resolve_rider_display(trip, rider)
         rider_photo_url = (_abs_photo_url(rider.photo_url) or "") if rider else ""
-        estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+        estimated_driver_fare = round(float(trip.fare or 0.0) * vehicle_tiers.driver_share_for_trip(trip), 2)
         _rating, _rating_count = _rider_rep.get(trip.rider_id, (0.0, 0))
         offers.append({
             "rider_rating": _rating,
@@ -2569,7 +2569,9 @@ async def list_available_trips(driver_id: int = Query(...), user: User = Depends
         dist_km = _haversine(user.lat, user.lng, t.pickup_lat or 0, t.pickup_lng or 0)
         if dist_km > radius_km:
             continue  # bounding-box corners overshoot the circle
-        est_driver_fare = round(float(t.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+        est_driver_fare = round(
+            float(t.fare or 0.0) * vehicle_tiers.driver_share_for_trip(t), 2,
+        )
         minutes = int(t.duration) if t.duration else 0
         miles = float(t.distance) if t.distance else 0.0
         per_hour = (f"${est_driver_fare / (minutes / 60):.2f}/hr" if minutes > 0 else None)

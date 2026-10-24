@@ -53,6 +53,7 @@ async def _money_trip(
         created_at=datetime.now(timezone.utc),
     )
     if with_split:
+        trip.driver_share_rate = 0.60
         trip.driver_earnings = round(fare * 0.60, 2)
         trip.platform_fee = round(fare * 0.40, 2)
         driver.pending_balance = trip.driver_earnings
@@ -292,10 +293,10 @@ async def test_partial_capture_and_failed_shortfall_split_only_collected_money(
     fresh_trip = await _reload(Trip, trip.id)
     fresh_driver = await _reload(User, driver.id)
     assert fresh_trip.payment_status == "partial"
-    assert fresh_trip.driver_earnings == 6.0
-    assert fresh_trip.platform_fee == 4.0
-    assert fresh_driver.pending_balance == 6.0
-    assert fresh_driver.total_earnings == 6.0
+    assert fresh_trip.driver_earnings == 9.0
+    assert fresh_trip.platform_fee == 1.0
+    assert fresh_driver.pending_balance == 9.0
+    assert fresh_driver.total_earnings == 9.0
 
 
 async def test_successful_shortfall_completes_fare_without_replacing_main_pi(
@@ -320,8 +321,8 @@ async def test_successful_shortfall_completes_fare_without_replacing_main_pi(
     fresh_trip = await _reload(Trip, trip.id)
     fresh_driver = await _reload(User, driver.id)
     assert fresh_trip.stripe_payment_intent_id == "pi_main"
-    assert fresh_trip.driver_earnings == 12.0
-    assert fresh_driver.pending_balance == 12.0
+    assert fresh_trip.driver_earnings == 18.0
+    assert fresh_driver.pending_balance == 18.0
 
 
 @pytest.mark.parametrize(

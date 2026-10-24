@@ -55,12 +55,10 @@ from config import (
 
 router = APIRouter()
 
-# Commission splits live in services/vehicle_tiers.py, which is the one
-# place that knows both the four tiers and the strings they replaced:
-# a flat 60% driver / 40% platform on every tier, legacy strings
-# included (pricing policy 2026-10-06, user spec "40/60 para todos").
-# Duplicating the table here is how the offer card ended up
-# quoting a rate the payout did not use.
+# Commission splits live in services/vehicle_tiers.py: 90% driver / 10%
+# platform on new trips, with the rate snapshotted on each row so historical
+# trips never change when pricing policy moves. Duplicating the table here
+# is how the offer card ended up quoting a rate the payout did not use.
 _COMMISSION_BY_TYPE = vehicle_tiers.COMMISSION
 _DEFAULT_COMMISSION = vehicle_tiers.DEFAULT_COMMISSION
 
@@ -174,9 +172,8 @@ _recent_status_patches: dict[tuple[int, str], float] = {}
 _DEDUP_WINDOW_SECONDS = 10.0
 _DEDUP_CACHE_MAX = 2000
 
-def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
-    """Return (platform_rate, driver_rate) for the given vehicle type."""
-    return vehicle_tiers.commission(vehicle_type)
+def _get_trip_commission(trip: Trip) -> tuple[float, float]:
+    return vehicle_tiers.commission_for_trip(trip)
 
 
 # ── Wait time fee policy (Uber/Lyft inspired) ──
@@ -207,17 +204,15 @@ def _wait_policy(vehicle_type: str | None, is_airport: bool) -> tuple[int, float
         return _AIRPORT_WAIT_POLICY
     return _WAIT_POLICY_BY_TYPE.get(_vehicle_key(vehicle_type), _DEFAULT_WAIT_POLICY)
 
-# Legacy constants kept for backward-compat in places that don't have vehicle_type
-# (pricing policy 2026-10-06: flat 60% driver / 40% platform on every tier)
-PLATFORM_COMMISSION_RATE = 0.40
-DRIVER_SHARE_RATE = 0.60
+PLATFORM_COMMISSION_RATE = vehicle_tiers.PLATFORM_COMMISSION_RATE
+DRIVER_SHARE_RATE = vehicle_tiers.DRIVER_SHARE_RATE
 
 
 def _driver_visible_trip_dict(trip: Trip) -> dict:
     """Return trip payload for drivers without exposing rider gross fare."""
     data = _trip_dict(trip)
     tip = float(trip.tip_amount or 0.0)
-    platform_rate, driver_rate = _get_commission(getattr(trip, "vehicle_type", None))
+    platform_rate, driver_rate = _get_trip_commission(trip)
     if trip.driver_earnings is not None:
         visible_fare = round(float(trip.driver_earnings), 2)
     elif trip.status in ("completed", "cancelled") and trip.payment_status != "paid":
@@ -255,8 +250,8 @@ def _trip_dict_for_user(trip: Trip, user: User) -> dict:
 async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]:
     """Split a charged cancellation fee with the driver using the SAME ledger
     mechanism as the completed-trip fare split:
-      - trip.driver_earnings  <- 60% driver share (e.g. $3.00 of $5.00)
-      - trip.platform_fee     <- 40% Company revenue (e.g. $2.00 of $5.00)
+      - trip.driver_earnings  <- the snapshotted driver share
+      - trip.platform_fee     <- the remainder collected by the company
       - driver.pending_balance / total_earnings incremented by the driver share
     Returns (driver_share, platform_share). No-op when there is no fee or
     no assigned driver.
@@ -276,7 +271,9 @@ async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]
             trip.id, fee, trip.payment_status,
         )
         return 0.0, 0.0
-    driver_share = round(fee * DRIVER_SHARE_RATE, 2)
+    driver_share = round(
+        fee * vehicle_tiers.driver_share_for_trip(trip), 2,
+    )
     platform_share = round(fee - driver_share, 2)
     trip.driver_earnings = driver_share
     trip.platform_fee = platform_share
@@ -322,7 +319,7 @@ async def _credit_driver_earnings(
     previous_cents, target_cents = await fare_collection_delta(db, trip, target_cents)
     if target_cents <= previous_cents:
         return False
-    platform_rate, driver_rate = _get_commission(trip.vehicle_type)
+    platform_rate, driver_rate = _get_trip_commission(trip)
     driver_delta = round(
         (target_cents / 100.0) * driver_rate, 2,
     ) - round((previous_cents / 100.0) * driver_rate, 2)

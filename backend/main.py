@@ -1144,6 +1144,16 @@ async def lifespan(app: FastAPI):
                 except Exception as _mig_err:
                     logging.error("[DB Init] column migration failed (non-fatal): %s", _mig_err)
 
+            if not IS_SQLITE:
+                try:
+                    from services.sector_defaults import migrate_live_sector_map
+                    async with engine.begin() as conn:
+                        await migrate_live_sector_map(conn)
+                except Exception as _sector_mig_err:
+                    logging.error(
+                        "[DB Init] sector map migration failed (non-fatal): %s",
+                        _sector_mig_err)
+
             # Contracts seed (2026-10-21, user spec — Uber-style
             # e-acceptance): the 5 legal documents land in legal_documents
             # on first boot, on BOTH backends (tests run SQLite); idempotent

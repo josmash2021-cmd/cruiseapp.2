@@ -130,8 +130,8 @@ async def test_shortfall_webhook_completes_partial_fare_once(
     fresh_trip = await _reload(Trip, trip.id)
     fresh_driver = await _reload(User, driver.id)
     assert fresh_trip.payment_status == "partial"
-    assert fresh_trip.driver_earnings == 6.0
-    assert fresh_driver.pending_balance == 6.0
+    assert fresh_trip.driver_earnings == 9.0
+    assert fresh_driver.pending_balance == 9.0
 
     shortfall = _pi_event(
         "evt_shortfall_completes",
@@ -159,9 +159,9 @@ async def test_shortfall_webhook_completes_partial_fare_once(
     fresh_driver = await _reload(User, driver.id)
     assert fresh_trip.payment_status == "paid"
     assert fresh_trip.stripe_payment_intent_id == "pi_test_123"
-    assert fresh_trip.driver_earnings == 15.30
-    assert fresh_driver.pending_balance == 15.30
-    assert fresh_driver.total_earnings == 15.30
+    assert fresh_trip.driver_earnings == 22.95
+    assert fresh_driver.pending_balance == 22.95
+    assert fresh_driver.total_earnings == 22.95
 
 
 async def test_shortfall_failure_does_not_unpay_or_replace_main_payment(

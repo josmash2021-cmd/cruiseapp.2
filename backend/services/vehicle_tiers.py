@@ -65,6 +65,7 @@ was already paying and never overpays on a guess we cannot check. Pass
 
 from __future__ import annotations
 
+import math
 import re
 
 # ── The five tiers ────────────────────────────────────────────────────
@@ -92,32 +93,50 @@ PREMIUM_MIN_YEAR = 2018
 COMPACT_MIN_YEAR = 2018
 
 # ── Commission, platform share first ──────────────────────────────────
-# Flat 60/40 in every tier (pricing policy 2026-10-06, user spec: "40% para
-# cruise y 60% para el driver para todos"). It replaces the 70/30 flat that
-# replaced the old 60–70% ladder.
+CURRENT_PLATFORM_SHARE = 0.10
+CURRENT_DRIVER_SHARE = 0.90
+PRE_SNAPSHOT_DRIVER_SHARE = 0.60
+PLATFORM_COMMISSION_RATE = CURRENT_PLATFORM_SHARE
+DRIVER_SHARE_RATE = CURRENT_DRIVER_SHARE
+
 COMMISSION = {
-    TIER_STANDARD: (0.40, 0.60),
-    TIER_COMPACT: (0.40, 0.60),
-    TIER_ELECTRIC_PRO: (0.40, 0.60),
-    TIER_PREMIUM: (0.40, 0.60),
-    TIER_VIP: (0.40, 0.60),
+    TIER_STANDARD: (CURRENT_PLATFORM_SHARE, CURRENT_DRIVER_SHARE),
+    TIER_COMPACT: (CURRENT_PLATFORM_SHARE, CURRENT_DRIVER_SHARE),
+    TIER_ELECTRIC_PRO: (CURRENT_PLATFORM_SHARE, CURRENT_DRIVER_SHARE),
+    TIER_PREMIUM: (CURRENT_PLATFORM_SHARE, CURRENT_DRIVER_SHARE),
+    TIER_VIP: (CURRENT_PLATFORM_SHARE, CURRENT_DRIVER_SHARE),
 }
 
-# Rows written before the five tiers existed, or with the old name of the
-# top tier ("black", renamed VIP 2026-10-15). Kept so a vehicle that has
-# not been migrated yet still resolves to a rate rather than falling
-# through to a default — the same flat 60/40 as everyone else.
 LEGACY_COMMISSION = {
-    "sedan": (0.40, 0.60),
-    "comfort": (0.40, 0.60),
-    "suv_xl": (0.40, 0.60),
-    "black": (0.40, 0.60),
-    "luxury": (0.40, 0.60),
+    "sedan": (CURRENT_PLATFORM_SHARE, CURRENT_DRIVER_SHARE),
+    "comfort": (CURRENT_PLATFORM_SHARE, CURRENT_DRIVER_SHARE),
+    "suv_xl": (CURRENT_PLATFORM_SHARE, CURRENT_DRIVER_SHARE),
+    "black": (CURRENT_PLATFORM_SHARE, CURRENT_DRIVER_SHARE),
+    "luxury": (CURRENT_PLATFORM_SHARE, CURRENT_DRIVER_SHARE),
 }
 
-# What an unrecognised tier string is worth. The safe direction is the
-# rate everyone already gets, not zero.
 DEFAULT_COMMISSION = COMMISSION[TIER_STANDARD]
+
+
+def commission_for_trip(trip) -> tuple[float, float]:
+    """Read the rate snapshotted at creation; old rows keep their old rate."""
+    raw_rate = getattr(trip, "driver_share_rate", None)
+    if raw_rate is None:
+        if getattr(trip, "id", None) is None:
+            return DEFAULT_COMMISSION
+        driver_rate = PRE_SNAPSHOT_DRIVER_SHARE
+    else:
+        try:
+            driver_rate = float(raw_rate)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("trip.driver_share_rate must be numeric") from exc
+    if not math.isfinite(driver_rate) or not 0.0 < driver_rate < 1.0:
+        raise ValueError("trip.driver_share_rate must be between 0 and 1")
+    return round(1.0 - driver_rate, 10), driver_rate
+
+
+def driver_share_for_trip(trip) -> float:
+    return commission_for_trip(trip)[1]
 
 # Old tier string → new one, for the migration and for any row that
 # slips through it. `premium` is deliberately absent: it keeps its name.

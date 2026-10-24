@@ -2,7 +2,7 @@
 the panel; apps update over the socket — no redeploy, no app restart).
 
 Pinned:
-- GET /zones/sectors is api-key gated and serves the baked static file
+- GET /zones/sectors is api-key gated and serves the baked FL+AL data
   (version 0) until the first PUT,
 - PUT is dispatch-auth only, validates strictly (name/geometry/ranges),
 - the server owns id (unique slug of the name), bbox and center (bbox
@@ -10,7 +10,7 @@ Pinned:
 - every write bumps the version and broadcasts "zones_updated",
 - /zones/demand carries sectors_version as the polling fallback,
 - a corrupt app_config row (bypass write) never reaches the apps: GET
-  re-validates it and falls back to the baked file at version 0.
+  re-validates it and falls back to the combined baked data at version 0.
 """
 
 import json
@@ -56,7 +56,7 @@ async def test_get_serves_static_file_until_first_put(client):
     assert body["version"] == 0
     geo = body["geojson"]
     assert geo["type"] == "FeatureCollection"
-    assert len(geo["features"]) == 13  # the baked fl_sectors.json
+    assert len(geo["features"]) == 20  # the combined baked FL+AL files
     first = geo["features"][0]
     assert first["properties"]["id"]
     assert first["geometry"]["type"] in ("Polygon", "MultiPolygon")
@@ -214,7 +214,7 @@ async def test_incident_one_point_rings_rejected(client):
     res = await client.get("/zones/sectors", headers=_make_auth_headers())
     body = res.json()
     assert body["version"] == 0  # untouched: still the baked file
-    assert len(body["geojson"]["features"]) == 13
+    assert len(body["geojson"]["features"]) == 20
 
 
 async def test_unclosed_ring_three_distinct_auto_closes(client):
@@ -290,7 +290,7 @@ async def test_corrupt_db_row_falls_back_to_static_file(client, db):
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["version"] == 0  # the file's, not the corrupt row's 7
-    assert len(body["geojson"]["features"]) == 13  # the baked fl_sectors.json
+    assert len(body["geojson"]["features"]) == 20  # the combined baked FL+AL files
 
 
 async def test_valid_db_row_is_served_as_stored(client, db):

@@ -1419,12 +1419,11 @@ class UnmatchedTripRetryAgent:
                 rider_name, rider_phone = _resolve_rider_display(trip, rider)
                 rider_photo = rider.photo_url or "" if rider else ""
 
-                # Calculate driver fare
-                try:
-                    from routers.trips import DRIVER_SHARE_RATE
-                except ImportError:
-                    DRIVER_SHARE_RATE = 0.60
-                estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+                from services import vehicle_tiers
+                estimated_driver_fare = round(
+                    float(trip.fare or 0.0)
+                    * vehicle_tiers.driver_share_for_trip(trip), 2,
+                )
 
                 # SSE push
                 _pending_cache.pop(assigned.id, None)

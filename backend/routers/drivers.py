@@ -53,8 +53,8 @@ router = APIRouter()
 _COMMISSION_BY_TYPE = vehicle_tiers.COMMISSION
 _DEFAULT_COMMISSION = vehicle_tiers.DEFAULT_COMMISSION
 
-PLATFORM_COMMISSION_RATE = 0.30
-DRIVER_SHARE_RATE = 0.70
+PLATFORM_COMMISSION_RATE = vehicle_tiers.PLATFORM_COMMISSION_RATE
+DRIVER_SHARE_RATE = vehicle_tiers.DRIVER_SHARE_RATE
 
 
 def _create_driver_connect_account(_stripe, email: str, **extra):
@@ -207,9 +207,8 @@ async def _usable_connect_id(_stripe, user, db) -> str:
     return acct["id"]
 
 
-def _get_driver_rate(vehicle_type: str | None) -> float:
-    """Return the driver share rate for the given vehicle type."""
-    return vehicle_tiers.driver_share(vehicle_type)
+def _get_driver_rate(trip: Trip) -> float:
+    return vehicle_tiers.driver_share_for_trip(trip)
 
 
 def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
@@ -225,8 +224,7 @@ def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
     # charges). Trips still in flight keep the live estimate below.
     if trip.status in ("completed", "cancelled") and trip.payment_status != "paid":
         return 0.0, 0.0
-    # Use vehicle-type-dependent rate instead of flat DRIVER_SHARE_RATE
-    driver_rate = _get_driver_rate(getattr(trip, "vehicle_type", None))
+    driver_rate = _get_driver_rate(trip)
     base = round(float(trip.fare or 0.0) * driver_rate, 2)
     return base, round(base + tip, 2)
 
@@ -237,7 +235,10 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
     data["fare"] = total
     data["driver_earnings"] = total
     if trip.platform_fee is None and trip.fare is not None:
-        data["platform_fee"] = round(float(trip.fare or 0.0) * PLATFORM_COMMISSION_RATE, 2)
+        platform_rate, _ = vehicle_tiers.commission_for_trip(trip)
+        data["platform_fee"] = round(
+            float(trip.fare or 0.0) * platform_rate, 2,
+        )
     data["driver_base_earnings"] = base
     # Guest-booking override for driver-facing rider name/phone. Fires
     # whenever guest fields are set — not only when rider_id is NULL —
@@ -2078,25 +2079,20 @@ async def delete_payout_method(payout_id: int, user: User = Depends(_get_current
 #  Debit-card payout method (real, via Stripe Connect external_account)
 # ─────────────────────────────────────────────────────────────────────
 
+_DEBIT_CARD_PAYOUTS_ENABLED = False
+
+
 @router.post("/drivers/payout-methods/debit-card", dependencies=[Depends(_verify_api_key)])
 async def add_debit_card_payout(
     body: dict = Body(...),
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Attach a debit card as an external_account on the driver's Stripe
-    Connect Express account so we can do **instant cashouts** to it.
-
-    Client must tokenize the PAN client-side first (Stripe.js / Stripe
-    iOS SDK / Stripe Android SDK) and send us only the resulting
-    ``card_token`` (e.g. ``tok_visa``). We never see the raw PAN.
-
-    Returns the persisted PayoutMethod row. The Stripe external_account
-    id is appended to display_name as ``[ext:card_xxx]`` so the delete
-    flow can detach it cleanly.
-    """
+    """New debit-card payouts are paused; existing methods are untouched."""
     if (user.role or "").lower() != "driver":
         raise HTTPException(403, "Only drivers can add payout methods")
+    if not _DEBIT_CARD_PAYOUTS_ENABLED:
+        raise HTTPException(410, "debit_card_payouts_coming_soon")
     if not STRIPE_SECRET:
         raise HTTPException(503, "Stripe not configured on this server")
     # Auto-create Stripe Connect account if it doesn't exist yet

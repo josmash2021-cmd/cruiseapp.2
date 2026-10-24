@@ -1,9 +1,9 @@
-"""Tests for the 60/40 driver split of charged cancellation fees.
+"""Tests for the 90/10 driver split of charged cancellation fees.
 
 When a cancellation fee is charged (rider-cancel $5.00 or no-show wait fee),
-the driver's 60% share must be credited through the same ledger mechanism as
+the driver's 90% share must be credited through the same ledger mechanism as
 completed-trip fares (trip.driver_earnings + user.pending_balance/total_earnings)
-and the 30% Company revenue recorded on trip.platform_fee.
+and the 10% Company revenue recorded on trip.platform_fee.
 
 Since the 2026-08-17 real-money rule the credit only happens when the fee was
 ACTUALLY captured (payment_status == "paid"), so the fixtures here hold the
@@ -104,10 +104,10 @@ async def _reload(model, pk):
         return (await s.execute(select(model).where(model.id == pk))).scalar_one()
 
 
-async def test_rider_cancel_fee_split_60_40(
+async def test_rider_cancel_fee_split_90_10(
     client: AsyncClient, db, test_rider, test_driver
 ):
-    """(a) $5.00 rider-cancel fee → driver $3.00, Company revenue $2.00."""
+    """(a) $5.00 rider-cancel fee → driver $4.50, Company revenue $0.50."""
     rider, _ = test_rider
     driver, _ = test_driver
     _, admin_token = await _make_admin(db)
@@ -133,17 +133,17 @@ async def test_rider_cancel_fee_split_60_40(
     from main import Trip, User
 
     updated = await _reload(Trip, trip.id)
-    assert updated.driver_earnings == 3.00
-    assert updated.platform_fee == 2.00
+    assert updated.driver_earnings == 4.50
+    assert updated.platform_fee == 0.50
 
-    # Driver balances credited with the 60% share
+    # Driver balances credited with the 90% share
     drv = await _reload(User, driver.id)
-    assert drv.pending_balance == 3.00
-    assert drv.total_earnings == 3.00
+    assert drv.pending_balance == 4.50
+    assert drv.total_earnings == 4.50
 
 
-async def test_no_show_wait_fee_split_60_40(db, test_rider, test_driver):
-    """(b) No-show wait fee charged as cancellation_fee splits 60/40."""
+async def test_no_show_wait_fee_split_90_10(db, test_rider, test_driver):
+    """(b) No-show wait fee charged as cancellation_fee splits 90/10."""
     from main import Trip, User
     from wait_timeout_agent import WaitTimeoutAgent
 
@@ -182,14 +182,14 @@ async def test_no_show_wait_fee_split_60_40(db, test_rider, test_driver):
     await db.refresh(trip)
 
     assert trip.cancellation_fee == 5.00
-    assert trip.driver_earnings == 3.00
-    assert trip.platform_fee == 2.00
+    assert trip.driver_earnings == 4.50
+    assert trip.platform_fee == 0.50
 
     drv = (
         await db.execute(select(User).where(User.id == driver.id))
     ).scalar_one()
-    assert drv.pending_balance == 3.00
-    assert drv.total_earnings == 3.00
+    assert drv.pending_balance == 4.50
+    assert drv.total_earnings == 4.50
 
 
 async def test_no_cancellation_fee_no_credit(

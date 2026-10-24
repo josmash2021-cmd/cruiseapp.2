@@ -1476,126 +1476,173 @@ async def update_surge_zone(zone_name: str = Body(...), center_lat: float = Body
 #  ADMIN DASHBOARD ENDPOINTS
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+_LIVE_MAP_TRIP_STATUSES = (
+    "requested", "accepted", "driver_en_route", "arrived", "in_trip",
+    "scheduled_active",
+)
+
+
 @router.get("/admin/drivers/online", dependencies=[Depends(_require_dispatch_auth)])
 async def get_online_drivers(db: AsyncSession = Depends(get_db)):
-    """Get all online drivers with their current location and status. Requires dispatch auth."""
-    try:
-        result = await db.execute(
-            select(User, Vehicle).outerjoin(
-                Vehicle, and_(
-                    Vehicle.user_id == User.id,
-                    Vehicle.is_active == True,
-                )
-            ).where(
-                and_(User.role == "driver", User.is_online == True)
+    rows = (await db.execute(
+        select(User, Vehicle).outerjoin(
+            Vehicle, and_(
+                Vehicle.user_id == User.id,
+                Vehicle.is_active == True,
             )
-        )
-        
-        drivers = []
-        for user, vehicle in result.all():
-            # Check if driver is on a trip
-            trip_result = await db.execute(
-                select(Trip).where(
-                    and_(
-                        Trip.driver_id == user.id,
-                        Trip.status.in_(["driver_en_route", "arrived", "in_trip"])
-                    )
-                )
+        ).where(and_(User.role == "driver", User.is_online == True))
+    )).all()
+    driver_ids = [user.id for user, _vehicle in rows]
+    trip_by_driver: dict[int, int] = {}
+    rating_by_driver: dict[int, float] = {}
+    if driver_ids:
+        trip_rows = (await db.execute(
+            select(Trip.id, Trip.driver_id)
+            .where(
+                Trip.driver_id.in_(driver_ids),
+                Trip.status.in_(_LIVE_MAP_TRIP_STATUSES),
             )
-            active_trip = trip_result.scalar_one_or_none()
-            
-            drivers.append({
-                "id": user.id,
-                "name": f"{user.first_name} {user.last_name}",
-                "phone": user.phone,
-                "lat": user.lat,
-                "lng": user.lng,
-                "rating": await _get_driver_rating(user.id, db),  # Calculate from reviews
-                "vehicle": {
-                    "make": vehicle.make if vehicle else None,
-                    "model": vehicle.model if vehicle else None,
-                    "color": vehicle.color if vehicle else None,
-                    "plate": vehicle.plate if vehicle else None,
-                } if vehicle else None,
-                "on_trip": active_trip is not None,
-                "trip_id": active_trip.id if active_trip else None,
-                "last_updated": user.last_active_at.isoformat() if user.last_active_at else None,
-            })
-        
-        return {"drivers": drivers}
-    except Exception as e:
-        logging.error("[Admin] Error getting online drivers: %s", e)
-        raise HTTPException(500, f"Error getting drivers: {str(e)}")
+            .order_by(Trip.id.desc())
+        )).all()
+        for trip_id, driver_id in trip_rows:
+            trip_by_driver.setdefault(driver_id, trip_id)
+        rating_rows = (await db.execute(
+            select(Rating.to_user_id, func.avg(Rating.stars))
+            .where(
+                Rating.to_user_id.in_(driver_ids),
+                Rating.from_user_id != Rating.to_user_id,
+            )
+            .group_by(Rating.to_user_id)
+        )).all()
+        rating_by_driver = {
+            driver_id: round(float(average), 1) if average else 0.0
+            for driver_id, average in rating_rows
+        }
+
+    drivers = []
+    for user, vehicle in rows:
+        trip_id = trip_by_driver.get(user.id)
+        drivers.append({
+            "id": user.id,
+            "name": f"{user.first_name or ''} {user.last_name or ''}".strip(),
+            "phone": user.phone,
+            "lat": user.lat,
+            "lng": user.lng,
+            "rating": rating_by_driver.get(user.id, 0.0),
+            "vehicle": {
+                "make": vehicle.make,
+                "model": vehicle.model,
+                "color": vehicle.color,
+                "plate": vehicle.plate,
+            } if vehicle else None,
+            "on_trip": trip_id is not None,
+            "trip_id": trip_id,
+            "last_updated": (
+                user.last_active_at.isoformat() if user.last_active_at else None
+            ),
+        })
+    return {"drivers": drivers}
+
+def _live_trip_payload(trip: Trip, rider: User | None,
+                       driver: User | None) -> dict:
+    driver_info = None
+    if driver:
+        driver_info = {
+            "id": driver.id,
+            "name": f"{driver.first_name or ''} {driver.last_name or ''}".strip(),
+            "phone": driver.phone,
+            "lat": driver.lat,
+            "lng": driver.lng,
+        }
+    rider_name, rider_phone = _resolve_rider_display(trip, rider)
+    is_web = bool(
+        getattr(trip, "guest_first_name", None)
+        or getattr(trip, "guest_last_name", None)
+        or getattr(trip, "guest_phone", None)
+    )
+    return {
+        "id": trip.id,
+        "status": trip.status,
+        "pickup": {
+            "address": trip.pickup_address,
+            "lat": trip.pickup_lat,
+            "lng": trip.pickup_lng,
+        },
+        "dropoff": {
+            "address": trip.dropoff_address,
+            "lat": trip.dropoff_lat,
+            "lng": trip.dropoff_lng,
+        },
+        "rider": {
+            "id": rider.id if rider else None,
+            "name": rider_name or "Rider",
+            "phone": rider_phone or "",
+            "is_guest": is_web,
+        },
+        "driver": driver_info,
+        "fare": trip.fare,
+        "created_at": trip.created_at.isoformat() if trip.created_at else None,
+        "vehicle_type": trip.vehicle_type,
+        "is_web_booking": False,
+        "source": "app" if (rider or is_web) else "system",
+    }
+
 
 @router.get("/admin/trips/active", dependencies=[Depends(_require_dispatch_auth)])
 async def get_active_trips(db: AsyncSession = Depends(get_db)):
-    """Get all active trips with driver and rider info. Requires dispatch auth."""
-    try:
-        # LEFT JOIN rider too — guest web bookings have rider_id pointing to
-        # a shared system user which may be missing/null. We need those trips
-        # to show up in the dispatch panel regardless.
-        RiderAlias = aliased(User)
-        DriverAlias = aliased(User)
-        result = await db.execute(
-            select(Trip, RiderAlias, DriverAlias).outerjoin(
-                RiderAlias, RiderAlias.id == Trip.rider_id
-            ).outerjoin(
-                DriverAlias, DriverAlias.id == Trip.driver_id
-            ).where(
-                Trip.status.in_(["requested", "driver_en_route", "arrived", "in_trip"])
-            ).order_by(Trip.created_at.desc()).limit(200)
+    RiderAlias = aliased(User)
+    DriverAlias = aliased(User)
+    result = await db.execute(
+        select(Trip, RiderAlias, DriverAlias)
+        .outerjoin(RiderAlias, RiderAlias.id == Trip.rider_id)
+        .outerjoin(DriverAlias, DriverAlias.id == Trip.driver_id)
+        .where(Trip.status.in_(_LIVE_MAP_TRIP_STATUSES))
+        .order_by(Trip.created_at.desc(), Trip.id.desc())
+    )
+    return {
+        "trips": [
+            _live_trip_payload(trip, rider, driver)
+            for trip, rider, driver in result.all()
+        ]
+    }
+
+
+@router.get("/admin/drivers/{driver_id}/active-trip",
+            dependencies=[Depends(_require_dispatch_auth)])
+async def get_driver_active_trip(driver_id: int,
+                                 db: AsyncSession = Depends(get_db)):
+    RiderAlias = aliased(User)
+    DriverAlias = aliased(User)
+    result = await db.execute(
+        select(Trip, RiderAlias, DriverAlias)
+        .outerjoin(RiderAlias, RiderAlias.id == Trip.rider_id)
+        .outerjoin(DriverAlias, DriverAlias.id == Trip.driver_id)
+        .where(
+            Trip.driver_id == driver_id,
+            Trip.status.in_(_LIVE_MAP_TRIP_STATUSES),
         )
+        .order_by(Trip.created_at.desc(), Trip.id.desc())
+        .limit(1)
+    )
+    row = result.first()
+    if row is None:
+        return {"trip": None, "route": None, "route_status": "no_trip"}
+    trip, rider, driver = row
+    from services import dispatch_map_routes
+    try:
+        route = await dispatch_map_routes.route_for_trip(trip, driver)
+    except Exception as exc:
+        logging.warning("[Admin] selected-trip route failed: %s",
+                        type(exc).__name__)
+        route = {"route": None, "route_status": "route_unavailable"}
+    return {"trip": _live_trip_payload(trip, rider, driver), **route}
 
-        trips = []
-        for trip, rider, driver in result.all():
-            driver_info = None
-            if driver:
-                driver_info = {
-                    "id": driver.id,
-                    "name": f"{driver.first_name or ''} {driver.last_name or ''}".strip(),
-                    "phone": driver.phone,
-                    "lat": driver.lat,
-                    "lng": driver.lng,
-                }
+@router.get("/admin/zones/sectors",
+            dependencies=[Depends(_require_dispatch_auth)])
+async def admin_get_zone_sectors(db: AsyncSession = Depends(get_db)):
+    from routers.system import get_zone_sectors
+    return await get_zone_sectors(db)
 
-            # Prefer guest_* fields for web bookings so dispatch shows the real
-            # booker's name instead of "Web Booking" (the system user).
-            rider_name, rider_phone = _resolve_rider_display(trip, rider)
-            is_web = bool(
-                (getattr(trip, "guest_first_name", None) or getattr(trip, "guest_last_name", None) or getattr(trip, "guest_phone", None))
-            )
-
-            trips.append({
-                "id": trip.id,
-                "status": trip.status,
-                "pickup": {
-                    "address": trip.pickup_address,
-                    "lat": trip.pickup_lat,
-                    "lng": trip.pickup_lng,
-                },
-                "dropoff": {
-                    "address": trip.dropoff_address,
-                    "lat": trip.dropoff_lat,
-                    "lng": trip.dropoff_lng,
-                },
-                "rider": {
-                    "id": rider.id if rider else None,
-                    "name": rider_name or "Rider",
-                    "phone": rider_phone or "",
-                    "is_guest": is_web,
-                },
-                "driver": driver_info,
-                "fare": trip.fare,
-                "created_at": trip.created_at.isoformat() if trip.created_at else None,
-                "vehicle_type": trip.vehicle_type,
-                "is_web_booking": False,
-                "source": "app" if (rider or is_web) else "system",
-            })
-
-        return {"trips": trips}
-    except Exception as e:
-        logging.error("[Admin] Error getting active trips: %s", e)
-        raise HTTPException(500, f"Error getting trips: {str(e)}")
 
 @router.get("/admin/heatmap", dependencies=[Depends(_require_dispatch_auth)])
 async def get_heatmap_data(
@@ -2605,12 +2652,14 @@ async def admin_wipe_firestore():
 
 
 def _admin_trip_driver_earnings(trip: Trip) -> float:
-    """Best-effort driver earnings for the admin earnings endpoint."""
     if trip.driver_earnings is not None:
         return float(trip.driver_earnings)
-    # Fallback to the default 60/40 split when the field hasn't been backfilled.
+    from services import vehicle_tiers
     tip = float(trip.tip_amount or 0.0)
-    base = round(float(trip.fare or 0.0) * 0.6, 2)
+    base = round(
+        float(trip.fare or 0.0)
+        * vehicle_tiers.driver_share_for_trip(trip), 2,
+    )
     return round(base + tip, 2)
 
 

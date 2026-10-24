@@ -746,7 +746,7 @@ async def client_event(req: ClientEventIn, request: Request):
 
 _SECTOR_DEMAND_KEY = "sector_demand"
 # Live-editable sector map (panel → apps over socket): the GeoJSON rides in
-# app_config, the baked static file is only the seed/fallback until the
+# app_config, the baked FL+AL data is only the seed/fallback until the
 # first PUT. The version is the change signal for the apps.
 _SECTORS_GEOJSON_KEY = "fl_sectors_geojson"
 _SECTORS_VERSION_KEY = "fl_sectors_version"
@@ -762,18 +762,13 @@ def _sectors_version_from(raw: Optional[str]) -> int:
 
 
 def _load_sector_ids() -> frozenset:
-    """Sector ids from the baked static file (validated once per process —
-    the file ships with the deploy)."""
+    """Sector ids from the combined baked seed, validated once per process."""
     global _SECTOR_IDS
     if _SECTOR_IDS:
         return _SECTOR_IDS
     try:
-        import json as _json
-        import os as _os
-        path = _os.path.join(_os.path.dirname(__file__), "..", "static",
-                             "fl_sectors.json")
-        with open(path, encoding="utf-8") as fh:
-            data = _json.load(fh)
+        from services.sector_defaults import load_baked_sector_collection
+        data = load_baked_sector_collection()
         _SECTOR_IDS = frozenset(
             f["properties"]["id"] for f in data.get("features", []))
     except Exception as e:  # fail-open: empty set rejects nothing below
@@ -952,36 +947,31 @@ async def sector_is_off(db, lat: float, lng: float) -> bool:
 # ═══════════════════════════════════════════════════════════════════════
 #  Live sector map (user spec: dispatch edits the driver-map sectors from
 #  the panel and every app updates over the socket — no redeploy, no app
-#  restart). The edited copy lives in app_config; the baked static file
+#  restart). The edited copy lives in app_config; the baked FL+AL data
 #  stays the seed/fallback until the first PUT. A monotonically increasing
 #  version is the change signal: the "zones_updated" socket event live,
 #  /zones/demand's sectors_version as the polling fallback.
 # ═══════════════════════════════════════════════════════════════════════
 
-_SECTORS_FILE = os.path.join(os.path.dirname(__file__), "..", "static",
-                             "fl_sectors.json")
 _SECTOR_MAX_FEATURES = 60
 _SECTOR_MAX_POINTS = 50000
-_sectors_file_cache: tuple = ()  # (mtime, geojson_dict)
+_sectors_file_cache: tuple = ()  # (file signature, geojson_dict)
 
 
 def _load_sectors_file() -> Optional[dict]:
-    """Baked sectors shipped with the deploy — the seed the panel edits
-    from and the fallback until the first PUT. Cached by mtime."""
+    """Combined baked sectors, cached from both static file signatures."""
     global _sectors_file_cache
     try:
-        mtime = os.path.getmtime(_SECTORS_FILE)
-        if _sectors_file_cache and _sectors_file_cache[0] == mtime:
+        from services.sector_defaults import (
+            baked_sectors_signature, load_baked_sector_collection)
+        signature = baked_sectors_signature()
+        if _sectors_file_cache and _sectors_file_cache[0] == signature:
             return _sectors_file_cache[1]
-        import json as _json
-        with open(_SECTORS_FILE, encoding="utf-8") as fh:
-            data = _json.load(fh)
-        if not isinstance(data, dict) or data.get("type") != "FeatureCollection":
-            raise ValueError("not a FeatureCollection")
-        _sectors_file_cache = (mtime, data)
+        data = load_baked_sector_collection()
+        _sectors_file_cache = (signature, data)
         return data
     except Exception as e:  # the endpoint turns this into a clean 503
-        logger.warning("[Zones] sectors file load failed: %s", e)
+        logger.warning("[Zones] sector files load failed: %s", e)
         return None
 
 
@@ -1123,7 +1113,7 @@ def _validate_sector_collection(req: SectorsGeojsonIn) -> list:
 @router.get("/zones/sectors", dependencies=[Depends(_verify_api_key)])
 async def get_zone_sectors(db=Depends(get_db)):
     """Live sector map for the apps. The dispatch-edited copy in app_config
-    wins; until the first PUT the baked static file is served. The version
+    wins; until the first PUT the baked FL+AL data is served. The version
     is the client's cache key — refetch only when it changes.
 
     The stored row is re-validated with the SAME rules the PUT applies

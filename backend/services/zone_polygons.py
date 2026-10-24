@@ -1,8 +1,9 @@
 """Sector polygons for the driver connect gate (2026-10-14).
 
 Source of truth: the LIVE sector map — the dispatch-edited copy in
-app_config (`fl_sectors_geojson`) wins; the baked `static/fl_sectors.json`
-is the seed/fallback until the first PUT (same rule as GET /zones/sectors).
+app_config (`fl_sectors_geojson`) wins; the combined baked
+`static/fl_sectors.json` + `static/al_sectors.json` is the seed/fallback
+until the first PUT (same rule as GET /zones/sectors).
 One dataset, the one the panel edits, covering Florida AND Alabama. The old
 per-city file (`fl_zones.json`) died as a gate input with the move to
 sectors; it remains only as the build source of scripts/build_fl_sectors.py.
@@ -64,12 +65,12 @@ def _parse_collection(data) -> list[dict]:
 
 
 def _load_file() -> list[dict]:
-    """The baked seed. Missing/broken file = empty (fail-open)."""
+    """The combined baked seed. Missing/broken data = empty (fail-open)."""
     try:
-        with open(_PATH, encoding="utf-8") as f:
-            return _parse_collection(json.load(f))
+        from services.sector_defaults import load_baked_sector_collection
+        return _parse_collection(load_baked_sector_collection(fl_path=_PATH))
     except Exception as e:
-        logger.warning("[Zones] baked sector file unreadable: %s", e)
+        logger.warning("[Zones] baked sector files unreadable: %s", e)
         return []
 
 

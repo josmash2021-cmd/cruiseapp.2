@@ -30,14 +30,20 @@ class OnboardingImage extends StatelessWidget {
       url,
       fit: fit,
       height: height,
-      errorBuilder: (context, error, stackTrace) => Image.asset(
-        'assets/images/onboarding/$filename',
-        fit: fit,
-        height: height,
-        errorBuilder: (context, error, stackTrace) => Center(
-          child: Icon(fallbackIcon, color: const Color(0xFFE8C547), size: 72),
-        ),
-      ),
+      errorBuilder: (context, error, stackTrace) {
+        // Diagnostic for the "photos never load" report (2026-10-24): log
+        // the exact URL and the failure so a device log says WHY instead of
+        // guessing (404 vs cert vs timeout vs wrong host).
+        debugPrint('[OnboardingImage] load FAILED $url -> $error');
+        return Image.asset(
+          'assets/images/onboarding/$filename',
+          fit: fit,
+          height: height,
+          errorBuilder: (context, error, stackTrace) => Center(
+            child: Icon(fallbackIcon, color: const Color(0xFFE8C547), size: 72),
+          ),
+        );
+      },
     );
   }
 }

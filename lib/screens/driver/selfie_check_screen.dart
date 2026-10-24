@@ -423,7 +423,6 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
                   _cascade(
                     SelfieVerifyCard(
                       variant: _variant,
-                      vip: _vip,
                       flash: false,
                       active: true,
                       badge: '1',
@@ -458,6 +457,12 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
                       ),
                     ),
                     0.6,
+                    1.0,
+                  ),
+                  const SizedBox(height: 18),
+                  _cascade(
+                    SelfieVerifyChips(vip: _vip),
+                    0.72,
                     1.0,
                   ),
                   const SizedBox(height: 24),

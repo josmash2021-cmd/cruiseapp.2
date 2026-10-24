@@ -2042,8 +2042,6 @@ class S {
   String get dressChipComfortable => _es ? 'Cómoda' : 'Comfortable';
   String get selfieVerifyTitle =>
       _es ? 'Verificación de selfie' : 'Selfie Verification';
-  String get selfieVerifyEvery24h =>
-      _es ? 'Cada 24 horas' : 'Every 24 hours';
   String get selfieBodyStd => _es
       ? 'Para mantener tu cuenta activa, debes tomar una selfie clara de tu rostro y verificar que tengas la vestimenta adecuada y profesional requerida para seguir con las reglas de la app.'
       : "To keep your account active, you must take a clear selfie of your face and verify that you are wearing the proper, professional attire required to keep following the app's rules.";

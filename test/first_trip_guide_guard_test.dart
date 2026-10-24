@@ -17,6 +17,9 @@ void main() {
   final variantUtil = File('lib/utils/selfie_variant.dart')
       .readAsStringSync()
       .replaceAll('\r\n', '\n');
+  final screen2 = File('lib/screens/driver/selfie_check_screen.dart')
+      .readAsStringSync()
+      .replaceAll('\r\n', '\n');
   final l10n = File('lib/l10n/app_localizations.dart')
       .readAsStringSync()
       .replaceAll('\r\n', '\n');
@@ -199,7 +202,6 @@ void main() {
       "String get dressChipPresentable =>",
       "String get dressChipComfortable =>",
       "String get selfieVerifyTitle =>",
-      "String get selfieVerifyEvery24h =>",
       "String get selfieBodyStd =>",
       "String get selfieBodyVip =>",
       "String get selfieChipFaceVisible =>",
@@ -210,7 +212,34 @@ void main() {
     ]) {
       expect(l10n, contains(g), reason: 'missing getter $g');
     }
-    expect(l10n, contains("'Cada 24 horas'"));
-    expect(l10n, contains("'Every 24 hours'"));
+    expect(l10n, isNot(contains('selfieVerifyEvery24h')),
+        reason: '"Cada 24 horas" died by owner spec 2026-10-23 (both the '
+            'guide page 6 AND the selfie-check screen dropped it)');
+    expect(l10n, isNot(contains("'Cada 24 horas'")));
+  });
+
+  test('the card is the foto-4 design: photo-only + on-photo badges', () {
+    // Owner mockup 2026-10-23 ("debe quedar así como la foto 4, tal cual,
+    // pero no dirá cada 24 horas"): the photo fills the card edge-to-edge;
+    // two gold-ring badges ride ON the photo's right edge (face scan +
+    // 24h); the 4 chips live BELOW the description as outlined circles.
+    expect(card, contains('height: 330'),
+        reason: 'the tall edge-to-edge photo');
+    expect(card, contains('class _PhotoBadge'),
+        reason: 'the on-photo gold-ring badges');
+    expect(card, contains('Icons.update_rounded'),
+        reason: 'the 24h circular-arrows badge (in the store font)');
+    expect(card, contains("'24h'"));
+    final cardOnly = card.split('class SelfieVerifyChips').first;
+    expect(cardOnly, isNot(contains('_chip(')),
+        reason: 'the chips moved OUT of the photo card (into the shared '
+            'SelfieVerifyChips row below the description)');
+    expect(card, contains('class SelfieVerifyChips'),
+        reason: 'the shared outlined chips row');
+    // Both pages compose: card → title → body → chips (no 24h subtitle).
+    expect(src, contains('SelfieVerifyChips(vip: widget.vip)'));
+    expect(src, isNot(contains('s.selfieVerifyEvery24h')),
+        reason: 'the guide page 6 dropped "Cada 24 horas" too');
+    expect(screen2, contains('SelfieVerifyChips(vip: _vip)'));
   });
 }

@@ -46,6 +46,8 @@ void main() {
     final m = SmoothMotion()..snapTo(startLat, startLng, bearing: 0);
 
     // A real jump of 20 m in ~0.5 s (implied 40 m/s — NOT a teleport snap).
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    m.setTarget(north(20), startLng, accuracyM: 5);
     await Future<void>.delayed(const Duration(milliseconds: 5000));
     final settled = m.lat!;
     for (var i = 0; i < 60; i++) {

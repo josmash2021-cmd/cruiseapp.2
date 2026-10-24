@@ -1165,9 +1165,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   Future<void> _maybeShowOnlineIntro() async {
     final p = await PrefsCache.instance;
     // The owner's demo account gets the intro on EVERY activation; everyone
-    // else once per phone (the seen flag).
-    final email = ((await UserSession.getUser())?['email'] ?? '').toLowerCase();
-    final alwaysShow = kOnlineIntroAlwaysEmails.contains(email);
+    // else once per phone (the seen flag). The match accepts the account
+    // email OR the phone number (2026-10-23, owner spec "debe ser para este
+    // telefono 3854612042") — a phone-created account can have an empty
+    // cached email and the email-only rule never matched.
+    final u = await UserSession.getUser();
+    final email = (u?['email'] ?? '').toLowerCase();
+    final phoneDigits = (u?['phone'] ?? '').replaceAll(RegExp(r'\D'), '');
+    final alwaysShow = kOnlineIntroAlwaysEmails.contains(email) ||
+        kOnlineIntroAlwaysPhones.contains(phoneDigits);
+    debugPrint('[OnlineIntro] alwaysShow=$alwaysShow '
+        'seen=${p.getBool('online_intro_seen_v1')} online=$_driverOnline');
     if (!alwaysShow && p.getBool('online_intro_seen_v1') == true) return;
     if (!mounted || !_driverOnline || _showOnlineIntro) return;
     _setState(() => _showOnlineIntro = true);

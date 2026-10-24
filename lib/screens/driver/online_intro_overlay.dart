@@ -21,6 +21,12 @@ const int kFirstDriverCount = 100;
 /// Cosmetic and client-side only, same spirit as the test-account lists.
 const Set<String> kOnlineIntroAlwaysEmails = {'josmash33@gmail.com'};
 
+/// Same always-show rule by PHONE NUMBER (owner spec 2026-10-23: "debe ser
+/// para este telefono 3854612042"). Needed because a phone-created account
+/// can have an EMPTY cached email — the email-only rule never matched and
+/// the seen flag then hid the intro forever. Digits-only comparison.
+const Set<String> kOnlineIntroAlwaysPhones = {'3854612042'};
+
 class OnlineIntroOverlay extends StatefulWidget {
   const OnlineIntroOverlay({super.key, required this.onUnderstood});
 

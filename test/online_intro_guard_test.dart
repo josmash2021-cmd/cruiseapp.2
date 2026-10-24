@@ -79,6 +79,26 @@ void main() {
     expect(controller, contains('!alwaysShow'));
   });
 
+  test('the always-show rule also matches the phone number (2026-10-23)', () {
+    // Owner spec, literal: "debe ser para este telefono 3854612042". A
+    // phone-created account can have an EMPTY cached email — the email-only
+    // rule never matched and the seen flag then hid the intro forever.
+    expect(overlay, contains('kOnlineIntroAlwaysPhones'));
+    expect(overlay, contains('3854612042'));
+    expect(
+        controller,
+        contains("replaceAll(RegExp(r'\\D'), '')"),
+        reason: 'the phone is normalized to digits before matching');
+    expect(
+        controller,
+        contains('kOnlineIntroAlwaysPhones.contains(phoneDigits)'),
+        reason: 'email OR phone number grants always-show');
+    expect(controller, contains('||'),
+        reason: 'the two identifiers are OR-ed, not AND-ed');
+    expect(controller, contains('[OnlineIntro] alwaysShow='),
+        reason: 'a decision log exists for on-device verification');
+  });
+
   test('the driver count is an editable constant, used in the copy', () {
     expect(overlay, contains('const int kFirstDriverCount = 100;'));
     expect(overlay, contains('kFirstDriverCount'));

@@ -98,7 +98,11 @@ void main() {
     ]) {
       expect(l10n, contains(g));
     }
-    expect(l10n, contains("'Cuenta pausada'"));
-    expect(l10n, contains("'Account paused'"));
+    expect(l10n, contains("'No puedes conectarte'"),
+        reason: 'owner spec 2026-10-24: no "Account paused" and no dispatch '
+            'mention — neutral accurate copy');
+    expect(l10n, contains("'You can\\'t go online'"));
+    expect(l10n, contains('No puedes conectarte en este momento'));
+    expect(l10n, contains('You can\\'t go online right now'));
   });
 }

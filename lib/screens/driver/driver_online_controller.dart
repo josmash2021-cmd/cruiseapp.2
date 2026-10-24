@@ -68,16 +68,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // pump frames between them — eliminates the 1s freeze on entry.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      // Siempre, en cualquier modo: el mapa necesita el dot del driver y el
-      // panel necesita los earnings — igual en offline que en online.
-      await Future.microtask(() => _startPosStream());
-      if (!mounted) return;
-      await Future.microtask(() => _loadAllEarnings());
-      if (!mounted) return;
-      await Future.microtask(() => _startEarningsRefresh());
-      if (!mounted) return;
-      // Fire-and-forget: these must not block the UI thread
-      unawaited(_locate());
       // ¿Entrar online de una? SOLO por una entrada de trabajo real (user
       // report 2026-09-27: "cuando el driver inicia sesion automaticamente
       // aparece online"): resume de viaje, tap de oferta push, handoff
@@ -110,6 +100,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           DriverOnlineScreen.chainedHandoffOffer != null) {
         unawaited(_enterOnlineMode(resuming: true));
       }
+      // Siempre, en cualquier modo: el mapa necesita el dot del driver y el
+      // panel necesita los earnings — igual en offline que en online.
+      await Future.microtask(() => _startPosStream());
+      if (!mounted) return;
+      await Future.microtask(() => _loadAllEarnings());
+      if (!mounted) return;
+      await Future.microtask(() => _startEarningsRefresh());
+      if (!mounted) return;
+      // Fire-and-forget: these must not block the UI thread
+      unawaited(_locate());
     });
 
     // Listen for network recovery — proactively reconnect SSE + re-register
@@ -485,8 +485,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // a cold fix with a worse-than-65 m radius must not plant the arrow
       // somewhere wrong — the stream delivers a trustworthy one shortly.
       if (pos.accuracy > 65) {
-        debugPrint(
-            '[DriverOnline] seed rejected: accuracy ${pos.accuracy} m');
+        debugPrint('[DriverOnline] seed rejected: accuracy ${pos.accuracy} m');
         return;
       }
       final ll = LatLng(pos.latitude, pos.longitude);
@@ -1065,8 +1064,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _zoomEaseDone = false;
         _zoomEaseStartMs = null;
         if (!_cameraFollowing && _pos != null) {
-          _animateToPosition(_pos!,
-              zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
+          _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
         }
       }
       PrefsCache.instance.then((p) => p.setBool('driver_was_online', true));
@@ -1164,25 +1162,29 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _introBusy = true;
     try {
       final p = await PrefsCache.instance;
+      final u = await UserSession.getUser();
+      final seen = p.getBool('online_intro_seen_v1') == true;
+      var alwaysShow = onlineIntroAlwaysAccount(cached: u);
+      if (epoch != _introEpoch ||
+          !mounted ||
+          !_driverOnline ||
+          _showOnlineIntro) {
+        return;
+      }
+      debugPrint('[OnlineIntro] alwaysShow=$alwaysShow seen=$seen '
+          'online=$_driverOnline source=cache');
+      if (alwaysShow || !seen) {
+        _presentOnlineIntro();
+        return;
+      }
+
       Map<String, dynamic>? me;
       try {
         me = await ApiService.getMe().timeout(const Duration(seconds: 4));
       } catch (e) {
         debugPrint('[OnlineIntro] live profile unavailable: $e');
       }
-      final u = await UserSession.getUser();
-      final freshEmail = (me?['email'] ?? '').toString().trim();
-      final cachedEmail = (u?['email'] ?? '').toString();
-      final email = (freshEmail.isNotEmpty ? freshEmail : cachedEmail)
-          .toLowerCase();
-      final freshPhone = (me?['phone'] ?? '').toString();
-      final phoneDigits = (freshPhone.isNotEmpty
-              ? freshPhone
-              : (u?['phone'] ?? ''))
-          .replaceAll(RegExp(r'\D'), '');
-      final alwaysShow = kOnlineIntroAlwaysEmails.contains(email) ||
-          kOnlineIntroAlwaysPhones.any((p) => phoneDigits.endsWith(p));
-      final seen = p.getBool('online_intro_seen_v1') == true;
+      alwaysShow = onlineIntroAlwaysAccount(live: me, cached: u);
       if (epoch != _introEpoch ||
           !mounted ||
           !_driverOnline ||
@@ -1191,28 +1193,31 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
       debugPrint('[OnlineIntro] alwaysShow=$alwaysShow seen=$seen '
           'online=$_driverOnline profileFresh=${me != null}');
-      if (!alwaysShow && seen) {
+      if (!alwaysShow) {
         if (me == null && u == null) {
-          _introRetryAfter =
-              DateTime.now().add(const Duration(seconds: 5));
+          _introRetryAfter = DateTime.now().add(const Duration(seconds: 5));
           return;
         }
         _introTimer?.cancel();
         _introTimer = null;
         return;
       }
-      _introTimer?.cancel();
-      _introTimer = null;
-      _setState(() => _showOnlineIntro = true);
+      _presentOnlineIntro();
     } catch (e) {
       if (epoch == _introEpoch && mounted && _driverOnline) {
-        _introRetryAfter =
-            DateTime.now().add(const Duration(seconds: 5));
+        _introRetryAfter = DateTime.now().add(const Duration(seconds: 5));
       }
       debugPrint('[OnlineIntro] show attempt failed: $e');
     } finally {
       _introBusy = false;
     }
+  }
+
+  void _presentOnlineIntro() {
+    if (!mounted || !_driverOnline || _showOnlineIntro) return;
+    _introTimer?.cancel();
+    _introTimer = null;
+    _setState(() => _showOnlineIntro = true);
   }
 
   Future<void> _dismissOnlineIntro() async {
@@ -1314,7 +1319,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           S.of(context).shiftEnded12h,
-          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
+          style:
+              const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
         ),
         backgroundColor: const Color(0xFFE8C547),
         behavior: SnackBarBehavior.floating,
@@ -1474,7 +1480,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // (zone_disabled) or a driver outside the coverage must NOT loop a
       // 403 every 5 s forever — the dialog explains and they stay offline.
       if (e is ApiException &&
-          (e.message == 'zone_disabled' || e.message == 'outside_service_area')) {
+          (e.message == 'zone_disabled' ||
+              e.message == 'outside_service_area')) {
         // A refused flip rolls the UI back OFFLINE (2026-10-23, owner
         // report): _driverOnline was set optimistically at flip start —
         // without the rollback the screen claimed "searching" while the
@@ -1534,12 +1541,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // driver online — FCM offers nobody answers, riders waiting on a ghost.
     // Last-known coords are fine; what matters is is_online: false.
     if (_driverId == null) return;
-    final offLat = _pos?.latitude ??
-        LocalCache.get<double>('last_driver_lat') ??
-        0.0;
-    final offLng = _pos?.longitude ??
-        LocalCache.get<double>('last_driver_lng') ??
-        0.0;
+    final offLat =
+        _pos?.latitude ?? LocalCache.get<double>('last_driver_lat') ?? 0.0;
+    final offLng =
+        _pos?.longitude ?? LocalCache.get<double>('last_driver_lng') ?? 0.0;
     AnalyticsService.instance.logDriverOffline();
     // iOS: dismiss the Dynamic Island activity (no-op elsewhere)
     LiveActivityService.stop();
@@ -1670,8 +1675,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _diagLastFixDistM = _hav(prevFix, newLL) * 1000;
           final prevAt = _diagLastFixAt;
           if (prevAt != null) {
-            _diagLastFixDtMs =
-                DateTime.now().difference(prevAt).inMilliseconds;
+            _diagLastFixDtMs = DateTime.now().difference(prevAt).inMilliseconds;
           }
         }
         _diagLastFixLL = newLL;
@@ -1953,8 +1957,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // rewrites _routePts[0] to the driver's own position on every fix, so
     // that line runs through them by construction and would report ~0 m
     // however far off the road they actually are.
-    final against =
-        _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts;
+    final against = _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts;
     final offM = RouteSplice.distanceToPolylineM(against, probe);
     final now = DateTime.now();
     if (offM > _kOffRouteMeters) {
@@ -2733,8 +2736,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      color: Colors.white
-                                          .withValues(alpha: 0.4),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.4),
                                       fontSize: 12.5,
                                     ),
                                   )
@@ -3059,7 +3062,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           try {
             _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
           } catch (e) {
-            debugPrint('[DriverOnline] _animateToPosition failed on expire: $e');
+            debugPrint(
+                '[DriverOnline] _animateToPosition failed on expire: $e');
           }
         }
       }
@@ -3213,8 +3217,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (_phase != _Phase.searching || _isPaused || _tripId != null) return;
       final status = (trip['status'] ?? '').toString().toLowerCase();
       const liveStatuses = {
-        'accepted', 'driver_en_route', 'driver_arriving', 'arrived',
-        'driver_arrived', 'in_trip', 'in_progress',
+        'accepted',
+        'driver_en_route',
+        'driver_arriving',
+        'arrived',
+        'driver_arrived',
+        'in_trip',
+        'in_progress',
       };
       if (!liveStatuses.contains(status)) return;
       final tripId = int.tryParse('${trip['id'] ?? trip['trip_id'] ?? ''}');
@@ -5098,7 +5107,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             // else. The already-driven head keeps being trimmed by
             // _trimRouteBehindDriver exactly as before.
             final spliced = RouteSplice.splice(
-              oldRoute: _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts,
+              oldRoute:
+                  _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts,
               newRoute: pts,
               driverPos: o,
             );
@@ -5254,7 +5264,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             return true;
           }
           final splicedOsrm = RouteSplice.splice(
-            oldRoute: _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts,
+            oldRoute:
+                _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts,
             newRoute: pts,
             driverPos: o,
           );
@@ -5331,7 +5342,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     } catch (_) {}
     if (fresh == null) return; // old line stays; _routePts already swapped
     if (!mounted) {
-      try { await polyMgr.delete(fresh); } catch (_) {}
+      try {
+        await polyMgr.delete(fresh);
+      } catch (_) {}
       return;
     }
     // The per-fix trim (_trimRouteBehindDriver) writes _routeAnnot — point

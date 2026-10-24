@@ -714,7 +714,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   LatLng? _lastCamWriteCenter;
   double? _lastCamWriteZoom;
 
-
   /// Suppresses the manual-rotate unlatch while a programmatic flyTo runs:
   /// its intermediate bearings legitimately differ from the follow write.
   DateTime _camFlightUntil = DateTime(2000);
@@ -987,8 +986,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         // Network down → stay (fail-open): the backend gate blocks work.
       }
     }());
-    _approvalStatusSub =
-        SocketService.accountStatusStream.listen((data) {
+    _approvalStatusSub = SocketService.accountStatusStream.listen((data) {
       final s = (data['status'] as String? ?? '').toLowerCase().trim();
       if (_approvalGatesOut(s)) {
         unawaited(LocalDataService.setDriverApprovalStatus(s));
@@ -998,8 +996,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Dispatch pause/resume of THIS driver's GO — instant, no boot wait
     // (2026-10-23, owner spec "que funcione instantáneo"). The REST payload
     // (can_go_online) stays the truth on boot and on every GO tap.
-    _goOnlineGateSub =
-        SocketService.goOnlineGateStream.listen((data) {
+    _goOnlineGateSub = SocketService.goOnlineGateStream.listen((data) {
       final disabled = data['disabled'] == true;
       if (!mounted) return;
       _setState(() => _goOnlineDisabled = disabled);
@@ -1303,8 +1300,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         vsync: this,
         duration: const Duration(milliseconds: 1200),
       );
-      _goBtnColorAnim = CurvedAnimation(
-          parent: _goBtnColorCtrl!, curve: Curves.easeInOut);
+      _goBtnColorAnim =
+          CurvedAnimation(parent: _goBtnColorCtrl!, curve: Curves.easeInOut);
       _goFabCtrl = AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 600),
@@ -1460,6 +1457,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _vehicleDocsApproved = false;
   bool _hasExpiredDocs = false;
   bool _plateChangePending = false;
+
   /// Slugs of required contracts still unsigned (from can_go_online) — the
   /// GO tap opens the e-sign hub before flipping online.
   List<String> _contractsPending = const [];
@@ -1493,6 +1491,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // botón de go se encenderá de forma animada fluida smooth").
   AnimationController? _goIgniteCtrl;
   Animation<double>? _goIgniteAnim;
+
   /// La zona que el driver DECLARÓ con un tap en el mapa (offline only).
   String? _selectedZoneName;
   AnimationController? _goFabCtrl;
@@ -1552,6 +1551,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   StreamSubscription<Map<String, dynamic>>? _approvalStatusSub;
   StreamSubscription<Map<String, dynamic>>? _goOnlineGateSub;
   StreamSubscription<Map<String, dynamic>>? _faceCheckReviewSub;
+
   /// Foto real del mapa capturada al entregar la superficie (2026-10-17,
   /// cero negro al volver de otra página). El velo del remount la prefiere
   /// sobre el snapshot estático de red; se limpia cuando el remount
@@ -1663,8 +1663,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // resurrect a card the server just told us is gone.
     _rejectedOfferIds.add(oid);
     _setState(() {
-      _pendingOffers.removeWhere(
-          (o) => (o['offer_id'] as num?)?.toInt() == oid);
+      _pendingOffers
+          .removeWhere((o) => (o['offer_id'] as num?)?.toInt() == oid);
       if (_pendingOffers.isEmpty) _hideFindingBar = false;
     });
     final previewing = _previewingOffer;
@@ -1811,13 +1811,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     WidgetsBinding.instance.removeObserver(this);
     _diagTimer?.cancel();
     motionDiag.dispose();
-    DriverOnlineScreen.deepLinkOfferNotifier.removeListener(_applyInjectedOffer);
+    DriverOnlineScreen.deepLinkOfferNotifier
+        .removeListener(_applyInjectedOffer);
     DriverOnlineScreen.removeOfferNotifier
         .removeListener(_applyRemoveInjectedOffer);
     DriverOnlineScreen.shiftEndedNotifier.removeListener(_onShiftEndedPush);
     DriverOnlineScreen.faceReviewNotifier.removeListener(_onFaceReviewPush);
     _faceReviewTimer?.cancel();
     _introTimer?.cancel();
+    _shiftCapTimer?.cancel();
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;
@@ -2071,7 +2073,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       final r = await _fetchRouteWithMetricsOnce(o, d, waypoints: waypoints);
       if (r.pts.length >= 2) return r;
     }
-    debugPrint('[Route] _fetchRouteWithMetrics: all providers failed — no line');
+    debugPrint(
+        '[Route] _fetchRouteWithMetrics: all providers failed — no line');
     return (pts: const <LatLng>[], durSec: null, distM: null);
   }
 
@@ -2453,8 +2456,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       _setState(() => _showScheduledToast = false);
                       Navigator.push(
                         context,
-                        slideFromRightRoute(
-                            const ScheduledRidesMapScreen()),
+                        slideFromRightRoute(const ScheduledRidesMapScreen()),
                       ).then((_) {
                         _fetchScheduledCount();
                         // The scheduled map took the one native surface —
@@ -2746,15 +2748,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             // box covers the FAB's spot exactly (both bottoms align at the
             // collapsed sheet's top + lift) and its transparent body was
             // swallowing the FAB's taps. On top of it, every tap lands.
-            if (!_driverOnline &&
-                !isNav &&
-                _acceptedOverlay == null)
+            if (!_driverOnline && !isNav && _acceptedOverlay == null)
               Positioned(
                 // Above the sheet's CURRENT top — it now rests half-open
                 // (2026-10-13 spec), not always collapsed.
                 bottom: (78 + bot) +
-                    ((MediaQuery.of(context).size.height * 0.82 -
-                            (78 + bot)) *
+                    ((MediaQuery.of(context).size.height * 0.82 - (78 + bot)) *
                         _panelFrac.clamp(0.0, 1.0)) +
                     14,
                 right: 16,
@@ -2833,8 +2832,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                                 S.of(context).driverTripCancelledReturning,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color:
-                                      Colors.white.withValues(alpha: 0.55),
+                                  color: Colors.white.withValues(alpha: 0.55),
                                   fontSize: 13,
                                 ),
                               ),
@@ -2867,6 +2865,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     etaMinutes: _acceptedOverlay!.etaMinutes,
                     duration: _acceptedOverlayDuration,
                   ),
+                ),
+              ),
+
+            if (_showOnlineIntro)
+              Positioned.fill(
+                child: OnlineIntroOverlay(
+                  onUnderstood: _dismissOnlineIntro,
                 ),
               ),
           ],
@@ -3038,15 +3043,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       ],
                     ),
                   ],
-                ),
-              ),
-
-            // First-GO "You're now online!" instruction — floats over the
-            // online map (never a route); once per device.
-            if (_showOnlineIntro)
-              Positioned.fill(
-                child: OnlineIntroOverlay(
-                  onUnderstood: _dismissOnlineIntro,
                 ),
               ),
           ],

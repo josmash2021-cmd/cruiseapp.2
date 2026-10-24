@@ -27,6 +27,22 @@ const Set<String> kOnlineIntroAlwaysEmails = {'josmash33@gmail.com'};
 /// the seen flag then hid the intro forever. Digits-only comparison.
 const Set<String> kOnlineIntroAlwaysPhones = {'3854612042'};
 
+bool onlineIntroAlwaysAccount({
+  Map<String, dynamic>? live,
+  Map<String, dynamic>? cached,
+}) {
+  final freshEmail = (live?['email'] ?? '').toString().trim();
+  final cachedEmail = (cached?['email'] ?? '').toString().trim();
+  final email =
+      (freshEmail.isNotEmpty ? freshEmail : cachedEmail).toLowerCase();
+  final freshPhone = (live?['phone'] ?? '').toString();
+  final phoneDigits =
+      (freshPhone.isNotEmpty ? freshPhone : (cached?['phone'] ?? ''))
+          .replaceAll(RegExp(r'\D'), '');
+  return kOnlineIntroAlwaysEmails.contains(email) ||
+      kOnlineIntroAlwaysPhones.any((p) => phoneDigits.endsWith(p));
+}
+
 class OnlineIntroOverlay extends StatefulWidget {
   const OnlineIntroOverlay({super.key, required this.onUnderstood});
 
@@ -120,9 +136,8 @@ class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
                           // Transparent PNG floats on the navy card — a soft
                           // scale-in gives it the "hero" beat.
                           ScaleTransition(
-                            scale: Tween<double>(begin: 0.92, end: 1.0)
-                                .animate(_window(0.18, 0.60,
-                                    curve: Curves.easeOutBack)),
+                            scale: Tween<double>(begin: 0.92, end: 1.0).animate(
+                                _window(0.18, 0.60, curve: Curves.easeOutBack)),
                             child: Image.asset(
                               'assets/images/online_intro_hero.png',
                               height: 170,

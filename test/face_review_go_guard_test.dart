@@ -43,7 +43,8 @@ void main() {
   });
 
   test('submitFaceCheck returns the parsed map with pending_review', () {
-    expect(api, contains('static Future<Map<String, dynamic>?> submitFaceCheck('));
+    expect(
+        api, contains('static Future<Map<String, dynamic>?> submitFaceCheck('));
     expect(api, isNot(contains("resp['pending_review']")),
         reason: 'the API layer itself does not read the flag');
     expect(api, contains('jsonDecode(res.body)'));
@@ -65,9 +66,11 @@ void main() {
         reason: 'the RED verify died by owner spec 2026-10-23');
     expect(offline, isNot(contains("const Color(0xFF9A1B1B)")),
         reason: 'the red gradient bottom died with it');
-    expect(offline, contains('faceState != 0\n                  ? const Color(0xFF6B6B70)'),
+    expect(offline,
+        contains('faceState != 0\n                  ? const Color(0xFF6B6B70)'),
         reason: 'verify AND pending paint the same dead grey');
-    expect(offline, contains('faceState != 0\n                  ? const Color(0xFF4A4A4F)'),
+    expect(offline,
+        contains('faceState != 0\n                  ? const Color(0xFF4A4A4F)'),
         reason: 'grey gradient bottom too');
     expect(offline, contains('? _onFaceVerifyTap'),
         reason: 'verify routes to the selfie flow, never the flip');
@@ -80,9 +83,15 @@ void main() {
             '              ? (_goIgniteAnim?.value ?? 1.0)\n'
             '              : 1.0;'),
         reason: 'no ignite pop in verify/pending/paused');
-    expect(offline, contains('morph > 0.5 &&\n                    faceState == 0 &&\n                    !_goOnlineDisabled'),
+    expect(
+        offline,
+        contains(
+            'morph > 0.5 &&\n                    faceState == 0 &&\n                    !_goOnlineDisabled'),
         reason: 'no gloss sweep on a grey face-gated GO');
-    expect(offline, contains('morph <= 0.5 &&\n                    faceState == 0 &&\n                    !_goOnlineDisabled'),
+    expect(
+        offline,
+        contains(
+            'morph <= 0.5 &&\n                    faceState == 0 &&\n                    !_goOnlineDisabled'),
         reason: 'no radar sweep on a grey face-gated GO');
     expect(offline, contains('(faceState != 0 ? 0.25 : 1.0)'),
         reason: 'the glow dims in BOTH non-normal face states');
@@ -95,11 +104,7 @@ void main() {
             'screen, never the 4-step biometric page (2026-10-23 spec)');
     expect(offline, isNot(contains('FaceLivenessScreen')),
         reason: 'the biometric 4-step page is signup-only now');
-    expect(
-        offline
-            .split('const SelfieCheckScreen()')
-            .length,
-        3,
+    expect(offline.split('const SelfieCheckScreen()').length, 3,
         reason: 'BOTH call sites (the daily GO gate and _onFaceVerifyTap) '
             'use it');
     // Owner spec 2026-10-23: the page HOLDS its verifying loader until the
@@ -135,17 +140,17 @@ void main() {
     expect(offline, contains('if (_docStatusLoaded && _faceCheckDue)'),
         reason: 'the auto-approved daily gate is intact and runs earlier '
             'in the same tap');
-    expect(offline, isNot(contains('final ok = await ApiService.submitFaceCheck')),
+    expect(
+        offline, isNot(contains('final ok = await ApiService.submitFaceCheck')),
         reason: 'the old bool call is gone');
   });
 
   test('the online intro fires 10 s into the shift, not on the GO tap', () {
-    expect(
-        controller,
-        contains('Timer.periodic(const Duration(seconds: 1)'));
+    expect(controller, contains('Timer.periodic(const Duration(seconds: 1)'));
     expect(controller, contains('timer.tick < 10'));
     final enterFn = controller.indexOf('Future<void> _enterOnlineMode');
-    final timerIdx = controller.indexOf('Timer.periodic(const Duration(seconds: 1)');
+    final timerIdx =
+        controller.indexOf('Timer.periodic(const Duration(seconds: 1)');
     expect(timerIdx, greaterThan(enterFn),
         reason: 'armed at the END of _enterOnlineMode');
     expect(offline, isNot(contains('unawaited(_maybeShowOnlineIntro())')),
@@ -154,8 +159,9 @@ void main() {
         reason: 'cancelled on exit and dispose');
     expect(controller, contains("getBool('online_intro_seen_v1')"),
         reason: 'once per phone flag intact');
-    expect(controller, contains('kOnlineIntroAlwaysEmails.contains(email)'),
+    expect(controller, contains('onlineIntroAlwaysAccount(cached: u)'),
         reason: 'the owner demo account still sees it on every activation');
+    expect(controller, contains('if (alwaysShow || !seen)'));
   });
 
   test('both face-check pushes route in main.dart, role-gated driver', () {
@@ -169,7 +175,8 @@ void main() {
             'pattern)');
     expect(main, contains('faceRejectedTitle'));
     expect(main, contains('faceApprovedTitle'));
-    expect(screen, contains('faceReviewNotifier.addListener(_onFaceReviewPush)'));
+    expect(
+        screen, contains('faceReviewNotifier.addListener(_onFaceReviewPush)'));
   });
 
   test('the six l10n strings exist ES/EN', () {
@@ -190,8 +197,7 @@ void main() {
     }
   });
 
-  test('the reject reaches the live app: socket channel + exit online',
-      () {
+  test('the reject reaches the live app: socket channel + exit online', () {
     // Owner report 2026-10-23: "le doy rechazar y no desconecta al driver
     // si esta conectado y el GO no se pone rojo". The kick used to live
     // only in the DB + an FCM that acted on banner TAP — the connected
@@ -204,12 +210,15 @@ void main() {
         reason: 'the public stream exists');
     expect(socket.split('_faceCheckReviewController.close()').length, 2,
         reason: 'dispose() closes it (recreated on reconnect)');
-    expect(screen,
-        contains('SocketService.faceCheckReviewStream.listen(_onFaceCheckReviewed)'),
+    expect(
+        screen,
+        contains(
+            'SocketService.faceCheckReviewStream.listen(_onFaceCheckReviewed)'),
         reason: 'DriverOnlineScreen subscribes in initState');
     expect(screen, contains('_faceCheckReviewSub?.cancel();'),
         reason: 'the subscription dies in dispose');
-    expect(offline, contains('void _onFaceCheckReviewed(Map<String, dynamic> data)'));
+    expect(offline,
+        contains('void _onFaceCheckReviewed(Map<String, dynamic> data)'));
     expect(offline, contains('void _showFaceRejectedDialog()'),
         reason: 'the live path explains the cut (no banner tap involved)');
     final handler = offline.split('void _onFaceCheckReviewed').last;

@@ -1584,8 +1584,7 @@ _LANDING_PATHS = ("/drive", "/open-app")
 
 
 def _security_headers_for(path: str, method: str) -> list[tuple[bytes, bytes]]:
-    """The security-header set for one response (ported verbatim from the
-    old security_headers_middleware into the pure-ASGI gateway below)."""
+    """Security headers for one response, including panel asset revalidation."""
     if method == "OPTIONS":
         return []
     hdrs: list[tuple[bytes, bytes]] = [(b"x-content-type-options", b"nosniff")]
@@ -1603,6 +1602,12 @@ def _security_headers_for(path: str, method: str) -> list[tuple[bytes, bytes]]:
         (b"pragma", b"no-cache"),
         (b"permissions-policy", b"geolocation=(), camera=(), microphone=()"),
     ]
+    if path.startswith("/panel/assets/"):
+        # Public bundles can be stored and revalidated; the HTML and API stay
+        # no-store. No immutable flag: hand-edited bundles keep their names.
+        hdrs = [(name, value) for name, value in hdrs
+                if name not in {b"cache-control", b"pragma"}]
+        hdrs.append((b"cache-control", b"public, max-age=0, must-revalidate"))
     if any(path.startswith(p) for p in _BROWSER_PATHS):
         # 'wasm-unsafe-eval': Flutter's CanvasKit renderer compiles
         # canvaskit.wasm — Chrome blocks WebAssembly without it.

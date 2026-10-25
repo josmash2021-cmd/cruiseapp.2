@@ -1576,7 +1576,8 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
     ver_reason = user.verification_reason
     if _HAS_FIRESTORE and ver_status not in ("approved",):
         try:
-            fs_status = firestore_sync.get_verification_status(user.id)
+            fs_status = await asyncio.to_thread(
+                firestore_sync.get_verification_status, user.id)
             if fs_status and fs_status.get("status") in ("approved", "rejected"):
                 ver_status = fs_status["status"]
                 ver_reason = fs_status.get("reason")
@@ -1596,7 +1597,8 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
     if _HAS_FIRESTORE:
         try:
             collection = "drivers" if user.role == "driver" else "clients"
-            fs_status = firestore_sync.get_account_status(user.id, collection)
+            fs_status = await asyncio.to_thread(
+                firestore_sync.get_account_status, user.id, collection)
             if fs_status and fs_status != account_status:
                 await db.execute(
                     User.__table__.update().where(User.__table__.c.id == user.id).values(status=fs_status)
@@ -3175,7 +3177,8 @@ async def verification_status(user: User = Depends(_get_current_user), db: Async
     # Always check Firestore for dispatch updates (dispatch writes directly to Firestore)
     if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
         try:
-            fs_status = firestore_sync.get_verification_status(db_user.id)
+            fs_status = await asyncio.to_thread(
+                firestore_sync.get_verification_status, db_user.id)
             logging.info("Firestore verification check for user %d: %s (db=%s)", db_user.id, fs_status, db_user.verification_status)
             if fs_status and fs_status.get("status") in ("approved", "rejected"):
                 db_user.verification_status = fs_status["status"]
@@ -3207,7 +3210,8 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
     # Always check Firestore - dispatch writes directly there even if backend call fails
     if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
         try:
-            fs_status = firestore_sync.get_verification_status(db_user.id)
+            fs_status = await asyncio.to_thread(
+                firestore_sync.get_verification_status, db_user.id)
             logging.info("Firestore driver approval check for user %d: %s (db=%s)", db_user.id, fs_status, db_user.verification_status)
             if fs_status and fs_status.get("status") in ("approved", "rejected"):
                 db_user.verification_status = fs_status["status"]
@@ -3555,7 +3559,8 @@ async def account_status(user: User = Depends(_get_current_user), db: AsyncSessi
     if _HAS_FIRESTORE:
         try:
             collection = "drivers" if user.role == "driver" else "clients"
-            fs_status = firestore_sync.get_account_status(user.id, collection)
+            fs_status = await asyncio.to_thread(
+                firestore_sync.get_account_status, user.id, collection)
             if fs_status and fs_status != current_status:
                 await db.execute(
                     User.__table__.update().where(User.__table__.c.id == user.id).values(status=fs_status)

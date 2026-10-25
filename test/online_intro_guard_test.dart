@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Guard for the daily "You're now online!" instruction overlay
 /// (2026-10-24 user spec): every 24 hours per device, for all drivers,
-/// floating over the online map — never a page — with a single gold
-/// "Entendido"/"I understand" button as the only way out.
+/// floating over the online map — never a page — with a single black,
+/// gold-lettered "Entendido"/"I understand" button as the only way out.
 void main() {
   final overlay =
       File('lib/screens/driver/online_intro_overlay.dart').readAsStringSync();
@@ -25,7 +25,7 @@ void main() {
     expect(overlay, contains('errorBuilder'));
   });
 
-  test('the gold card has a cloud silhouette and an external gold button', () {
+  test('the gold card has a cloud silhouette and an external black button', () {
     for (final needle in [
       'maxWidth: 360',
       'height: 150',
@@ -35,16 +35,17 @@ void main() {
       '_cloudPath',
       'clipBehavior: Clip.none',
       'color: const Color(0xFFFFFDF6)',
-      'color: Colors.white',
-      'backgroundColor: _gold',
-      'foregroundColor: Colors.black',
+      'color: Colors.black',
+      'backgroundColor: Colors.black',
+      'foregroundColor: _gold',
+      'side: BorderSide(color: _gold, width: 1.2)',
       'const SizedBox(height: 10)',
     ]) {
       expect(overlay, contains(needle));
     }
     expect(overlay, isNot(contains('maxWidth: 420')));
-    expect(overlay, isNot(contains('backgroundColor: _navy')),
-        reason: 'the external button is gold with black text, not navy');
+    expect(overlay, isNot(contains('backgroundColor: _gold')),
+        reason: 'the external button is black with gold text');
     expect(overlay, isNot(contains('shape: BoxShape.circle')),
         reason: 'icons are plain glyphs, never enclosed in a circle');
   });
@@ -111,7 +112,7 @@ void main() {
         reason: 'spec: only the Entendido button, no X');
   });
 
-  test('all drivers use a 24-hour timestamp and a lighter map scrim', () {
+  test('all drivers use a 24-hour timestamp and a black backdrop', () {
     expect(
         overlay, contains('onlineIntroRepeatInterval = Duration(hours: 24)'));
     expect(overlay, contains('bool onlineIntroDueNow'));
@@ -123,8 +124,9 @@ void main() {
         controller,
         contains(
             '_introRetryAfter = clock.now().add(onlineIntroRepeatInterval)'));
-    expect(overlay, contains('alpha: 0.18'));
-    expect(overlay, isNot(contains('alpha: 0.42')));
+    expect(
+        overlay, contains('color: Colors.black,\n          child: SafeArea('));
+    expect(overlay, isNot(contains('alpha: 0.18')));
   });
 
   test('the driver count is an editable constant, used in the copy', () {

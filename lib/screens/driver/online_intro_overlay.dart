@@ -4,9 +4,9 @@ import '../../l10n/app_localizations.dart';
 import '../../services/haptic_service.dart';
 
 /// Daily instruction overlay: it floats OVER the online map (it is NOT a
-/// page — the map stays mounted underneath, lightly dimmed). Every 24 hours
-/// per device, dismissed only by the gold "Entendido" button; if the app
-/// dies mid-overlay it simply shows again on the next GO.
+/// page — the map stays mounted underneath a black backdrop). Every 24 hours
+/// per device, dismissed only by the black, gold-lettered "Entendido" button;
+/// if the app dies mid-overlay it simply shows again on the next GO.
 ///
 /// Animated: scrim fade, card slide-up, PNG soft-scale, and the four info
 /// blocks cascading in — plain Flutter tweens, no animation packages.
@@ -78,7 +78,7 @@ class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
       child: FadeTransition(
         opacity: _window(0.0, 0.22),
         child: Container(
-          color: Colors.black.withValues(alpha: 0.18),
+          color: Colors.black,
           child: SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -126,7 +126,7 @@ class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
                                         s.onlineIntroTitle,
                                         textAlign: TextAlign.center,
                                         style: const TextStyle(
-                                          color: Colors.white,
+                                          color: Colors.black,
                                           fontSize: 27,
                                           fontWeight: FontWeight.w900,
                                           height: 1.05,
@@ -219,8 +219,9 @@ class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
                                 child: ElevatedButton(
                                   onPressed: _dismiss,
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: _gold,
-                                    foregroundColor: Colors.black,
+                                    backgroundColor: Colors.black,
+                                    foregroundColor: _gold,
+                                    side: BorderSide(color: _gold, width: 1.2),
                                     elevation: 0,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14),

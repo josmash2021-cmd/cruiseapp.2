@@ -39,6 +39,32 @@ void main() {
     expect(entrySource, contains('lastActiveAt:S(e.last_active_at)'));
   });
 
+  test('rider filter submenu is readable on narrow screens', () {
+    for (final needle in [
+      'fixed left-1/2 top-20',
+      '-translate-x-1/2',
+      'position:"fixed",top:"5rem",left:"50%",transform:"translateX(-50%)"',
+      'maxHeight:"calc(100vh - 6rem)"',
+      'width:"min(560px, calc(100vw - 1.5rem))"',
+      'gridTemplateColumns:"repeat(auto-fit, minmax(240px, 1fr))"',
+      'style:riderFilterGridStyle',
+      'riderChoice("areas",city.key,city.city,city.count,!0)',
+    ]) {
+      expect(source, contains(needle), reason: needle);
+    }
+    final choiceStart = source.indexOf('const riderFilterGridStyle=');
+    final choiceEnd = source.indexOf('riderSectionLabel', choiceStart);
+    expect(choiceStart, isNonNegative);
+    expect(choiceEnd, greaterThan(choiceStart));
+    final choiceHelpers = source.substring(choiceStart, choiceEnd);
+    expect(choiceHelpers, isNot(contains('truncate')),
+        reason: 'summary labels and every filter label must wrap, not become '
+            'one-letter fragments like the screenshot');
+    expect(choiceHelpers, contains('min-w-0 flex-1 leading-[1.25]'));
+    expect(source, isNot(contains(r'city.key,`${city.city} · ${city.count}`')),
+        reason: 'the area label must not repeat its count before the count badge');
+  });
+
   test('real filters, summaries and persisted view execute with Node', () {
     final script = r'''
 const fs=require('fs'),vm=require('vm');

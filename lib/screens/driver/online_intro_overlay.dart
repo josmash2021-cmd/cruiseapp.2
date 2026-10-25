@@ -114,124 +114,139 @@ class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
                   ).animate(_window(0.12, 0.55)),
                   child: FadeTransition(
                     opacity: _window(0.12, 0.50),
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 420),
-                      padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-                      decoration: BoxDecoration(
-                        color: _navy,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                            color: _gold.withValues(alpha: 0.28), width: 1.2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _gold.withValues(alpha: 0.14),
-                            blurRadius: 40,
-                            offset: const Offset(0, 14),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.topCenter,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(top: 92),
+                          constraints: const BoxConstraints(maxWidth: 360),
+                          padding: const EdgeInsets.fromLTRB(14, 60, 14, 14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE8C547),
+                            borderRadius: BorderRadius.circular(30),
+                            border: Border.all(
+                              color: const Color(0xFFF4D876),
+                              width: 1.1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.22),
+                                blurRadius: 26,
+                                offset: const Offset(0, 12),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Transparent PNG floats on the navy card — a soft
-                          // scale-in gives it the "hero" beat.
-                          ScaleTransition(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                s.onlineIntroTitle,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Color(0xFF17130A),
+                                  fontSize: 27,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.05,
+                                  letterSpacing: -0.4,
+                                ),
+                              ),
+                              const SizedBox(height: 7),
+                              Container(
+                                width: 34,
+                                height: 3,
+                                color: const Color(0xFF5C4B12),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                s.onlineIntroSub(kFirstDriverCount),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Color(0xFF3D3830),
+                                  fontSize: 11.5,
+                                  height: 1.35,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              _cascade(
+                                0,
+                                _IntroBlock(
+                                  icon: Icons.groups_rounded,
+                                  title: s.onlineIntroB1Title,
+                                  body: s.onlineIntroB1Body,
+                                ),
+                              ),
+                              _cascade(
+                                1,
+                                _IntroBlock(
+                                  icon: Icons.bar_chart_rounded,
+                                  title: s.onlineIntroB2Title,
+                                  body: s.onlineIntroB2Body,
+                                ),
+                              ),
+                              _cascade(
+                                2,
+                                _IntroBlock(
+                                  icon: Icons.schedule_rounded,
+                                  title: s.onlineIntroB3Title,
+                                  body: s.onlineIntroB3Body,
+                                ),
+                              ),
+                              _cascade(
+                                3,
+                                _IntroBlock(
+                                  icon: Icons.emoji_events_rounded,
+                                  title: s.onlineIntroB4Title,
+                                  body: s.onlineIntroB4Body(kFirstDriverCount),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              FadeTransition(
+                                opacity: _window(0.72, 1.0),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  height: 44,
+                                  child: ElevatedButton(
+                                    onPressed: _dismiss,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _navy,
+                                      foregroundColor: _gold,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      s.onlineIntroUnderstood,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: ScaleTransition(
                             scale: Tween<double>(begin: 0.92, end: 1.0).animate(
                                 _window(0.18, 0.60, curve: Curves.easeOutBack)),
                             child: Image.asset(
                               'assets/images/online_intro_hero.png',
-                              height: 170,
+                              height: 150,
                               fit: BoxFit.contain,
-                              // A Shorebird patch can ship WITHOUT the new
-                              // asset (asset diffs excluded) — the card must
-                              // render anyway, image or no image.
                               errorBuilder: (context, error, stackTrace) =>
                                   const SizedBox(height: 12),
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            s.onlineIntroTitle,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: _gold,
-                              fontSize: 30,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            s.onlineIntroSub(kFirstDriverCount),
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.72),
-                              fontSize: 13.5,
-                              height: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          _cascade(
-                            0,
-                            _IntroBlock(
-                              icon: Icons.groups_rounded,
-                              title: s.onlineIntroB1Title,
-                              body: s.onlineIntroB1Body,
-                            ),
-                          ),
-                          _cascade(
-                            1,
-                            _IntroBlock(
-                              icon: Icons.bar_chart_rounded,
-                              title: s.onlineIntroB2Title,
-                              body: s.onlineIntroB2Body,
-                            ),
-                          ),
-                          _cascade(
-                            2,
-                            _IntroBlock(
-                              icon: Icons.schedule_rounded,
-                              title: s.onlineIntroB3Title,
-                              body: s.onlineIntroB3Body,
-                            ),
-                          ),
-                          _cascade(
-                            3,
-                            _IntroBlock(
-                              icon: Icons.emoji_events_rounded,
-                              title: s.onlineIntroB4Title,
-                              body: s.onlineIntroB4Body(kFirstDriverCount),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          FadeTransition(
-                            opacity: _window(0.72, 1.0),
-                            child: SizedBox(
-                              width: double.infinity,
-                              height: 52,
-                              child: ElevatedButton(
-                                onPressed: _dismiss,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _gold,
-                                  foregroundColor: Colors.black,
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                ),
-                                child: Text(
-                                  s.onlineIntroUnderstood,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0.2,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -279,45 +294,58 @@ class _IntroBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFDF6),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE3CD92)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: _gold.withValues(alpha: 0.18),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: _gold, size: 21),
             ),
-            child: Icon(icon, color: _gold, size: 24),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: _gold,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  body,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.66),
-                    fontSize: 12.5,
-                    height: 1.35,
-                  ),
-                ),
-              ],
+            Container(
+              width: 1.5,
+              height: 42,
+              margin: const EdgeInsets.symmetric(horizontal: 9),
+              color: _gold.withValues(alpha: 0.55),
             ),
-          ),
-        ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Color(0xFFB77A00),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    body,
+                    style: TextStyle(
+                      color: const Color(0xFF3D3830).withValues(alpha: 0.82),
+                      fontSize: 11.5,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

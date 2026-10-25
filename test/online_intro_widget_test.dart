@@ -46,6 +46,40 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('the gold intro scrolls and dismisses on a small phone',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    var dismissed = false;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+        SystemChannels.platform, (_) async => null);
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OnlineIntroOverlay(onUnderstood: () => dismissed = true),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    await tester.ensureVisible(find.text('Got it'));
+    await tester.tap(find.text('Got it'));
+    await tester.pumpAndSettle();
+    expect(dismissed, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   test('the demo account rule resolves locally by email or phone', () {
     expect(
       onlineIntroAlwaysAccount(cached: {'email': ' JOSMASH33@GMAIL.COM '}),

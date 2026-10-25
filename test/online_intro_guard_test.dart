@@ -25,6 +25,25 @@ void main() {
     expect(overlay, contains('errorBuilder'));
   });
 
+  test('the gold card is compact, rounded and keeps the hero outside', () {
+    for (final needle in [
+      'maxWidth: 360',
+      'height: 150',
+      'color: const Color(0xFFE8C547)',
+      'borderRadius: BorderRadius.circular(30)',
+      'clipBehavior: Clip.none',
+      'color: const Color(0xFFFFFDF6)',
+      'backgroundColor: _navy',
+      'foregroundColor: _gold',
+    ]) {
+      expect(overlay, contains(needle));
+    }
+    expect(overlay, isNot(contains('maxWidth: 420')));
+    expect(overlay, isNot(contains('color: _navy,')),
+        reason: 'the old navy card around all the content is gone; navy is '
+            'only the contrasting button');
+  });
+
   test('it is an overlay, never a route', () {
     expect(overlay.contains('Navigator.'), isFalse,
         reason: 'no push/pop inside — the map stays mounted underneath');

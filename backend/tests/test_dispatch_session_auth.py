@@ -117,8 +117,8 @@ async def test_bearer_login_logout_across_workers_stores_only_jti_hash(
     claims = _claims(token)
     assert claims["type"] == "dispatch"
     assert claims["role"] == "owner"
-    assert claims["ip"] == _IP
-    assert claims["exp"] - claims["iat"] == 28800
+    assert "ip" not in claims
+    assert claims["exp"] - claims["iat"] == 315360000
     assert len(claims["jti"]) == 64
 
     assert len(session_env.shared.values) == 1
@@ -127,7 +127,7 @@ async def test_bearer_login_logout_across_workers_stores_only_jti_hash(
     assert token not in key
     assert value == "1"
     assert token not in value
-    assert session_env.shared.ttls[key] == 28800
+    assert session_env.shared.ttls[key] == 315360000
 
     _use_worker(monkeypatch, session_env, 1)
     async with _client(second_worker) as client:
@@ -175,7 +175,7 @@ async def test_panel_secure_cookie_login_logout_across_workers(monkeypatch, sess
         assert "httponly" in normalized
         assert "secure" in normalized
         assert "samesite=strict" in normalized
-        assert "max-age=28800" in normalized
+        assert "max-age=315360000" in normalized
         assert "path=/" in normalized
         token = client.cookies.get(dispatch_sessions.DISPATCH_PANEL_COOKIE)
         assert token
@@ -239,7 +239,7 @@ async def test_cookie_mutations_require_safe_origin_for_both_dependencies(
         assert session_env.shared.values
 
 
-async def test_token_type_role_ip_and_jti_are_validated_centrally(
+async def test_token_type_role_and_jti_are_validated_centrally(
     monkeypatch, session_env,
 ):
     app = _app()
@@ -269,7 +269,7 @@ async def test_token_type_role_ip_and_jti_are_validated_centrally(
         response = await other_ip.get(
             "/admin/session-probe", headers={"Authorization": f"Bearer {token}"},
         )
-        assert response.status_code == 403
+        assert response.status_code == 200
 
 
 async def test_redis_failure_is_closed_for_login_and_existing_bearer(

@@ -729,9 +729,6 @@ def _decode_dispatch_token(token: str, client_ip: str) -> dict:
         jti = payload.get("jti", "")
         if not isinstance(jti, str) or not re.fullmatch(r"[0-9a-f]{64}", jti):
             raise HTTPException(401, "Invalid dispatch session")
-        if payload.get("ip") != client_ip:
-            _security_audit_log("dispatch_ip_mismatch", client_ip, "session IP changed")
-            raise HTTPException(403, "IP address changed - please login again")
         lifetime = int(payload["exp"]) - int(payload["iat"])
         if lifetime <= 0 or lifetime > dispatch_sessions.DISPATCH_SESSION_TTL_SECONDS:
             raise HTTPException(401, "Invalid dispatch session lifetime")

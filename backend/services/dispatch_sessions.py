@@ -7,7 +7,7 @@ import logging
 import os
 from typing import Any
 
-DISPATCH_SESSION_TTL_SECONDS = 8 * 60 * 60
+DISPATCH_SESSION_TTL_SECONDS = 10 * 365 * 24 * 60 * 60
 DISPATCH_PANEL_COOKIE = "cruise_dispatch_session"
 _SESSION_KEY_PREFIX = "cruise:dispatch:session:v1:"
 

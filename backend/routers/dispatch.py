@@ -1411,7 +1411,6 @@ async def _owner_session_token(credentials: OwnerLogin, client_ip: str) -> str:
             "jti": jti,
             "iat": now,
             "exp": now + timedelta(seconds=dispatch_sessions.DISPATCH_SESSION_TTL_SECONDS),
-            "ip": client_ip,
         },
         JWT_SECRET,
         algorithm=JWT_ALGORITHM,

@@ -229,6 +229,14 @@ def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
     return base, round(base + tip, 2)
 
 
+def _payable_trip_earnings(trips) -> float:
+    return round(sum(
+        _driver_trip_amounts(t)[1]
+        for t in trips
+        if not getattr(t, "payout_excluded", False)
+    ), 2)
+
+
 def _driver_visible_trip_dict(trip: Trip) -> dict:
     data = _trip_dict(trip)
     base, total = _driver_trip_amounts(trip)
@@ -1480,6 +1488,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
         )
         completed_trips = completed_r.scalars().all()
         total_earnings = round(sum(_driver_trip_amounts(t)[1] for t in completed_trips), 2)
+        payable_earnings = _payable_trip_earnings(completed_trips)
         cashouts_r = await db.execute(
             select(func.coalesce(func.sum(Cashout.amount), 0.0)).where(
                 Cashout.user_id == user.id,
@@ -1487,7 +1496,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
             )
         )
         total_cashouts = float(cashouts_r.scalar() or 0)
-        available_balance = round(total_earnings - total_cashouts, 2)
+        available_balance = round(payable_earnings - total_cashouts, 2)
         # Update cache
         locked_user.pending_balance = available_balance
         locked_user.total_earnings = total_earnings

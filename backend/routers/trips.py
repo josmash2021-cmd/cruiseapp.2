@@ -262,6 +262,8 @@ async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]
     never collected (test-mode rides, released holds) must NOT pay the
     driver money that never arrived.
     """
+    if getattr(trip, "payout_excluded", False):
+        return 0.0, 0.0
     fee = float(trip.cancellation_fee or 0.0)
     if fee <= 0 or not trip.driver_id:
         return 0.0, 0.0
@@ -298,6 +300,9 @@ async def _credit_driver_earnings(
     idempotent. A partial capture may credit only by passing the actual amount
     collected; a bare ``payment_status='partial'`` never infers the full fare.
     """
+    if getattr(trip, "payout_excluded", False):
+        logging.info("[Split] Trip %s NOT credited — payout excluded", trip.id)
+        return False
     if trip.status != "completed" or not trip.driver_id \
             or not (trip.fare and trip.fare > 0):
         return False

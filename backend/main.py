@@ -3196,7 +3196,7 @@ async def _driver_referral_expiry_loop():
 
 async def _nightly_reconcile_loop():
     """Once every 24 hours, reconcile each driver's pending_balance against
-    the ground-truth computed from trips.driver_earnings and cashouts.
+    the ground-truth computed from payable trips.driver_earnings and cashouts.
 
     Reports drift but NEVER auto-fixes — a human must review because the
     root cause could be refund clawback bugs, not a simple ledger drift.
@@ -3227,6 +3227,7 @@ async def _nightly_reconcile_loop():
                                COUNT(*) AS trip_count
                           FROM trips
                          WHERE driver_id IS NOT NULL
+                           AND payout_excluded IS NOT TRUE
                            AND (
                                status = 'completed'
                                OR (status = 'cancelled'

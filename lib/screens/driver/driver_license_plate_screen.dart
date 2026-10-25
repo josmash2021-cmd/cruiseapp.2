@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/us_cities.dart' show kUsStateNameToCode;
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
@@ -32,11 +33,8 @@ class DriverLicensePlateScreen extends StatefulWidget {
 class _DriverLicensePlateScreenState extends State<DriverLicensePlateScreen> {
   static const _gold = Color(0xFFE8C547);
 
-  /// The two states Cruise operates in. Adding one here is not enough on
-  /// its own — dispatch radius is per-state in the backend too.
-  static const _states = <String, String>{
-    'AL': 'Alabama',
-    'FL': 'Florida',
+  static final _states = <String, String>{
+    for (final entry in kUsStateNameToCode.entries) entry.value: entry.key,
   };
 
   late final TextEditingController _plate =

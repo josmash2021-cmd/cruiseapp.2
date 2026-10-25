@@ -376,6 +376,72 @@ class AdminNotificationIn(BaseModel):
         return value
 
 
+PLATE_STATE_CODES = frozenset({
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA",
+    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA",
+    "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
+    "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX",
+    "UT", "VT", "VA", "WA", "WV", "WI", "WY", "PR",
+})
+
+
+class AdminVehicleUpdateIn(BaseModel):
+    make: Optional[str] = Field(None, max_length=100)
+    model: Optional[str] = Field(None, max_length=100)
+    year: Optional[int] = Field(None, ge=1900, le=2100)
+    color: Optional[str] = Field(None, max_length=50)
+    plate: Optional[str] = Field(None, max_length=15)
+    plate_state: Optional[str] = None
+    vehicle_type: Optional[str] = None
+
+    @field_validator("make", "model")
+    @classmethod
+    def validate_required_text(cls, value):
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("Make and model cannot be blank")
+        return value
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value):
+        return value.strip() if value is not None else value
+
+    @field_validator("plate")
+    @classmethod
+    def validate_plate(cls, value):
+        if value is None:
+            return value
+        value = value.strip().upper()
+        import re as _re
+        if not _re.fullmatch(r"[A-Z0-9][A-Z0-9 \-]{0,14}", value):
+            raise ValueError("Invalid license plate")
+        return value
+
+    @field_validator("plate_state")
+    @classmethod
+    def validate_plate_state(cls, value):
+        if value is None or not value.strip():
+            return None
+        value = value.strip().upper()
+        if value not in PLATE_STATE_CODES:
+            raise ValueError("Invalid plate state")
+        return value
+
+    @field_validator("vehicle_type")
+    @classmethod
+    def validate_vehicle_type(cls, value):
+        if value is None:
+            return value
+        from services.vehicle_tiers import LEGACY_TIER_MAP, TIERS
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        value = LEGACY_TIER_MAP.get(normalized, normalized)
+        if value not in TIERS:
+            raise ValueError("Invalid vehicle category")
+        return value
+
+
 class VehicleIn(BaseModel):
     make: Optional[str] = None
     model: Optional[str] = None

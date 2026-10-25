@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, Form, File
 from fastapi.responses import JSONResponse, FileResponse, Response
+from pydantic import ValidationError
 from sqlalchemy import select, func, and_, or_, text, case, cast, Date, String, delete, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +24,7 @@ from models.database import (
 _SERVER_START_TIME = datetime.now(timezone.utc)
 from models.schemas import (
     AdminStatsResponse, CreateTripIn, AdminUpdateTripIn, AdminCancelTripIn,
-    AdminNotificationIn,
+    AdminNotificationIn, AdminVehicleUpdateIn,
 )
 from utils.security import (
     _get_current_user, _require_admin, _verify_api_key,
@@ -1206,10 +1207,12 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
         select(Document).where(Document.user_id == user_id).order_by(Document.created_at.desc())
     )
     docs = docs_result.scalars().all()
-    # Get ALL vehicles (multi-vehicle 2026-08-29) — admin sees each with its
-    # approval status and active flag.
+    # Deleted vehicles stay in history, but never in the editable fleet.
     veh_result = await db.execute(
-        select(Vehicle).where(Vehicle.user_id == user_id).order_by(Vehicle.created_at.asc())
+        select(Vehicle).where(
+            Vehicle.user_id == user_id,
+            Vehicle.archived_at.is_(None),
+        ).order_by(Vehicle.created_at.asc())
     )
     vehicles = veh_result.scalars().all()
     ud = _user_dict(user)
@@ -1296,6 +1299,34 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
         if not any(c.isdigit() for c in pw):
             raise HTTPException(400, "Password must contain at least one digit")
         user.password_hash = pwd.hash(body["password"])
+    if any(key in body for key in ("vehicle_type", "plate_number", "plate_state")):
+        payload_data = {}
+        if "vehicle_type" in body:
+            payload_data["vehicle_type"] = body["vehicle_type"]
+        if "plate_number" in body:
+            payload_data["plate"] = body["plate_number"]
+        if "plate_state" in body:
+            payload_data["plate_state"] = body["plate_state"]
+        try:
+            payload = AdminVehicleUpdateIn(**payload_data)
+        except ValidationError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        data = payload.model_dump(exclude_unset=True)
+        for key in ("vehicle_type", "plate"):
+            if key in data and data[key] is None:
+                raise HTTPException(400, f"{key} cannot be null")
+        result = await db.execute(select(Vehicle).where(
+            Vehicle.user_id == user.id,
+            Vehicle.is_active == True,
+            Vehicle.archived_at.is_(None),
+        ))
+        vehicle = result.scalar_one_or_none()
+        if not vehicle:
+            raise HTTPException(404, "No active vehicle to update")
+        for key, value in data.items():
+            setattr(vehicle, key, value)
+        user.plate_number = vehicle.plate
+        user.plate_state = vehicle.plate_state
     await db.commit()
     await db.refresh(user)
     # Sync to Firestore
@@ -3053,6 +3084,34 @@ async def admin_get_driver_earnings(
         "daily_earnings": daily_earnings,
         "day_labels": day_labels,
     }
+
+
+@router.patch("/admin/vehicles/{vehicle_id}", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_update_vehicle(
+    vehicle_id: int, body: AdminVehicleUpdateIn,
+    db: AsyncSession = Depends(get_db),
+):
+    """Edit one unarchived vehicle, including its plate and category."""
+    data = body.model_dump(exclude_unset=True)
+    for key in ("make", "model", "year", "plate", "vehicle_type"):
+        if key in data and data[key] is None:
+            raise HTTPException(400, f"{key} cannot be null")
+    result = await db.execute(select(Vehicle).where(
+        Vehicle.id == vehicle_id,
+        Vehicle.archived_at.is_(None),
+    ))
+    vehicle = result.scalar_one_or_none()
+    if not vehicle:
+        raise HTTPException(404, "Vehicle not found")
+    for key, value in data.items():
+        setattr(vehicle, key, value)
+    await db.commit()
+    await db.refresh(vehicle)
+    _security_audit_log(
+        "ADMIN_VEHICLE_UPDATE", "admin",
+        f"vehicle_id={vehicle.id} user_id={vehicle.user_id}",
+    )
+    return {"vehicle": _vehicle_dict(vehicle)}
 
 
 @router.post("/admin/vehicles/{vehicle_id}/status", dependencies=[Depends(_require_dispatch_auth)])

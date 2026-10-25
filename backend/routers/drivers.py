@@ -740,7 +740,24 @@ async def get_driver_trips(driver_id: int, user: User = Depends(_get_current_use
     if user.id != driver_id and user.role != "admin":
         raise HTTPException(403, "Not authorized to view these trips")
     result = await db.execute(select(Trip).where(Trip.driver_id == driver_id).order_by(Trip.created_at.desc()).limit(100))
-    return [_driver_visible_trip_dict(t) for t in result.scalars().all()]
+    trips = result.scalars().all()
+    rider_ids = {t.rider_id for t in trips if t.rider_id}
+    rider_map: dict[int, str] = {}
+    if rider_ids:
+        r_res = await db.execute(
+            select(User.id, User.first_name, User.last_name).where(User.id.in_(rider_ids))
+        )
+        for r_id, r_first, r_last in r_res.all():
+            rider_map[r_id] = f"{r_first or ''} {r_last or ''}".strip()
+
+    out = []
+    for t in trips:
+        trip_dict = _driver_visible_trip_dict(t)
+        has_guest = (t.guest_first_name or "").strip() or (t.guest_last_name or "").strip()
+        if t.rider_id and not has_guest:
+            trip_dict["rider_name"] = rider_map.get(t.rider_id, "")
+        out.append(trip_dict)
+    return out
 
 
 @router.get("/drivers/{driver_id}/locations", dependencies=[Depends(_require_dispatch_auth)])

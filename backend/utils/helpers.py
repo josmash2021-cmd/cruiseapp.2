@@ -454,8 +454,8 @@ def _trip_dict(t) -> dict:
                     _legs[_i][0], _legs[_i][1], _legs[_i + 1][0], _legs[_i + 1][1])
             computed_miles = round(_km * 0.621371, 1)
             computed_minutes = max(round(computed_miles * 2.5), 3) if computed_miles else None
-            d["distance_miles"] = computed_miles
-            d["duration_minutes"] = computed_minutes
+            d["distance_miles"] = d["distance"] if d.get("distance") is not None else computed_miles
+            d["duration_minutes"] = d["duration"] if d.get("duration") is not None else computed_minutes
             # Backfill the raw fields that Flutter reads when the DB values are NULL
             if d.get("distance") is None:
                 d["distance"] = computed_miles

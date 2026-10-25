@@ -970,6 +970,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       ));
       return;
     }
+    if (FeatureFlags.zonesMapEnabled &&
+        _selectedZoneName != null &&
+        ZoneService.demand[_selectedZoneName]?.off == true) {
+      HapticService.mediumImpact();
+      _showZoneDisabledDialog();
+      return;
+    }
     // Nothing about being online works without a location — dispatch ranks
     // by distance, so a driver with no fix is not "online with a bad map",
     // they are unreachable. This used to be unchecked: the button worked,
@@ -1532,8 +1539,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // zona se queda apagado; al seleccionar se enciende animado"):
           // with the zone layer ON and the driver OFFLINE, the GO reads
           // dimmed until they tap their city on the map.
+          final selectedZoneOff = _selectedZoneName != null &&
+              ZoneService.demand[_selectedZoneName]?.off == true;
           final dimmed = FeatureFlags.zonesMapEnabled &&
-              _selectedZoneName == null &&
+              (_selectedZoneName == null || selectedZoneOff) &&
               !_driverOnline;
           final topColor = dimmed
               ? Color.lerp(topColor0, const Color(0xFF6B6B70), 0.55)!

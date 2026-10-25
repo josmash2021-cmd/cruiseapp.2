@@ -158,14 +158,17 @@ void main() {
     expect(look, contains("'line-opacity', 0.0"),
         reason: 'no black outline may paint beside the gold border');
 
-    // Selection is a brighter traveling border, never a fill; a disabled
-    // sector cannot start the gold wave.
+    // Selection is a brighter traveling border, never a fill. An OFF sector
+    // may be highlighted, but its GO never ignites and deselection restores gray.
     expect(s, contains("'sec-hl-fill', 'fill-opacity', 0.0"),
         reason: 'the selection fill never paints, in any mode');
     expect(s, contains('lineMetrics: true'),
         reason: 'the sector sources carry lineMetrics for the border wave');
     expect(s, contains('void _syncZoneWave()'));
-    expect(s, contains('ZoneService.demand[sel]?.off != true'));
+    expect(s, isNot(contains('ZoneService.demand[sel]?.off != true')),
+        reason: 'selection may illuminate an OFF sector without enabling it');
+    expect(s, contains('ZoneService.demand[s.id]?.off != true'),
+        reason: 'an OFF selection never ignites GO');
     expect(s, contains("const dim = '#E8C547';"),
         reason: 'the wave runs over a gold base border');
     expect(s,
@@ -391,6 +394,9 @@ void main() {
         reason: 'spotlight = online + searching + a chosen zone');
     expect(map, contains('_previewingOffer == null'),
         reason: 'an offer preview kills the dim — the route must read');
+    expect(map, contains('effectiveSec == null ? 0.0 : 0.25'),
+        reason: 'the outside stays readable instead of a 70% black veil');
+    expect(map, isNot(contains('effectiveSec == null ? 0.0 : 0.70')));
     expect(map, contains('moveStyleLayer'),
         reason: 'mode flips keep the fill stacking consistent');
     expect(map, contains('!visible || online'),
@@ -452,10 +458,9 @@ void main() {
             'las zonas")');
     expect(map, contains('_sectorsBBox('),
         reason: 'the bbox union math is shared with the fit');
-    expect(ctrl, contains('final zoomTarget = 15.5;'),
-        reason: 'chase zoom = street parity everywhere — the home-state fit '
-            'owns the offline resting view, the chase only follows at street '
-            'zoom');
+    expect(ctrl, contains('final zoomTarget = _offlineFollowZoom ?? 15.5;'),
+        reason: 'online keeps street zoom; offline recenter preserves the '
+            'zone-fit zoom when heading-follow resumes');
     final sources = '$map$ctrl';
     expect(sources.contains('_reFollowTimer'), isFalse,
         reason: 'manual gestures never start a timed refollow');
@@ -490,19 +495,21 @@ void main() {
     expect(scr, contains('double _zoomEaseFrom = 16.0;'));
   });
 
-  test('the offline recenter proves it landed — or writes the camera dry',
-      () {
-    // 2026-10-11: prod breadcrumb showed recenter_fired=true with the camera
-    // never moving. One beat after the flight, the actual camera state is
-    // compared; a miss writes the camera directly and both outcomes land in
-    // the server log.
+  test('one recenter has one guarded fallback and no repeat timer', () {
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     expect(map, contains('recenter_settle'));
-    expect(map, contains('lastPan.isAfter(tapAt)'),
-        reason: 'a fresh grab must abort the settle — never fight the finger');
-    expect(map, contains('.setCamera(mapbox.CameraOptions('),
-        reason: 'the dry write is the guaranteed landing');
+    expect(map, contains('.setCamera(options)'),
+        reason: 'a failed native flight gets one direct-write fallback');
+    final start = map.indexOf('Future<void> _recenterWithFollow(');
+    expect(start, isNonNegative);
+    final body = map.substring(start, start + 5000);
+    expect(body.contains('Timer('), isFalse,
+        reason: 'no timer can fire a second recenter after the first lands');
+    expect(body.contains('_cameraActionGate.isCurrent(seq)'), isTrue,
+        reason: 'a newer gesture or camera action invalidates the completion');
+    expect(map.contains('_followResumeTimer'), isFalse);
+    expect(map.contains('_lastMapPanAt'), isFalse);
   });
 
   test('the boot refresh never clobbers newer cached sectors', () {

@@ -86,5 +86,20 @@ void main() {
       // And it did chase the target — not freeze in place.
       expect(m.bearing, greaterThan(60));
     });
+
+    test('an angular frame above 0.01 but below 0.05 still renders', () {
+      var now = DateTime.utc(2026, 1, 1);
+      final m = SmoothMotion(clock: () => now);
+      m.snapTo(25.8, -80.1, bearing: 0);
+      m.setBearing(0);
+      now = now.add(const Duration(milliseconds: 50));
+      m.setBearing(1.0);
+      now = now.add(const Duration(milliseconds: 1));
+
+      expect(m.tick(0.001), isTrue);
+      expect(m.bearing, greaterThan(0.01));
+      expect(m.bearing, lessThan(0.05),
+          reason: 'the old 0.05-degree render gate swallowed this frame');
+    });
   });
 }

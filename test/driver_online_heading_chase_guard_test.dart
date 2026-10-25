@@ -46,29 +46,22 @@ void main() {
           reason: 'the manual-rotate detector needs the last written value');
     });
 
-    test(
-        'every follow/recenter camera write clears the padding '
-        '(2026-10-16 noche)', () {
-      // "El boton de centrar online no funciona / la flecha queda en otro
-      // lugar": las vistas de zona escriben padding del sheet y Mapbox lo
-      // CONSERVA si la escritura no lo trae — toda cámara de seguimiento o
-      // recenter debe escribir padding cero explícito o el driver renderiza
-      // fuera del centro para siempre.
-      expect(ctrl, contains('_kZeroCamPadding'),
-          reason: 'the per-frame chase clears the padding');
+    test('online clears padding; offline keeps the visible sheet inset', () {
+      expect(ctrl, contains('_kZeroCamPadding'));
       final scr = File('lib/screens/driver/driver_online_screen.dart')
           .readAsStringSync();
-      expect(scr, contains('final _kZeroCamPadding'),
-          reason: 'the shared zero padding exists');
-      expect('padding: _kZeroCamPadding,'.allMatches(scr).length,
-          greaterThanOrEqualTo(1),
-          reason: 'the recenter flight clears it too');
+      expect(scr, contains('final _kZeroCamPadding'));
+      expect(ctrl, contains('padding: followPadding,'),
+          reason: 'the chase writes the mode-appropriate padding every frame');
+      expect(ctrl, contains('lastPadding.bottom == followPadding.bottom'),
+          reason: 'opening or closing the offline sheet must refresh the inset');
       final map =
           File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
-      expect(map, contains('pitch: settleTilt,'),
-          reason: 'the settle write exists');
-      expect(map, contains('padding: _kZeroCamPadding,'),
-          reason: 'the settle write clears it too');
+      expect(map, contains('padding: padding,'));
+      expect(map, contains(': _kZeroCamPadding'),
+          reason: 'online recenter still clears stale zone padding');
+      expect(map, contains('_offlineFollowZoom = zoneFollow ? zoom : null;'),
+          reason: 'offline keeps its zone-fit zoom and visible sheet inset');
     });
 
     test(
@@ -109,12 +102,10 @@ void main() {
       expect(recenter.contains('bearing: bearing'), isTrue,
           reason: 'manual recenter returns to the heading-up chase, '
               'not to north');
-      // Recenter = online parity (2026-10-12 spec: "que funcione igual que
-      // cuando el driver está activo") — centre the arrow at street zoom in
-      // EVERY mode; the offline region view stays as the resting state only.
-      expect(recenter.contains('zoom: 15.5, bearing: bearing, tilt: 0'), isTrue,
-          reason: 'offline recenter centres the arrow at street zoom, same '
-              'as online');
+      expect(recenter.contains('_recenterWithFollow('), isTrue);
+      expect(recenter.contains('zoom: isNav ? 17.5 : 15.5'), isTrue,
+          reason: 'street zoom remains the online/navigation target');
+      expect(recenter.contains('tilt: isNav ? 55 : 0'), isTrue);
       // Recenter by mode (2026-10-13/14 specs): OFFLINE = centre ON THE
       // ARROW at the zone-view zoom (the state-centroid frame died);
       // ONLINE = the ARROW — the zone frame moved to the LEFT compass FAB.
@@ -203,7 +194,7 @@ void main() {
     });
 
     test('the gesture handling and marker ownership have no mode gate', () {
-      final body = bodyOf(map2, 'void _onCameraMoveStarted() {', maxLen: 2400);
+      final body = bodyOf(map2, 'void _onCameraMoveStarted() {', maxLen: 1200);
       expect(body.contains('_driverOnline'), isFalse);
       expect(body.contains('_markerFrame.value++;'), isTrue,
           reason: 'the overlay repaints synchronously on every gesture event');
@@ -228,13 +219,16 @@ void main() {
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
 
-    test('the online resume timer flushes the annotation to opacity 0 NOW', () {
-      final body = bodyOf(map, '_followResumeTimer = Timer(', maxLen: 700);
+    test('one guarded recenter completion resumes follow and flushes the marker',
+        () {
+      final body = bodyOf(map, 'Future<void> _recenterWithFollow(', maxLen: 5000);
       expect(body.contains('_cameraFollowing = true'), isTrue);
       expect(body.contains('_updateDriverAnnotation();'), isTrue,
-          reason: 'a parked driver produces no ticker frames — without the '
-              'explicit flush the stale visible annotation and the overlay '
-              'drew two arrows for as long as the car stood still');
+          reason: 'a parked driver needs an explicit marker flush on landing');
+      expect(body.contains('_cameraActionGate.isCurrent(seq)'), isTrue,
+          reason: 'a stale flight cannot complete over a newer camera action');
+      expect(map.contains('_followResumeTimer'), isFalse,
+          reason: 'there is no second timer that can recenter twice');
     });
 
     test(
@@ -439,8 +433,10 @@ void main() {
       expect(svc.contains('_compassAlpha = 0.08'), isTrue,
           reason: '~0.4 s at the sensor 20 Hz — steps arrive as a sweep');
       final onCompass =
-          bodyOf(svc, 'void _onCompass(CompassEvent e) {', maxLen: 1100);
+          bodyOf(svc, 'void _onCompassHeading(double? h) {', maxLen: 1100);
       expect(onCompass.contains('_compassEma'), isTrue);
+      expect(svc.contains('_compassDeadBandDeg = 0.02'), isTrue,
+          reason: 'slow phone turns are not swallowed by the old 0.5° gate');
       expect(
           bodyOf(svc, 'if (usingCourse) {', maxLen: 300)
               .contains('_emit(_course!)'),
@@ -627,44 +623,33 @@ void main() {
           reason: 'the drag gate records the finger start position');
     });
 
-    test('a vetoed glide never reads as a dead button', () {
-      // User report 2026-10-11: "lo presiono y no hace nada". The flyTo can
-      // be vetoed (dead/remounting surface, zoom ease) — when that happens
-      // follow flips immediately and the per-frame chase centres the map.
-      expect(screen.contains('bool _animateToPosition('), isTrue,
-          reason: 'the flight reports whether it was issued');
-      final recenter = bodyOf(map, 'void _recenterCamera() {', maxLen: 3400);
-      expect(recenter.contains('final fired ='), isTrue);
-      expect(recenter.contains('if (!fired)'), isTrue);
-      expect(recenter.contains('_cameraFollowing = true'), isTrue);
+    test('a failed flight never leaves the recenter dead', () {
+      final body = bodyOf(map, 'Future<void> _recenterWithFollow(', maxLen: 5000);
+      expect(body.contains('var issued = false'), isTrue);
+      expect(body.contains('if (!landed &&'), isTrue,
+          reason: 'a failed native flight gets one direct-write fallback');
+      expect(body.contains('_cameraFollowing = true'), isTrue,
+          reason: 'the per-frame chase remains the final safety net');
     });
 
     test('programmatic bearing writes never trip the manual-rotate unlatch',
         () {
-      // User report 2026-10-12: "el botón de recentrar offline no funciona".
-      // The style-load flatten flyTo bypassed _camFlightUntil and never
-      // synced _lastCamWriteBearing — the next camera event read it as a
-      // finger rotate, unlatched follow and raised the recenter FAB with
-      // the camera still ON the driver. Tapping it flew to where the
-      // camera already was: nothing visible, a dead button (prod log: six
-      // taps, four landed=true). Both programmatic writes below now wear
-      // the suppression + the bearing sync.
       final flatten = widgets.indexOf('pitch: 0, bearing: _smoothedBearing');
       expect(flatten, isNonNegative,
           reason: 'the style-load flatten flyTo lives here');
       final around =
           widgets.substring(flatten - 800 > 0 ? flatten - 800 : 0, flatten);
-      expect(around.contains('_camFlightUntil = DateTime.now()'), isTrue,
-          reason: 'the flatten snap suppresses the rotate unlatch');
-      expect(around.contains('_lastCamWriteBearing = _smoothedBearing'), isTrue,
-          reason: '…and syncs the last-written bearing so the snap reads '
-              'as OUR write, not a finger');
-      final settle = map.indexOf("recenter_settle', 'landed=");
-      expect(settle, isNonNegative);
-      final settleBlock = map.substring(settle, settle + 1400);
-      expect(settleBlock.contains('_lastCamWriteBearing = bearing'), isTrue,
-          reason: 'the dry setCamera fallback wears the same suppression — '
-              'or the FAB pops back up the moment the camera lands');
+      expect(around.contains('_camFlightUntil = DateTime.now()'), isTrue);
+      expect(around.contains('_lastCamWriteBearing = _smoothedBearing'), isTrue);
+      expect(map.contains('_cameraBearing = bearing;'), isTrue);
+      expect(map.contains('.setCamera(options)'), isTrue);
+      final fallbackStart = map.indexOf('if (!landed &&');
+      final settle = map.indexOf("recenter_settle', 'landed=", fallbackStart);
+      expect(fallbackStart, isNonNegative);
+      expect(settle, greaterThan(fallbackStart));
+      final guardedFallback = map.substring(fallbackStart, settle);
+      expect(guardedFallback.contains('_cameraActionGate.isCurrent(seq)'), isTrue,
+          reason: 'a stale fallback cannot overwrite a newer camera action');
     });
 
     test('gesture listeners ignore phantom scrolls during programmatic flights',

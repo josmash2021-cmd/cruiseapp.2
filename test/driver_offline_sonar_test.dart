@@ -19,6 +19,9 @@ void main() {
       expect(radii[i], greaterThan(radii[i - 1]));
       expect(opacities[i], lessThan(opacities[i - 1]));
     }
+    expect(radii.last, closeTo(size * 0.42, 0.000001));
+    expect(radii.last * 2, lessThan(size),
+        reason: 'the waves stay inside the marker box instead of dominating it');
     expect(DriverSonarMarker.waveOpacity(0), greaterThan(0));
     expect(DriverSonarMarker.waveOpacity(1), 0);
   });

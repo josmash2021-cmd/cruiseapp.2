@@ -2,11 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guard for the camera-write coalescing (2026-10-23, owner ask "mucho más
-/// smooth"): nearly-identical frames must NOT go to native — only a real
-/// pose change (>0.3 m, >0.5°, >0.02 zoom) or 100 ms since the last write.
-/// The arrow overlay keeps 60 fps; the native map stops re-rendering
-/// identical frames (less GPU, less heat on long shifts).
+/// Guard for camera-write coalescing: translation and zoom are throttled for
+/// heat, while slow phone rotation keeps flowing instead of stepping.
 void main() {
   final driver = File('lib/screens/driver/driver_online_controller.dart')
       .readAsStringSync()
@@ -22,8 +19,8 @@ void main() {
         reason: '100 ms since the last write always lets one through');
     expect(driver, contains('dLatM < 0.3'));
     expect(driver, contains('dLngM < 0.3'));
-    expect(driver, contains('dBrg.abs() < 0.5'),
-        reason: 'bearing changes below 0.5° are coalesced');
+    expect(driver, contains('dBrg.abs() < 0.01'),
+        reason: 'rotation has a fine threshold, not the old half-degree steps');
     expect(driver, contains('dZoom.abs() < 0.02'),
         reason: 'zoom changes below 0.02 are coalesced');
     // The gate sits BEFORE the latest-wins pending write, so a skipped frame

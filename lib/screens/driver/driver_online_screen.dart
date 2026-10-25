@@ -875,14 +875,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // -- Camera follow mode --
   bool _cameraFollowing = true;
-
-  /// Hands the overlay back to centred mode once a recentre has landed.
-  /// See _recenterCamera — set while the camera is in flight, cancelled if
-  /// the driver takes hold of the map again.
-  Timer? _followResumeTimer;
-
-  /// When the driver last grabbed the map; a newer grab aborts a stale settle.
-  DateTime? _lastMapPanAt;
+  double? _offlineFollowZoom;
 
   // â”€â”€ Draggable panel â”€â”€
   bool _panelOpen = false;
@@ -1876,7 +1869,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // the ghost agent would have forced them offline for going quiet. Going
     // to look at your home screen is not going off shift.
     if (_leavingOffline) _gpsService.stopTracking();
-    _followResumeTimer?.cancel();
     _earningsRefreshTimer?.cancel();
     _bgHeartbeatTimer?.cancel();
     _panelAnimCtrl?.dispose();

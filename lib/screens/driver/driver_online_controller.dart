@@ -1847,11 +1847,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
     final map = _map;
     if (map == null) return;
-    // Coalesce nearly-identical frames (owner ask 2026-10-23 "mucho más
-    // smooth"): a native write only goes out when the pose really changed —
-    // >0.3 m or >0.5° or >0.02 zoom, or 100 ms have passed since the last
-    // write. The arrow overlay still runs at 60 fps; the native map just
-    // stops re-rendering identical frames (less GPU, less heat).
+    // Translation and zoom coalesce for heat; rotation keeps a much finer
+    // threshold so a slow phone turn never becomes a staircase.
     final center = options.center?.coordinates;
     if (center != null) {
       final last = _lastCamWriteOpts;
@@ -1866,7 +1863,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         final dZoom = (options.zoom ?? 0) - (last?.zoom ?? 0);
         if (dLatM < 0.3 &&
             dLngM < 0.3 &&
-            dBrg.abs() < 0.5 &&
+            dBrg.abs() < 0.01 &&
             dZoom.abs() < 0.02) {
           return;
         }
@@ -2264,10 +2261,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // ignore it, so a driver dragging the map while online was overruled
     // sixty times a second and the view snapped back under their finger.
     if (_phase == _Phase.searching && !offerActive && _cameraFollowing) {
-      // Resting zoom: street level everywhere (2026-10-13 spec — the
-      // offline resting view is the fit-all-zones frame with follow OFF, so
-      // the chase only ever runs in FAB/online mode = street zoom parity).
-      final zoomTarget = 15.5;
+      final zoneFollow = !_driverOnline && _offlineFollowZoom != null;
+      final zoomTarget = _offlineFollowZoom ?? 15.5;
+      final followPadding = zoneFollow
+          ? mapbox.MbxEdgeInsets(
+              top: 120, left: 0, bottom: _visibleSheetPx, right: 0)
+          : _kZeroCamPadding;
       // Entry zoom ease: the map opens at zoom 16 (same as home) and
       // glides to the working zoom over ~750ms (easeOutCubic) so there
       // is no zoom "pop" when arriving from the home screen.
@@ -2302,10 +2301,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // 60 channel calls a second for a no-op. The zoom ease changes zoom
       // per frame, so it always gets through.
       final lastC = _lastCamWriteCenter;
+      final lastPadding = _lastCamWriteOpts?.padding;
+      final samePadding = lastPadding != null &&
+          lastPadding.top == followPadding.top &&
+          lastPadding.bottom == followPadding.bottom &&
+          lastPadding.left == followPadding.left &&
+          lastPadding.right == followPadding.right;
       final unchanged = lastC != null &&
+          samePadding &&
           (_pos!.latitude - lastC.latitude).abs() < 1e-7 &&
           (_pos!.longitude - lastC.longitude).abs() < 1e-7 &&
-          (camBearing - (lastWrittenB ?? camBearing)).abs() < 0.05 &&
+          (camBearing - (lastWrittenB ?? camBearing)).abs() < 0.01 &&
           (zoom - (_lastCamWriteZoom ?? -1)).abs() < 1e-4;
       if (!unchanged) {
         _cameraBearing = camBearing;
@@ -2319,7 +2325,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             zoom: zoom,
             bearing: camBearing,
             pitch: 0,
-            padding: _kZeroCamPadding,
+            padding: followPadding,
           ),
         );
       }

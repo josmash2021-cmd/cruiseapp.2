@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -85,6 +87,8 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
         _isVip = vip;
       });
     }
+    unawaited(OnboardingImage.preload(context, 'guide_dress_$variant.png'));
+    unawaited(OnboardingImage.preload(context, 'guide_selfie_$variant.png'));
   }
 
   @override

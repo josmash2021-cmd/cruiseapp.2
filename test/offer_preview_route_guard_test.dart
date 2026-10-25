@@ -97,7 +97,7 @@ void main() {
       expect(body,
           contains('effectiveSec = _previewingOffer == null ? sec : null'));
       expect(body, contains('if (effectiveSec != null)'));
-      expect(body, contains('effectiveSec == null ? 0.0 : 0.70'));
+      expect(body, contains('effectiveSec == null ? 0.0 : 0.25'));
     });
 
     test('a sector swap re-syncs after releasing its guard', () {

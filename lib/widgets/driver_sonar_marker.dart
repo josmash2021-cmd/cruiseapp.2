@@ -20,7 +20,7 @@ class DriverSonarMarker extends StatelessWidget {
   static double waveRadius(double progress, double size) {
     final remaining = 1.0 - progress;
     final eased = 1.0 - remaining * remaining * remaining;
-    return size * (0.17 + 0.51 * eased);
+    return size * (0.17 + 0.25 * eased);
   }
 
   static double waveOpacity(double progress) => 0.34 * (1.0 - progress);

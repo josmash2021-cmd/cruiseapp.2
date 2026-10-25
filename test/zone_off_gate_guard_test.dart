@@ -41,6 +41,17 @@ void main() {
     expect(offline, contains('ZoneService.sectorOff(_pos!)'),
         reason: 'client-side gate before even asking the backend');
     expect(offline, contains('_showZoneDisabledDialog()'));
+    expect(offline,
+        contains('ZoneService.demand[_selectedZoneName]?.off == true'),
+        reason: 'selecting an OFF sector never bypasses the connect gate');
+    expect(offline, contains('(_selectedZoneName == null || selectedZoneOff)'),
+        reason: 'an OFF selection leaves GO visually disabled');
+    final selectedGate =
+        offline.indexOf('ZoneService.demand[_selectedZoneName]?.off == true');
+    final locationGate = offline.indexOf('if (!await _ensureLocationReady())');
+    expect(selectedGate, isNonNegative);
+    expect(selectedGate, lessThan(locationGate),
+        reason: 'the OFF selection is rejected before GPS or backend work');
     expect(ctrl, contains("e.message == 'zone_disabled'"),
         reason: 'a 403 zone_disabled never enters the 5 s retry loop');
     expect(l10n, contains('zoneDisabledTitle'));

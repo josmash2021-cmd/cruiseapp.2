@@ -174,16 +174,9 @@ void main() {
     expect(src, isNot(contains('_metric(Icons.')));
   });
 
-  test('onboarding photos: backend /static + bundled fallback, never a void',
-      () {
-    // Owner report 2026-10-23: the photos never arrived via OTA (new assets
-    // don't ride patches). Now they load from the backend's /static mount
-    // FIRST, the bundled asset is the offline fallback, and a gold icon is
-    // the last resort — the page never shows an empty void.
-    expect(src, contains('OnboardingImage('),
-        reason: 'the dress card uses the shared network+asset loader');
-    expect(card, contains('OnboardingImage('),
-        reason: 'the selfie card uses it too');
+  test('onboarding photos: bundled first, preloaded, backend fallback', () {
+    expect(src, contains('OnboardingImage('));
+    expect(card, contains('OnboardingImage('));
     expect(src, contains('guide_dress_\$variant.png'));
     expect(card, contains('guide_selfie_\${widget.variant}.png'));
     final loader = File('lib/widgets/onboarding_image.dart')
@@ -191,10 +184,22 @@ void main() {
         .replaceAll('\r\n', '\n');
     expect(loader, contains('Image.network('));
     expect(loader, contains('Image.asset('));
+    expect(loader.indexOf('Image.asset('),
+        lessThan(loader.indexOf('Image.network(')),
+        reason: 'the immediate local photo never waits for the network');
+    expect(loader, contains('static Future<void> preload('));
+    expect(loader, contains('gaplessPlayback: true'));
     expect(loader, contains('publicBaseUrl'));
     expect(loader, contains('/static/onboarding/'));
     expect(loader, contains('errorBuilder: (context, error, stackTrace)'),
         reason: 'the gold stand-in is still there if both sources fail');
+    expect(src, contains("OnboardingImage.preload(context, 'guide_dress_\$variant.png')"));
+    expect(src, contains("OnboardingImage.preload(context, 'guide_selfie_\$variant.png')"));
+    final selfie = File('lib/screens/driver/selfie_check_screen.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    expect(selfie,
+        contains("OnboardingImage.preload(context, 'guide_selfie_\$variant.png')"));
   });
 
   test('review mode: the menu Learning Center opens the guide ungated', () {

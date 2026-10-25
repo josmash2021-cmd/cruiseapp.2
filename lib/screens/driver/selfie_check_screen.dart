@@ -11,6 +11,7 @@ import '../../services/haptic_service.dart';
 import '../../services/socket_service.dart';
 import '../../utils/app_platform.dart';
 import '../../utils/selfie_variant.dart';
+import '../../widgets/onboarding_image.dart';
 import '../../widgets/selfie_verify_card.dart';
 
 /// The 24 h GO selfie check (owner spec 2026-10-23): NOT the 4-step
@@ -100,6 +101,7 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
       _variant = variant;
       _vip = variant.startsWith('vip');
     });
+    unawaited(OnboardingImage.preload(context, 'guide_selfie_$variant.png'));
   }
 
   @override

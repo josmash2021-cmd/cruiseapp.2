@@ -2,12 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 
-/// Onboarding photo (dress code + selfie verification): backend-hosted
-/// /static FIRST, so phones whose OTA patch delivered only Dart still get
-/// the real photos even when the bundled asset is missing (new assets never
-/// ride Shorebird patches — proven on device 2026-10-23). The bundled asset
-/// is the offline fallback, and a dignified gold icon is the last resort if
-/// both fail. ONE source for the onboarding image slots.
+/// Onboarding photo (dress code + selfie verification): the bundled asset is
+/// immediate and needs no network. Older releases without that asset fall
+/// back to the backend copy; a gold icon is the last resort.
 class OnboardingImage extends StatelessWidget {
   const OnboardingImage({
     super.key,
@@ -23,25 +20,52 @@ class OnboardingImage extends StatelessWidget {
   final double? height;
   final IconData fallbackIcon;
 
+  static String assetPath(String filename) =>
+      'assets/images/onboarding/$filename';
+
+  static String networkUrl(String filename) =>
+      '${ApiService.publicBaseUrl}/static/onboarding/$filename';
+
+  static Future<void> preload(BuildContext context, String filename) async {
+    final path = assetPath(filename);
+    try {
+      await precacheImage(AssetImage(path), context);
+      return;
+    } catch (error) {
+      debugPrint('[OnboardingImage] asset preload FAILED $path -> $error');
+    }
+    if (!context.mounted) return;
+    final url = networkUrl(filename);
+    try {
+      await precacheImage(NetworkImage(url), context);
+    } catch (error) {
+      debugPrint('[OnboardingImage] network preload FAILED $url -> $error');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final url = '${ApiService.publicBaseUrl}/static/onboarding/$filename';
-    return Image.network(
-      url,
+    final path = assetPath(filename);
+    return Image.asset(
+      path,
       fit: fit,
       height: height,
+      gaplessPlayback: true,
       errorBuilder: (context, error, stackTrace) {
-        // Diagnostic for the "photos never load" report (2026-10-24): log
-        // the exact URL and the failure so a device log says WHY instead of
-        // guessing (404 vs cert vs timeout vs wrong host).
-        debugPrint('[OnboardingImage] load FAILED $url -> $error');
-        return Image.asset(
-          'assets/images/onboarding/$filename',
+        final url = networkUrl(filename);
+        debugPrint('[OnboardingImage] asset FAILED $path -> $error');
+        return Image.network(
+          url,
           fit: fit,
           height: height,
-          errorBuilder: (context, error, stackTrace) => Center(
-            child: Icon(fallbackIcon, color: const Color(0xFFE8C547), size: 72),
-          ),
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) {
+            debugPrint('[OnboardingImage] network FAILED $url -> $error');
+            return Center(
+              child:
+                  Icon(fallbackIcon, color: const Color(0xFFE8C547), size: 72),
+            );
+          },
         );
       },
     );

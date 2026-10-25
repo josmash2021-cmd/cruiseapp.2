@@ -609,7 +609,7 @@ class SmoothMotion {
     final now = _now();
     if (_lastBearingAt != null) {
       final dt = now.difference(_lastBearingAt!).inMilliseconds / 1000.0;
-      if (dt > 0.05 && dt < 10.0) {
+      if (dt > 0.02 && dt < 10.0) {
         var d = t - _targetBearing;
         while (d > 180) {
           d -= 360;
@@ -827,7 +827,7 @@ class SmoothMotion {
       _bearing = _targetBearing.isFinite ? _targetBearing : 0;
       return true;
     }
-    final movedBrg = (newBearing - _bearing).abs() > 0.05;
+    final movedBrg = (newBearing - _bearing).abs() > 0.01;
     _bearing = newBearing < 0 ? newBearing + 360 : newBearing;
 
     return movedPos || movedBrg;
@@ -854,8 +854,8 @@ class SmoothMotion {
     // what "settled" means.
     double brgGap = (_targetBearing - _bearing).abs();
     if (brgGap > 180) brgGap = 360 - brgGap;
-    // ~1 cm of position, a twentieth of a degree of heading.
-    return latGap < 1e-7 && lngGap < 1e-7 && brgGap < 0.05;
+    // ~1 cm of position, a hundredth of a degree of heading.
+    return latGap < 1e-7 && lngGap < 1e-7 && brgGap < 0.01;
   }
 
   /// Force-set position (e.g., resuming from background, camera recenter).

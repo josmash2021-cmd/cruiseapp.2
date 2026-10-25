@@ -2009,24 +2009,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// next chase write, so the map moves under the finger instead of fighting
   /// it. Only the manual recenter re-engages it.
   void _onCameraMoveStarted() {
-    // Phantom-gesture guard (2026-10-12, "el botón de recentrar no hace
-    // nada" — prod: taps landed=true y el FAB jamás se iba): durante un
-    // vuelo PROGRAMÁTICO el plugin puede escupir callbacks de scroll/zoom
-    // sin dedo encima — el propio flyTo del recentrado des-latchaba el
-    // follow y cancelaba el resume, dejando el FAB arriba para siempre con
-    // la cámara ya en casa. Sin dedo y dentro de la ventana de vuelo = no
-    // es un gesto. Un dedo REAL mid-flight (pointers > 0) siempre gana.
     if (_mapPointers == 0 && DateTime.now().isBefore(_camFlightUntil)) {
       _phantomGestureEvents++;
       return;
     }
     _cameraActionGate.begin();
-    _lastMapPanAt = DateTime.now();
-    // A recentre in flight is abandoned the moment the driver grabs the map
-    // again — otherwise its resume would fire mid-gesture and snap the view
-    // out from under their finger. Only a finger reaches this method: it is
-    // wired to onScrollListener, which a programmatic flyTo does not trip.
-    _followResumeTimer?.cancel();
     // ONE arrow, always (user report 2026-10-10: "que la flecha sea la misma
     // cuando hace zoom o mueve el mapa que cuando está normal" — size jump,
     // wrong heading and a double-arrow flicker on every gesture). The overlay
@@ -2055,26 +2042,97 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// flag until the camera has arrived keeps the arrow on the ground the
   /// whole way: the map slides under it and it ends up centred because it
   /// really is, not because it was told to be.
+  Future<void> _recenterWithFollow({
+    required double zoom,
+    required double bearing,
+    required double tilt,
+  }) async {
+    final seq = _cameraActionGate.begin();
+    final pos = _pos;
+    if (pos == null) {
+      ApiService.logClientEvent('recenter_fired', 'no_position');
+      if (mounted) _setState(() => _cameraFollowing = true);
+      return;
+    }
+    _pendingCamWrite = null;
+    _zoomEaseDone = true;
+    final zoneFollow = _phase == _Phase.searching &&
+        !_driverOnline &&
+        FeatureFlags.zonesMapEnabled;
+    _offlineFollowZoom = zoneFollow ? zoom : null;
+    final padding = zoneFollow
+        ? mapbox.MbxEdgeInsets(
+            top: 120, left: 0, bottom: _visibleSheetPx, right: 0)
+        : _kZeroCamPadding;
+    _cameraBearing = bearing;
+    final options = mapbox.CameraOptions(
+      center: mapbox.Point(
+          coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+      zoom: zoom,
+      bearing: bearing,
+      pitch: tilt,
+      padding: padding,
+    );
+    _camFlightUntil = DateTime.now()
+        .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
+    var issued = false;
+    var landed = false;
+    if (kIsWeb) {
+      final web = _webMap;
+      issued = web != null;
+      if (web != null) {
+        web.flyTo(
+          lng: pos.longitude,
+          lat: pos.latitude,
+          zoom: zoom,
+          bearing: bearing,
+          pitch: tilt,
+          durationMs: _kRecenterFlightMs,
+        );
+        landed = true;
+      }
+    } else {
+      final map = _map;
+      if (mounted && _mapMounted && map != null) {
+        issued = true;
+        try {
+          await map
+              .flyTo(options,
+                  mapbox.MapAnimationOptions(duration: _kRecenterFlightMs))
+              .timeout(
+                  const Duration(milliseconds: _kRecenterFlightMs + 2000));
+          landed = true;
+        } catch (e) {
+          debugPrint('[DriverOnline] recenter flyTo failed: $e');
+        }
+        if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
+        if (!landed && _mapMounted && identical(map, _map)) {
+          try {
+            await map
+                .setCamera(options)
+                .timeout(const Duration(seconds: 2));
+            landed = true;
+          } catch (e) {
+            debugPrint('[DriverOnline] recenter fallback failed: $e');
+            ApiService.logClientEvent('recenter_settle_write', 'failed=$e');
+          }
+        }
+      }
+    }
+    if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
+    ApiService.logClientEvent('recenter_fired', '$issued');
+    ApiService.logClientEvent(
+        'recenter_settle', 'landed=$landed phantoms=$_phantomGestureEvents');
+    _setState(() => _cameraFollowing = true);
+    _updateDriverAnnotation();
+  }
+
   void _recenterCamera() {
     if (!mounted) return;
-    // Diag breadcrumb (2026-10-11, "el botón de recentrar no funciona"):
-    // the tap + the flight outcome land in the server log — visible without
-    // the device. Removed once the chain is proven healthy on prod.
     ApiService.logClientEvent('recenter_tap',
         'online=$_driverOnline phase=$_phase hasPos=${_pos != null} mapMounted=$_mapMounted hasMap=${_map != null}');
     _phantomGestureEvents = 0;
-    _followResumeTimer?.cancel();
-    // An offer preview owns the frame: the route (driver → pickup →
-    // dropoff) is fitted above the card, so it must not be replaced by a
-    // recenter. The driver explores freely until the offer closes.
     if (_previewingOffer != null) return;
-    _cameraActionGate.begin();
-    // Recenter by mode (user specs 2026-10-13/14): OFFLINE = centre ON THE
-    // ARROW at the zone-view zoom ("el botón de centrar solo va a centrar
-    // donde esté la flecha, pero con ese zoom mostrando las zonas") — never
-    // the state-centroid frame; ONLINE = centre the ARROW ("el de la derecha
-    // será para centrar en la flecha") — the zone frame lives on the LEFT
-    // compass FAB (_onZoneCompassTap).
     if (_phase == _Phase.searching &&
         FeatureFlags.zonesMapEnabled &&
         !_driverOnline) {
@@ -2083,111 +2141,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
     final bearing = _smoothedBearing;
-    _cameraBearing = bearing; // sync for sprite selection
-    if (_pos == null) {
-      // No position to fly to, so there is no flight to wait out.
-      _setState(() => _cameraFollowing = true);
-      return;
-    }
     final isNav = _phase == _Phase.enRouteToPickup ||
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
-    // Recenter = the SAME in every mode (user spec 2026-10-12: "que funcione
-    // igual que cuando el driver está activo"): centre the arrow at street
-    // zoom, heading-up. The offline region view (10.8) stays as the resting
-    // state at boot/mode-flip — but this button means "take me to my arrow".
-    final fired = isNav
-        ? _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55)
-        // Searching: flat but HEADING-UP (user spec 2026-09-19) — the same
-        // rotation the per-frame chase keeps writing once follow resumes.
-        : _animateToPosition(_pos!, zoom: 15.5, bearing: bearing, tilt: 0);
-    ApiService.logClientEvent('recenter_fired', '$fired');
-    if (!fired) {
-      // The glide was vetoed (dead/remounting surface, mid ease) — flip
-      // follow NOW and let the per-frame chase centre the camera on the
-      // next frames. Never silent (user report 2026-10-11: "el botón de
-      // centrar offline no hace nada").
-      _setState(() => _cameraFollowing = true);
-      _updateDriverAnnotation();
-      return;
-    }
-
-    // The flyTo above runs for _kRecenterFlightMs. A little past that, the
-    // camera is where the marker already is and handing the overlay back to
-    // its centred mode changes nothing on screen.
-    //
-    // Not awaited: flyTo's future resolves on the native side and is
-    // rejected outright if the view goes away mid-flight, so the resume
-    // would be lost exactly when the driver most needs the camera to come
-    // back. A timer always fires, and _onCameraMoveStarted cancels it if
-    // they grab the map again.
-    _followResumeTimer = Timer(
-      const Duration(milliseconds: _kRecenterFlightMs + 40),
-      () {
-        if (!mounted) return;
-        _setState(() => _cameraFollowing = true);
-        // The overlay owns the marker again from this frame — flush the
-        // annotation to opacity 0 NOW (user report 2026-09-19, "se crean
-        // 2 flechas"): a parked driver produces no ticker frames, so no
-        // indirect caller was guaranteed to run this — the stale visible
-        // annotation and the overlay drew two arrows after pinch-zoom +
-        // recenter, for as long as the car stood still.
-        _updateDriverAnnotation();
-      },
-    );
-
-    // Settle check (2026-10-11: prod log shows recenter_fired=true yet the
-    // camera never moves — the native flyTo is issued and goes nowhere on
-    // this device). One beat after the flight we compare where the camera
-    // ACTUALLY sits: if it never arrived, a dry setCamera always lands — a
-    // dead button is worse than an unanimated jump, and the server log now
-    // carries the real outcome.
-    final settleTarget = _pos!;
-    // Same target as the flight above: online parity (2026-10-12 spec).
-    final settleZoom = isNav ? 17.5 : 15.5;
-    final settleTilt = isNav ? 55.0 : 0.0;
-    final tapAt = DateTime.now();
-    Timer(Duration(milliseconds: _kRecenterFlightMs + 200), () {
-      if (!mounted || kIsWeb) return;
-      final map = _map;
-      if (map == null || !_mapMounted) return;
-      // The driver grabbed the map again mid-flight — never fight the finger.
-      final lastPan = _lastMapPanAt;
-      if (lastPan != null && lastPan.isAfter(tapAt)) return;
-      final cam = _onlineCamState;
-      if (cam == null) return;
-      final c = cam.center.coordinates;
-      bool near(LatLng t) =>
-          (c.lat.toDouble() - t.latitude).abs() < 0.0005 &&
-          (c.lng.toDouble() - t.longitude).abs() < 0.0005;
-      final landed = near(settleTarget) || (_pos != null && near(_pos!));
-      ApiService.logClientEvent(
-          'recenter_settle', 'landed=$landed phantoms=$_phantomGestureEvents');
-      if (landed) return;
-      // Same discipline as every programmatic flight: suppress the manual-
-      // rotate unlatch and sync the last-written trackers, or THIS write's
-      // camera events read as a finger and the recenter FAB pops back up
-      // the moment the camera lands (user report 2026-10-12).
-      _camFlightUntil = DateTime.now()
-          .add(const Duration(milliseconds: _kRecenterFlightMs + 120));
-      _lastCamWriteCenter = settleTarget;
-      _lastCamWriteBearing = bearing;
-      _lastCamWriteZoom = settleZoom;
-      unawaited(map
-          .setCamera(mapbox.CameraOptions(
-        center: mapbox.Point(
-            coordinates:
-                mapbox.Position(settleTarget.longitude, settleTarget.latitude)),
-        zoom: settleZoom,
-        bearing: bearing,
-        pitch: settleTilt,
-        padding: _kZeroCamPadding,
-      ))
-          .catchError((Object e) {
-        debugPrint('[DriverOnline] recenter settle setCamera failed: $e');
-        ApiService.logClientEvent('recenter_settle_write', 'failed=$e');
-      }));
-    });
+    unawaited(_recenterWithFollow(
+      zoom: isNav ? 17.5 : 15.5,
+      bearing: bearing,
+      tilt: isNav ? 55 : 0,
+    ));
   }
 
   /// True while the marker is the Flutter overlay rather than the Mapbox
@@ -2269,14 +2230,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       }
       return off;
     }
-    // Centred while the camera follows — except during the offer preview,
-    // where the driver is an endpoint of the framed route, not the centre
-    // of the screen, so the arrow needs its real projected pixel.
-    if (_cameraFollowing && _previewingOffer == null) return null;
     final cam = _onlineCamState;
     final p = _pos;
     final size = _onlineMapSize;
     if (cam == null || p == null || size == null) return null;
+    if (_cameraFollowing && _previewingOffer == null) {
+      return Offset(size.width / 2, size.height / 2) + _camPadShift(cam);
+    }
     final c = cam.center.coordinates;
     final off = FlatMapProjection.screenOffsetHeading(
       target: p,
@@ -2694,7 +2654,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await map.style
           .setStyleSourceProperty('sec-dim-src', 'data', jsonEncode(fc));
       await map.style.setStyleLayerProperty(
-          'sec-dim', 'fill-opacity', effectiveSec == null ? 0.0 : 0.70);
+          'sec-dim', 'fill-opacity', effectiveSec == null ? 0.0 : 0.25);
     } catch (e) {
       debugPrint('[Zones] dim write failed: $e');
     }
@@ -2756,8 +2716,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _mapMounted &&
         _zoneLayersReady &&
         _phase == _Phase.searching &&
-        sel != null &&
-        ZoneService.demand[sel]?.off != true;
+        sel != null;
     if (!active) {
       _stopZoneWave();
       return;
@@ -3071,23 +3030,25 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _recenterArrowZoneZoom() async {
     final map = _map;
     if (map == null || kIsWeb) return;
-    // Este recenter es lo más nuevo — cualquier fit de zonas en vuelo (el
-    // glide-out del flip online→offline) muere y no puede pisarlo al caer.
     final seq = _cameraActionGate.begin();
     final pos = _pos;
-    if (pos == null || !ZoneService.sectorsReady) {
+    if (pos == null) {
       await _fitHomeZones();
+      return;
+    }
+    if (!ZoneService.sectorsReady) {
+      await _recenterWithFollow(
+          zoom: 10.8, bearing: _smoothedBearing, tilt: 0);
       return;
     }
     final secs = ZoneService.sectorsForState(ZoneService.stateOfPoint(pos));
     final bbox = _sectorsBBox(secs);
     if (bbox == null) {
-      await _fitHomeZones();
+      await _recenterWithFollow(
+          zoom: 10.8, bearing: _smoothedBearing, tilt: 0);
       return;
     }
     try {
-      // The zoom that frames the driver's state sectors, then the centre is
-      // replaced with the arrow's.
       final fitCam = await map.cameraForCoordinatesPadding(
         [
           mapbox.Point(coordinates: mapbox.Position(bbox[0], bbox[1])),
@@ -3099,52 +3060,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         null,
         null,
       );
-      if (!_cameraActionGate.isCurrent(seq))
-        return; // otro recenter llegó detrás
-      // Programmatic — wear the suppression so the flight's own camera
-      // events never read as a manual rotate/gesture.
-      _camFlightUntil = DateTime.now()
-          .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
-      await map.flyTo(
-          mapbox.CameraOptions(
-            center: mapbox.Point(
-                coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-            zoom: fitCam.zoom,
-            bearing: 0,
-            pitch: 0,
-            // Centrar en lo visible: el sheet abierto no se traga la flecha.
-            padding: mapbox.MbxEdgeInsets(
-                top: 120, left: 0, bottom: _visibleSheetPx, right: 0),
-          ),
-          mapbox.MapAnimationOptions(duration: _kRecenterFlightMs));
-      if (mounted && _cameraActionGate.isCurrent(seq)) {
-        _setState(() => _cameraFollowing = false);
-      }
+      if (!_cameraActionGate.isCurrent(seq)) return;
+      await _recenterWithFollow(
+          zoom: fitCam.zoom ?? 10.8, bearing: _smoothedBearing, tilt: 0);
     } catch (e) {
-      // Nunca en silencio (2026-10-16): si la medición nativa falla, el
-      // recenter igual vuela a la flecha al zoom de vista de zonas.
       debugPrint('[Zones] arrow zone-zoom recenter failed: $e');
       ApiService.logClientEvent(
           'recenter_fit', 'scope=arrow_zone_zoom_fallback');
       if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
-      try {
-        _camFlightUntil = DateTime.now()
-            .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
-        await map.flyTo(
-            mapbox.CameraOptions(
-              center: mapbox.Point(
-                  coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-              zoom: 10.8,
-              bearing: 0,
-              pitch: 0,
-              padding: mapbox.MbxEdgeInsets(
-                  top: 120, left: 0, bottom: _visibleSheetPx, right: 0),
-            ),
-            mapbox.MapAnimationOptions(duration: _kRecenterFlightMs));
-        if (mounted && _cameraActionGate.isCurrent(seq)) {
-          _setState(() => _cameraFollowing = false);
-        }
-      } catch (_) {}
+      await _recenterWithFollow(
+          zoom: 10.8, bearing: _smoothedBearing, tilt: 0);
     }
   }
 
@@ -3285,7 +3210,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // debe mantenerse cuando se cierra y se abre la app").
     PrefsCache.instance.then((p) => p.setString('driver_selected_zone', s.id));
     HapticService.selectionClick();
-    _goIgniteCtrl?.forward(from: 0.0);
+    if (ZoneService.demand[s.id]?.off != true) {
+      _goIgniteCtrl?.forward(from: 0.0);
+    }
     _syncZoneLayers(forceHighlight: true);
   }
 

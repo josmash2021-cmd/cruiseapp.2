@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, Form, File
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, or_, text, case, cast, Date, delete, update
+from sqlalchemy import select, func, and_, or_, text, case, cast, Date, String, delete, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
@@ -1810,6 +1810,90 @@ async def create_driver_incentive(
 # ══════════════════════════════════════════════════════════
 #  ADMIN — PUSH NOTIFICATIONS
 # ══════════════════════════════════════════════════════════
+
+@router.get("/admin/notification-recipients", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_notification_recipients(
+    role: str = Query(..., pattern="^(driver|rider)$"),
+    search: Optional[str] = Query(None, max_length=120),
+    limit: int = Query(500, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=10000),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return lightweight recipients for the dispatch notification picker."""
+    query = (
+        select(User, Vehicle)
+        .outerjoin(Vehicle, and_(
+            Vehicle.user_id == User.id,
+            Vehicle.is_active == True,
+            Vehicle.archived_at.is_(None),
+        ))
+        .where(User.role == role)
+    )
+    if search and search.strip():
+        term = search.strip().lower()
+        full_name = (
+            func.coalesce(User.first_name, "") + " " +
+            func.coalesce(User.last_name, "")
+        )
+        text_columns = [
+            User.first_name, User.last_name, User.email, User.phone,
+            User.drive_city, User.drive_state, User.plate_number,
+            User.plate_state, User.platform, User.status,
+            User.verification_status, User.app_version, User.device_model,
+            User.os_version, User.cruise_level, Vehicle.make, Vehicle.model,
+            Vehicle.color, Vehicle.plate, Vehicle.plate_state,
+            Vehicle.vehicle_type, Vehicle.vin,
+        ]
+        conditions = [
+            func.lower(func.coalesce(column, "")).contains(term, autoescape=True)
+            for column in text_columns
+        ]
+        conditions.extend([
+            func.lower(full_name).contains(term, autoescape=True),
+            cast(User.id, String).contains(term, autoescape=True),
+            cast(Vehicle.year, String).contains(term, autoescape=True),
+        ])
+        query = query.where(or_(*conditions))
+
+    result = await db.execute(
+        query.order_by(User.id.desc(), Vehicle.id.desc()).offset(offset).limit(limit)
+    )
+    rows = result.all()
+    recipients = []
+    seen = set()
+    for user, vehicle in rows:
+        if user.id in seen:
+            continue
+        seen.add(user.id)
+        recipients.append({
+            "id": user.id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "phone": user.phone,
+            "role": user.role,
+            "photo_url": _abs_photo_url(user.photo_url),
+            "drive_city": user.drive_city,
+            "drive_state": user.drive_state,
+            "plate_number": user.plate_number,
+            "plate_state": user.plate_state,
+            "platform": user.platform,
+            "status": user.status,
+            "verification_status": user.verification_status,
+            "app_version": user.app_version,
+            "has_fcm": bool(user.fcm_token),
+            "vehicle": None if vehicle is None else {
+                "make": vehicle.make,
+                "model": vehicle.model,
+                "year": vehicle.year,
+                "color": vehicle.color,
+                "plate": vehicle.plate,
+                "plate_state": vehicle.plate_state,
+                "vehicle_type": vehicle.vehicle_type,
+            },
+        })
+    return {"items": recipients, "has_more": len(rows) == limit}
+
 
 @router.post("/admin/notifications/send", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_send_notification(

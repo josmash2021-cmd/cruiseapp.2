@@ -1355,11 +1355,14 @@ class S {
   String get arrivingAtDestination =>
       _es ? 'Llegando a tu destino' : 'Arriving at your destination';
   String get driverOnTheWayCard =>
-      _es ? 'Conductor en camino' : 'Driver on the way';
+      _es ? 'Tu conductor ya va en camino' : 'Your driver is on the way';
+  String driverArrivesInEstimate(int minutes) => _es
+      ? 'Tu conductor llega en un estimado de $minutes min'
+      : 'Your driver arrives in about $minutes min';
   String get driverAlmostHereCard =>
       _es ? 'Tu conductor está casi aquí' : 'Your driver is almost here';
   String get driverArrivingCard =>
-      _es ? '¡Tu conductor está llegando!' : 'Your driver is arriving!';
+      _es ? 'El driver está por llegar' : 'Your driver is almost here';
   String get driverAtPickupSpot => _es
       ? 'Tu conductor está en el punto de recogida 📍'
       : 'Your driver is at the pickup spot 📍';

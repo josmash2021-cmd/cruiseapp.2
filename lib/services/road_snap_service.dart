@@ -24,8 +24,8 @@ import '../models/lat_lng.dart';
 /// onto that line locally between refreshes. The arrow therefore glides
 /// along real roads, not along the GPS noise. Mapbox Map Matching first
 /// (same token as every other map call), the OSRM demo as the fallback
-/// (same provider the directions fallback already uses), raw GPS when both
-/// fail — the old line simply stays until the next success.
+/// (same provider the directions fallback already uses). If both fail the
+/// controller keeps the last trusted line instead of advancing on raw GPS.
 class RoadSnapService {
   static const _traceMax = 10;
   static const _minInterval = Duration(seconds: 6);
@@ -94,8 +94,8 @@ class RoadSnapService {
     final radiuses = trace
         .map((p) =>
             (p.acc.isFinite && p.acc > 0 && p.acc <= 200)
-                ? p.acc.round()
-                : _defaultRadiusM)
+            ? p.acc.round()
+            : _defaultRadiusM)
         .join(';');
 
     // 1) Mapbox Map Matching — same access token as every other map call.
@@ -137,7 +137,7 @@ class RoadSnapService {
       debugPrint('[RoadSnap] osrm match failed: $e');
     }
 
-    return null; // caller keeps the old line; fixes fall back to raw
+    return null; // caller keeps the last trusted line instead of raw movement
   }
 
   /// Shared by both providers: `matchings[0].geometry.coordinates` as

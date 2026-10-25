@@ -50,16 +50,20 @@ import '../../services/analytics_service.dart';
 import '../../services/chat_service.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/gold_location_dot.dart';
+import '../../widgets/driver_sonar_marker.dart';
 import '../../widgets/static_map_snapshot.dart';
 import '../../utils/smooth_motion.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
 import '../../map/flat_map_projection.dart';
+import '../../map/camera_action_gate.dart';
+import '../../map/driver_road_lock.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../services/places_service.dart';
 import '../../utils/driver_location_settings.dart';
+import '../../utils/gps_fix_policy.dart';
 import '../chat_screen.dart';
 import '../safety_screen.dart';
 import '../../navigation/car_icon_loader.dart';
@@ -302,6 +306,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   mapbox.PolylineAnnotation? _previewDropoffAnnot;
   LatLng? _pos;
   ResilientPositionStream? _posStream;
+  final GpsFixPolicy _gpsFixPolicy = GpsFixPolicy();
   final _gpsService = GpsService();
   DateTime _lastNavSetState = DateTime(0);
   DateTime _lastBackendLocSend = DateTime(0);
@@ -352,6 +357,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     double bearing = 0,
     double tilt = 0,
   }) {
+    _cameraActionGate.begin();
     // Every programmatic flight suppresses the manual-rotate unlatch for
     // its duration — the flight's intermediate bearings are not a finger.
     _camFlightUntil = DateTime.now()
@@ -731,11 +737,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Uint8List? _goldPinBytes;
   bool _dotPopDone = false; // true after first-appearance pop completes
   double _dotPopScale = 0.0; // 0→1.15→1.0 during pop, then 1.0
-  // Route-snap state (see _snapToRoute in driver_online_map.dart): hysteresis
-  // on the snap boundary and continuity on the polyline segment, so the
-  // marker never flickers between the lane and raw GPS.
-  bool _routeSnapActive = false;
-  int _snapSegIdx = -1;
   // Road-snap while searching (user report 2026-09-27: arrow off the road
   // lines at high zoom with no route to project onto). The service keeps a
   // matched polyline of the streets actually driven; _snapToRoute projects
@@ -745,6 +746,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _snapOnRouteSrc = true;
   late final RoadSnapService _roadSnap = RoadSnapService()
     ..onLine = _onRoadSnapLine;
+  final DriverRoadLock _roadLock = DriverRoadLock();
+  double? _roadLockBearing;
   // Re-asserts the dot annotation while the smooth ticker is parked (driver
   // stationary). Without it a dot that failed to appear — or whose final
   // pop-scale flush was dropped mid-IPC — stays wrong until the driver moves.
@@ -795,6 +798,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// panels responsive — right for panels, far too slow for an arrow
   /// turning through a bend. This repaints only the marker.
   final ValueNotifier<int> _markerFrame = ValueNotifier<int>(0);
+  AnimationController? _driverSonarCtrl;
 
   // ── Diagnóstico de movimiento (panel oculto; long-press en la zona del
   // chip de earnings). Los 4 eslabones de la cadena por segundo: fixes
@@ -802,6 +806,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // número lento señala el eslabón roto: GPS ~1 = feed del teléfono; tick
   // bajo = ticker muerto; cam/anot bajas con tick alto = canal nativo.
   int _diagFixes = 0, _diagTicks = 0, _diagCamWrites = 0, _diagAnnotUpdates = 0;
+  int _diagRejectedFixes = 0;
+  double _diagLastAccuracyM = 0;
   final ValueNotifier<String> motionDiag = ValueNotifier<String>('');
   bool motionDiagVisible = false;
   Timer? _diagTimer;
@@ -1419,7 +1425,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // El flip es in-place — sin push, sin handoff de superficie, sin snapshot.
   bool _driverOnline = false;
   bool _enteringOnline = false;
-  // Daily "You're now online!" instruction (2026-10-24): every 24 hours,
+  // "You're now online!" instruction: every 6 hours for every driver,
   // rendered as an overlay over the online map — see _maybeShowOnlineIntro.
   bool _showOnlineIntro = false;
   // Working state for the airport pills ('AL'/'FL', from the profile's
@@ -1534,13 +1540,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // Token anti-stale de los fits de zonas (2026-10-16): un fit que quedó en
   // vuelo muere si otro fit/recenter arrancó después (nunca pisa un recenter
   // más nuevo — el "recenter no funciona después del flip").
-  int _zoneFitSeq = 0;
+  final CameraActionGate _cameraActionGate = CameraActionGate();
   // Onda de selección en el borde del sector (2026-10-16) — los campos viven
   // en la clase (las extensiones no declaran campos); la lógica está en
   // driver_online_map.dart.
   Timer? _zoneWaveTimer;
   String? _zoneWaveSectorId;
   double _zoneWavePhase = 0;
+  bool _zoneWaveWriteBusy = false;
+  double? _zoneWavePendingPhase;
   // Guard anti doble-tap: la ruta del menú clásico solo se empuja una vez.
   bool _menuRouteOpen = false;
   // Gate de aprobación EN EL DESTINO (2026-10-17, spec "eso nunca puede
@@ -1773,6 +1781,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         });
       });
     }
+    _syncDriverSonar();
   }
 
   /// Route safety net (user report 2026-10-12: "después de ir a otra página
@@ -1828,6 +1837,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
     _smoothTicker?.stop();
     _smoothTicker?.dispose();
+    _driverSonarCtrl?.dispose();
     _enterCtrl.dispose();
     _driverAnim.dispose();
     _reqCtrl?.dispose();
@@ -1848,6 +1858,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _dotWatchdog?.cancel();
     _goldDot.dispose();
     _roadSnap.reset(); // in-flight matching answers die with the screen
+    _roadLock.reset();
     _headingSub?.cancel();
     _headingSource.dispose();
     EarningsPrivacy.hidden.removeListener(_onEarningsPrivacyChanged);

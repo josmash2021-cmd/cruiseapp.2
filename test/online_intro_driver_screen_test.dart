@@ -26,7 +26,7 @@ void main() {
         'user_session_v1': jsonEncode({
           'userId': '1',
           'email': '',
-          'phone': '+13854612042',
+          'phone': '+15550001111',
           'role': 'driver',
         }),
       });
@@ -76,7 +76,7 @@ void main() {
       expect(prefs.getInt('online_intro_last_seen_at'),
           fakeNow.millisecondsSinceEpoch);
 
-      fakeNow = fakeNow.add(const Duration(hours: 25));
+      fakeNow = fakeNow.add(const Duration(hours: 7));
       await tester.pump(const Duration(seconds: 2));
       await tester.pump();
 

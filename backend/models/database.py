@@ -463,6 +463,7 @@ class Trip(Base):
     wheelchair_accessible = Column(Boolean, default=False)
     arrived_at = Column(DateTime(timezone=True), nullable=True)  # when driver reached pickup spot (for wait time fee)
     driver_assigned_at = Column(DateTime(timezone=True), nullable=True)
+    rider_approach_notified_at = Column(DateTime(timezone=True), nullable=True)
     # 4-digit pickup handshake (2026-09-12): shown on the rider's Find-My
     # screen; the driver hears it from the rider and enters it to unlock
     # Start Ride when the ~2 m proximity handshake can't fire. Rider-facing
@@ -1158,6 +1159,7 @@ async def migrate_add_columns(conn):
         ("trips", "platform_fee", "FLOAT"),
         ("trips", "driver_share_rate", "FLOAT"),
         ("trips", "payout_excluded", "BOOLEAN DEFAULT 0"),
+        ("trips", "rider_approach_notified_at", "DATETIME"),
         ("trips", "updated_at", "DATETIME"),
         ("trips", "pickup_pin", "VARCHAR(4)"),
         ("ratings", "tip_amount", "FLOAT DEFAULT 0.0"),
@@ -1399,6 +1401,7 @@ async def migrate_postgres(conn):
         ("trips", "platform_fee", "FLOAT"),
         ("trips", "driver_share_rate", "FLOAT"),
         ("trips", "payout_excluded", "BOOLEAN DEFAULT FALSE"),
+        ("trips", "rider_approach_notified_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "refund_status", "VARCHAR(20)"),
         ("trips", "refund_amount", "FLOAT DEFAULT 0.0"),
         ("trips", "refund_reason", "TEXT"),

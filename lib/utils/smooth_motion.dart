@@ -23,7 +23,16 @@ import 'dart:math' as math;
 /// in simulation: the marker spent 33–73% of frames at a standstill at a
 /// steady 8 m/s). Aiming at the extrapolated point keeps the glide alive
 /// between fixes: 0% stalled frames, rendered speed 8.02 ± 0.13 m/s.
+enum MotionFeedState { tracking, degraded, reacquiring }
+
 class SmoothMotion {
+  SmoothMotion({DateTime Function()? clock}) : _now = clock ?? DateTime.now;
+
+  final DateTime Function() _now;
+  MotionFeedState _feedState = MotionFeedState.tracking;
+
+  MotionFeedState get feedState => _feedState;
+
   // Current rendered position (null = no GPS yet).
   double? _lat;
   double? _lng;
@@ -89,10 +98,9 @@ class SmoothMotion {
   static const double _maxExtrapolationSec = 5.0;
 
   /// How far ahead of the latest fix the extrapolated aim point may lead, in
-  /// seconds of travel. Caps the guess when the feed goes quiet: with a dead
-  /// feed the marker glides at most this far past the last fix and holds,
-  /// instead of running on for the full [_maxExtrapolationSec]. 2 s covers
-  /// the 1 Hz iOS cadence with jitter headroom; a live feed never reaches it.
+  /// seconds of travel. Caps the guess when the feed goes quiet: after this
+  /// lead the velocity decays progressively to zero by [_maxExtrapolationSec].
+  /// A later fix starts a bounded recovery instead of a catch-up sprint.
   static const double _maxLeadSec = 2.0;
 
   /// Maximum acceleration the velocity estimate may gain per second of fix
@@ -159,12 +167,61 @@ class SmoothMotion {
   DateTime? _frozenSkipAt;
   double? _frozenSkipTsMs;
 
-  void _rememberFrozenSkip(
-      double lat, double lng, DateTime at, double? tsMs) {
+  void _rememberFrozenSkip(double lat, double lng, DateTime at, double? tsMs) {
     _frozenSkipLat = lat;
     _frozenSkipLng = lng;
     _frozenSkipAt = at;
     _frozenSkipTsMs = tsMs;
+  }
+
+  void _beginReacquire(
+    double lat,
+    double lng, {
+    double? bearing,
+    double? speedMps,
+    required DateTime now,
+    double? timestampMs,
+  }) {
+    final baseLat = _targetLat ?? _lat!;
+    final baseLng = _targetLng ?? _lng!;
+    final cosLat = math.cos(baseLat * math.pi / 180.0);
+    final dxM = (lng - baseLng) * 111320.0 * cosLat;
+    final dyM = (lat - baseLat) * 110540.0;
+    final previousSpeed = this.speedMps;
+    final validSpeed = speedMps != null && speedMps.isFinite && speedMps >= 0
+        ? math.min(speedMps, 60.0)
+        : null;
+    final nextSpeed = validSpeed ?? math.min(previousSpeed, 25.0);
+    final heading = bearing != null && bearing.isFinite
+        ? bearing % 360
+        : (dxM.abs() + dyM.abs() > 0.1
+            ? math.atan2(dxM, dyM) * 180 / math.pi
+            : _targetBearing);
+    final radians = heading * math.pi / 180.0;
+
+    _targetLat = lat;
+    _targetLng = lng;
+    _lastTargetAt = now;
+    _lastTargetTsMs = timestampMs;
+    _vLat = nextSpeed * math.cos(radians) / 110540.0;
+    _vLng = nextSpeed *
+        math.sin(radians) /
+        (111320.0 * math.cos(lat * math.pi / 180.0));
+    _corrVelLat = 0;
+    _corrVelLng = 0;
+    _corrVelBrg = 0;
+    _vBearing = 0;
+    _lastBearingAt = null;
+    _consecutiveHolds = 0;
+    _slowFixes = 0;
+    _stationary = false;
+    _frozenSkipLat = null;
+    _frozenSkipLng = null;
+    _frozenSkipAt = null;
+    _frozenSkipTsMs = null;
+    _speedHist.clear();
+    if (bearing != null && bearing.isFinite) setBearing(bearing);
+    _feedState = MotionFeedState.reacquiring;
   }
 
   /// Provide a new GPS target. Measures velocity from the delta to the
@@ -205,13 +262,54 @@ class SmoothMotion {
     // platform sends.
     if (!lat.isFinite || !lng.isFinite) return;
 
-    final now = DateTime.now();
-    // Wall-clock sanity for the capture timestamp: future or prehistoric
-    // timestamps are ignored and the arrival time paces that fix instead.
-    final double? fixTsMs =
-        (timestampMs != null && timestampMs.isFinite && timestampMs > 0)
-            ? timestampMs
-            : null;
+    final now = _now();
+    final double? fixTsMs = (timestampMs != null &&
+            timestampMs.isFinite &&
+            timestampMs > 0 &&
+            timestampMs <= now.millisecondsSinceEpoch + 5000)
+        ? timestampMs
+        : null;
+    if (fixTsMs != null &&
+        _lastTargetTsMs != null &&
+        fixTsMs <= _lastTargetTsMs!) {
+      return;
+    }
+    if (_lat != null && _targetLat != null && _lastTargetAt != null) {
+      final gapSec = now.difference(_lastTargetAt!).inMilliseconds / 1000.0;
+      if (gapSec > _maxLeadSec) {
+        _beginReacquire(lat, lng,
+            bearing: bearing,
+            speedMps: speedMps,
+            now: now,
+            timestampMs: fixTsMs);
+        return;
+      }
+    }
+    if (_feedState == MotionFeedState.reacquiring &&
+        speedMps != null &&
+        speedMps.isFinite &&
+        speedMps >= 0 &&
+        speedMps < _stationaryExitMps) {
+      _vLat = 0;
+      _vLng = 0;
+      _targetLat = lat;
+      _targetLng = lng;
+      _lastTargetAt = now;
+      _lastTargetTsMs = fixTsMs ?? _lastTargetTsMs;
+      final cosLat = math.cos(_lat! * math.pi / 180.0);
+      final dLat = lat - _lat!;
+      final dLng = lng - _lng!;
+      final remainingM = math.sqrt(
+        math.pow(dLng * 111320.0 * cosLat, 2) + math.pow(dLat * 110540.0, 2),
+      );
+      if (remainingM < 1.0) {
+        _stationary = true;
+        _corrVelLat = 0;
+        _corrVelLng = 0;
+        _feedState = MotionFeedState.tracking;
+      }
+      return;
+    }
     // Stationary freeze (user report 2026-09-17): a parked car's fixes can
     // jump 20-60 m on bad signal while the platform's own speed reading
     // keeps saying ~0. A jump that big with speed ~0 is GPS wander, not
@@ -235,9 +333,9 @@ class SmoothMotion {
           // or a pre-freeze hop would pin the marker at a wrong spot
           // forever. Wander is 20-60 m; a fix that itself reports good
           // accuracy and disagrees by more than 150 m is a correction, not
-          // noise — snap to it (snapTo also releases the freeze; the next
-          // parked fix re-enters it at the corrected spot). Only a fix
-          // that DECLARES itself accurate counts (iOS reports -1 when it
+          // noise — recover toward it with bounded motion (reacquiring also
+          // releases the freeze; the next parked fix re-enters it at the
+          // corrected spot). Only a fix that DECLARES itself accurate counts (iOS reports -1 when it
           // has no accuracy reading — that is unknown, not good).
           final acc = accuracyM;
           if (acc != null && acc.isFinite && acc >= 0 && acc <= 65) {
@@ -249,7 +347,11 @@ class SmoothMotion {
                   math.pow(dLat * 110540.0, 2),
             );
             if (distM > 150) {
-              snapTo(lat, lng, bearing: bearing);
+              _beginReacquire(lat, lng,
+                  bearing: bearing,
+                  speedMps: speedMps,
+                  now: now,
+                  timestampMs: fixTsMs);
               if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
               return;
             }
@@ -272,14 +374,15 @@ class SmoothMotion {
         final dLat = lat - _targetLat!;
         final dLng = lng - _targetLng!;
         final distM = math.sqrt(
-          math.pow(dLng * 111320.0 * cosLat, 2) +
-              math.pow(dLat * 110540.0, 2),
+          math.pow(dLng * 111320.0 * cosLat, 2) + math.pow(dLat * 110540.0, 2),
         );
         _slowFixes++;
         if (distM > 8.0 || _slowFixes >= 2) {
           _stationary = true;
           _vLat = 0;
           _vLng = 0;
+          _corrVelLat = 0;
+          _corrVelLng = 0;
           _consecutiveHolds = 0;
           _lastTargetAt = now;
           if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
@@ -323,27 +426,13 @@ class SmoothMotion {
         // Equirectangular meters — accurate enough at GPS-smoothing scales.
         final cosLat = math.cos(baseLat * math.pi / 180.0);
         final distM = math.sqrt(
-          math.pow(dLng * 111320.0 * cosLat, 2) +
-              math.pow(dLat * 110540.0, 2),
+          math.pow(dLng * 111320.0 * cosLat, 2) + math.pow(dLat * 110540.0, 2),
         );
         final impliedSpeed = distM / dtSec; // m/s
 
-        // GPS teleport glitch (tunnel re-acquire, cell-tower hop): snap
-        // directly instead of ingesting a 100+ m/s velocity estimate that
-        // rockets the dot across the map.
-        if (impliedSpeed > 60.0) {
-          snapTo(lat, lng, bearing: bearing);
-          if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
-          return;
-        }
-
-        // Speed fusion (2026-10-23, owner ask "mucho más smooth"): median
-        // of the last 3 implied speeds caps one-off ghost spikes at 2.5×
-        // the recent norm (never below 12 m/s so a real launch isn't
-        // clipped), and the blend weight further down is accuracy-adaptive
-        // — a fix that declares 3 m pulls hard, one that declares 40 m
-        // only nudges the velocity estimate.
-        var fusedSpeed = impliedSpeed;
+        // A position jump cannot turn into a velocity spike. The correction
+        // has its own frame cap, so the marker never needs to snap here.
+        var fusedSpeed = math.min(impliedSpeed, 60.0);
         if (_speedHist.length == 3) {
           final sorted = [..._speedHist]..sort();
           final ceiling = math.max(12.0, sorted[1] * 2.5);
@@ -351,8 +440,7 @@ class SmoothMotion {
         }
         _speedHist.add(impliedSpeed);
         if (_speedHist.length > 3) _speedHist.removeAt(0);
-        final fusionRatio =
-            impliedSpeed > 0 ? fusedSpeed / impliedSpeed : 1.0;
+        final fusionRatio = impliedSpeed > 0 ? fusedSpeed / impliedSpeed : 1.0;
 
         // A stopped or crawling car's GPS heading is noise — it swings
         // 30-90° between fixes at a traffic light, and applying it made the
@@ -366,9 +454,8 @@ class SmoothMotion {
         // for 6 s and the delta reads as one slow slide. Left uncapped,
         // the blended velocity keeps the marker gliding far past the fix.
         // 12 m/s ≈ 43 km/h: a city car between fixes, never a flight.
-        final speedScale = dtSec > 5.0 && fusedSpeed > 12.0
-            ? 12.0 / fusedSpeed
-            : 1.0;
+        final speedScale =
+            dtSec > 5.0 && fusedSpeed > 12.0 ? 12.0 / fusedSpeed : 1.0;
 
         // Standstill jitter hold: while essentially parked, ignore position
         // hops small enough to be GPS wander rather than movement.
@@ -389,11 +476,10 @@ class SmoothMotion {
         // (The freeze-then-jump in slow traffic was NOT this radius — it
         // was the per-hold velocity halving stacked with 3 consecutive
         // holds; both are softened below.)
-        final holdRadiusM = (accuracyM == null ||
-                !accuracyM.isFinite ||
-                accuracyM <= 0)
-            ? 15.0
-            : accuracyM.clamp(2.5, 15.0);
+        final holdRadiusM =
+            (accuracyM == null || !accuracyM.isFinite || accuracyM <= 0)
+                ? 15.0
+                : accuracyM.clamp(2.5, 15.0);
 
         final curSpeedMps = math.sqrt(
           math.pow(_vLng * 111320.0 * cosLat, 2) +
@@ -520,7 +606,7 @@ class SmoothMotion {
     // (≤45°/s) earn fast tracking (0.7); bigger jumps — multipath noise
     // bursts, never a street turn at course speed — earn only 0.25, so the
     // burst train lands as one calm average.
-    final now = DateTime.now();
+    final now = _now();
     if (_lastBearingAt != null) {
       final dt = now.difference(_lastBearingAt!).inMilliseconds / 1000.0;
       if (dt > 0.05 && dt < 10.0) {
@@ -563,10 +649,10 @@ class SmoothMotion {
   /// the marker BACKWARDS over the lead it had legitimately built up.
   (double, double) _aimPoint() {
     if (_lat == null || _targetLat == null) return (0, 0);
+    if (_stationary) return (_lat!, _lng!);
     var ageSec = 0.0;
     if (_lastTargetAt != null) {
-      ageSec =
-          DateTime.now().difference(_lastTargetAt!).inMilliseconds / 1000.0;
+      ageSec = _now().difference(_lastTargetAt!).inMilliseconds / 1000.0;
     }
     if (ageSec > _maxExtrapolationSec) return (_lat!, _lng!);
     final leadSec = ageSec > _maxLeadSec ? _maxLeadSec : ageSec;
@@ -583,27 +669,23 @@ class SmoothMotion {
     // never teleport the marker across several seconds in one step.
     if (dtSec > 0.2) dtSec = 0.2;
 
-    // Freeze velocity if the last GPS fix is stale — avoids extrapolating
-    // the marker off into nowhere when the driver phone silently drops GPS.
     double vLat = _vLat;
     double vLng = _vLng;
     if (_lastTargetAt != null) {
       final staleSec =
-          DateTime.now().difference(_lastTargetAt!).inMilliseconds / 1000.0;
-      if (staleSec > _maxExtrapolationSec) {
-        vLat = 0;
-        vLng = 0;
+          _now().difference(_lastTargetAt!).inMilliseconds / 1000.0;
+      if (staleSec > _maxLeadSec) {
+        _feedState = MotionFeedState.degraded;
+        final decay = (1.0 -
+                (staleSec - _maxLeadSec) / (_maxExtrapolationSec - _maxLeadSec))
+            .clamp(0.0, 1.0);
+        vLat *= decay;
+        vLng *= decay;
       }
     }
 
-    // Constant-velocity advance.
     double stepLat = vLat * dtSec;
     double stepLng = vLng * dtSec;
-
-    // Gentle proportional correction — handles measurement noise, sudden
-    // turns, and GPS jumps without a visible snap. The aim point is the
-    // extrapolated target (see _aimPoint) — aiming at the raw fix is what
-    // produced the sprint-and-park cadence.
     final aim = _aimPoint();
     final residualLat = aim.$1 - _lat!;
     final residualLng = aim.$2 - _lng!;
@@ -613,8 +695,34 @@ class SmoothMotion {
     final aLng = _springOmega * _springOmega * residualLng -
         2 * _springOmega * _corrVelLng;
     _corrVelLng += aLng * dtSec;
+
+    final maxMps = _feedState == MotionFeedState.reacquiring
+        ? (speedMps * 1.5).clamp(6.0, 25.0).toDouble()
+        : (speedMps * 1.5).clamp(30.0, 45.0).toDouble();
+    final cosLat = math.cos(_targetLat! * math.pi / 180.0);
+    final corrMps = math.sqrt(
+      math.pow(_corrVelLng * 111320.0 * cosLat, 2) +
+          math.pow(_corrVelLat * 110540.0, 2),
+    );
+    if (corrMps > maxMps && corrMps > 0) {
+      final scale = maxMps / corrMps;
+      _corrVelLat *= scale;
+      _corrVelLng *= scale;
+    }
     stepLat += _corrVelLat * dtSec;
     stepLng += _corrVelLng * dtSec;
+
+    final stepMps = math.sqrt(
+      math.pow(stepLng * 111320.0 * cosLat, 2) +
+          math.pow(stepLat * 110540.0, 2),
+    );
+    final stepM = stepMps * dtSec;
+    final maxStepM = math.min(maxMps * dtSec, 1.0);
+    if (stepM > maxStepM && stepM > 0) {
+      final scale = maxStepM / stepM;
+      stepLat *= scale;
+      stepLng *= scale;
+    }
 
     // Never overshoot past the aim point on either axis. The aim point is
     // moving (see above), so this clamps the marker onto the extrapolated
@@ -661,6 +769,14 @@ class SmoothMotion {
         (newLat - _lat!).abs() > 1e-9 || (newLng - _lng!).abs() > 1e-9;
     _lat = newLat;
     _lng = newLng;
+    if (_feedState == MotionFeedState.reacquiring) {
+      final cosLat = math.cos(_targetLat! * math.pi / 180.0);
+      final remainingM = math.sqrt(
+        math.pow((_targetLng! - _lng!) * 111320.0 * cosLat, 2) +
+            math.pow((_targetLat! - _lat!) * 110540.0, 2),
+      );
+      if (remainingM < 1.0) _feedState = MotionFeedState.tracking;
+    }
 
     // Bearing: constant-turn glide + shortest-arc correction aimed at the
     // EXTRAPOLATED target — the angular twin of the position glide above.
@@ -671,8 +787,7 @@ class SmoothMotion {
     double vBrg = _vBearing;
     double aimBrg = _targetBearing;
     if (_lastBearingAt != null) {
-      final ageSec =
-          DateTime.now().difference(_lastBearingAt!).inMilliseconds / 1000.0;
+      final ageSec = _now().difference(_lastBearingAt!).inMilliseconds / 1000.0;
       if (ageSec > _maxExtrapolationSec) {
         vBrg = 0;
         aimBrg = _bearing;
@@ -689,10 +804,14 @@ class SmoothMotion {
     while (dBrg < -180) {
       dBrg += 360;
     }
-    final aBrg = _springOmega * _springOmega * dBrg -
-        2 * _springOmega * _corrVelBrg;
+    final aBrg =
+        _springOmega * _springOmega * dBrg - 2 * _springOmega * _corrVelBrg;
     _corrVelBrg += aBrg * dtSec;
+    _corrVelBrg =
+        _corrVelBrg.clamp(-_maxTurnRateDps, _maxTurnRateDps).toDouble();
     var stepBrg = vBrg * dtSec + _corrVelBrg * dtSec;
+    final maxBrgStep = _maxTurnRateDps * dtSec;
+    stepBrg = stepBrg.clamp(-maxBrgStep, maxBrgStep).toDouble();
     // Never overshoot the (moving) aim — same clamp shape as position.
     if (dBrg > 0) {
       if (stepBrg > dBrg) stepBrg = dBrg;
@@ -763,12 +882,14 @@ class SmoothMotion {
     _corrVelBrg = 0;
     _lastBearingAt = null;
     _consecutiveHolds = 0;
+    _slowFixes = 0;
     _stationary = false;
+    _feedState = MotionFeedState.tracking;
     _frozenSkipLat = null;
     _frozenSkipLng = null;
     _frozenSkipAt = null;
     _frozenSkipTsMs = null;
-    _lastTargetAt = DateTime.now();
+    _lastTargetAt = _now();
     _lastTargetTsMs = null;
     _speedHist.clear();
   }
@@ -789,7 +910,9 @@ class SmoothMotion {
     _bearing = 0;
     _targetBearing = 0;
     _consecutiveHolds = 0;
+    _slowFixes = 0;
     _stationary = false;
+    _feedState = MotionFeedState.tracking;
     _frozenSkipLat = null;
     _frozenSkipLng = null;
     _frozenSkipAt = null;

@@ -80,13 +80,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('the daily rule is due immediately and again after 24 hours', () {
-    final day = const Duration(hours: 24).inMilliseconds;
+  test('the general rule is due immediately and again after 6 hours', () {
+    final interval = onlineIntroRepeatInterval.inMilliseconds;
     final now = DateTime(2026, 10, 24, 12).millisecondsSinceEpoch;
+    expect(interval, const Duration(hours: 6).inMilliseconds);
     expect(onlineIntroDueNow(null, now), isTrue);
-    expect(onlineIntroDueNow(now - day + 1, now), isFalse);
-    expect(onlineIntroDueNow(now - day, now), isTrue,
-        reason: 'exactly 24 hours after the last acknowledgement is due');
+    expect(onlineIntroDueNow(now - interval + 1, now), isFalse);
+    expect(onlineIntroDueNow(now - interval, now), isTrue,
+        reason: 'exactly 6 hours after the last acknowledgement is due');
     expect(onlineIntroDueNow(now + 1000, now), isFalse,
         reason: 'a future timestamp must not show early');
   });

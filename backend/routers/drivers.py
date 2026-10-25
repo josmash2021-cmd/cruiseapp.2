@@ -30,6 +30,7 @@ from utils.helpers import (
 # reads as a 500 with no clue in it.
 from utils.image_validation import validate_image_bytes
 from services.fcm_service import _send_fcm_push_async
+from services.approach_notifications import maybe_notify_rider_approach
 from services import vehicle_tiers
 from config import (
     PUBLIC_URL, STRIPE_SECRET, _HAS_STRIPE, _stripe_mod,
@@ -420,6 +421,8 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     # Only push real location to trip watchers when driver is online.
     # Skipping when is_online=False prevents corrupting the rider's map with (0,0).
     if trip_row and body.is_online:
+        _safe_create_task(maybe_notify_rider_approach(driver_id, body.eta_seconds, trip_row),
+                          name=f"rider_approach_{driver_id}")
         _safe_create_task(event_bus.push_driver_location(trip_row, driver_id, body.lat, body.lng))
         # Socket.io primary channel (sub-200ms latency)
         _safe_create_task(emit_driver_location(

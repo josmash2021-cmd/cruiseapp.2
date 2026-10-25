@@ -218,6 +218,7 @@ class DriverLocationIn(BaseModel):
     lat: float
     lng: float
     is_online: bool = True
+    eta_seconds: int | None = Field(default=None, ge=0)
 
 
 class DriverDestinationIn(BaseModel):

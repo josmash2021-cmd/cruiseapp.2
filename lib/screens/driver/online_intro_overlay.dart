@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/haptic_service.dart';
 
-/// Daily instruction overlay: it floats OVER the online map (it is NOT a
-/// page — the map stays mounted underneath a black backdrop). Every 24 hours
+/// Periodic instruction overlay: it floats OVER the online map (it is NOT a
+/// page — the map stays mounted underneath a black backdrop). Every 6 hours
 /// per device, dismissed only by the black, gold-lettered "Entendido" button;
 /// if the app dies mid-overlay it simply shows again on the next GO.
 ///
@@ -14,7 +14,7 @@ import '../../services/haptic_service.dart';
 /// The first-N-drivers figure used in the copy — EDITABLE by design.
 const int kFirstDriverCount = 100;
 
-const Duration onlineIntroRepeatInterval = Duration(hours: 24);
+const Duration onlineIntroRepeatInterval = Duration(hours: 6);
 
 bool onlineIntroDueNow(int? lastSeenMs, int nowMs) {
   if (lastSeenMs == null || lastSeenMs <= 0) return true;

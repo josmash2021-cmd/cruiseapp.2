@@ -119,7 +119,7 @@ String _riderNotifBody(String type) {
   return switch (type) {
     // ── Rider notifications ──
     'driver_assigned'    => isEs ? 'Se ha asignado un conductor a tu viaje.' : 'A driver has been assigned to your ride.',
-    'driver_arriving'    => isEs ? 'Tu conductor está casi en el punto de recogida.' : 'Your driver is almost at the pickup location.',
+    'driver_arriving'    => isEs ? 'Tu driver llega en 2 minutos o menos.' : 'Your driver arrives in 2 minutes or less.',
     'driver_arrived'     => isEs ? 'Tu conductor está en el punto de recogida.' : 'Your driver is at the pickup location.',
     'driver_found'       => isEs ? '¡Encontramos un conductor para tu viaje!' : 'We found a driver for your ride!',
     'arrived_dropoff'    => isEs ? 'Has llegado a tu destino. ¡Gracias por viajar con Cruise!' : 'You have arrived at your destination. Thanks for riding with Cruise!',
@@ -621,6 +621,18 @@ void _handleNotificationTap(RemoteMessage message) {
   // Rider: driver cancelled scheduled → refresh home card
   if (type == 'scheduled_driver_cancelled') {
     HomeScreen.scheduledRideRefresh.value++;
+    return;
+  }
+
+  // Rider: the <=2 min and actual-arrival pushes open the current trip leg.
+  if (type == 'driver_arriving' || type == 'driver_arrived') {
+    final tripId = int.tryParse(message.data['trip_id'] ?? '');
+    if (tripId != null) {
+      UserSession.getMode().then((mode) {
+        if (mode != 'rider') return;
+        _navigateToScheduledTracking(tripId);
+      });
+    }
     return;
   }
 

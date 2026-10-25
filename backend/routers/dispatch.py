@@ -3091,6 +3091,7 @@ async def release_trip(
 
     trip.driver_id = None
     trip.driver_assigned_at = None
+    trip.rider_approach_notified_at = None
     trip.status = "requested"
     await db.commit()
 
@@ -3186,6 +3187,7 @@ async def reject_offer(
     ):
         trip.driver_id = None
         trip.driver_assigned_at = None
+        trip.rider_approach_notified_at = None
         await db.commit()
         _dispatch_status_cache.pop(trip.id, None)
         if _HAS_FIRESTORE:

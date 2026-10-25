@@ -23,7 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final accept =
       File('lib/screens/driver/driver_trip_accept_screen.dart')
-          .readAsStringSync();
+      .readAsStringSync();
   final nav =
       File('lib/screens/driver/driver_nav_view.dart').readAsStringSync();
   final riderMap =
@@ -189,7 +189,7 @@ void main() {
           isTrue);
       final chooser =
           bodyOf(accept, 'void _showNavigateChooser({required bool isPickup})',
-              maxLen: 2800);
+          maxLen: 2800);
       expect(chooser.contains('s.navCruiseNav'), isTrue,
           reason: 'Cruise Navigation is the first option');
       expect(chooser.contains('_openGoogleMaps(coords)'), isTrue);
@@ -279,7 +279,7 @@ void main() {
     });
 
     test('nav fixes pass the 65 m accuracy gate so 25 m cannot false-arm', () {
-      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 500);
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 700);
       expect(body.contains('pos.accuracy > 65'), isTrue,
           reason: 'without the gate, GPS noise at 25 m would fire false '
               'reroutes all day');
@@ -565,7 +565,8 @@ void main() {
       'road furniture', () {
     test('the route tangent steers the arrow at EVERY speed on-route', () {
       final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 4200);
-      expect(body.contains('bearing: onRoute ? null'), isTrue,
+      expect(body.contains('bearing: onRoute'), isTrue);
+      expect(body.contains('_roadLockBearing'), isTrue,
           reason: 'user report: GPS headings arrive once a second and the '
               'arrow turned in steps — on-route only the continuous route '
               'tangent speaks');
@@ -590,9 +591,11 @@ void main() {
 
     test('the tangent look-ahead scales with speed — the arrow turns WITH '
         'the car, never off the line', () {
-      final body = bodyOf(nav, 'double? _routeHeadingFor(LatLng pos) {',
-          maxLen: 1400);
-      expect(body.contains('(_speedMps * 0.8).clamp(6.0, 24.0)'), isTrue,
+      final body =
+          bodyOf(nav, 'double? _routeHeadingFor(LatLng pos) {', maxLen: 1400);
+      final roadLock = File('lib/map/driver_road_lock.dart').readAsStringSync();
+      expect(body.contains('_roadLock.project'), isTrue);
+      expect(roadLock.contains('(speedMps * 0.8).clamp(6.0, 24.0)'), isTrue,
           reason: 'user report 2026-09-27: "cuando da la vuelta la flecha se '
               'pasa o se sale de la linea" — the 1.2 s lead pointed the arrow '
               'a full curve ahead mid-turn');
@@ -708,11 +711,13 @@ void main() {
               'display position is now ALWAYS the route projection, any '
               'distance; only measurements (off-route / arrival / trim) '
               'keep the raw fix');
-      expect(body.contains('RouteSplice.projectOnSegment'), isTrue);
+      expect(body.contains('_roadLock.project'), isTrue);
       final fix = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 2600);
-      expect(fix.contains('_snapToNavRoute(fixLL) ?? fixLL'), isTrue,
-          reason: 'a house driveway is genuinely off the road — the arrow '
-              'rides the line, worst at nav start parked at the pickup');
+      expect(fix.contains('final display = _snapToNavRoute(fixLL);'), isTrue);
+      expect(fix.contains('if (display != null)'), isTrue,
+          reason: 'a house driveway is genuinely off the road — without a '
+              'trusted line the marker must not advance on raw GPS');
+      expect(fix.contains('?? fixLL'), isFalse);
       expect(fix.contains('RouteSplice.distanceToPolylineM(_routePts, fixLL)'),
           isTrue,
           reason: 'off-route detection must read the RAW fix, never the '
@@ -723,6 +728,7 @@ void main() {
           isTrue,
           reason: 'the nav opens with the arrow ON the line, not floating '
               'in the pickup\'s block');
+      expect(seed.contains('if (seed != null)'), isTrue);
     });
   });
 

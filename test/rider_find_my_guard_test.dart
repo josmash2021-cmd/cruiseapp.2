@@ -68,18 +68,15 @@ void main() {
   group('proximity FOUND is pure, reversible UI (user spec 2026-09-16)', () {
     test('the radius models TWO phones: accuracy + 8 m, 12 m floor, 30 m cap',
         () {
-      expect(
-          src.contains(
-              'static const double _kDetectFloorMeters = 12.0;'),
+      expect(src.contains('static const double _kDetectFloorMeters = 12.0;'),
           isTrue,
           reason: 'user report 2026-09-17: side-by-side phones read 15-20 ft '
               'apart from pure GPS noise — a 2 m base never latched');
-      expect(
-          src.contains('static const double _kDriverNoiseMeters = 8.0;'),
+      expect(src.contains('static const double _kDriverNoiseMeters = 8.0;'),
           isTrue,
           reason: 'the relay carries no accuracy for the driver fix');
-      expect(src.contains('static const double _kDetectMaxMeters = 30.0;'),
-          isTrue,
+      expect(
+          src.contains('static const double _kDetectMaxMeters = 30.0;'), isTrue,
           reason: 'spec: never accept a fix beyond 30 m, however bad the GPS');
       final body = bodyOf('void _startProximityWatch() {');
       expect(body.contains('pos.accuracy + _kDriverNoiseMeters'), isTrue,
@@ -118,8 +115,7 @@ void main() {
     test('widget.onConfirmed is invoked from exactly one place: driver start',
         () {
       final calls = RegExp(r'widget\.onConfirmed\(\)').allMatches(src).length;
-      expect(calls, 1,
-          reason: 'proximity must never call onConfirmed');
+      expect(calls, 1, reason: 'proximity must never call onConfirmed');
       final body = bodyOf('Future<void> _onDriverStartedTrip() async {');
       expect(body.contains('widget.onConfirmed()'), isTrue);
       expect(body.contains('_fadeOutCtrl.forward()'), isTrue,
@@ -146,7 +142,8 @@ void main() {
           reason: 'the hero glow chases the arrow and goes green in FOUND');
     });
 
-    test('the FOUND check is a big FILLED disc, not a tiny outline '
+    test(
+        'the FOUND check is a big FILLED disc, not a tiny outline '
         '(user spec 2026-09-17)', () {
       expect(src.contains('Icons.check_circle_rounded'), isTrue);
       expect(src.contains('size: 264'), isTrue,
@@ -154,8 +151,8 @@ void main() {
               'as the 296 arrow');
       expect(src.contains('Icons.check_circle_outline_rounded'), isFalse);
       final dist = bodyOf('Widget _buildDistanceLine()');
-      expect(dist.contains('duration: const Duration(milliseconds: 300)'),
-          isTrue,
+      expect(
+          dist.contains('duration: const Duration(milliseconds: 300)'), isTrue,
           reason: 'the ft readout trails reality at 600 ms — 300 keeps it '
               'on the live phone fixes');
     });
@@ -166,8 +163,7 @@ void main() {
               'initializing — latching _userTookCamera off them blocked '
               'every refit and the mini map showed blank navy forever '
               '(user report 2026-09-17)');
-      expect(src.contains('if (_bootFitted) _userTookCamera = true;'),
-          isTrue);
+      expect(src.contains('if (_bootFitted) _userTookCamera = true;'), isTrue);
     });
   });
 
@@ -200,7 +196,8 @@ void main() {
       expect(src.contains('surfaceRemoved()'), isTrue,
           reason: 'a revoke is honest only after the MapWidget left the tree');
       expect(
-          src.contains('MapSurfaceCoordinator.instance.release(_mapSurfaceOwner)'),
+          src.contains(
+              'MapSurfaceCoordinator.instance.release(_mapSurfaceOwner)'),
           isTrue,
           reason: 'dispose must give the surface back to the tracking map');
     });
@@ -208,10 +205,13 @@ void main() {
       expect(src.contains('_buildMiniMapStandIn'), isTrue);
       expect(src.contains('StaticRoutePreview('), isTrue);
     });
-    test('the live map is top-down dark style, interactive pan/zoom (user spec 2026-09-15)', () {
+    test(
+        'the live map is top-down dark style, interactive pan/zoom (user spec 2026-09-15)',
+        () {
       expect(src.contains('styleUri: MapboxConfig.styleDark'), isTrue);
       expect(src.contains('pitch: 0.0'), isTrue);
-      final body = bodyOf('Future<void> _onMiniMapCreated(mapbox.MapboxMap ctrl) async {');
+      final body = bodyOf(
+          'Future<void> _onMiniMapCreated(mapbox.MapboxMap ctrl) async {');
       expect(body.contains('scrollEnabled: true'), isTrue,
           reason: 'spec: the strip pans');
       expect(body.contains('pinchToZoomEnabled: true'), isTrue,
@@ -223,8 +223,7 @@ void main() {
       expect(body.contains('pitchEnabled: false'), isTrue);
     });
     test('a user pan/zoom latches the camera so auto-fit never fights it', () {
-      expect(src.contains('if (_bootFitted) _userTookCamera = true;'),
-          isTrue,
+      expect(src.contains('if (_bootFitted) _userTookCamera = true;'), isTrue,
           reason: 'the latch is gated on the first real fit — boot-time '
               'camera events are the map initializing, not the rider '
               '(2026-09-17)');
@@ -233,8 +232,7 @@ void main() {
           reason: 'once the rider takes the camera the periodic refit must '
               'stop dragging it back');
     });
-    test('the rider dot is the exact phone fix, only the car is smoothed',
-        () {
+    test('the rider dot is the exact phone fix, only the car is smoothed', () {
       expect(src.contains('final _driverMotion = SmoothMotion();'), isTrue);
       expect(src.contains('LatLng? _riderRaw;'), isTrue,
           reason: 'user spec 2026-09-17: the rider dot is the phone\'s own '
@@ -244,11 +242,13 @@ void main() {
       expect(src.contains('spd >= 0.6'), isTrue,
           reason: 'parked wander is held; the first walking step lands');
     });
-    test('car marker is the tier PNG, ONLY the edges feather into the background', () {
+    test(
+        'car marker is the tier PNG, ONLY the edges feather into the background',
+        () {
       expect(src.contains('assets/images/car_suv.png'), isTrue);
       expect(src.contains('assets/images/car_sedan.png'), isTrue);
-      final body = bodyOf('Widget _buildMiniMap({double height = 280}) {',
-          maxLen: 6000);
+      final body =
+          bodyOf('Widget _buildMiniMap({double height = 280}) {', maxLen: 6000);
       expect(body.contains('IgnorePointer'), isTrue,
           reason: 'the feather gradients never intercept touches');
       expect(body.contains('LinearGradient'), isTrue,
@@ -286,8 +286,7 @@ void main() {
           reason: 'user spec 2026-09-17: driving routes must carry '
               'traffic-aware durations — free-flow ETAs lie in real traffic');
     });
-    test('no provider ever fabricates a straight origin→destination route',
-        () {
+    test('no provider ever fabricates a straight origin→destination route', () {
       expect(directions.contains('return [origin, destination];'), isFalse,
           reason: 'user report 2026-09-17: an empty parse was "rescued" as '
               'a 2-point beeline that every screen drew as the REAL route');
@@ -312,7 +311,8 @@ void main() {
           reason: 'user spec 2026-09-17: gold dot, blue is gone');
       expect(src.contains('circleColor: _gold.toARGB32(),'), isTrue);
       expect(
-          src.contains('circleColor: _gold.withValues(alpha: 0.22).toARGB32(),'),
+          src.contains(
+              'circleColor: _gold.withValues(alpha: 0.22).toARGB32(),'),
           isTrue,
           reason: 'the halo follows in the same gold at 0.22');
     });
@@ -324,8 +324,7 @@ void main() {
               'driver\'s raw phone fix — never the snapped display point, '
               'never a marked-arrival spot');
     });
-    test('markers are created even when nothing moves (parked at pickup)',
-        () {
+    test('markers are created even when nothing moves (parked at pickup)', () {
       final body = bodyOf('void _onMapTick(Duration elapsed) {');
       expect(body.contains('_riderDotAnnot == null'), isTrue);
       expect(body.contains('_carAnnot == null'), isTrue,
@@ -378,20 +377,22 @@ void main() {
               'fallback only');
     });
 
-    test('the GPS handler also prefers the raw phone fix (single source)',
-        () {
-      expect(src.contains('final driver = _lastDriverPos ?? widget.driverPosOf!();'),
+    test('the GPS handler also prefers the raw phone fix (single source)', () {
+      expect(
+          src.contains(
+              'final driver = _lastDriverPos ?? widget.driverPosOf!();'),
           isTrue,
           reason: 'user spec 2026-09-17: without this, the GPS handler wrote '
               'the smoothed pull position while the ticker wrote the raw fix '
               '— two sources tugging "N ft" back and forth');
-      final handler = bodyOf(
-          '_riderGpsSub = Geolocator.getPositionStream(', maxLen: 1800);
+      final handler =
+          bodyOf('_riderGpsSub = Geolocator.getPositionStream(', maxLen: 1800);
       expect(handler.contains('spd >= 0.6'), isTrue,
           reason: 'the rider dot IS the exact fix: held only while the fix '
               'reports ~no speed (parked wander), written the instant the '
               'rider walks — precision without lag');
-      expect(handler.contains('_riderRaw = LatLng(pos.latitude, pos.longitude)'),
+      expect(
+          handler.contains('_riderRaw = LatLng(pos.latitude, pos.longitude)'),
           isTrue);
     });
   });
@@ -410,11 +411,12 @@ void main() {
   group('tracking screen side of the handoff', () {
     final tracking =
         File('lib/screens/rider_tracking_screen.dart').readAsStringSync();
-    final controller =
-        File('lib/controllers/rider_tracking_controller.dart').readAsStringSync();
+    final controller = File('lib/controllers/rider_tracking_controller.dart')
+        .readAsStringSync();
 
     test('revoke nulls the controller so the guards stop map writes', () {
-      final start = tracking.indexOf('Future<void> _acquireMapSurface() async {');
+      final start =
+          tracking.indexOf('Future<void> _acquireMapSurface() async {');
       expect(start, isNonNegative);
       final end = tracking.indexOf('await surfaceRemoved();', start);
       expect(end, greaterThan(start));
@@ -428,8 +430,8 @@ void main() {
       // onConfirmed closure in the screen.
       final onConfirmed = tracking.indexOf('onConfirmed: () async {');
       expect(onConfirmed, isNonNegative);
-      final closure = tracking.substring(
-          onConfirmed, tracking.indexOf('_restartRouteAnimation();', onConfirmed));
+      final closure = tracking.substring(onConfirmed,
+          tracking.indexOf('_restartRouteAnimation();', onConfirmed));
       expect(closure.contains('unawaited(_acquireMapSurface());'), isTrue,
           reason: 'the tracking map must remount when the Find-My overlay '
               'leaves via the driver-started fade-out');
@@ -437,8 +439,7 @@ void main() {
       final pulse = controller
           .indexOf('RiderConfirmPickupScreen.externalStartPulse.value++;');
       expect(pulse, isNonNegative);
-      final closeBlock = controller.substring(
-          pulse, pulse + 1400);
+      final closeBlock = controller.substring(pulse, pulse + 1400);
       final reacquires = RegExp(r'unawaited\(_acquireMapSurface\(\)\);')
           .allMatches(closeBlock)
           .length;
@@ -448,8 +449,7 @@ void main() {
     });
   });
 
-  group('far-driver fit, bigger strip, human distance units (2026-09-19)',
-      () {
+  group('far-driver fit, bigger strip, human distance units (2026-09-19)', () {
     test('fit zoom floor is 3.5 — never zoom into the ocean midpoint', () {
       final body =
           bodyOf('Future<void> _fitMiniMap({bool instant = false}) async {');
@@ -459,7 +459,8 @@ void main() {
               '2026-09-19, "el mini mapa se queda azul")');
     });
 
-    test('the strip grew 200 → 280 (default), shrinks only on compact screens', () {
+    test('the strip grew 200 → 280 (default), shrinks only on compact screens',
+        () {
       final body =
           bodyOf('Widget _buildMiniMap({double height = 280}) {', maxLen: 6000);
       expect(body.contains('height: height'), isTrue,
@@ -502,7 +503,8 @@ void main() {
   });
 
   group('mini-map self-healing + stand-in pin size (2026-09-19)', () {
-    test('a load error retries the mount — cap 3, 3 s backoff, success '
+    test(
+        'a load error retries the mount — cap 3, 3 s backoff, success '
         'cancels, timer disposed', () {
       expect(src.contains('_scheduleMiniMapRetry'), isTrue);
       expect(src.contains('_miniMapMaxRetries = 3'), isTrue);
@@ -538,36 +540,38 @@ void main() {
     });
   });
 
-  group('near-destination close-up (user spec 2026-09-19, foto 2 → 3)', () {
+  group('no automatic near-destination zoom (current user spec)', () {
     final view =
         File('lib/widgets/tracking/tracking_map_view.dart').readAsStringSync();
     final screen =
         File('lib/screens/rider_tracking_screen.dart').readAsStringSync();
 
-    test('the close-up is its own frame KIND with a street-level cap', () {
-      final body = view.substring(
-          view.indexOf('if (_phase == _TrackPhase.nearDestination) {'),
-          view.indexOf('if (_phase == _TrackPhase.nearDestination) {') + 2400);
-      expect(body.contains('_framedPhaseKind = 2'), isTrue,
-          reason: 'a different frame — the smoothing re-seeds, never a cut');
-      expect(body.contains('maxZoom: 16.5'), isTrue,
-          reason: 'street level like the reference, never a speck frame');
-      expect(body.contains('_nearDestFramePoints()'), isTrue,
-          reason: 'car + ~300 m of remaining road + the dropoff pin');
-      expect(body.contains('movedM > 40'), isTrue,
-          reason: 're-fit only on meaningful advance — a per-frame re-fit '
-              'is the auto-recenter the rider killed, as a zoom-in');
-      expect(screen.contains('LatLng? _nearFitAnchor'), isTrue);
+    test('near-destination shares the full-route frame', () {
+      final tick = view.indexOf('void _onCameraTick(Duration elapsed)');
+      final end = view.indexOf('/// Identity of the trip frame', tick);
+      expect(tick, isNonNegative);
+      expect(end, greaterThan(tick));
+      final body = view.substring(tick, end);
+      expect(body.contains('_framedPhaseKind = 2'), isFalse,
+          reason: 'there is no separate close-up frame kind anymore');
+      expect(body.contains('_nearDestFramePoints'), isFalse);
+      expect(body.contains('_nearFitAnchor'), isFalse);
+      expect(body.contains('maxZoom: 16.5'), isFalse,
+          reason: 'no street-level zoom when the driver gets close');
+      expect(body.contains('_tripFramePoints()'), isTrue,
+          reason: 'nearDestination and onTrip share the full route');
+      expect(body.contains('_lastTripFitSig'), isTrue);
+      expect(screen.contains('_lastApproachFitSig'), isTrue);
+      expect(screen.contains('LatLng? _nearFitAnchor'), isFalse);
     });
 
-    test('leaving the close-up restores the full-route fit once', () {
-      final body = view.substring(
-          view.indexOf('if (_framedPhaseKind == 2) {'),
-          view.indexOf('if (_framedPhaseKind == 2) {') + 400);
-      expect(body.contains('_framedPhaseKind = 1'), isTrue);
-      expect(body.contains('_needsTripReframe = true'), isTrue,
-          reason: 'ETA climbing back over the hysteresis must bring the '
-              'wide trip frame back in one move');
+    test('manual pan has no timed auto-resume', () {
+      expect(view, isNot(contains('_lastUserCameraInteraction')));
+      expect(view, isNot(contains('_kResumeFollowAfterPanMs')));
+      expect(view.split('if (_userControllingCamera) return;').length - 1, 2,
+          reason: 'native and web both keep the camera with the rider');
+      expect(screen, contains('ignoring: !_userControllingCamera'));
+      expect(screen, contains('opacity: _userControllingCamera ? 1 : 0'));
     });
   });
 

@@ -910,20 +910,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   void _recenter() {
     _userControllingCamera = false;
-    _lastUserCameraInteraction = null;
     _setState(() {}); // drops the recenter button
 
     final isOnTrip =
         _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
     if (isOnTrip || _phase == _TrackPhase.arriving) {
-      // Drop the smoothing so the framer re-seeds from the live fit instead
-      // of resuming from where the rider left the map.
+      // Re-seed only for this manual fit; no automatic chase is re-enabled.
       _mapCamera?.resetFollowFraming();
-      // Then frame it here and now, rather than waiting for the framer to
-      // seed on some later tick. The button says "show route"; it has to
-      // answer with the route, immediately and in one move — resuming the
-      // follow and letting it converge is what made it read as the camera
-      // going back to chasing the car.
       final pts = isOnTrip ? _tripFramePoints() : _approachFramePoints();
       final mq = MediaQuery.maybeOf(context);
       if (_mapCamera != null && mq != null && pts.isNotEmpty) {
@@ -938,32 +931,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _fitRouteBounds();
   }
 
-  /// The rider dragged the map: hand them the camera and stop chasing.
-  ///
-  /// Driven by the map's scroll (gesture) callback, NOT by camera-change
-  /// events. onCameraChangeListener fires for our own easeTo too, so it
-  /// needed a "this one is mine" flag that was cleared by a 120 ms
-  /// Future scheduled on every one of the 25 camera frames per second —
-  /// and those clears regularly landed while an easeTo was still
-  /// settling. The chase camera then declared the rider had grabbed the
-  /// map and stopped following the car for the rest of the trip, with no
-  /// gesture ever happening. A gesture callback cannot lie.
+  /// The rider dragged the map: hand them the camera until Show route is used.
   void _onUserPannedMap() {
     if (!_userControllingCamera) {
-      // Logged because the rider reports the camera handing itself over
-      // without being touched. These are gesture callbacks, so they should
-      // not fire for our own per-frame writes — if this line shows up in a
-      // session where nobody touched the map, the listener is the liar and
-      // the fix belongs here rather than in the framer.
-      debugPrint('[Tracking] rider took the camera (pan/zoom gesture) — '
-          'follow paused for ${_kResumeFollowAfterPanMs}ms');
+      debugPrint('[Tracking] rider took the camera — automatic follow off');
       _userControllingCamera = true;
       _mapCamera?.stopNavigationChase();
-      // Raises the recenter button. The flag flips twice a ride at most, so
-      // the rebuild is free.
       _setState(() {});
     }
-    _lastUserCameraInteraction = DateTime.now();
   }
 
   /// One vsync frame: advance the car, then move the camera after it.
@@ -1020,7 +995,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   bool get _cameraChaseAllowed =>
       _phase != _TrackPhase.arrived && _phase != _TrackPhase.completed;
 
-  /// Ticker callback: drive the Uber-style chase camera.
+  /// Ticker callback: fit the current route by content, never chase the car.
   void _onCameraTick(Duration elapsed) {
     if (kIsWeb) {
       _webCameraTick();
@@ -1033,31 +1008,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // one line that decides it — see _chaseCarAnchor.
     unawaited(_mapCar?.setHidden(_chaseCarAnchor != null) ?? Future.value());
 
-    // Auto-resume: hand the camera back after the rider stops panning.
-    // _lastUserCameraInteraction was being written and never read, so a
-    // single pan parked the camera permanently — the car drove off screen
-    // and never came back for the rest of the ride.
-    if (_userControllingCamera) {
-      final last = _lastUserCameraInteraction;
-      if (last == null ||
-          DateTime.now().difference(last).inMilliseconds >
-              _kResumeFollowAfterPanMs) {
-        _userControllingCamera = false;
-        _lastUserCameraInteraction = null;
-        // The full-route frame comes back too (2026-09-13): resume used to
-        // leave the camera wherever the rider abandoned it, and since the
-        // route signature hadn't changed the fit never re-ran — the dropoff
-        // pin could sit off-screen for the rest of the trip.
-        _needsTripReframe = true;
-        // Re-seed from the live fit: the framer's smoothed centre/zoom are
-        // from before the rider moved the map, so writing them straight out
-        // would snap the view instead of gliding back.
-        _mapCamera?.resetFollowFraming();
-        _setState(() {}); // drops the recenter button
-      } else {
-        return;
-      }
-    }
+    if (_userControllingCamera) return;
     if (!_cameraChaseAllowed) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
 
@@ -1073,86 +1024,27 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (mq == null) return;
     final topPad = mq.padding.top;
     final bottomPad = mq.padding.bottom;
-    final screenSize = mq.size;
-
-    // ── Both halves of the ride are framed the same way ──
-    // The rider is reading a map, not driving one: whatever is still ahead —
-    // the car, the pin it is going to, and the road between them — stays
-    // fully on screen.
+    // Both legs fit their whole current route between the cards. No chase,
+    // no near-destination close-up and no automatic recenter after a gesture.
     final isOnTrip =
         _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
     if (_phase != _TrackPhase.arriving && !isOnTrip) return;
 
     if (isOnTrip) {
       if (_mapCamera!.isNavChaseActive) {
-        // Leaves the car marker to Mapbox again — _chaseCarAnchor goes null,
-        // so the Flutter-painted chase car stops and the annotation shows.
         _mapCamera!.stopNavigationChase();
       }
-      // Near destination (user spec 2026-09-19, foto 2 → foto 3): as the
-      // driver closes in, the wide trip frame gives way to a street-level
-      // frame of the final stretch — car, dropoff pin and the road left
-      // between them. The nearDestination phase's own hysteresis (enter
-      // ≤2, exit ≥4) is the trigger, so the frame never flaps at a light.
-      if (_phase == _TrackPhase.nearDestination) {
-        if (_framedPhaseKind != 2) {
-          _framedPhaseKind = 2;
-          _mapCamera!.resetFollowFraming();
-          _nearFitAnchor = null;
-        }
-        // Re-fit only when the car meaningfully advanced (~40 m) — a
-        // per-frame re-fit is the same auto-recenter the rider killed,
-        // just as a zoom-in.
-        final anchor = _nearFitAnchor;
-        final movedM = anchor == null
-            ? double.infinity
-            : Geolocator.distanceBetween(
-                anchor.latitude,
-                anchor.longitude,
-                _animPos.latitude,
-                _animPos.longitude);
-        if (movedM > 40 || _needsTripReframe) {
-          _nearFitAnchor = _animPos;
-          _needsTripReframe = false;
-          unawaited(_mapCamera!.fitBounds(
-            points: _nearDestFramePoints(),
-            maxZoom: 16.5,
-            // Same padding discipline as the wide fit — the pin body clears
-            // the top card (+56), the frame clears the bottom sheet.
-            topPadding: topPad + 10 + _topCardHeight + 56,
-            bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
-          ));
-        }
-        return;
-      }
-      // Leaving the close-up (ETA climbed back over the hysteresis): the
-      // trip KIND returns — re-seed and re-frame the full route once.
-      if (_framedPhaseKind == 2) {
+      if (_framedPhaseKind != 1) {
         _framedPhaseKind = 1;
         _mapCamera!.resetFollowFraming();
-        _needsTripReframe = true;
+        _lastTripFitSig = 0;
       }
-      // ONE stable frame for the whole ride (user spec 2026-08-09): fit the
-      // full trip route BETWEEN the top card and the bottom sheet and HOLD
-      // it — a moderate zoom-out, no auto-recenter. The per-frame
-      // updateFollowFrame recentered continuously, and its custom span math
-      // let the route slide behind the cards; fitBounds uses the native
-      // padding, so nothing hides. Re-fit ONLY when the frame content
-      // changes (late route seed, restore, a real reroute of the trip
-      // polyline) — never because the car moved.
       final sig = _tripFitSignature();
-      // _needsTripReframe forces the fit without a content change: the
-      // rider panned (auto-resume above) or a reroute replaced the drawn leg
-      // — the full route and the dropoff pin always come back on screen.
       if (sig != 0 && (sig != _lastTripFitSig || _needsTripReframe)) {
         _lastTripFitSig = sig;
         _needsTripReframe = false;
         unawaited(_mapCamera!.fitBounds(
           points: _tripFramePoints(),
-          // The +56 covers the dropoff pin: its tip anchors at the route's
-          // last point and the pin body extends ~55 px UP from there — with
-          // only +32 the pin poked up behind the top card (user report
-          // 2026-09-17: "el pin del dropoff no aparece").
           topPadding: topPad + 10 + _topCardHeight + 56,
           bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
         ));
@@ -1160,40 +1052,24 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       return;
     }
 
-    // Approach phase keeps the per-frame follow: the driver is moving
-    // toward the rider, so the frame has to track that.
     if (_framedPhaseKind != 0) {
       _framedPhaseKind = 0;
       _mapCamera!.resetFollowFraming();
+      _lastApproachFitSig = 0;
     }
-
-    _mapCamera!.updateFollowFrame(
-      points: _approachFramePoints(),
-      screenSize: screenSize,
-      topPadding: topPad + 10 + _topCardHeight + 32,
-      bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
-    );
-  }
-
-  /// The close-up frame for the final stretch (user spec 2026-09-19, foto
-  /// 3): the car, the dropoff pin and the remaining ~300 m of road between
-  /// them — nothing else. The tail keeps a curved approach on screen;
-  /// without it a U-turn into the pin clips out of frame.
-  List<LatLng> _nearDestFramePoints() {
-    final pts = <LatLng>[];
-    if (_animPos.latitude != 0) pts.add(_animPos);
-    final leg = _routePts.length >= 2 ? _routePts : _tripRoutePts;
-    if (leg.length >= 2) {
-      var acc = 0.0;
-      for (var i = leg.length - 1; i > 0; i--) {
-        pts.add(leg[i]);
-        acc += Geolocator.distanceBetween(leg[i].latitude, leg[i].longitude,
-            leg[i - 1].latitude, leg[i - 1].longitude);
-        if (acc > 300) break;
+    final sig = Object.hash(_tripFitSignature(), _approachRouteFetched);
+    if (sig != _lastApproachFitSig || _needsTripReframe) {
+      _lastApproachFitSig = sig;
+      _needsTripReframe = false;
+      final pts = _approachFramePoints();
+      if (pts.isNotEmpty) {
+        unawaited(_mapCamera!.fitBounds(
+          points: pts,
+          topPadding: topPad + 10 + _topCardHeight + 32,
+          bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
+        ));
       }
     }
-    pts.add(widget.dropoffLatLng);
-    return pts;
   }
 
   /// Identity of the trip frame's CONTENT, not of the camera: the route
@@ -3307,12 +3183,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     );
   }
 
-  /// Web chase camera, driven by the same shared ticker as native.
-  ///
-  /// No 3D pitch chase (that is the native TrackingMapCamera's job and GL JS
-  /// markers do not lie flat anyway): during arriving the camera frames
-  //  driver + pickup and tightens as the gap closes; during the trip it
-  /// follows the car top-down with the map rotated to heading.
+  /// Web route camera: full current leg, no chase or near-destination zoom.
   void _webCameraTick() {
     if (!mounted) return;
     final web = _webMapCtrl;
@@ -3320,52 +3191,45 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_phase == _TrackPhase.arrived || _phase == _TrackPhase.completed) {
       return;
     }
-
-    // Auto-resume after the rider stops panning — same rule as native.
-    if (_userControllingCamera) {
-      final last = _lastUserCameraInteraction;
-      if (last == null ||
-          DateTime.now().difference(last).inMilliseconds >
-              _kResumeFollowAfterPanMs) {
-        _userControllingCamera = false;
-        _lastUserCameraInteraction = null;
-      } else {
-        return;
-      }
-    }
+    if (_userControllingCamera) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
 
-    // Throttled: a 60 fps flyTo storms the GL camera for no visible gain.
-    final now = DateTime.now();
-    if (now.difference(_lastWebCamMove).inMilliseconds < 400) return;
-    _lastWebCamMove = now;
-    _webAutoCameraUntil = now.add(const Duration(milliseconds: 800));
-
-    // maybeOf: ticker frames can land on a deactivated element. See rule 26.
     final mq = MediaQuery.maybeOf(context);
     if (mq == null) return;
-    final topPad = mq.padding.top + 10 + _topCardHeight + 32;
-    final bottomPad = mq.padding.bottom + 16 + _bottomCardHeight + 32;
-
-    // Same framing rule as native, so the browser build shows the ride the
-    // way the phones do: everything still ahead stays on screen and the
-    // zoom tightens by itself. The trip half used to follow the car at a
-    // fixed zoom 15.5 with the map turned heading-up — the rider could not
-    // see where they were going, only where they were.
     final isOnTrip = _phase == _TrackPhase.onTrip ||
         _phase == _TrackPhase.nearDestination;
     if (_phase != _TrackPhase.arriving && !isOnTrip) return;
 
+    final sig = Object.hash(_tripFitSignature(), _approachRouteFetched);
+    if (isOnTrip) {
+      if (_framedPhaseKind != 1) {
+        _framedPhaseKind = 1;
+        _lastTripFitSig = -1;
+      }
+      if (sig == _lastTripFitSig && !_needsTripReframe) return;
+      _lastTripFitSig = sig;
+    } else {
+      if (_framedPhaseKind != 0) {
+        _framedPhaseKind = 0;
+        _lastApproachFitSig = -1;
+      }
+      if (sig == _lastApproachFitSig && !_needsTripReframe) return;
+      _lastApproachFitSig = sig;
+    }
+    _needsTripReframe = false;
     final framePts = isOnTrip ? _tripFramePoints() : _approachFramePoints();
     if (framePts.isEmpty) return;
+    final now = DateTime.now();
+    _lastWebCamMove = now;
+    _webAutoCameraUntil = now.add(const Duration(milliseconds: 800));
     web.fitBounds(
       [
         for (final p in framePts)
           if (p.latitude != 0 || p.longitude != 0)
             (lng: p.longitude, lat: p.latitude),
       ],
-      paddingTop: topPad,
-      paddingBottom: bottomPad,
+      paddingTop: mq.padding.top + 10 + _topCardHeight + 32,
+      paddingBottom: mq.padding.bottom + 16 + _bottomCardHeight + 32,
       paddingLeft: 60,
       paddingRight: 60,
       durationMs: 400,

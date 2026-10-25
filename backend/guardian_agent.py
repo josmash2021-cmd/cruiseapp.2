@@ -1224,6 +1224,7 @@ class DispatchTimeoutAgent:
                             offer.trip_id,
                         )
                         trip.driver_id = None
+                        trip.rider_approach_notified_at = None
                 # Notify the rider via SSE if possible
                 try:
                     from services.event_bus import event_bus

@@ -2708,6 +2708,7 @@ async def driver_cancel_trip(
 
     # ── Return the trip to the dispatch pool (rematch) ──
     trip.driver_id = None
+    trip.rider_approach_notified_at = None
     trip.status = "requested"
     trip.cancel_reason = None  # fresh dispatch cycle — the record lives in the audit log
     trip.driver_assigned_at = None

@@ -28,7 +28,7 @@ void main() {
           isTrue,
           reason: 'searching falls back to the matched road line — that is '
               'the whole fix');
-      final fnStart = map.indexOf('LatLng _snapToRoute(LatLng raw) {');
+      final fnStart = map.indexOf('LatLng? _snapToRoute(LatLng raw) {');
       final fn = map.substring(fnStart, fnStart + 900);
       expect(fn.contains('_Phase.enRouteToPickup'), isFalse,
           reason: 'the phase gate is what left the offer preview and '
@@ -59,7 +59,7 @@ void main() {
       expect(exitBlock.contains('_roadLinePts = const [];'), isTrue);
       final screen =
           File('lib/screens/driver/driver_online_screen.dart')
-              .readAsStringSync();
+          .readAsStringSync();
       expect(screen.contains('_roadSnap.reset(); // in-flight'), isTrue);
     });
   });

@@ -429,7 +429,8 @@ void main() {
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     expect(map, contains('_fitHomeZones('), reason: 'the home-state frame');
-    expect(map, contains('_fitSectors(ZoneService.sectorsForState('),
+    expect(map, contains('_fitSectors('));
+    expect(map, contains('ZoneService.sectorsForState'),
         reason: 'state-scoped sector pick via the embedded outlines');
     expect(map, contains('_offlineZonesFitDone = true'),
         reason: 'one-shot the first time the offline zone view exists');
@@ -604,14 +605,12 @@ void main() {
       'noche)', () {
     // "Cuando me pongo online y me desconecto el boton de centrar no
     // funciona despues": el glide-out del flip quedaba en vuelo y aterrizaba
-    // sobre el recenter. Ahora ambos llevan token `_zoneFitSeq` y el viejo
-    // muere antes de su flyTo.
+    // sobre el recenter. Toda acción nueva invalida el token anterior.
     final map = File('lib/screens/driver/driver_online_map.dart')
         .readAsStringSync();
-    expect(map, contains('final seq = ++_zoneFitSeq;'),
+    expect(map, contains('final seq = _cameraActionGate.begin();'),
         reason: 'both zone fits take the token');
-    expect(
-        map, contains('if (seq != _zoneFitSeq) return;'),
+    expect(map, contains('if (!_cameraActionGate.isCurrent(seq)) return;'),
         reason: 'a superseded fit dies before flying');
     expect(map, contains('scope=arrow_zone_zoom_fallback'),
         reason: 'the recenter never dies silent — fallback flies to the '

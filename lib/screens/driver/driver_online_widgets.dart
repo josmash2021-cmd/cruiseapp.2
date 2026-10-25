@@ -173,9 +173,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   // Camera-rotation compensated (2026-09-19): in the
                   // heading-up chase the arrow keeps pointing UP while the
                   // world turns under it.
-                  final dot = GoldLocationDotOverlay(
-                      bearing:
-                          _heading - (_onlineCamState?.bearing ?? 0));
+                  final bearing = _heading - (_onlineCamState?.bearing ?? 0);
+                  final dot = _driverSonarActive && _driverSonarCtrl != null
+                      ? DriverSonarMarker(
+                          animation: _driverSonarCtrl!, bearing: bearing)
+                      : GoldLocationDotOverlay(bearing: bearing);
                   const half = GoldLocationDot.driverOverlaySize / 2;
                   // Centred is only true while the camera FOLLOWS — the
                   // driver really is the centre then. Not following and no
@@ -306,6 +308,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   'styleMs=${_mapStyleMs ?? -1} idleMs=${DateTime.now().difference(bootAt).inMilliseconds} zones=${FeatureFlags.zonesMapEnabled} online=$_driverOnline');
             }
           }
+          _syncDriverSonar();
           // The zone layers wait for the map to be rendering (see
           // _syncZoneLayers) — every idle beat is their cue to (re)try.
           _syncZoneLayers();
@@ -334,6 +337,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           // setState, not a bare write: the snapshot overlay over the live
           // surface only fades out when the flag's change triggers a rebuild.
           _setState(() => _mapStyleLoaded = true);
+          _syncDriverSonar();
           final bootAt = _mapBootAt;
           if (bootAt != null && _mapStyleMs == null) {
             _mapStyleMs = DateTime.now().difference(bootAt).inMilliseconds;
@@ -502,6 +506,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     _mapStyleWatchdogTimer?.cancel();
     _mapStyleLoaded = false;
     _firstRenderDone = false;
+    _syncDriverSonar();
     // A remount loses the camera — the home-state frame runs again at sync.
     _offlineZonesFitDone = false;
     _offlineZonesRefitPending = false;

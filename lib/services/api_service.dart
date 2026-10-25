@@ -2500,13 +2500,19 @@ class ApiService {
     required double lat,
     required double lng,
     bool isOnline = true,
+    int? etaSeconds,
   }) async {
     final h = await _authHeaders();
     final res = await _client
         .patch(
           Uri.parse('$_baseUrl/drivers/$driverId/location'),
           headers: h,
-          body: jsonEncode({'lat': lat, 'lng': lng, 'is_online': isOnline}),
+          body: jsonEncode({
+            'lat': lat,
+            'lng': lng,
+            'is_online': isOnline,
+            if (etaSeconds != null) 'eta_seconds': etaSeconds,
+          }),
         )
         .timeout(const Duration(seconds: 3));
     return _parse(res);

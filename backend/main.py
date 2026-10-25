@@ -2361,6 +2361,7 @@ async def _dispatch_reserved_scheduled_rides(db, now):
             # so the normal cascade can give the ride to someone else.
             released_driver_id = trip.driver_id
             trip.driver_id = None
+            trip.rider_approach_notified_at = None
             trip.status = "scheduled"
             trip.updated_at = now
             # The claim wrote an ACCEPTED DispatchOffer; leaving it would

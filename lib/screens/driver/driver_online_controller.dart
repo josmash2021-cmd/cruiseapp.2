@@ -1045,6 +1045,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // seleccionó, en online solo aparece marcada esa zona") — the
         // selection highlight reads it; it is no longer consumed on connect.
       });
+      _cameraActionGate.begin();
+      _syncDriverSonar();
       // Mode flip rewrites the zone look NOW (the GPS-fix sync can be
       // minutes away for a parked driver): online, every heated sector paints
       // its gold UNDER the roads (2026-10-14 spec) and the transition
@@ -1281,6 +1283,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Offline the sheet rests half-open with the pill "Go online" at its
     // floor (2026-10-13 spec); the swipe down collapses it to the circle.
     _animatePanelTo(_kSheetRestFrac);
+    _syncDriverSonar();
   }
 
   /// The 10 s auto-refollow exists ONLINE (and with the zone layer off) —
@@ -1638,7 +1641,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       },
       onPosition: (pos) {
         if (!mounted) return;
+        if (!_gpsFixPolicy.accept(pos)) {
+          _diagRejectedFixes++;
+          return;
+        }
         _diagFixes++;
+        _diagLastAccuracyM = pos.accuracy;
         // Municipal zone highlight + visibility follow the driver's zone
         // and the phase (deduped inside; no-op until zones are loaded).
         _syncZoneLayers();
@@ -1691,6 +1699,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // presence and RTDB keep flowing either way — the ghost agent
         // needs them; only the display target is gated.
         final fixUsable = pos.accuracy <= 25;
+        if (!fixUsable) _diagRejectedFixes++;
         if (fixUsable) {
           // Searching has no route to snap to — feed the road-matching
           // trace (user report 2026-09-27: arrow off the road lines at
@@ -1702,14 +1711,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           }
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
-          _smoothMoveTo(snappedLL, _smoothedBearing,
-              accuracyM: pos.accuracy,
-              timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
-              speedMps:
-                  pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
-          _trimRouteBehindDriver(snappedLL);
-          if (_previewingOffer != null) {
-            unawaited(_maybeRefreshOfferRoutePreview(snappedLL));
+          if (snappedLL != null) {
+            _smoothMoveTo(snappedLL, _roadLockBearing ?? _smoothedBearing,
+                accuracyM: pos.accuracy,
+                timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
+                speedMps:
+                    pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
+            _trimRouteBehindDriver(snappedLL);
+            if (_previewingOffer != null) {
+              unawaited(_maybeRefreshOfferRoutePreview(snappedLL));
+            }
           }
         }
 
@@ -1778,6 +1789,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             driverId: _driverId!,
             lat: pos.latitude,
             lng: pos.longitude,
+            etaSeconds: _navEta > 0 ? _navEta * 60 : null,
           ).catchError((e) {
             // face_review_required 403 (2026-10-23, owner report): this 5 s
             // stream used to UNDO the dispatch selfie-reject kick — it is
@@ -1882,6 +1894,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _flushCameraWrite(mapbox.MapboxMap map) {
     final opts = _pendingCamWrite;
     if (opts == null) return;
+    if (!mounted || !identical(map, _map)) {
+      _pendingCamWrite = null;
+      return;
+    }
     _pendingCamWrite = null;
     _camWriteBusy = true;
     _diagCamWrites++;
@@ -1890,10 +1906,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // frees it, and the pending flush still carries the freshest frame.
       map.setCamera(opts).timeout(const Duration(seconds: 2)).then((_) {
         _camWriteBusy = false;
-        _flushCameraWrite(map);
+        if (mounted && identical(map, _map)) _flushCameraWrite(map);
       }).catchError((Object _) {
         _camWriteBusy = false;
-        _flushCameraWrite(map);
+        if (mounted && identical(map, _map)) _flushCameraWrite(map);
       });
     } catch (_) {
       _camWriteBusy = false;
@@ -2160,8 +2176,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           ? ' · fix ${_diagLastFixDistM.toStringAsFixed(0)}m/${(_diagLastFixDtMs / 1000).toStringAsFixed(1)}s'
           : '';
       motionDiag.value =
-          'GPS $_diagFixes/s · tick $_diagTicks/s · cam $_diagCamWrites/s · anot $_diagAnnotUpdates/s · v $vMph mph$fixInfo';
+          'GPS $_diagFixes/s · bad $_diagRejectedFixes/s · acc ${_diagLastAccuracyM.toStringAsFixed(0)}m · rs ${_posStream?.restartCount ?? 0}\n'
+          'tick $_diagTicks/s · cam $_diagCamWrites/s · anot $_diagAnnotUpdates/s · v $vMph mph$fixInfo';
       _diagFixes = _diagTicks = _diagCamWrites = _diagAnnotUpdates = 0;
+      _diagRejectedFixes = 0;
     });
   }
 
@@ -2170,11 +2188,39 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _setState(() {});
   }
 
+  bool get _driverSonarActive =>
+      _phase == _Phase.searching &&
+      _mapMounted &&
+      _mapStyleLoaded &&
+      _firstRenderDone &&
+      _appInForeground;
+
+  void _syncDriverSonar() {
+    if (!_driverSonarActive) {
+      if (_driverSonarCtrl?.isAnimating ?? false) {
+        _driverSonarCtrl!.stop();
+        if (mounted) _setState(() {});
+      }
+      return;
+    }
+    if (_driverSonarCtrl == null) {
+      _driverSonarCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 2600),
+      );
+      _driverSonarCtrl!.repeat();
+      if (mounted) _setState(() {});
+    } else if (!_driverSonarCtrl!.isAnimating) {
+      _driverSonarCtrl!.repeat();
+    }
+  }
+
   /// Continuous 60fps ticker — Google-Maps-style constant-velocity advance
   /// via [SmoothMotion]. Never resets, never stutters, keeps gliding at the
   /// measured speed between GPS fixes instead of decelerating into a stall.
   void _onSmoothTick(Duration elapsed) {
     if (!mounted || _pos == null) return;
+    _syncDriverSonar();
     _diagTicks++;
     // Self-correcting stop. _releaseMapSurface already stops the ticker, and
     // both start paths now check the map first — this is the backstop for
@@ -4245,6 +4291,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _zoneWaveTimer?.cancel();
     _zoneWaveTimer = null;
     _zoneWaveSectorId = null;
+    _zoneWaveWriteBusy = false;
+    _zoneWavePendingPhase = null;
     // Bump the generation so any in-flight annotation work recognises its
     // handles as dead instead of poking a destroyed native object.
     _mapGeneration++;
@@ -4275,6 +4323,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // remount whose style never loaded had no watchdog left and the driver
     // stared at a dead map until process death.
     _mapStyleWatchdogRetried = false;
+    _cameraActionGate.begin();
+    _pendingCamWrite = null;
     _map = null;
     // _mapStyleLoaded resets with the surface too: on remount the overlay
     // still has to cover the fresh PlatformView's first frames until the
@@ -4284,6 +4334,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _mapStyleLoaded = false;
       _firstRenderDone = false;
     });
+    _syncDriverSonar();
   }
 
   /// Bring the canvas back after the screen above us is gone.

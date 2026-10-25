@@ -671,6 +671,7 @@ async def cancel_claimed_scheduled_trip(
     _require_cancel_notice_window(trip)
 
     trip.driver_id = None
+    trip.rider_approach_notified_at = None
     trip.status = "scheduled"
     await db.commit()
 
@@ -780,6 +781,7 @@ async def drop_scheduled_trip(
 
     try:
         trip.driver_id = None
+        trip.rider_approach_notified_at = None
         trip.status = "scheduled"
         trip.updated_at = datetime.now(timezone.utc)
         # Cancel any pending DispatchOffer rows for this trip so the

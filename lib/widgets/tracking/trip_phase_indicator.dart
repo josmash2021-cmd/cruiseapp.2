@@ -29,12 +29,11 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     final s = S.of(context);
     switch (_phase) {
       case _TrackPhase.arriving:
-        // Distance in meters: _distanceMiles * 1609.34
         final distM = _distanceMiles * 1609.34;
-        if (distM <= 50) return s.driverAtPickupSpot;                 // ≤50m: at spot
-        if (_etaMinutes <= 2 || distM <= 300) return s.driverArrivingCard;  // ≤2min or ≤300m
-        if (_etaMinutes <= 5) return s.driverAlmostHereCard;           // ≤5min
-        return s.driverEnRoute;                                        // >5min
+        if (distM <= 50) return s.driverAtPickupSpot;
+        if (_etaMinutes <= 2 || distM <= 300) return s.driverArrivingCard;
+        if (_etaMinutes <= 5) return s.driverAlmostHereCard;
+        return s.driverArrivesInEstimate(_etaMinutes);
       case _TrackPhase.arrived:
         return s.driverHasArrived;
       case _TrackPhase.onTrip:
@@ -53,11 +52,10 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     switch (_phase) {
       case _TrackPhase.arriving:
         final distM = _distanceMiles * 1609.34;
-        // BUG FIX: Never show "waiting" text during arriving phase.
         // The driver is still en-route; "waiting" only makes sense at arrived phase.
         if (_etaMinutes <= 2 || distM <= 300) return s.driverArrivingCard;
         if (_etaMinutes <= 5) return s.driverAlmostHereCard;
-        return s.driverOnTheWayCard;                                   // >5min
+        return s.driverArrivesInEstimate(_etaMinutes);
       case _TrackPhase.arrived:
         return s.driverWaitingForYou;
       case _TrackPhase.onTrip:

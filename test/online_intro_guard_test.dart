@@ -2,10 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guard for the daily "You're now online!" instruction overlay
-/// (2026-10-24 user spec): every 24 hours per device, for all drivers,
-/// floating over the online map — never a page — with a single black,
-/// gold-lettered "Entendido"/"I understand" button as the only way out.
+/// Guard for the periodic "You're now online!" instruction overlay:
+/// every 6 hours per device for every driver, with no account exceptions.
+/// It floats over the online map with one black, gold-lettered button.
 void main() {
   final overlay =
       File('lib/screens/driver/online_intro_overlay.dart').readAsStringSync();
@@ -69,7 +68,7 @@ void main() {
         screen.substring(navHeader).contains('OnlineIntroOverlay('), isFalse);
   });
 
-  test('fires after ten seconds and stays armed for the next day', () {
+  test('fires after ten seconds and stays armed for the next 6 hours', () {
     final goTap = offline.indexOf('void _onGoTap()');
     expect(goTap, greaterThan(-1));
     final tapRegion = offline.substring(goTap, goTap + 7000);
@@ -83,9 +82,12 @@ void main() {
     final trigger = controller.indexOf('Future<void> _maybeShowOnlineIntro()');
     final triggerRegion = controller.substring(trigger, trigger + 3000);
     expect(triggerRegion, contains('onlineIntroDueNow(lastSeenMs, nowMs)'));
+    expect(triggerRegion, isNot(contains('showEveryGo')));
+    expect(triggerRegion, isNot(contains('UserSession.getUser()')),
+        reason: 'recurrence needs no account lookup or network profile');
     expect(triggerRegion, contains("getInt('online_intro_last_seen_at')"));
     expect(triggerRegion, isNot(contains('ApiService.getMe()')),
-        reason: 'daily recurrence does not wait for a network profile');
+        reason: 'recurrence does not wait for a network profile');
     expect(triggerRegion, isNot(contains('onlineIntroAlwaysAccount')));
     expect(triggerRegion, contains('epoch != _introEpoch'));
     expect(triggerRegion, contains('_introRetryAfter'));
@@ -93,7 +95,7 @@ void main() {
     final present = controller.indexOf('void _presentOnlineIntro()');
     final presentRegion = controller.substring(present, present + 260);
     expect(presentRegion, isNot(contains('_introTimer?.cancel()')),
-        reason: 'the daily timer survives presentation for the next 24 h');
+        reason: 'the timer survives presentation for the next 6 h');
     expect(controller, contains('_introTimer?.cancel();'),
         reason: 'exit and dispose still cancel the timer');
     expect(controller, contains("getInt('online_intro_last_seen_at')"));
@@ -112,14 +114,15 @@ void main() {
         reason: 'spec: only the Entendido button, no X');
   });
 
-  test('all drivers use a 24-hour timestamp and a black backdrop', () {
-    expect(
-        overlay, contains('onlineIntroRepeatInterval = Duration(hours: 24)'));
+  test('all drivers use a 6-hour timestamp and a black backdrop', () {
+    expect(overlay, contains('onlineIntroRepeatInterval = Duration(hours: 6)'));
     expect(overlay, contains('bool onlineIntroDueNow'));
-    expect(overlay, isNot(contains('kOnlineIntroAlways')));
+    expect(overlay, isNot(contains('onlineIntroShowsEveryGo')));
+    expect(overlay, isNot(contains('onlineIntroEveryGoPhone')));
+    expect(controller, isNot(contains('showEveryGo')));
+    expect(controller, isNot(contains('onlineIntroAlwaysAccount')));
     expect(controller, contains("getInt('online_intro_last_seen_at')"));
     expect(controller, contains('onlineIntroDueNow(lastSeenMs, nowMs)'));
-    expect(controller, isNot(contains('onlineIntroAlwaysAccount')));
     expect(
         controller,
         contains(

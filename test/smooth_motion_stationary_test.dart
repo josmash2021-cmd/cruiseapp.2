@@ -94,13 +94,22 @@ void main() {
     run(m, 0.5);
     expect(movedM(m).abs(), lessThan(1.0));
 
-    // The honest fix: driver is really 300 m north, accuracy 10 m, parked.
+    // The honest fix must eventually arrive, but the recovery may not teleport.
     m.setTarget(north(300), startLng, accuracyM: 10, speedMps: 0.0);
     await gap();
-    run(m, 0.5);
+    var previous = m.lat!;
+    var worstStepM = 0.0;
+    for (var frame = 0; frame < 3600; frame++) {
+      m.tick(1 / 60);
+      final stepM = (m.lat! - previous).abs() * 110540.0;
+      if (stepM > worstStepM) worstStepM = stepM;
+      previous = m.lat!;
+    }
     expect(movedM(m), greaterThan(250),
         reason: 'a good fix that far off the held spot is a correction, '
-            'not wander — snap to it and hold there');
+            'not wander — reach it with bounded motion');
+    expect(worstStepM, lessThan(1.0),
+        reason: 'the recovery must not teleport to the corrected position');
   });
 
   test('wander-scale fixes with good accuracy still do NOT escape', () async {

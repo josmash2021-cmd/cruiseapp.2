@@ -31,8 +31,7 @@ void main() {
               'on the map under the new card');
     });
 
-    test('the auto-trigger latch arms only when the trigger actually runs',
-        () {
+    test('the auto-trigger latch arms only when the trigger actually runs', () {
       final start = map.indexOf('void _autoTriggerRoutePreview(');
       expect(start, isNonNegative);
       final body = map.substring(start, start + 1400);
@@ -67,6 +66,50 @@ void main() {
       expect(rejBody.contains('_sweepPreviewOrphans()'), isTrue,
           reason: 'reject sweeps immediately — the route must not outlive '
               'the card by even a frame');
+    });
+  });
+
+  group('the zone spotlight never darkens an offer route', () {
+    test('preview entry and exit refresh the zone look through the clear', () {
+      final sequence = map.indexOf('Future<void> _offerCardTapSequence(');
+      expect(sequence, isNonNegative);
+      final opening = map.substring(sequence, sequence + 1500);
+      expect(opening, contains('_previewingOffer = offer;'));
+      expect(opening, contains('_clearAllAnnotations();'));
+
+      final clear = map.indexOf('Future<void> _clearAllAnnotations()');
+      expect(clear, isNonNegative);
+      final body = map.substring(clear, clear + 650);
+      expect(body, contains('unawaited(_syncZoneLayers());'),
+          reason: 'both offer entry and dismissal reevaluate the spotlight');
+    });
+
+    test('the zone look signature includes the preview state', () {
+      expect(map.split(r'|offer:${_previewingOffer != null}').length - 1, 2,
+          reason: 'normal sync and the animated sector swap must both '
+              'repaint when an offer opens or closes');
+    });
+
+    test('the dim writer is gated even for a stale caller', () {
+      final start = map.indexOf('Future<void> _writeZoneDim(');
+      expect(start, isNonNegative);
+      final body = map.substring(start, start + 2300);
+      expect(body,
+          contains('effectiveSec = _previewingOffer == null ? sec : null'));
+      expect(body, contains('if (effectiveSec != null)'));
+      expect(body, contains('effectiveSec == null ? 0.0 : 0.70'));
+    });
+
+    test('a sector swap re-syncs after releasing its guard', () {
+      final start = map.indexOf('Future<void> _animateZoneSwap()');
+      expect(start, isNonNegative);
+      final end = map.indexOf('Future<void> _fitAllZones', start);
+      expect(end, greaterThan(start));
+      final body = map.substring(start, end);
+      final finallyStart = body.indexOf('finally {');
+      expect(finallyStart, isNonNegative);
+      expect(body.substring(finallyStart, finallyStart + 220),
+          contains('unawaited(_syncZoneLayers());'));
     });
   });
 }

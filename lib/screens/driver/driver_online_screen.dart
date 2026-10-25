@@ -10,6 +10,8 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+// ignore: depend_on_referenced_packages
+import 'package:clock/clock.dart';
 import '../../services/haptic_service.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../models/lat_lng.dart';
@@ -1417,7 +1419,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // El flip es in-place — sin push, sin handoff de superficie, sin snapshot.
   bool _driverOnline = false;
   bool _enteringOnline = false;
-  // First-GO "You're now online!" instruction (2026-10-22): once per device,
+  // Daily "You're now online!" instruction (2026-10-24): every 24 hours,
   // rendered as an overlay over the online map — see _maybeShowOnlineIntro.
   bool _showOnlineIntro = false;
   // Working state for the airport pills ('AL'/'FL', from the profile's
@@ -1517,8 +1519,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _offlineZonesRefitPending = false;
   bool? _zoneLayersVisible;
   bool? _zoneLookOnline;
-  // The state-visibility set the look was painted with (2026-10-14 spec: a
-  // driver only sees their own state's sectors) — a border crossing repaints.
+  // The state-visibility set and offer-preview state the look was painted
+  // with — a border crossing or an offer opening/closing repaints.
   String? _zoneLookVisibleSig;
   // The mode the zone fills are STACKED for (true = under the roads): the
   // flips move them, not recreate them (moveStyleLayer).

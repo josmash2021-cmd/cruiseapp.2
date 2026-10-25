@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guard for the first-GO "You're now online!" instruction overlay
-/// (2026-10-22 user spec): once per device, for newly approved AND veteran
-/// drivers, floating over the online map — never a page — with a single
-/// gold "Entendido" button as the only way out.
+/// Guard for the daily "You're now online!" instruction overlay
+/// (2026-10-24 user spec): every 24 hours per device, for all drivers,
+/// floating over the online map — never a page — with a single gold
+/// "Entendido"/"I understand" button as the only way out.
 void main() {
   final overlay =
       File('lib/screens/driver/online_intro_overlay.dart').readAsStringSync();
@@ -25,23 +25,28 @@ void main() {
     expect(overlay, contains('errorBuilder'));
   });
 
-  test('the gold card is compact, rounded and keeps the hero outside', () {
+  test('the gold card has a cloud silhouette and an external gold button', () {
     for (final needle in [
       'maxWidth: 360',
       'height: 150',
       'color: const Color(0xFFE8C547)',
-      'borderRadius: BorderRadius.circular(30)',
+      '_CloudClipper',
+      '_CloudBorderPainter',
+      '_cloudPath',
       'clipBehavior: Clip.none',
       'color: const Color(0xFFFFFDF6)',
-      'backgroundColor: _navy',
-      'foregroundColor: _gold',
+      'color: Colors.white',
+      'backgroundColor: _gold',
+      'foregroundColor: Colors.black',
+      'const SizedBox(height: 10)',
     ]) {
       expect(overlay, contains(needle));
     }
     expect(overlay, isNot(contains('maxWidth: 420')));
-    expect(overlay, isNot(contains('color: _navy,')),
-        reason: 'the old navy card around all the content is gone; navy is '
-            'only the contrasting button');
+    expect(overlay, isNot(contains('backgroundColor: _navy')),
+        reason: 'the external button is gold with black text, not navy');
+    expect(overlay, isNot(contains('shape: BoxShape.circle')),
+        reason: 'icons are plain glyphs, never enclosed in a circle');
   });
 
   test('it is an overlay, never a route', () {
@@ -63,14 +68,7 @@ void main() {
         screen.substring(navHeader).contains('OnlineIntroOverlay('), isFalse);
   });
 
-  test(
-      'fires ~10 s after the shift is live, once per device (always for '
-      'the owner)', () {
-    // The trigger moved OFF the GO tap (owner spec 2026-10-23: "debe salir
-    // después de unos 10 segundos de estar activado, no cuando se le da al
-    // botón GO") — a Timer armed at the END of _enterOnlineMode, which also
-    // cures the 700 ms race that checked _driverOnline before the flip
-    // landed and let the overlay die silently.
+  test('fires after ten seconds and stays armed for the next day', () {
     final goTap = offline.indexOf('void _onGoTap()');
     expect(goTap, greaterThan(-1));
     final tapRegion = offline.substring(goTap, goTap + 7000);
@@ -78,32 +76,26 @@ void main() {
         reason: 'the tap no longer triggers it — the 10 s timer does');
     final fn = controller.indexOf('Future<void> _enterOnlineMode');
     final region = controller.substring(fn, fn + 5500);
-    expect(region, contains('Timer.periodic(const Duration(seconds: 1)'),
-        reason: 'retries after ten seconds online instead of depending on '
-            'one callback that can be lost with the screen lifecycle');
+    expect(region, contains('Timer.periodic(const Duration(seconds: 1)'));
     expect(region, contains('timer.tick < 10'));
     expect(region, contains('_introEpoch++'));
     final trigger = controller.indexOf('Future<void> _maybeShowOnlineIntro()');
-    final triggerRegion = controller.substring(trigger, trigger + 4500);
-    final cachedIdentity = triggerRegion.indexOf('UserSession.getUser()');
-    final liveLookup = triggerRegion.indexOf('ApiService.getMe()');
-    final firstPresentation = triggerRegion.indexOf('_presentOnlineIntro();');
-    expect(cachedIdentity, greaterThan(-1));
-    expect(liveLookup, greaterThan(cachedIdentity));
-    expect(firstPresentation, greaterThan(cachedIdentity));
-    expect(firstPresentation, lessThan(liveLookup),
-        reason: 'a first view or a locally recognized demo account presents '
-            'before any network request — a slow getMe cannot suppress it');
-    expect(triggerRegion, contains('if (alwaysShow || !seen)'));
-    expect(triggerRegion, contains('me = await ApiService.getMe()'),
-        reason: 'the live profile remains a fallback when seen=true and the '
-            'cached identity did not match the demo account');
+    final triggerRegion = controller.substring(trigger, trigger + 3000);
+    expect(triggerRegion, contains('onlineIntroDueNow(lastSeenMs, nowMs)'));
+    expect(triggerRegion, contains("getInt('online_intro_last_seen_at')"));
+    expect(triggerRegion, isNot(contains('ApiService.getMe()')),
+        reason: 'daily recurrence does not wait for a network profile');
+    expect(triggerRegion, isNot(contains('onlineIntroAlwaysAccount')));
     expect(triggerRegion, contains('epoch != _introEpoch'));
     expect(triggerRegion, contains('_introRetryAfter'));
+    expect(controller, contains('onlineIntroRepeatInterval'));
+    final present = controller.indexOf('void _presentOnlineIntro()');
+    final presentRegion = controller.substring(present, present + 260);
+    expect(presentRegion, isNot(contains('_introTimer?.cancel()')),
+        reason: 'the daily timer survives presentation for the next 24 h');
     expect(controller, contains('_introTimer?.cancel();'),
-        reason: 'cancelled on exit/dispose — never fires over the '
-            'offline map');
-    expect(controller, contains("getBool('online_intro_seen_v1')"));
+        reason: 'exit and dispose still cancel the timer');
+    expect(controller, contains("getInt('online_intro_last_seen_at')"));
     expect(controller, contains("setBool('online_intro_seen_v1', true)"));
   });
 
@@ -119,36 +111,20 @@ void main() {
         reason: 'spec: only the Entendido button, no X');
   });
 
-  test("the owner's demo account sees it on EVERY GO (spec 2026-10-22)", () {
-    expect(overlay, contains('kOnlineIntroAlwaysEmails'));
-    expect(overlay, contains('josmash33@gmail.com'));
-    expect(overlay, contains('kOnlineIntroAlwaysEmails.contains(email)'));
-    expect(controller, contains('onlineIntroAlwaysAccount(cached: u)'));
+  test('all drivers use a 24-hour timestamp and a lighter map scrim', () {
     expect(
-        controller, contains('onlineIntroAlwaysAccount(live: me, cached: u)'));
-    expect(controller, contains('if (alwaysShow || !seen)'),
-        reason: 'seen suppresses only accounts that are not always-show');
-  });
-
-  test('the always-show rule also matches the phone number (2026-10-23)', () {
-    // Owner spec, literal: "debe ser para este telefono 3854612042". A
-    // phone-created account can have an EMPTY cached email — the email-only
-    // rule never matched and the seen flag then hid the intro forever.
-    expect(overlay, contains('kOnlineIntroAlwaysPhones'));
-    expect(overlay, contains('3854612042'));
-    expect(overlay, contains("replaceAll(RegExp(r'\\D'), '')"),
-        reason: 'the phone is normalized to digits before matching');
+        overlay, contains('onlineIntroRepeatInterval = Duration(hours: 24)'));
+    expect(overlay, contains('bool onlineIntroDueNow'));
+    expect(overlay, isNot(contains('kOnlineIntroAlways')));
+    expect(controller, contains("getInt('online_intro_last_seen_at')"));
+    expect(controller, contains('onlineIntroDueNow(lastSeenMs, nowMs)'));
+    expect(controller, isNot(contains('onlineIntroAlwaysAccount')));
     expect(
-        overlay,
+        controller,
         contains(
-            'kOnlineIntroAlwaysPhones.any((p) => phoneDigits.endsWith(p))'),
-        reason: 'email OR phone number grants always-show — and endsWith() '
-            'accepts the +1 country-code prefix that the plain equality '
-            'missed (3854612042 vs +13854612042)');
-    expect(overlay, contains('kOnlineIntroAlwaysEmails.contains(email) ||'),
-        reason: 'the two identifiers are OR-ed, not AND-ed');
-    expect(controller, contains('[OnlineIntro] alwaysShow='),
-        reason: 'a decision log exists for on-device verification');
+            '_introRetryAfter = clock.now().add(onlineIntroRepeatInterval)'));
+    expect(overlay, contains('alpha: 0.18'));
+    expect(overlay, isNot(contains('alpha: 0.42')));
   });
 
   test('the driver count is an editable constant, used in the copy', () {

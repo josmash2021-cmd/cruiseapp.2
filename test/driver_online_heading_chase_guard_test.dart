@@ -17,8 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final ctrl = File('lib/screens/driver/driver_online_controller.dart')
       .readAsStringSync();
-  final widgets = File('lib/screens/driver/driver_online_widgets.dart')
-      .readAsStringSync();
+  final widgets =
+      File('lib/screens/driver/driver_online_widgets.dart').readAsStringSync();
   final map =
       File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
 
@@ -29,10 +29,11 @@ void main() {
   }
 
   group('searching chase rotates heading-up, top-down (spec 2026-09-19)', () {
-    test('the per-frame searching write carries the (possibly frozen) '
+    test(
+        'the per-frame searching write carries the (possibly frozen) '
         'heading, never north-up', () {
-      final body = bodyOf(
-          ctrl, "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
+      final body = bodyOf(ctrl,
+          "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
           maxLen: 4000);
       expect(body.contains('bearing: camBearing'), isTrue,
           reason: 'the chase must rotate with the arrow — bearing 0 was the '
@@ -45,7 +46,8 @@ void main() {
           reason: 'the manual-rotate detector needs the last written value');
     });
 
-    test('every follow/recenter camera write clears the padding '
+    test(
+        'every follow/recenter camera write clears the padding '
         '(2026-10-16 noche)', () {
       // "El boton de centrar online no funciona / la flecha queda en otro
       // lugar": las vistas de zona escriben padding del sheet y Mapbox lo
@@ -61,18 +63,19 @@ void main() {
       expect('padding: _kZeroCamPadding,'.allMatches(scr).length,
           greaterThanOrEqualTo(1),
           reason: 'the recenter flight clears it too');
-      final map = File('lib/screens/driver/driver_online_map.dart')
-          .readAsStringSync();
+      final map =
+          File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
       expect(map, contains('pitch: settleTilt,'),
           reason: 'the settle write exists');
       expect(map, contains('padding: _kZeroCamPadding,'),
           reason: 'the settle write clears it too');
     });
 
-    test('the camera mirrors the arrow directly at every speed — heading-up '
+    test(
+        'the camera mirrors the arrow directly at every speed — heading-up '
         'always (2026-10-16 noche, final spec)', () {
-      final body = bodyOf(
-          ctrl, "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
+      final body = bodyOf(ctrl,
+          "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
           maxLen: 4000);
       expect(body.contains('final camBearing = _heading;'), isTrue,
           reason: 'ONE source while moving AND parked — the user wants the '
@@ -85,10 +88,9 @@ void main() {
           reason: 'identical parked cameras are still not re-written 60×/s');
     });
 
-    test('every searching reset flies to the current heading, never north',
-        () {
+    test('every searching reset flies to the current heading, never north', () {
       final resets = RegExp(
-              r'_animateToPosition\(_pos!, zoom: 15\.5, bearing: _smoothedBearing, tilt: 0\)')
+              r'_animateToPosition\(_pos!,\s*zoom: 15\.5, bearing: _smoothedBearing, tilt: 0\)')
           .allMatches(ctrl)
           .length;
       expect(resets, greaterThanOrEqualTo(6),
@@ -110,8 +112,7 @@ void main() {
       // Recenter = online parity (2026-10-12 spec: "que funcione igual que
       // cuando el driver está activo") — centre the arrow at street zoom in
       // EVERY mode; the offline region view stays as the resting state only.
-      expect(recenter.contains('zoom: 15.5, bearing: bearing, tilt: 0'),
-          isTrue,
+      expect(recenter.contains('zoom: 15.5, bearing: bearing, tilt: 0'), isTrue,
           reason: 'offline recenter centres the arrow at street zoom, same '
               'as online');
       // Recenter by mode (2026-10-13/14 specs): OFFLINE = centre ON THE
@@ -154,7 +155,8 @@ void main() {
       expect(body.contains('pitchEnabled: false'), isTrue);
     });
 
-    test('manual rotate unlatches via bearing divergence (no onRotateListener '
+    test(
+        'manual rotate unlatches via bearing divergence (no onRotateListener '
         'in the plugin), suppressed during programmatic flights', () {
       expect(map.contains('void _maybeUnlatchOnManualRotate('), isTrue);
       final body =
@@ -173,7 +175,8 @@ void main() {
     });
   });
 
-  group('single-map parity (2026-09-26: DriverHomeScreen murió — offline es '
+  group(
+      'single-map parity (2026-09-26: DriverHomeScreen murió — offline es '
       'un MODO de la misma pantalla)', () {
     // Online y offline corren sobre el mismo mapa, la misma chase y el mismo
     // marcador: la paridad ya no se pinea entre dos archivos — se pinea que
@@ -182,8 +185,7 @@ void main() {
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
 
     test('the heading-up chase runs in BOTH modes (no _driverOnline gate)', () {
-      final body = bodyOf(
-          ctrl,
+      final body = bodyOf(ctrl,
           'if (_phase == _Phase.searching && !offerActive && _cameraFollowing)',
           maxLen: 4000);
       expect(body.contains('bearing: camBearing'), isTrue,
@@ -201,8 +203,7 @@ void main() {
     });
 
     test('the gesture handling and marker ownership have no mode gate', () {
-      final body =
-          bodyOf(map2, 'void _onCameraMoveStarted() {', maxLen: 2400);
+      final body = bodyOf(map2, 'void _onCameraMoveStarted() {', maxLen: 2400);
       expect(body.contains('_driverOnline'), isFalse);
       expect(body.contains('_markerFrame.value++;'), isTrue,
           reason: 'the overlay repaints synchronously on every gesture event');
@@ -215,8 +216,7 @@ void main() {
       // The painter rotates from screen-up: with a rotating chase the raw
       // dot bearing draws the arrow off-vertical — subtract the camera
       // bearing so it keeps pointing straight UP while the world turns.
-      final onlineDot = bodyOf(
-          widgets,
+      final onlineDot = bodyOf(widgets,
           'if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();',
           maxLen: 700);
       expect(onlineDot.contains('_onlineCamState?.bearing ?? 0'), isTrue,
@@ -224,13 +224,11 @@ void main() {
     });
   });
 
-  group('no double arrow after pinch + recenter (user report 2026-09-19)',
-      () {
+  group('no double arrow after pinch + recenter (user report 2026-09-19)', () {
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
 
-    test('the online resume timer flushes the annotation to opacity 0 NOW',
-        () {
+    test('the online resume timer flushes the annotation to opacity 0 NOW', () {
       final body = bodyOf(map, '_followResumeTimer = Timer(', maxLen: 700);
       expect(body.contains('_cameraFollowing = true'), isTrue);
       expect(body.contains('_updateDriverAnnotation();'), isTrue,
@@ -239,7 +237,8 @@ void main() {
               'drew two arrows for as long as the car stood still');
     });
 
-    test('the online unlatch hands the marker to the annotation '
+    test(
+        'the online unlatch hands the marker to the annotation '
         'deterministically', () {
       final body = bodyOf(map, 'void _onCameraMoveStarted() {', maxLen: 2400);
       expect(body.contains('_cameraFollowing = false'), isTrue);
@@ -247,7 +246,8 @@ void main() {
           reason: 'no waiting for an indirect caller while parked');
     });
 
-    test('mid-gesture the overlay KEEPS the arrow — one arrow in every state '
+    test(
+        'mid-gesture the overlay KEEPS the arrow — one arrow in every state '
         '(user report 2026-10-10)', () {
       // The old handoff to the native annotation mid-drag produced three
       // visible differences at once: size jump, wrong heading, double-arrow
@@ -284,14 +284,15 @@ void main() {
       expect(listener.contains('_onlineCamState = data.cameraState'), isTrue);
       expect(listener.contains('_markerFrame.value++;'), isTrue);
       // The field itself is gone from the screen state.
-      final screen =
-          File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+      final screen = File('lib/screens/driver/driver_online_screen.dart')
+          .readAsStringSync();
       expect(screen.contains('_mapDragUntil'), isFalse);
       expect(screen.contains('_dragSettleTimer'), isFalse);
     });
   });
 
-  group('GPS accuracy gate (user reports 2026-09-19 "flecha en el mar" and '
+  group(
+      'GPS accuracy gate (user reports 2026-09-19 "flecha en el mar" and '
       '2026-09-25 "flecha fuera de la linea al hacer zoom")', () {
     test('a fix that declares itself worse than 25 m never moves the arrow',
         () {
@@ -311,12 +312,14 @@ void main() {
     });
   });
 
-  group('zoom/drag arrow handoff (user report 2026-09-26: "al hacer zoom '
+  group(
+      'zoom/drag arrow handoff (user report 2026-09-26: "al hacer zoom '
       'sale otra flecha / se queda en el medio")', () {
     final map2 =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
 
-    test('the overlay repaints the SAME frame on EVERY gesture event, not '
+    test(
+        'the overlay repaints the SAME frame on EVERY gesture event, not '
         'only on the follow→free transition', () {
       final body = bodyOf(map2, 'void _onCameraMoveStarted() {', maxLen: 2400);
       final bump = body.indexOf('_markerFrame.value++;');
@@ -334,20 +337,18 @@ void main() {
       // single-map parity: nada de esto está gateado por _driverOnline).
     });
 
-    test('no centred arrow when the camera is not following — never a '
+    test(
+        'no centred arrow when the camera is not following — never a '
         'mid-screen guess', () {
       // The "annotation missing" escape draws only while following.
-      final owns =
-          bodyOf(map2, 'bool get _dotOverlayOwnsMarker', maxLen: 2200);
+      final owns = bodyOf(map2, 'bool get _dotOverlayOwnsMarker', maxLen: 2200);
       expect(
-          owns.contains(
-              'if (_goldDotAnnot == null) return _cameraFollowing;'),
+          owns.contains('if (_goldDotAnnot == null) return _cameraFollowing;'),
           isTrue,
           reason: 'drawing centred with the camera panned away points at a '
               'street the driver is not on');
       // The builder: the Center fallback is gated on following.
-      final onlineBuilder = bodyOf(
-          widgets,
+      final onlineBuilder = bodyOf(widgets,
           'if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();',
           maxLen: 1400);
       expect(
@@ -359,10 +360,11 @@ void main() {
   });
 
   group('nav phases keep their tilt, with the same rate-limited chase', () {
-    test('the tilted nav chase keeps 17.5/55 and now trails the arrow '
+    test(
+        'the tilted nav chase keeps 17.5/55 and now trails the arrow '
         '(2026-09-30)', () {
-      final body = bodyOf(ctrl, 'else if (isNav && _cameraFollowing) {',
-          maxLen: 700);
+      final body =
+          bodyOf(ctrl, 'else if (isNav && _cameraFollowing) {', maxLen: 700);
       expect(body.contains('zoom: 17.5'), isTrue);
       expect(body.contains('pitch: 55'), isTrue);
       expect(body.contains('bearing: _heading'), isTrue,
@@ -371,10 +373,11 @@ void main() {
     });
   });
 
-  group('zoom clone: the trailing-edge flush (user report 2026-09-27 — '
+  group(
+      'zoom clone: the trailing-edge flush (user report 2026-09-27 — '
       'pinch/double-tap duplicates the arrow)', () {
-    final map = File('lib/screens/driver/driver_online_map.dart')
-        .readAsStringSync();
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
 
     test('a flush skipped on busy is re-fired when the channel drains', () {
       final pendingSets =
@@ -395,7 +398,8 @@ void main() {
     });
   });
 
-  group('camera rotation = mirror of the arrow (user reports '
+  group(
+      'camera rotation = mirror of the arrow (user reports '
       '2026-09-27/30)', () {
     test('NO chase layer survives in either driver map', () {
       final ctrlSrc = File('lib/screens/driver/driver_online_controller.dart')
@@ -414,22 +418,20 @@ void main() {
     });
 
     test('the turn-rate blend is adaptive — noise jumps earn less trust', () {
-      final sm =
-          File('lib/utils/smooth_motion.dart').readAsStringSync();
-      expect(sm.contains('measured.abs() > 45.0 ? 0.25 : 0.7'),
-          isTrue,
+      final sm = File('lib/utils/smooth_motion.dart').readAsStringSync();
+      expect(sm.contains('measured.abs() > 45.0 ? 0.25 : 0.7'), isTrue,
           reason: 'real city turns (≤45°/s) track fast; multipath bursts '
               'land as one calm average — the flat 0.8 blend pulsed the '
               'arrow through traffic');
-      expect(sm.contains('d.abs() < 5.0 && _vBearing.abs() > 20.0'),
-          isTrue,
+      expect(sm.contains('d.abs() < 5.0 && _vBearing.abs() > 20.0'), isTrue,
           reason: 'a stable course with a big residual rate kills the tail '
               'this sample — the arrow must not fishtail past a completed '
               'turn (user report 2026-10-02, "se colea")');
     });
   });
 
-  group('compass EMA (user report 2026-09-27: the arrow turns in steps and '
+  group(
+      'compass EMA (user report 2026-09-27: the arrow turns in steps and '
       'wanders before settling)', () {
     final svc = File('lib/services/heading_service.dart').readAsStringSync();
 
@@ -466,7 +468,8 @@ void main() {
       // change (post-frame: a notify mid-build is setState-in-build).
       final w = File('lib/screens/driver/driver_online_widgets.dart')
           .readAsStringSync();
-      expect(w, contains('if (_onlineMapSize != null && _onlineMapSize != newSize)'),
+      expect(w,
+          contains('if (_onlineMapSize != null && _onlineMapSize != newSize)'),
           reason: 'the size change is detected in the LayoutBuilder');
       expect(w, contains('addPostFrameCallback((_) {'),
           reason: 'the bump is post-frame, never mid-build');
@@ -480,10 +483,10 @@ void main() {
         File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
-    final offline =
-        File('lib/screens/driver/driver_online_offline.dart').readAsStringSync();
-    final widgets =
-        File('lib/screens/driver/driver_online_widgets.dart').readAsStringSync();
+    final offline = File('lib/screens/driver/driver_online_offline.dart')
+        .readAsStringSync();
+    final widgets = File('lib/screens/driver/driver_online_widgets.dart')
+        .readAsStringSync();
 
     test('the offline FAB recentres through the shared glide', () {
       expect(screen.contains('!_cameraFollowing'), isTrue);
@@ -507,7 +510,8 @@ void main() {
               'the collapsed sheet leaves it untappable');
     });
 
-    test('the pill GO: long + centred label (2026-10-16), Cruise logo, zone '
+    test(
+        'the pill GO: long + centred label (2026-10-16), Cruise logo, zone '
         'label', () {
       // User spec 2026-10-16 (Dash foto 3): the open pill is LONG — the row
       // minus the calendar disc (46) and a 12 gap — and the GO ONLINE label
@@ -568,15 +572,13 @@ void main() {
           reason: 'the gold morph lerp is dead');
       expect(offline, contains('S.of(context).zoneSelectAction'),
           reason: 'no zone picked → the label names the task');
-      final l10n =
-          File('lib/l10n/app_localizations.dart').readAsStringSync();
+      final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
       expect(l10n, contains('zoneSelectAction'));
       expect(l10n, contains('Selecciona zona'));
       expect(l10n, contains('Select zone'));
     });
 
-    test('the offline sheet rests half-open with the pill GO, three snaps',
-        () {
+    test('the offline sheet rests half-open with the pill GO, three snaps', () {
       // User spec 2026-10-13: "el sheet debe estar un poco más abierto y el
       // botón aparecerá abajo de forma píldora… si el driver desliza hacia
       // abajo, aparece el GO normal". Rest = half-open with the pill fully
@@ -588,8 +590,10 @@ void main() {
               'pill, never a half-formed in-between');
       expect(widgets, contains('const snaps = [0.0, _kSheetRestFrac, 1.0];'),
           reason: 'collapsed / resting / open — three snap points');
-      expect(screen,
-          contains('if (mounted && !_driverOnline) _animatePanelTo(_kSheetRestFrac);'),
+      expect(
+          screen,
+          contains(
+              'if (mounted && !_driverOnline) _animatePanelTo(_kSheetRestFrac);'),
           reason: 'the boot rests half-open when offline');
       final ctrl = File('lib/screens/driver/driver_online_controller.dart')
           .readAsStringSync();
@@ -629,8 +633,7 @@ void main() {
       // follow flips immediately and the per-frame chase centres the map.
       expect(screen.contains('bool _animateToPosition('), isTrue,
           reason: 'the flight reports whether it was issued');
-      final recenter =
-          bodyOf(map, 'void _recenterCamera() {', maxLen: 3400);
+      final recenter = bodyOf(map, 'void _recenterCamera() {', maxLen: 3400);
       expect(recenter.contains('final fired ='), isTrue);
       expect(recenter.contains('if (!fired)'), isTrue);
       expect(recenter.contains('_cameraFollowing = true'), isTrue);
@@ -649,12 +652,11 @@ void main() {
       final flatten = widgets.indexOf('pitch: 0, bearing: _smoothedBearing');
       expect(flatten, isNonNegative,
           reason: 'the style-load flatten flyTo lives here');
-      final around = widgets.substring(
-          flatten - 800 > 0 ? flatten - 800 : 0, flatten);
+      final around =
+          widgets.substring(flatten - 800 > 0 ? flatten - 800 : 0, flatten);
       expect(around.contains('_camFlightUntil = DateTime.now()'), isTrue,
           reason: 'the flatten snap suppresses the rotate unlatch');
-      expect(around.contains('_lastCamWriteBearing = _smoothedBearing'),
-          isTrue,
+      expect(around.contains('_lastCamWriteBearing = _smoothedBearing'), isTrue,
           reason: '…and syncs the last-written bearing so the snap reads '
               'as OUR write, not a finger');
       final settle = map.indexOf("recenter_settle', 'landed=");
@@ -688,18 +690,14 @@ void main() {
     });
 
     test('the GO button never paints disabled', () {
-      final go =
-          bodyOf(offline, 'Widget _buildGoButton(', maxLen: 2400);
+      final go = bodyOf(offline, 'Widget _buildGoButton(', maxLen: 2400);
       expect(go.contains('neuBox(radius: 16, pressed: true)'), isFalse,
           reason: 'no sunken grey well anymore — spec "siempre normal en '
               'amarillo"');
       // 2026-10-11 spec change: the ONLY dimmed GO is the deliberate
       // zone-selection state (zones flag on + offline + no pick) — never
       // an accidental disabled look.
-      expect(
-          offline.contains(
-              'dimmed ? Colors.white54 : Colors.white'),
-          isTrue,
+      expect(offline.contains('dimmed ? Colors.white54 : Colors.white'), isTrue,
           reason: '2026-10-15 spec: WHITE lettering on gold — the lone '
               'exception is the deliberate zone-selection dim');
       expect(offline.contains('_selectedZoneName == null'), isTrue);
@@ -707,8 +705,7 @@ void main() {
 
     test('the go-offline disc is red with the GO radar waves, both doors', () {
       expect(offline.contains('Widget _offlineRadarDisc('), isTrue);
-      expect(offline.contains('Color(0xFFE05555)'), isTrue,
-          reason: 'red body');
+      expect(offline.contains('Color(0xFFE05555)'), isTrue, reason: 'red body');
       expect(offline.contains('_GoRadarPainter('), isTrue,
           reason: 'same waves as GO');
       expect('Icons.pan_tool_rounded'.allMatches(widgets).length, 0,
@@ -718,7 +715,8 @@ void main() {
           reason: 'the panel AND the sheet share the disc (sibling paths)');
     });
 
-    test('GO connects on the FIRST tap even before the flag lands '
+    test(
+        'GO connects on the FIRST tap even before the flag lands '
         '(2026-10-16-noche)', () {
       // User report: "al boton de go online hay que darle dos veces para que
       // se conecte" — tap 1 ran _ensureVerified() (flips the flag) and NEVER
@@ -736,17 +734,14 @@ void main() {
       expect(widgets.contains('class _RecenterFab extends StatefulWidget'),
           isTrue);
       expect(widgets.contains('Icons.navigation_rounded'), isTrue);
-      final body = bodyOf(
-          widgets, 'class _RecenterFabState', maxLen: 1800);
+      final body = bodyOf(widgets, 'class _RecenterFabState', maxLen: 1800);
       expect(body.contains('ImageFilter.blur('), isTrue, reason: 'blur-in');
       expect(body.contains('_ctrl.reverse()'), isTrue, reason: 'pop-out');
       // All three sites use it: offline FAB, searching cluster, nav phases.
-      expect('_RecenterFab('.allMatches(screen).length,
-          greaterThanOrEqualTo(3),
+      expect('_RecenterFab('.allMatches(screen).length, greaterThanOrEqualTo(3),
           reason: 'offline + searching + nav share the one FAB');
       expect(screen.contains('const Color(0xFF4285F4)'), isFalse,
           reason: 'the blue nav recenter died — one photo-style FAB');
     });
   });
 }
-

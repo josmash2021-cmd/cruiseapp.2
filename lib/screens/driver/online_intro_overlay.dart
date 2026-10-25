@@ -3,12 +3,10 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/haptic_service.dart';
 
-/// First-GO instruction overlay (user spec 2026-10-22): the first time a
-/// driver taps GO and connects on this phone, this floats OVER the online
-/// map (it is NOT a page — the map stays mounted underneath, dimmed).
-/// Once per device (flag `online_intro_seen_v1`), dismissed only by the
-/// gold "Entendido" button; if the app dies mid-overlay it simply shows
-/// again on the next GO.
+/// Daily instruction overlay: it floats OVER the online map (it is NOT a
+/// page — the map stays mounted underneath, lightly dimmed). Every 24 hours
+/// per device, dismissed only by the gold "Entendido" button; if the app
+/// dies mid-overlay it simply shows again on the next GO.
 ///
 /// Animated: scrim fade, card slide-up, PNG soft-scale, and the four info
 /// blocks cascading in — plain Flutter tweens, no animation packages.
@@ -16,31 +14,11 @@ import '../../services/haptic_service.dart';
 /// The first-N-drivers figure used in the copy — EDITABLE by design.
 const int kFirstDriverCount = 100;
 
-/// Accounts that see the intro EVERY time they go online (owner spec
-/// 2026-10-22 — Jhon's demo driver). Everyone else gets it once per phone.
-/// Cosmetic and client-side only, same spirit as the test-account lists.
-const Set<String> kOnlineIntroAlwaysEmails = {'josmash33@gmail.com'};
+const Duration onlineIntroRepeatInterval = Duration(hours: 24);
 
-/// Same always-show rule by PHONE NUMBER (owner spec 2026-10-23: "debe ser
-/// para este telefono 3854612042"). Needed because a phone-created account
-/// can have an EMPTY cached email — the email-only rule never matched and
-/// the seen flag then hid the intro forever. Digits-only comparison.
-const Set<String> kOnlineIntroAlwaysPhones = {'3854612042'};
-
-bool onlineIntroAlwaysAccount({
-  Map<String, dynamic>? live,
-  Map<String, dynamic>? cached,
-}) {
-  final freshEmail = (live?['email'] ?? '').toString().trim();
-  final cachedEmail = (cached?['email'] ?? '').toString().trim();
-  final email =
-      (freshEmail.isNotEmpty ? freshEmail : cachedEmail).toLowerCase();
-  final freshPhone = (live?['phone'] ?? '').toString();
-  final phoneDigits =
-      (freshPhone.isNotEmpty ? freshPhone : (cached?['phone'] ?? ''))
-          .replaceAll(RegExp(r'\D'), '');
-  return kOnlineIntroAlwaysEmails.contains(email) ||
-      kOnlineIntroAlwaysPhones.any((p) => phoneDigits.endsWith(p));
+bool onlineIntroDueNow(int? lastSeenMs, int nowMs) {
+  if (lastSeenMs == null || lastSeenMs <= 0) return true;
+  return nowMs - lastSeenMs >= onlineIntroRepeatInterval.inMilliseconds;
 }
 
 class OnlineIntroOverlay extends StatefulWidget {
@@ -56,7 +34,6 @@ class OnlineIntroOverlay extends StatefulWidget {
 class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
     with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
-  static const _navy = Color(0xFF14141A);
 
   late final AnimationController _ctrl;
   bool _leaving = false;
@@ -101,7 +78,7 @@ class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
       child: FadeTransition(
         opacity: _window(0.0, 0.22),
         child: Container(
-          color: Colors.black.withValues(alpha: 0.42),
+          color: Colors.black.withValues(alpha: 0.18),
           child: SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -114,135 +91,151 @@ class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
                   ).animate(_window(0.12, 0.55)),
                   child: FadeTransition(
                     opacity: _window(0.12, 0.50),
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      alignment: Alignment.topCenter,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          margin: const EdgeInsets.only(top: 92),
-                          constraints: const BoxConstraints(maxWidth: 360),
-                          padding: const EdgeInsets.fromLTRB(14, 60, 14, 14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE8C547),
-                            borderRadius: BorderRadius.circular(30),
-                            border: Border.all(
-                              color: const Color(0xFFF4D876),
-                              width: 1.1,
+                        Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.topCenter,
+                          children: [
+                            ClipPath(
+                              clipper: _CloudClipper(),
+                              child: CustomPaint(
+                                foregroundPainter: _CloudBorderPainter(),
+                                child: Container(
+                                  margin: const EdgeInsets.only(top: 92),
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 360),
+                                  padding:
+                                      const EdgeInsets.fromLTRB(14, 60, 14, 14),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE8C547),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.22),
+                                        blurRadius: 26,
+                                        offset: const Offset(0, 12),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        s.onlineIntroTitle,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 27,
+                                          fontWeight: FontWeight.w900,
+                                          height: 1.05,
+                                          letterSpacing: -0.4,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 7),
+                                      Container(
+                                        width: 34,
+                                        height: 3,
+                                        color: const Color(0xFF5C4B12),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        s.onlineIntroSub(kFirstDriverCount),
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Color(0xFF3D3830),
+                                          fontSize: 11.5,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 14),
+                                      _cascade(
+                                        0,
+                                        _IntroBlock(
+                                          icon: Icons.groups_rounded,
+                                          title: s.onlineIntroB1Title,
+                                          body: s.onlineIntroB1Body,
+                                        ),
+                                      ),
+                                      _cascade(
+                                        1,
+                                        _IntroBlock(
+                                          icon: Icons.bar_chart_rounded,
+                                          title: s.onlineIntroB2Title,
+                                          body: s.onlineIntroB2Body,
+                                        ),
+                                      ),
+                                      _cascade(
+                                        2,
+                                        _IntroBlock(
+                                          icon: Icons.schedule_rounded,
+                                          title: s.onlineIntroB3Title,
+                                          body: s.onlineIntroB3Body,
+                                        ),
+                                      ),
+                                      _cascade(
+                                        3,
+                                        _IntroBlock(
+                                          icon: Icons.emoji_events_rounded,
+                                          title: s.onlineIntroB4Title,
+                                          body: s.onlineIntroB4Body(
+                                              kFirstDriverCount),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.22),
-                                blurRadius: 26,
-                                offset: const Offset(0, 12),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                s.onlineIntroTitle,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF17130A),
-                                  fontSize: 27,
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.05,
-                                  letterSpacing: -0.4,
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: ScaleTransition(
+                                scale: Tween<double>(begin: 0.92, end: 1.0)
+                                    .animate(_window(0.18, 0.60,
+                                        curve: Curves.easeOutBack)),
+                                child: Image.asset(
+                                  'assets/images/online_intro_hero.png',
+                                  height: 150,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const SizedBox(height: 12),
                                 ),
                               ),
-                              const SizedBox(height: 7),
-                              Container(
-                                width: 34,
-                                height: 3,
-                                color: const Color(0xFF5C4B12),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                s.onlineIntroSub(kFirstDriverCount),
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF3D3830),
-                                  fontSize: 11.5,
-                                  height: 1.35,
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              _cascade(
-                                0,
-                                _IntroBlock(
-                                  icon: Icons.groups_rounded,
-                                  title: s.onlineIntroB1Title,
-                                  body: s.onlineIntroB1Body,
-                                ),
-                              ),
-                              _cascade(
-                                1,
-                                _IntroBlock(
-                                  icon: Icons.bar_chart_rounded,
-                                  title: s.onlineIntroB2Title,
-                                  body: s.onlineIntroB2Body,
-                                ),
-                              ),
-                              _cascade(
-                                2,
-                                _IntroBlock(
-                                  icon: Icons.schedule_rounded,
-                                  title: s.onlineIntroB3Title,
-                                  body: s.onlineIntroB3Body,
-                                ),
-                              ),
-                              _cascade(
-                                3,
-                                _IntroBlock(
-                                  icon: Icons.emoji_events_rounded,
-                                  title: s.onlineIntroB4Title,
-                                  body: s.onlineIntroB4Body(kFirstDriverCount),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              FadeTransition(
-                                opacity: _window(0.72, 1.0),
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  height: 44,
-                                  child: ElevatedButton(
-                                    onPressed: _dismiss,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: _navy,
-                                      foregroundColor: _gold,
-                                      elevation: 0,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        FadeTransition(
+                          opacity: _window(0.72, 1.0),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 360),
+                              child: SizedBox(
+                                width: double.infinity,
+                                height: 44,
+                                child: ElevatedButton(
+                                  onPressed: _dismiss,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _gold,
+                                    foregroundColor: Colors.black,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
                                     ),
-                                    child: Text(
-                                      s.onlineIntroUnderstood,
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: 0.2,
-                                      ),
+                                  ),
+                                  child: Text(
+                                    s.onlineIntroUnderstood,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.2,
                                     ),
                                   ),
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          child: ScaleTransition(
-                            scale: Tween<double>(begin: 0.92, end: 1.0).animate(
-                                _window(0.18, 0.60, curve: Curves.easeOutBack)),
-                            child: Image.asset(
-                              'assets/images/online_intro_hero.png',
-                              height: 150,
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const SizedBox(height: 12),
                             ),
                           ),
                         ),
@@ -275,7 +268,7 @@ class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
   }
 }
 
-/// Gold icon in a soft disc + title/body — one info row of the card.
+/// Gold icon and title + dark body — one info row of the card.
 /// Icons are passed as plain const constructor args (NEVER through a
 /// record literal — the release tree-shaker drops those glyphs).
 class _IntroBlock extends StatelessWidget {
@@ -305,15 +298,7 @@ class _IntroBlock extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.18),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: _gold, size: 21),
-            ),
+            Icon(icon, color: _gold, size: 24),
             Container(
               width: 1.5,
               height: 42,
@@ -349,4 +334,51 @@ class _IntroBlock extends StatelessWidget {
       ),
     );
   }
+}
+
+Path _cloudPath(Size size) {
+  final w = size.width;
+  final h = size.height;
+  return Path()
+    ..moveTo(0, 76)
+    ..quadraticBezierTo(0, 60, 18, 56)
+    ..quadraticBezierTo(w * 0.18, 48, w * 0.30, 38)
+    ..quadraticBezierTo(w * 0.40, 4, w * 0.50, 0)
+    ..quadraticBezierTo(w * 0.60, 4, w * 0.70, 38)
+    ..quadraticBezierTo(w * 0.82, 48, w - 18, 56)
+    ..quadraticBezierTo(w, 60, w, 76)
+    ..lineTo(w, h - 24)
+    ..quadraticBezierTo(w, h, w - 24, h)
+    ..lineTo(24, h)
+    ..quadraticBezierTo(0, h, 0, h - 24)
+    ..close();
+}
+
+class _CloudClipper extends CustomClipper<Path> {
+  const _CloudClipper();
+
+  @override
+  Path getClip(Size size) => _cloudPath(size);
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class _CloudBorderPainter extends CustomPainter {
+  const _CloudBorderPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawPath(
+      _cloudPath(size),
+      Paint()
+        ..color = const Color(0xFFF4D876)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1
+        ..isAntiAlias = true,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

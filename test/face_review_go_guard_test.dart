@@ -157,11 +157,10 @@ void main() {
         reason: 'the tap trigger is dead');
     expect(controller, contains('_introTimer?.cancel();'),
         reason: 'cancelled on exit and dispose');
-    expect(controller, contains("getBool('online_intro_seen_v1')"),
-        reason: 'once per phone flag intact');
-    expect(controller, contains('onlineIntroAlwaysAccount(cached: u)'),
-        reason: 'the owner demo account still sees it on every activation');
-    expect(controller, contains('if (alwaysShow || !seen)'));
+    expect(controller, contains("getInt('online_intro_last_seen_at')"),
+        reason: 'a 24 h timestamp, not a one-time seen flag');
+    expect(controller, contains('onlineIntroDueNow(lastSeenMs, nowMs)'));
+    expect(controller, isNot(contains('onlineIntroAlwaysAccount')));
   });
 
   test('both face-check pushes route in main.dart, role-gated driver', () {

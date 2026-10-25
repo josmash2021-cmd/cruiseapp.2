@@ -32,14 +32,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text("You're now online!"), findsOneWidget);
-    expect(find.text('Got it'), findsOneWidget);
+    expect(find.text('I understand'), findsOneWidget);
     expect(find.text('We Are Getting Started'), findsOneWidget);
     expect(find.text('Exclusive Benefits'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    await tester.ensureVisible(find.text('Got it'));
+    await tester.ensureVisible(find.text('I understand'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Got it'));
+    await tester.tap(find.text('I understand'));
     await tester.pumpAndSettle();
 
     expect(dismissed, isTrue);
@@ -73,35 +73,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    await tester.ensureVisible(find.text('Got it'));
-    await tester.tap(find.text('Got it'));
+    await tester.ensureVisible(find.text('I understand'));
+    await tester.tap(find.text('I understand'));
     await tester.pumpAndSettle();
     expect(dismissed, isTrue);
     expect(tester.takeException(), isNull);
   });
 
-  test('the demo account rule resolves locally by email or phone', () {
-    expect(
-      onlineIntroAlwaysAccount(cached: {'email': ' JOSMASH33@GMAIL.COM '}),
-      isTrue,
-    );
-    expect(
-      onlineIntroAlwaysAccount(cached: {'phone': '+1 (385) 461-2042'}),
-      isTrue,
-      reason: 'country code and formatting must not hide the demo rule',
-    );
-    expect(
-      onlineIntroAlwaysAccount(
-        live: {'phone': '+13854612042'},
-        cached: {'phone': '+15550000000'},
-      ),
-      isTrue,
-    );
-    expect(
-      onlineIntroAlwaysAccount(
-        cached: {'email': 'driver@example.test', 'phone': '+15550000000'},
-      ),
-      isFalse,
-    );
+  test('the daily rule is due immediately and again after 24 hours', () {
+    final day = const Duration(hours: 24).inMilliseconds;
+    final now = DateTime(2026, 10, 24, 12).millisecondsSinceEpoch;
+    expect(onlineIntroDueNow(null, now), isTrue);
+    expect(onlineIntroDueNow(now - day + 1, now), isFalse);
+    expect(onlineIntroDueNow(now - day, now), isTrue,
+        reason: 'exactly 24 hours after the last acknowledgement is due');
+    expect(onlineIntroDueNow(now + 1000, now), isFalse,
+        reason: 'a future timestamp must not show early');
   });
 }

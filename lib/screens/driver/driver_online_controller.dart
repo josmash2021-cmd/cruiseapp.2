@@ -1064,7 +1064,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _zoomEaseDone = false;
         _zoomEaseStartMs = null;
         if (!_cameraFollowing && _pos != null) {
-          _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
+          _animateToPosition(_pos!,
+              zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
         }
       }
       PrefsCache.instance.then((p) => p.setBool('driver_was_online', true));
@@ -1134,7 +1135,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _introTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (timer.tick < 10 || _introBusy) return;
         final retryAfter = _introRetryAfter;
-        if (retryAfter != null && DateTime.now().isBefore(retryAfter)) return;
+        if (retryAfter != null && clock.now().isBefore(retryAfter)) return;
         unawaited(_maybeShowOnlineIntro());
       });
     } finally {
@@ -1162,50 +1163,27 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _introBusy = true;
     try {
       final p = await PrefsCache.instance;
-      final u = await UserSession.getUser();
-      final seen = p.getBool('online_intro_seen_v1') == true;
-      var alwaysShow = onlineIntroAlwaysAccount(cached: u);
+      final lastSeenMs = p.getInt('online_intro_last_seen_at');
+      final nowMs = clock.now().millisecondsSinceEpoch;
       if (epoch != _introEpoch ||
           !mounted ||
           !_driverOnline ||
           _showOnlineIntro) {
         return;
       }
-      debugPrint('[OnlineIntro] alwaysShow=$alwaysShow seen=$seen '
-          'online=$_driverOnline source=cache');
-      if (alwaysShow || !seen) {
-        _presentOnlineIntro();
-        return;
-      }
-
-      Map<String, dynamic>? me;
-      try {
-        me = await ApiService.getMe().timeout(const Duration(seconds: 4));
-      } catch (e) {
-        debugPrint('[OnlineIntro] live profile unavailable: $e');
-      }
-      alwaysShow = onlineIntroAlwaysAccount(live: me, cached: u);
-      if (epoch != _introEpoch ||
-          !mounted ||
-          !_driverOnline ||
-          _showOnlineIntro) {
-        return;
-      }
-      debugPrint('[OnlineIntro] alwaysShow=$alwaysShow seen=$seen '
-          'online=$_driverOnline profileFresh=${me != null}');
-      if (!alwaysShow) {
-        if (me == null && u == null) {
-          _introRetryAfter = DateTime.now().add(const Duration(seconds: 5));
-          return;
+      if (!onlineIntroDueNow(lastSeenMs, nowMs)) {
+        if (lastSeenMs != null) {
+          _introRetryAfter = DateTime.fromMillisecondsSinceEpoch(lastSeenMs)
+              .add(onlineIntroRepeatInterval);
         }
-        _introTimer?.cancel();
-        _introTimer = null;
         return;
       }
+      debugPrint('[OnlineIntro] daily due online=$_driverOnline '
+          'lastSeenMs=$lastSeenMs');
       _presentOnlineIntro();
     } catch (e) {
       if (epoch == _introEpoch && mounted && _driverOnline) {
-        _introRetryAfter = DateTime.now().add(const Duration(seconds: 5));
+        _introRetryAfter = clock.now().add(const Duration(seconds: 5));
       }
       debugPrint('[OnlineIntro] show attempt failed: $e');
     } finally {
@@ -1215,16 +1193,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   void _presentOnlineIntro() {
     if (!mounted || !_driverOnline || _showOnlineIntro) return;
-    _introTimer?.cancel();
-    _introTimer = null;
     _setState(() => _showOnlineIntro = true);
   }
 
   Future<void> _dismissOnlineIntro() async {
     final p = await PrefsCache.instance;
     await p.setBool('online_intro_seen_v1', true);
+    await p.setInt(
+      'online_intro_last_seen_at',
+      clock.now().millisecondsSinceEpoch,
+    );
     if (!mounted) return;
-    _setState(() => _showOnlineIntro = false);
+    _setState(() {
+      _showOnlineIntro = false;
+      _introRetryAfter = clock.now().add(onlineIntroRepeatInterval);
+    });
   }
 
   /// Salir offline (el _goOffline de hoy, sin el pop): se apagan los
@@ -3060,7 +3043,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // left staring at the expired offer's frame until the next fix.
         if (_pos != null && mounted) {
           try {
-            _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
+            _animateToPosition(_pos!,
+                zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
           } catch (e) {
             debugPrint(
                 '[DriverOnline] _animateToPosition failed on expire: $e');
@@ -3690,7 +3674,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
       if (_pos != null) {
         try {
-          _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
+          _animateToPosition(_pos!,
+              zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
         } catch (e) {
           debugPrint(
               '[DriverOnline] _animateToPosition failed during accept: $e');
@@ -4498,7 +4483,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
       if (_pos != null && mounted) {
         try {
-          _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
+          _animateToPosition(_pos!,
+              zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
         } catch (e) {
           debugPrint('[DriverOnline] _animateToPosition failed on reject: $e');
         }

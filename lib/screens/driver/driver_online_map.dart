@@ -787,8 +787,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _isClearingAnnotations = true;
     // Every preview entry/exit funnels through here with _previewingOffer
     // already at its new value — the one place that starts the badge's
-    // shrink/grow glide no matter which path opened or closed the offer.
+    // shrink/grow glide and refreshes the spotlight for the new state.
     _syncArrowScale();
+    unawaited(_syncZoneLayers());
     try {
       // Web overlays live in the GL JS controller, not in annotation
       // managers — clear them by the ids the preview draws with.
@@ -2469,7 +2470,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       // The visible-state set rides the signature: crossing a state line
       // (or the first fix landing) repaints the look for the new state.
       final visibleIds = _zoneVisibleIds();
-      final visibleSig = visibleIds.join('|');
+      final visibleSig =
+          '${visibleIds.join('|')}|offer:${_previewingOffer != null}';
       if (_zoneLayersVisible != visible ||
           _zoneLookOnline != online ||
           _zoneDemandSig != demandSig ||
@@ -2760,16 +2762,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// The spotlight mask: a world-sized polygon with the chosen sector's
   /// outer rings as holes. `null` = mask off (every sector visible).
   Future<void> _writeZoneDim(mapbox.MapboxMap map, Sector? sec) async {
+    final effectiveSec = _previewingOffer == null ? sec : null;
     var fc = <String, dynamic>{
       'type': 'FeatureCollection',
       'features': const [],
     };
-    if (sec != null) {
+    if (effectiveSec != null) {
       // Ring 0 of each poly is the sector's outer boundary — each becomes a
       // hole in the world ring (the sector's own holes stay dimmed: they
       // are not part of the zone either).
       final holes = [
-        for (final poly in sec.polys)
+        for (final poly in effectiveSec.polys)
           [
             for (final p in poly.first)
               [p.longitude, p.latitude]
@@ -2804,7 +2807,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await map.style
           .setStyleSourceProperty('sec-dim-src', 'data', jsonEncode(fc));
       await map.style.setStyleLayerProperty(
-          'sec-dim', 'fill-opacity', sec == null ? 0.0 : 0.70);
+          'sec-dim', 'fill-opacity', effectiveSec == null ? 0.0 : 0.70);
     } catch (e) {
       debugPrint('[Zones] dim write failed: $e');
     }
@@ -3100,7 +3103,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       } catch (_) {}
       _zoneLayersVisible = visible;
       _zoneLookOnline = online;
-      _zoneLookVisibleSig = visibleIds.join('|');
+      _zoneLookVisibleSig =
+          '${visibleIds.join('|')}|offer:${_previewingOffer != null}';
       _zoneDemandSig = ZoneService.demand.entries
           .map((e) => '${e.key}:${e.value.level}')
           .join('|');
@@ -3113,6 +3117,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       ApiService.logClientEvent('zones_swap', 'error=$e');
     } finally {
       _zoneSwapRunning = false;
+      unawaited(_syncZoneLayers());
     }
   }
 

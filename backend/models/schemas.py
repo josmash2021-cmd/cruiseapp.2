@@ -359,6 +359,21 @@ class AdminCancelTripIn(BaseModel):
     reason: Optional[str] = None
 
 
+class AdminNotificationIn(BaseModel):
+    user_id: int = Field(..., gt=0)
+    title: str = Field(..., min_length=1, max_length=255)
+    body: str = Field(..., min_length=1, max_length=4000)
+    data: Optional[dict] = None
+
+    @field_validator("title", "body")
+    @classmethod
+    def validate_text(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Notification text cannot be blank")
+        return value
+
+
 class VehicleIn(BaseModel):
     make: Optional[str] = None
     model: Optional[str] = None

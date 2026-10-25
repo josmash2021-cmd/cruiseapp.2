@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../config/page_transitions.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:convert';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
@@ -141,7 +139,7 @@ class _InboxScreenState extends State<InboxScreen>
   }
 }
 
-// ── Notifications tab — reads from LocalDataService ──
+// ── Notifications tab — server dispatch notices + local history ──
 class _NotificationsTab extends StatefulWidget {
   final AppColors c;
   const _NotificationsTab({required this.c});
@@ -153,7 +151,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
   static const _gold = Color(0xFFE8C547);
 
   List<AppNotificationItem> _notifications = [];
-  bool _loading = false;
+  bool _loading = true;
 
   @override
   void initState() {
@@ -162,7 +160,30 @@ class _NotificationsTabState extends State<_NotificationsTab> {
   }
 
   Future<void> _load() async {
-    final items = await LocalDataService.getNotifications();
+    final localItems = await LocalDataService.getNotifications();
+    List<Map<String, dynamic>> serverRows = [];
+    try {
+      serverRows = await ApiService.getNotifications(useCache: false);
+    } catch (e) {
+      debugPrint('[Inbox] server notifications load error: $e');
+    }
+    final serverItems = serverRows
+        .where((n) => n['type'] == 'dispatch_notification')
+        .map((n) => AppNotificationItem(
+              id: 'server_${n['id']}',
+              title: n['title']?.toString() ?? '',
+              message: n['body']?.toString() ?? '',
+              type: 'dispatch_notification',
+              read: n['is_read'] == true,
+              createdAt: DateTime.tryParse(n['created_at']?.toString() ?? '') ??
+                  DateTime.now(),
+            ));
+    final byId = <String, AppNotificationItem>{
+      for (final item in localItems) item.id: item,
+      for (final item in serverItems) item.id: item,
+    };
+    final items = byId.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     if (!mounted) return;
     // If no saved notifications, seed a welcome one
     if (items.isEmpty) {
@@ -187,17 +208,40 @@ class _NotificationsTabState extends State<_NotificationsTab> {
 
   Future<void> _markAllRead() async {
     await LocalDataService.markNotificationsAsRead();
+    try {
+      await ApiService.markAllNotificationsRead();
+    } catch (e) {
+      debugPrint('[Inbox] mark-all server notifications error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(S.of(context).errorOccurred)),
+        );
+      }
+    }
     await _load();
   }
 
   Future<void> _dismiss(int index) async {
+    final item = _notifications[index];
     setState(() => _notifications.removeAt(index));
-    // Persist the updated list
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'notifications_v1',
-      jsonEncode(_notifications.map((n) => n.toJson()).toList()),
-    );
+    try {
+      if (item.id.startsWith('server_')) {
+        final serverId = int.tryParse(item.id.substring(7));
+        if (serverId == null) throw const FormatException('Invalid server id');
+        await ApiService.deleteNotification(serverId);
+      }
+      await LocalDataService.removeNotification(item.id);
+    } catch (e) {
+      debugPrint('[Inbox] notification delete error: $e');
+      if (!mounted) return;
+      setState(() {
+        _notifications.add(item);
+        _notifications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(S.of(context).failedToDelete)),
+      );
+    }
   }
 
   IconData _iconForType(String type) {

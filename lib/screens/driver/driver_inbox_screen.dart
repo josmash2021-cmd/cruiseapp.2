@@ -93,6 +93,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
   /// mark, cancellations a red X, rating-band notices a warning.
   IconData _iconForRawType(String raw, InboxType t) {
     if (raw == 'trip_cancelled') return Icons.cancel_outlined;
+    if (raw == 'dispatch_notification') return Icons.notifications_rounded;
     if (raw.startsWith('rating_')) {
       return raw == 'rating_restored' || raw == 'rating_followup'
           ? Icons.trending_up_rounded
@@ -108,6 +109,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
 
   Color _colorForRawType(String raw, InboxType t) {
     if (raw == 'trip_cancelled') return const Color(0xFFE57373);
+    if (raw == 'dispatch_notification') return _gold;
     if (raw.startsWith('rating_')) {
       return raw == 'rating_restored' || raw == 'rating_followup'
           ? const Color(0xFF4CAF50)

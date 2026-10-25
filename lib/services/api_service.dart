@@ -4304,13 +4304,13 @@ class ApiService {
   /// Get user notifications.
   /// ✅ QUICK WIN #3: Added 5s cache for notification list
   /// Short TTL keeps them fresh while reducing API load
-  static Future<List<Map<String, dynamic>>> getNotifications() async {
+  static Future<List<Map<String, dynamic>>> getNotifications({bool useCache = true}) async {
     final h = await _authHeaders();
     final res = await _cachedGet(
       Uri.parse('$_baseUrl/notifications'),
       headers: h,
       cacheTtl: const Duration(seconds: 5),
-      useCache: true,
+      useCache: useCache,
     );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
@@ -4333,6 +4333,16 @@ class ApiService {
     await _client
         .post(Uri.parse('$_baseUrl/notifications/read-all'), headers: h)
         .timeout(const Duration(seconds: 5));
+  }
+
+  static Future<void> deleteNotification(int notifId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .delete(Uri.parse('$_baseUrl/notifications/$notifId'), headers: h)
+        .timeout(const Duration(seconds: 5));
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception('Notification delete failed (${res.statusCode})');
+    }
   }
 
   // ═══════════════════════════════════════════════════════

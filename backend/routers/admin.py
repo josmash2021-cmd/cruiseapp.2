@@ -23,6 +23,7 @@ from models.database import (
 _SERVER_START_TIME = datetime.now(timezone.utc)
 from models.schemas import (
     AdminStatsResponse, CreateTripIn, AdminUpdateTripIn, AdminCancelTripIn,
+    AdminNotificationIn,
 )
 from utils.security import (
     _get_current_user, _require_admin, _verify_api_key,
@@ -113,15 +114,29 @@ async def _get_driver_rating(driver_id: int, db: AsyncSession) -> float:
 @router.get("/admin/users", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_users(
     role: Optional[str] = None, status: Optional[str] = None,
+    search: Optional[str] = Query(None, max_length=120),
     limit: int = 200, offset: int = Query(0, ge=0, le=10000),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all users with optional role/status filter. For dispatch admin panel."""
+    """List users with optional role/status/text filters for dispatch."""
     query = select(User)
     if role:
         query = query.where(User.role == role)
     if status:
         query = query.where(User.status == status)
+    if search and search.strip():
+        term = search.strip().lower()
+        full_name = (
+            func.coalesce(User.first_name, "") + " " +
+            func.coalesce(User.last_name, "")
+        )
+        query = query.where(or_(
+            func.lower(full_name).contains(term, autoescape=True),
+            func.lower(func.coalesce(User.first_name, "")).contains(term, autoescape=True),
+            func.lower(func.coalesce(User.last_name, "")).contains(term, autoescape=True),
+            func.lower(func.coalesce(User.email, "")).contains(term, autoescape=True),
+            func.lower(func.coalesce(User.phone, "")).contains(term, autoescape=True),
+        ))
     limit = min(limit, 500)  # Cap max results
     query = query.order_by(User.id.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
@@ -1798,26 +1813,54 @@ async def create_driver_incentive(
 
 @router.post("/admin/notifications/send", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_send_notification(
-    user_id: int = Body(...),
-    title: str = Body(...),
-    body: str = Body(...),
-    data: Optional[dict] = Body(None),
+    payload: AdminNotificationIn,
     db: AsyncSession = Depends(get_db),
 ):
-    """Send a push notification to a specific user by user_id."""
-    result = await db.execute(select(User).where(User.id == user_id))
+    """Persist a dispatch notification and dispatch its push when possible."""
+    result = await db.execute(select(User).where(User.id == payload.user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
-    if not user.fcm_token:
-        raise HTTPException(400, "User has no FCM token registered")
-    # Awaited (not fire-and-forget): this endpoint reports back to the operator,
-    # so the response must not return before the push has actually been handed
-    # to FCM. _send_fcm_push_async swallows FCM errors internally, so delivery
-    # is still not *confirmed* — the wording below reflects only what we know.
-    await _send_fcm_push_async(user.fcm_token, title, body, data)
-    logging.info("[Admin] Push notification dispatched to FCM for user %d", user_id)
-    return {"ok": True, "delivery": "dispatched"}
+    if user.role not in ("driver", "rider"):
+        raise HTTPException(400, "Recipient must be a driver or rider")
+
+    notification = Notification(
+        user_id=user.id,
+        title=payload.title,
+        body=payload.body,
+        notif_type="dispatch_notification",
+        is_read=False,
+    )
+    db.add(notification)
+    await db.flush()
+    notification_id = notification.id
+    data = dict(payload.data or {})
+    data["type"] = "dispatch_notification"
+    data["notification_id"] = str(notification_id)
+    notification.data = json.dumps(data, ensure_ascii=False)
+    await db.commit()
+
+    delivery = "inbox_only"
+    if user.fcm_token:
+        # Awaiting hands the message to FCM before the panel reports success;
+        # actual device delivery is still not confirmed by this response.
+        try:
+            await _send_fcm_push_async(user.fcm_token, payload.title, payload.body, data)
+            delivery = "dispatched"
+        except Exception as exc:
+            logging.warning(
+                "[Admin] Push failed for user %d; inbox notification %d remains available: %s",
+                user.id, notification_id, exc,
+            )
+    logging.info(
+        "[Admin] Notification %d saved for user %d (%s)",
+        notification_id, user.id, delivery,
+    )
+    _security_audit_log(
+        "ADMIN_NOTIFICATION_SENT", "admin",
+        f"user_id={user.id} role={user.role} delivery={delivery} notification_id={notification_id}",
+    )
+    return {"ok": True, "delivery": delivery, "notification_id": notification_id}
 
 
 @router.post("/admin/notifications/broadcast/drivers", dependencies=[Depends(_require_dispatch_auth)])

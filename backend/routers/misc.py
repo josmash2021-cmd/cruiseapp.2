@@ -106,6 +106,19 @@ async def mark_all_notifications_read(user: User = Depends(_get_current_user), d
     await db.commit()
     return {"status": "all_read"}
 
+
+@router.delete("/notifications/{notif_id}", dependencies=[Depends(_verify_api_key)])
+async def delete_notification(notif_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Notification).where(and_(Notification.id == notif_id, Notification.user_id == user.id))
+    )
+    notification = result.scalar_one_or_none()
+    if not notification:
+        raise HTTPException(404, "Notification not found")
+    await db.delete(notification)
+    await db.commit()
+    return {"status": "deleted"}
+
 # -- Tunnel URL discovery -------------------------------
 
 @router.get("/tunnel-url", dependencies=[Depends(_verify_api_key)])

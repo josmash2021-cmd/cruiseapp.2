@@ -32,8 +32,9 @@ import 'screens/splash_screen.dart';
 import 'screens/maintenance_screen.dart';
 import 'screens/update_required_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
-import 'screens/driver/driver_online_screen.dart';
+import 'screens/driver/driver_inbox_screen.dart';
 import 'screens/driver/driver_waitlist_screen.dart';
+import 'screens/inbox_screen.dart';
 import 'screens/driver/onboarding/driver_approved_celebration_screen.dart';
 import 'screens/driver/driver_trip_accept_screen.dart';
 import 'screens/driver/scheduled_rides_map_screen.dart';
@@ -545,6 +546,19 @@ void _handleNotificationTap(RemoteMessage message) {
   // Driver: ride offer → DriverOnlineScreen
   if (type == 'new_offer') {
     _handleDriverRideOffer(message);
+    return;
+  }
+
+  if (type == 'dispatch_notification') {
+    UserSession.getMode().then((mode) {
+      final nav = _navigatorKey.currentState;
+      if (nav == null) return;
+      if (mode == 'driver') {
+        nav.push(slideFromRightRoute(const DriverInboxScreen()));
+      } else if (mode == 'rider') {
+        nav.push(slideFromRightRoute(const InboxScreen()));
+      }
+    });
     return;
   }
 
@@ -1450,6 +1464,19 @@ Future<void> heavyInit() async {
               // FIX: dispatch cancellation uses 'trip_canceled' (1 l)
               'trip_canceled', 'trip_cancelled',
             };
+
+            if (type == 'dispatch_notification') {
+              final notificationId = message.data['notification_id']?.toString();
+              LocalDataService.addNotification(
+                title: title,
+                message: body,
+                type: type,
+                id: notificationId == null || notificationId.isEmpty
+                    ? null
+                    : 'server_$notificationId',
+              );
+              return;
+            }
 
             // Chat messages: suppress in-app notification — the OS already shows
             // the FCM push when the app is backgrounded. When foreground, the user

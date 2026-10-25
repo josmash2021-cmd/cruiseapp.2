@@ -1815,6 +1815,7 @@ async def create_driver_incentive(
 async def admin_notification_recipients(
     role: str = Query(..., pattern="^(driver|rider)$"),
     search: Optional[str] = Query(None, max_length=120),
+    online: str = Query("all", pattern="^(all|online|offline)$"),
     limit: int = Query(500, ge=1, le=500),
     offset: int = Query(0, ge=0, le=10000),
     db: AsyncSession = Depends(get_db),
@@ -1829,6 +1830,10 @@ async def admin_notification_recipients(
         ))
         .where(User.role == role)
     )
+    if online == "online":
+        query = query.where(User.is_online == True)
+    elif online == "offline":
+        query = query.where(or_(User.is_online == False, User.is_online.is_(None)))
     if search and search.strip():
         term = search.strip().lower()
         full_name = (
@@ -1882,6 +1887,7 @@ async def admin_notification_recipients(
             "verification_status": user.verification_status,
             "app_version": user.app_version,
             "has_fcm": bool(user.fcm_token),
+            "is_online": bool(user.is_online),
             "vehicle": None if vehicle is None else {
                 "make": vehicle.make,
                 "model": vehicle.model,

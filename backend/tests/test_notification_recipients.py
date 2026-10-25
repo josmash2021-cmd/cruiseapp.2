@@ -161,6 +161,54 @@ async def test_recipient_dedupes_multiple_active_vehicle_rows(
         assert items[0]["id"] == driver.id
 
 
+async def test_recipient_online_offline_and_all_filters(client, db, test_driver):
+    online_driver, _ = test_driver
+    offline_driver = User(
+        first_name="Offline", last_name="Driver", email="offline@test.com",
+        phone="+15550000003", password_hash="x", role="driver",
+        status="active", is_online=False,
+    )
+    legacy_driver = User(
+        first_name="Legacy", last_name="Driver", email="legacy@test.com",
+        phone="+15550000004", password_hash="x", role="driver",
+        status="active", is_online=None,
+    )
+    db.add_all([offline_driver, legacy_driver])
+    await db.commit()
+    await db.refresh(offline_driver)
+    await db.refresh(legacy_driver)
+
+    async def _ids(online=None):
+        params = {"role": "driver"}
+        if online is not None:
+            params["online"] = online
+        res = await client.get(
+            "/admin/notification-recipients",
+            params=params,
+            headers=_dispatch_headers(),
+        )
+        assert res.status_code == 200, res.text
+        return res.json()["items"]
+
+    assert {row["id"] for row in await _ids()} == {
+        online_driver.id, offline_driver.id, legacy_driver.id,
+    }
+    online_rows = await _ids("online")
+    assert [row["id"] for row in online_rows] == [online_driver.id]
+    assert online_rows[0]["is_online"] is True
+
+    offline_rows = await _ids("offline")
+    assert {row["id"] for row in offline_rows} == {offline_driver.id, legacy_driver.id}
+    assert all(row["is_online"] is False for row in offline_rows)
+
+    res = await client.get(
+        "/admin/notification-recipients",
+        params={"role": "driver", "online": "sideways"},
+        headers=_dispatch_headers(),
+    )
+    assert res.status_code == 422
+
+
 async def test_recipient_validates_role_and_dispatch_auth(client):
     res = await client.get(
         "/admin/notification-recipients",

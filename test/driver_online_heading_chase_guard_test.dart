@@ -107,7 +107,7 @@ void main() {
     test('recenter + style-load keep the heading too', () {
       final recenter = bodyOf(map, 'void _recenterCamera() {', maxLen: 3200);
       expect(recenter.contains('bearing: bearing'), isTrue,
-          reason: 'the 10 s auto-refollow returns to the heading-up chase, '
+          reason: 'manual recenter returns to the heading-up chase, '
               'not to north');
       // Recenter = online parity (2026-10-12 spec: "que funcione igual que
       // cuando el driver está activo") — centre the arrow at street zoom in
@@ -611,9 +611,9 @@ void main() {
       expect(goIdx, greaterThan(panelIdx),
           reason: 'the GO pill is the sheet footer — it must come AFTER the '
               'sheet in the Stack or the sheet covers it');
-      // Rolling re-engages the chase after a zone recenter (2026-10-13).
-      expect(ctrl, contains('_motion.speedMps > 2.2'),
-          reason: 'driving re-engages follow by itself — no button needed');
+      // A real gesture releases follow; movement alone must not steal it back.
+      expect(ctrl, isNot(contains('_motion.speedMps > 2.2')),
+          reason: 'manual camera only resumes through an explicit recenter');
       // The sheet moves ONLY from its header strip (2026-10-13 spec: "el
       // sheet solamente se puede abrir o cerrar tocando o deslizando desde
       // donde dice You're offline/online").
@@ -678,8 +678,15 @@ void main() {
       expect(screen.contains('int _mapPointers = 0;'), isTrue,
           reason: 'the map counts fingers — no finger, no gesture');
       expect(screen.contains('int _phantomGestureEvents = 0;'), isTrue);
-      expect(widgets.contains('onPointerDown: (_) => _mapPointers++'), isTrue,
+      expect(widgets.contains('onPointerDown: (event) {'), isTrue,
           reason: 'the Listener wraps the MapWidget (nav-view pattern)');
+      expect(
+          widgets.contains(
+              '_mapGestureGuard.pointerDown(event.position, _mapPointers)'),
+          isTrue,
+          reason: 'pointer-level drag/pinch releases follow before the chase');
+      expect(widgets.contains('onPointerMove: (event) {'), isTrue,
+          reason: 'the map observes actual finger movement, not only callbacks');
       final handler = bodyOf(map, 'void _onCameraMoveStarted()', maxLen: 900);
       expect(handler.contains('_mapPointers == 0'), isTrue);
       expect(handler.contains('isBefore(_camFlightUntil)'), isTrue,

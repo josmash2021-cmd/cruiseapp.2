@@ -456,12 +456,13 @@ void main() {
         reason: 'chase zoom = street parity everywhere — the home-state fit '
             'owns the offline resting view, the chase only follows at street '
             'zoom');
-    const gate = '_driverOnline || !FeatureFlags.zonesMapEnabled';
-    final hits = gate.allMatches(map).length + gate.allMatches(ctrl).length;
-    expect(hits, greaterThanOrEqualTo(2),
-        reason: 'BOTH auto-movers are gated OFF offline+zones: the 10 s '
-            'auto-refollow (_autoRecenterEnabled) and the late-GPS-fix '
-            'camera flight');
+    final sources = '$map$ctrl';
+    expect(sources.contains('_reFollowTimer'), isFalse,
+        reason: 'manual gestures never start a timed refollow');
+    expect(sources.contains('_autoRecenterEnabled'), isFalse,
+        reason: 'there is no mode-dependent auto-recenter switch');
+    expect(sources.contains('speedMps > 2.2'), isFalse,
+        reason: 'movement alone never recaptures the camera after a gesture');
   });
 
   test('the camera is born at the region view offline and glides on flips',

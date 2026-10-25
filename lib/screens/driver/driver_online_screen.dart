@@ -59,6 +59,7 @@ import '../../l10n/app_localizations.dart';
 import '../../map/flat_map_projection.dart';
 import '../../map/camera_action_gate.dart';
 import '../../map/driver_road_lock.dart';
+import '../../map/map_gesture_guard.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../services/places_service.dart';
@@ -335,6 +336,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // Fingers currently on the driver map (Listener around MapWidget) + the
   // phantom-gesture counter — see _onCameraMoveStarted (2026-10-12).
   int _mapPointers = 0;
+  final MapGestureGuard _mapGestureGuard = MapGestureGuard();
   int _phantomGestureEvents = 0;
   // Monotonically incremented every time onMapCreated fires. Guards against
   // stale annotation refs surviving a PlatformView recreation.
@@ -879,11 +881,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// the driver takes hold of the map again.
   Timer? _followResumeTimer;
 
-  /// When the driver last dragged the map. The auto-recentre is scheduled
-  /// from this, so it lands ten seconds after they stop, not ten seconds
-  /// after they start.
+  /// When the driver last grabbed the map; a newer grab aborts a stale settle.
   DateTime? _lastMapPanAt;
-  Timer? _reFollowTimer;
 
   // â”€â”€ Draggable panel â”€â”€
   bool _panelOpen = false;
@@ -1877,7 +1876,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // the ghost agent would have forced them offline for going quiet. Going
     // to look at your home screen is not going off shift.
     if (_leavingOffline) _gpsService.stopTracking();
-    _reFollowTimer?.cancel();
     _followResumeTimer?.cancel();
     _earningsRefreshTimer?.cancel();
     _bgHeartbeatTimer?.cancel();

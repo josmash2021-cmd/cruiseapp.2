@@ -1276,7 +1276,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // mostrando todas las zonas" — the zones of the DRIVER'S state, Florida
     // or Alabama) — the camera frames them, then stays FREE: no follow, no
     // auto-recenter.
-    _reFollowTimer?.cancel();
     if (FeatureFlags.zonesMapEnabled) {
       unawaited(_fitHomeZones());
     }
@@ -1286,14 +1285,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _syncDriverSonar();
   }
 
-  /// The 10 s auto-refollow exists ONLINE (and with the zone layer off) —
-  /// offline with the zone layer the driver EXPLORES the zones and the
-  /// camera stays where they left it (user spec 2026-10-13: "elimina el
-  /// recentrar automático de esta parte"); only the manual FAB recentres.
-  /// Kept out of `_onCameraMoveStarted` so the gesture path stays
-  /// mode-gate-free (single-map parity).
-  bool get _autoRecenterEnabled =>
-      _driverOnline || !FeatureFlags.zonesMapEnabled;
 
   /// The server-side half of the 12 h cap landing while the app is OPEN
   /// (user spec 2026-09-27): the ghost agent flipped the shift off and
@@ -1625,9 +1616,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _posStream = ResilientPositionStream(
       label: 'DriverOnlineGps',
       settings: driverLocationSettings(
-        // distanceFilter: 2 -> fixes every 2 meters.
-        // SmoothMotion still glides smoothly. Balance accuracy/battery.
-        distanceFilter: 2,
+        // Continuous feed: SmoothMotion owns the smoothing, not metres.
+        distanceFilter: 0,
         background: _driverOnline,
         notificationTitle: s.driverLocationNotifTitle,
         notificationText: s.driverLocationNotifOnline,
@@ -1711,16 +1701,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           }
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
-          if (snappedLL != null) {
-            _smoothMoveTo(snappedLL, _roadLockBearing ?? _smoothedBearing,
-                accuracyM: pos.accuracy,
-                timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
-                speedMps:
-                    pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
-            _trimRouteBehindDriver(snappedLL);
-            if (_previewingOffer != null) {
-              unawaited(_maybeRefreshOfferRoutePreview(snappedLL));
-            }
+          _smoothMoveTo(snappedLL, _roadLockBearing ?? _smoothedBearing,
+              accuracyM: pos.accuracy,
+              timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
+              speedMps:
+                  pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
+          _trimRouteBehindDriver(snappedLL);
+          if (_previewingOffer != null) {
+            unawaited(_maybeRefreshOfferRoutePreview(snappedLL));
           }
         }
 
@@ -2242,12 +2230,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     // tick() devuelve si posición O rumbo cambiaron este frame.
     final frameMoved = _motion.tick(dtSec);
-    // Rolling re-engages the chase by itself (2026-10-13 spec): the zone
-    // recenter views are for a parked driver looking at zones — once the
-    // car moves, follow comes back without any button.
-    if (!_cameraFollowing && _driverOnline && _motion.speedMps > 2.2) {
-      _setState(() => _cameraFollowing = true);
-    }
     // Re-project the engine's output onto the active line (route or matched
     // road line) — the fix-level snap alone left the extrapolated lead
     // running off the road between fixes (see _snapRenderedToLine).

@@ -25,7 +25,7 @@ void main() {
     }
   });
 
-  test('an untrusted match never falls back to raw GPS', () {
+  test('the road lock keeps its last point internally on an untrusted match', () {
     final lock = DriverRoadLock();
     final good = lock.project(corner, a, requireConfidence: true);
     expect(good.trusted, isTrue);
@@ -126,5 +126,25 @@ void main() {
     expect(lock.lastPoint, isNull);
     expect(lock.project(replacement, const LatLng(34.0005, -85.0)).segmentIndex,
         greaterThanOrEqualTo(0));
+  });
+
+  test('display falls back to real GPS instead of freezing without a match',
+      () {
+    final lock = DriverRoadLock();
+    final good = lock.project(corner, a, requireConfidence: true);
+    final trustedDisplay = driverDisplayPosition(good, a);
+    expect(trustedDisplay.latitude, good.point!.latitude);
+    expect(trustedDisplay.longitude, good.point!.longitude);
+
+    const raw = LatLng(34.0, -85.0);
+    final untrusted = lock.project(corner, raw, requireConfidence: true);
+    expect(untrusted.trusted, isFalse);
+    final fallback = driverDisplayPosition(untrusted, raw);
+    expect(fallback.latitude, raw.latitude);
+    expect(fallback.longitude, raw.longitude);
+
+    final empty = lock.project(const <LatLng>[], raw, requireConfidence: true);
+    expect(driverDisplayPosition(empty, raw).latitude, raw.latitude);
+    expect(driverDisplayPosition(empty, raw).longitude, raw.longitude);
   });
 }

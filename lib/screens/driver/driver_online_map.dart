@@ -362,8 +362,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// routeSummary, enRoute, inTrip — the old phase gate left preview and
   /// summary unsnapped, user report 2026-09-27); while searching there is
   /// no route, so the line is the matched polyline the RoadSnapService
-  /// maintains from the driver's own trace. With neither, the last trusted
-  /// point holds; without a trusted point there is no invented movement.
+  /// maintains from the driver's own trace. If that line is absent or not
+  /// trusted, the real GPS keeps feeding SmoothMotion instead of freezing
+  /// or jumping to a stale line; a later match rejoins with bounded motion.
   ///
   /// Hysteresis on the boundary, and continuity on the segment. The old flat
   /// 40 m in/out rule flickered: a fix at 39 m snapped to the lane, the next
@@ -372,7 +373,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// only releases past 55 m, and on parallel lanes the projection stays on
   /// the segment it was on unless another is clearly (8 m) closer — divided
   /// highways used to flip the marker between carriageways.
-  LatLng? _snapToRoute(LatLng raw) {
+  LatLng _snapToRoute(LatLng raw) {
     final onRoute = _routePts.length >= 2;
     final pts = onRoute ? _routePts : _roadLinePts;
     if (_snapOnRouteSrc != onRoute) {
@@ -389,7 +390,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       speedMps: _motion.speedMps,
     );
     _roadLockBearing = result.trusted ? result.bearing : null;
-    return result.point;
+    return driverDisplayPosition(result, raw);
   }
 
   /// The RoadSnapService found a better street line: swap the projection
@@ -410,12 +411,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       requireConfidence: !onRoute,
       speedMps: _motion.speedMps,
     );
-    if (!result.trusted) return result.point ?? p;
+    if (!result.trusted) return driverDisplayPosition(result, p);
     if (result.bearing != null && _motion.speedMps >= 1.0) {
       _motion.setBearing(result.bearing!);
     }
     _roadLockBearing = result.bearing;
-    return result.point ?? p;
+    return driverDisplayPosition(result, p);
   }
 
   double _bearingBetween(LatLng a, LatLng b) {
@@ -2003,10 +2004,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// sixty times a second — the map fought the finger and sprang back the
   /// instant they let go.
   ///
-  /// The marker keeps tracking the whole time. It stops being the Flutter
-  /// overlay pinned to the centre and becomes the Mapbox annotation at its
-  /// true coordinates, so a driver who has panned away still sees exactly
-  /// where they are, off to the side of the view or off screen entirely.
+  /// The marker stays a vector overlay projected from the real coordinates
+  /// on every rendered frame. The pointer guard releases follow before the
+  /// next chase write, so the map moves under the finger instead of fighting
+  /// it. Only the manual recenter re-engages it.
   void _onCameraMoveStarted() {
     // Phantom-gesture guard (2026-10-12, "el botón de recentrar no hace
     // nada" — prod: taps landed=true y el FAB jamás se iba): durante un
@@ -2021,18 +2022,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
     _cameraActionGate.begin();
     _lastMapPanAt = DateTime.now();
-    _reFollowTimer?.cancel();
     // A recentre in flight is abandoned the moment the driver grabs the map
     // again — otherwise its resume would fire mid-gesture and snap the view
     // out from under their finger. Only a finger reaches this method: it is
     // wired to onScrollListener, which a programmatic flyTo does not trip.
     _followResumeTimer?.cancel();
-    // Auto-resume ten seconds after the last drag, not ten seconds after the
-    // first: a driver still moving the map around should not have it yanked
-    // out from under them mid-gesture.
-    if (_autoRecenterEnabled) {
-      _reFollowTimer = Timer(const Duration(seconds: 10), _recenterCamera);
-    }
     // ONE arrow, always (user report 2026-10-10: "que la flecha sea la misma
     // cuando hace zoom o mueve el mapa que cuando está normal" — size jump,
     // wrong heading and a double-arrow flicker on every gesture). The overlay
@@ -2069,12 +2063,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     ApiService.logClientEvent('recenter_tap',
         'online=$_driverOnline phase=$_phase hasPos=${_pos != null} mapMounted=$_mapMounted hasMap=${_map != null}');
     _phantomGestureEvents = 0;
-    _reFollowTimer?.cancel();
     _followResumeTimer?.cancel();
     // An offer preview owns the frame: the route (driver → pickup →
-    // dropoff) is fitted above the card, and the ten-second auto-refollow
-    // after a pan must not yank the camera back onto the driver and leave
-    // the route behind. The driver explores freely until the offer closes.
+    // dropoff) is fitted above the card, so it must not be replaced by a
+    // recenter. The driver explores freely until the offer closes.
     if (_previewingOffer != null) return;
     _cameraActionGate.begin();
     // Recenter by mode (user specs 2026-10-13/14): OFFLINE = centre ON THE

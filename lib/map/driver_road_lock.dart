@@ -21,6 +21,11 @@ class RoadLockFix {
   final double distanceM;
 }
 
+LatLng driverDisplayPosition(RoadLockFix result, LatLng rawGps) {
+  if (result.trusted && result.point != null) return result.point!;
+  return rawGps;
+}
+
 class DriverRoadLock {
   List<LatLng> _routeRef = const [];
   List<LatLng> _points = const [];

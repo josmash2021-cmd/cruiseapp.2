@@ -25,7 +25,8 @@ import '../models/lat_lng.dart';
 /// along real roads, not along the GPS noise. Mapbox Map Matching first
 /// (same token as every other map call), the OSRM demo as the fallback
 /// (same provider the directions fallback already uses). If both fail the
-/// controller keeps the last trusted line instead of advancing on raw GPS.
+/// controller keeps the real GPS moving with SmoothMotion instead of freezing
+/// until a later match succeeds.
 class RoadSnapService {
   static const _traceMax = 10;
   static const _minInterval = Duration(seconds: 6);
@@ -137,7 +138,7 @@ class RoadSnapService {
       debugPrint('[RoadSnap] osrm match failed: $e');
     }
 
-    return null; // caller keeps the last trusted line instead of raw movement
+    return null; // caller keeps moving on smoothed GPS until a match succeeds
   }
 
   /// Shared by both providers: `matchings[0].geometry.coordinates` as

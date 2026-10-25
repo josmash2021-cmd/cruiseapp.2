@@ -279,12 +279,24 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       // know whether a real finger is down when a scroll/zoom callback
       // arrives during a programmatic flight.
       child: Listener(
-        onPointerDown: (_) => _mapPointers++,
+        onPointerDown: (event) {
+          _mapPointers++;
+          if (_mapGestureGuard.pointerDown(event.position, _mapPointers)) {
+            _onCameraMoveStarted();
+          }
+        },
+        onPointerMove: (event) {
+          if (_mapGestureGuard.pointerMove(event.position, _mapPointers)) {
+            _onCameraMoveStarted();
+          }
+        },
         onPointerUp: (_) {
           if (_mapPointers > 0) _mapPointers--;
+          _mapGestureGuard.pointerUp(_mapPointers);
         },
         onPointerCancel: (_) {
           if (_mapPointers > 0) _mapPointers--;
+          _mapGestureGuard.reset();
         },
         child: mapbox.MapWidget(
         key: _mapKey,
@@ -385,8 +397,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           _onCameraMoveStarted();
         },
         onZoomListener: (_) {
-          // Pinch is a user gesture too: unlatch follow so the 60 fps chase
-          // never fights the fingers (10 s later it glides back by itself).
+          // Pinch is a user gesture too: unlatch follow so the chase never
+          // fights the fingers. Only manual recenter re-engages it.
           _onCameraMoveStarted();
         },
         onCameraChangeListener: (data) {

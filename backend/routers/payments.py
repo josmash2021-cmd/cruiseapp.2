@@ -1881,6 +1881,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
                 password_hash=pwd.hash(_sys_pw),
                 role="rider",
                 status="active",
+                registration_source="system",
             )
             db.add(sys_user)
             await db.commit()
@@ -4069,6 +4070,7 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
         password_hash=pwd.hash(password),
         role=role,
         date_of_birth=dob,
+        registration_source="web",
     )
     db.add(user)
     try:
@@ -4429,6 +4431,7 @@ async def web_social_auth(request: Request, db: AsyncSession = Depends(get_db)):
         email=email,
         password_hash=pwd.hash(_generated_pw),
         role=role,
+        registration_source="web",
     )
     db.add(user)
     try:

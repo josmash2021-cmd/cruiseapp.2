@@ -200,6 +200,7 @@ class User(Base):
     # todos los que tienen android y todos los que tienen ios").
     platform = Column(String(10), nullable=True)
     last_active_at = Column(DateTime(timezone=True), nullable=True)
+    registration_source = Column(String(20), nullable=True)
     privacy_location = Column(Boolean, default=True)
     privacy_analytics = Column(Boolean, default=True)
     privacy_ads = Column(Boolean, default=False)
@@ -1190,6 +1191,7 @@ async def migrate_add_columns(conn):
         ("users", "os_version", "VARCHAR(50)"),
         ("users", "platform", "VARCHAR(10)"),
         ("users", "last_active_at", "DATETIME"),
+        ("users", "registration_source", "VARCHAR(20)"),
         ("users", "privacy_location", "BOOLEAN DEFAULT 1"),
         ("users", "privacy_analytics", "BOOLEAN DEFAULT 1"),
         ("users", "privacy_ads", "BOOLEAN DEFAULT 0"),
@@ -1350,6 +1352,7 @@ async def migrate_postgres(conn):
         ("users", "os_version", "VARCHAR(50)"),
         ("users", "platform", "VARCHAR(10)"),
         ("users", "last_active_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "registration_source", "VARCHAR(20)"),
         ("users", "privacy_location", "BOOLEAN DEFAULT TRUE"),
         ("users", "privacy_analytics", "BOOLEAN DEFAULT TRUE"),
         ("users", "privacy_ads", "BOOLEAN DEFAULT FALSE"),

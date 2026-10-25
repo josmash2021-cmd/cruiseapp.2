@@ -342,6 +342,8 @@ def _user_dict(u) -> dict:
         "device_model": getattr(u, 'device_model', None),
         "os_version": getattr(u, 'os_version', None),
         "app_version": getattr(u, 'app_version', None),
+        "registration_source": getattr(u, 'registration_source', None),
+        "last_active_at": u.last_active_at.isoformat() if getattr(u, 'last_active_at', None) else None,
         "is_verified": u.is_verified or False,
         "id_document_type": u.id_document_type,
         "verification_status": u.verification_status or "none",

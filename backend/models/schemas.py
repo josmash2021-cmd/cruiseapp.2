@@ -1,6 +1,6 @@
 """Cruise App — Pydantic request/response schemas."""
 
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -23,6 +23,7 @@ class RegisterIn(BaseModel):
     password: str
     photo_url: Optional[str] = None
     role: str = "rider"
+    registration_source: Literal["app", "dispatch"] = "app"
     # YYYY-MM-DD. Required (and 25+, user spec 2026-09-27) for drivers;
     # optional for riders in this legacy payload (the phone onboarding
     # collects it at the name step) but age-gated 18+ whenever present.

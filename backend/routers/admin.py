@@ -2547,6 +2547,215 @@ async def admin_driver_fleet_stats(db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/admin/rider-insights", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_rider_insights(db: AsyncSession = Depends(get_db)):
+    """Complete rider roster for Dispatch analytics and the Zonas page."""
+    from services.rider_geography import resolve_city_state
+    from services.zone_polygons import sector_id_at
+
+    riders = (await db.execute(
+        select(User)
+        .where(
+            User.role == "rider",
+            or_(User.registration_source.is_(None),
+                User.registration_source != "system"),
+            func.lower(func.coalesce(User.email, "")) !=
+            "web@cruiseinride.com",
+        )
+        .order_by(User.id.desc())
+    )).scalars().all()
+    rider_ids = [u.id for u in riders]
+    if not rider_ids:
+        return {"riders": [], "city_centers": {}, "summary": {
+            "total": 0, "verified": 0, "unverified": 0,
+            "with_documents": 0, "without_documents": 0,
+            "with_area": 0, "without_area": 0,
+        }}
+
+    latest_trips = select(
+        Trip.rider_id.label("rider_id"),
+        Trip.pickup_lat.label("pickup_lat"),
+        Trip.pickup_lng.label("pickup_lng"),
+        Trip.created_at.label("created_at"),
+        func.row_number().over(
+            partition_by=Trip.rider_id,
+            order_by=(Trip.created_at.desc(), Trip.id.desc()),
+        ).label("trip_rank"),
+    ).where(Trip.rider_id.in_(rider_ids)).subquery()
+    latest_rows = (await db.execute(
+        select(latest_trips).where(latest_trips.c.trip_rank == 1)
+    )).all()
+    latest_by_rider = {row.rider_id: row for row in latest_rows}
+
+    favorite_rows = (await db.execute(
+        select(FavoriteLocation.user_id, FavoriteLocation.label,
+               FavoriteLocation.lat, FavoriteLocation.lng)
+        .where(
+            FavoriteLocation.user_id.in_(rider_ids),
+            func.lower(FavoriteLocation.label).in_(
+                ["home", "work", "casa", "trabajo"]),
+        )
+        .order_by(FavoriteLocation.user_id, FavoriteLocation.id)
+    )).all()
+    favorites_by_rider: dict[int, dict[str, tuple[float, float]]] = {}
+    for row in favorite_rows:
+        label = (row.label or "").strip().lower()
+        source = "home" if label in ("home", "casa") else "work"
+        favorites_by_rider.setdefault(row.user_id, {})[source] = (
+            row.lat, row.lng)
+
+    document_rows = (await db.execute(
+        select(Document.user_id, Document.doc_type, Document.status)
+        .where(Document.user_id.in_(rider_ids))
+    )).all()
+    documents_by_rider: dict[int, list] = {}
+    for row in document_rows:
+        documents_by_rider.setdefault(row.user_id, []).append(row)
+
+    payment_rows = (await db.execute(
+        select(RiderPaymentMethod.user_id, RiderPaymentMethod.method_type,
+               RiderPaymentMethod.display_name,
+               RiderPaymentMethod.is_default,
+               RiderPaymentMethod.created_at)
+        .where(RiderPaymentMethod.user_id.in_(rider_ids))
+        .order_by(RiderPaymentMethod.user_id,
+                  RiderPaymentMethod.is_default.desc(),
+                  RiderPaymentMethod.created_at)
+    )).all()
+    payments_by_rider: dict[int, list] = {}
+    for row in payment_rows:
+        payments_by_rider.setdefault(row.user_id, []).append({
+            "method_type": row.method_type,
+            "display_name": row.display_name,
+            "is_default": bool(row.is_default),
+        })
+
+    def _valid_point(lat, lng) -> bool:
+        return (
+            lat is not None and lng is not None
+            and math.isfinite(lat) and math.isfinite(lng)
+            and -90 <= lat <= 90 and -180 <= lng <= 180
+        )
+
+    candidates_by_rider: dict[int, list] = {}
+    cells = set()
+    for user in riders:
+        candidates = []
+        latest = latest_by_rider.get(user.id)
+        if latest is not None and _valid_point(
+                latest.pickup_lat, latest.pickup_lng):
+            candidates.append(
+                ("last_trip", latest.pickup_lat, latest.pickup_lng))
+        saved = favorites_by_rider.get(user.id, {})
+        for source in ("home", "work"):
+            point = saved.get(source)
+            if point is not None and _valid_point(*point):
+                candidates.append((source, point[0], point[1]))
+        candidates_by_rider[user.id] = candidates
+        cells.update((round(lat, 2), round(lng, 2))
+                     for _, lat, lng in candidates)
+
+    semaphore = asyncio.Semaphore(6)
+
+    async def _resolve(cell):
+        async with semaphore:
+            try:
+                return cell, await resolve_city_state(cell[0], cell[1])
+            except Exception as exc:
+                logging.warning("[RiderInsights] geocode failed for %s: %s",
+                                cell, exc)
+                return cell, {"city": None, "state": None}
+
+    geo_results = await asyncio.gather(
+        *(_resolve(cell) for cell in sorted(cells)))
+    geo_by_cell = dict(geo_results)
+
+    rows = []
+    city_centers: dict = {}
+    summary = {
+        "total": 0, "verified": 0, "unverified": 0,
+        "with_documents": 0, "without_documents": 0,
+        "with_area": 0, "without_area": 0,
+    }
+    for user in riders:
+        area = None
+        for source, lat, lng in candidates_by_rider[user.id]:
+            geo = geo_by_cell.get((round(lat, 2), round(lng, 2)),
+                                  {"city": None, "state": None})
+            try:
+                sector_id = await sector_id_at(db, lat, lng)
+            except Exception as exc:
+                logging.warning("[RiderInsights] sector lookup failed: %s", exc)
+                sector_id = None
+            city = geo.get("city")
+            state = geo.get("state")
+            if city or state or sector_id:
+                area = {
+                    "city": city,
+                    "state": state,
+                    "sector_id": sector_id,
+                    "source": source,
+                    "city_key": f"{state}|{city}" if city and state else None,
+                }
+                break
+
+        user_docs = documents_by_rider.get(user.id, [])
+        has_documents = bool(user_docs or any((
+            user.id_photo_url, user.selfie_url, user.license_front_url,
+            user.license_back_url, user.video_url,
+        )))
+        verified = bool(user.is_verified or
+                        (user.verification_status or "") == "approved")
+        payment_methods = payments_by_rider.get(user.id, [])
+        default_payment = next(
+            (p for p in payment_methods if p["is_default"]), None)
+        latest = latest_by_rider.get(user.id)
+        user_data = _user_dict(user)
+        allowed_keys = (
+            "id", "first_name", "last_name", "email", "phone", "photo_url",
+            "role", "platform", "device_model", "os_version", "app_version",
+            "is_verified", "id_document_type", "verification_status",
+            "id_photo_url", "selfie_url", "license_front_url",
+            "license_back_url", "video_url", "verified_at", "status",
+            "auth_provider", "date_of_birth", "created_at", "last_active_at",
+            "registration_source",
+        )
+        row = {key: user_data.get(key) for key in allowed_keys}
+        row.update({
+            "verified": verified,
+            "has_documents": has_documents,
+            "document_statuses": sorted({
+                (doc.status or "").strip().lower()
+                for doc in user_docs if (doc.status or "").strip()
+            }),
+            "last_trip_at": (latest.created_at.isoformat()
+                             if latest is not None and latest.created_at else None),
+            "payment_methods": payment_methods,
+            "payment_types": sorted({
+                p["method_type"] for p in payment_methods
+                if p["method_type"]
+            }),
+            "default_payment_method": default_payment,
+            "area": area,
+        })
+        rows.append(row)
+
+        summary["total"] += 1
+        summary["verified" if verified else "unverified"] += 1
+        summary["with_documents" if has_documents else "without_documents"] += 1
+        has_area = bool(area and (area["city"] or area["sector_id"]))
+        summary["with_area" if has_area else "without_area"] += 1
+        if area and area["city_key"]:
+            key = area["city_key"]
+            if key not in city_centers:
+                center = _city_center(key)
+                if center is not None:
+                    city_centers[key] = center
+
+    return {"riders": rows, "city_centers": city_centers,
+            "summary": summary}
+
+
 @router.get("/admin/driver-locations", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
     """Last known position of every driver for the Zonas page map

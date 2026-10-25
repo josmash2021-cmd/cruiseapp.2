@@ -273,6 +273,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         role=role,
         date_of_birth=dob,
         gender=gender,
+        registration_source=body.registration_source,
     )
     db.add(user)
     try:
@@ -1018,6 +1019,7 @@ async def _review_phone_login(db: AsyncSession, request: Request, phone: str, fi
             auth_provider="phone",
             phone_verified=True,
             phone_verified_at=now,
+            registration_source="app",
         )
         db.add(user)
         await db.commit()
@@ -1130,6 +1132,7 @@ async def phone_login(body: PhoneLoginIn, request: Request, db: AsyncSession = D
             auth_provider="phone",
             phone_verified=True,
             phone_verified_at=now,
+            registration_source="app",
         )
         db.add(user)
         await db.commit()
@@ -1378,6 +1381,7 @@ async def social_auth(body: SocialAuthIn, request: Request, db: AsyncSession = D
             photo_url=photo,
             role=role,
             auth_provider=provider,
+            registration_source="app",
         )
         db.add(user)
         await db.commit()

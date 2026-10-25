@@ -182,8 +182,9 @@ void main() {
     expect(
         chunk,
         contains(
-            'map.setLayoutProperty("drv-wait-dots","visibility",drvView==="waitlist"?"visible":"none")'),
-        reason: 'the layer is visible ONLY in the waitlist view');
+            'map.setLayoutProperty("drv-wait-dots","visibility",zoneAudience==="drivers"&&drvView==="waitlist"?"visible":"none")'),
+        reason: 'the layer is visible ONLY in the waitlist view while the '
+            'Drivers audience is selected');
     expect(chunk, contains('for(const d of drvWaitlist)'),
         reason: 'one feature per person from the filtered waitlist memo — '
             'the side-panel filter applies to the map too');

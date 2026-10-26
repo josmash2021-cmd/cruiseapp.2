@@ -7,17 +7,17 @@ import 'package:flutter_test/flutter_test.dart';
 /// It floats over the online map with one black, gold-lettered button.
 void main() {
   final overlay =
-      File('lib/screens/driver/online_intro_overlay.dart').readAsStringSync();
+      File('lib/screens/driver/online_intro_overlay.dart').readAsStringSync().replaceAll('\r\n', '\n');
   final offline =
-      File('lib/screens/driver/driver_online_offline.dart').readAsStringSync();
+      File('lib/screens/driver/driver_online_offline.dart').readAsStringSync().replaceAll('\r\n', '\n');
   final screen =
-      File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+      File('lib/screens/driver/driver_online_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
   final controller = File('lib/screens/driver/driver_online_controller.dart')
-      .readAsStringSync();
-  final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
+      .readAsStringSync().replaceAll('\r\n', '\n');
+  final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
   test('the transparent PNG is bundled and has a real remote fallback', () {
-    final image = File('lib/widgets/onboarding_image.dart').readAsStringSync();
+    final image = File('lib/widgets/onboarding_image.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(File('assets/images/online_intro_hero.png').existsSync(), isTrue);
     expect(overlay, contains('assets/images/online_intro_hero.png'));
     expect(overlay, contains('OnboardingImage('));

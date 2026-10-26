@@ -12,9 +12,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///     "searching" while the backend had the driver OFFLINE.
 void main() {
   final offline =
-      File('lib/screens/driver/driver_online_offline.dart').readAsStringSync();
+      File('lib/screens/driver/driver_online_offline.dart').readAsStringSync().replaceAll('\r\n', '\n');
   final controller = File('lib/screens/driver/driver_online_controller.dart')
-      .readAsStringSync();
+      .readAsStringSync().replaceAll('\r\n', '\n');
 
   test('the GO tap re-verifies fresh before bouncing on a stale snapshot', () {
     final fn = offline.indexOf('void _onGoTap()');

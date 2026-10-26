@@ -9,13 +9,13 @@ import 'package:flutter_test/flutter_test.dart';
 /// first-trip guide picks the dress photo by tier×gender.
 void main() {
   final nameScreen =
-      File('lib/screens/driver/driver_name_screen.dart').readAsStringSync();
+      File('lib/screens/driver/driver_name_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
   final signupScreen = File('lib/screens/driver/driver_signup_screen.dart')
       .readAsStringSync()
       .replaceAll('\r\n', '\n');
-  final api = File('lib/services/api_service.dart').readAsStringSync();
-  final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
-  final auth = File('backend/routers/auth.py').readAsStringSync();
+  final api = File('lib/services/api_service.dart').readAsStringSync().replaceAll('\r\n', '\n');
+  final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync().replaceAll('\r\n', '\n');
+  final auth = File('backend/routers/auth.py').readAsStringSync().replaceAll('\r\n', '\n');
 
   test('driver name screen (phone flow): selector, gate, PATCH payload', () {
     expect(nameScreen, contains('String? _gender;'));

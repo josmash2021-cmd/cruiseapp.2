@@ -16,11 +16,11 @@ import 'package:flutter_test/flutter_test.dart';
 ///   3. Nav phases keep their tilted chase untouched.
 void main() {
   final ctrl = File('lib/screens/driver/driver_online_controller.dart')
-      .readAsStringSync();
+      .readAsStringSync().replaceAll('\r\n', '\n');
   final widgets =
-      File('lib/screens/driver/driver_online_widgets.dart').readAsStringSync();
+      File('lib/screens/driver/driver_online_widgets.dart').readAsStringSync().replaceAll('\r\n', '\n');
   final map =
-      File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+      File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
   String bodyOf(String src, String signature, {int maxLen = 2000}) {
     final start = src.indexOf(signature);
@@ -49,7 +49,7 @@ void main() {
     test('online clears padding; offline zone fit pauses the chase', () {
       expect(ctrl, contains('_kZeroCamPadding'));
       final scr = File('lib/screens/driver/driver_online_screen.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       expect(scr, contains('final _kZeroCamPadding'));
       expect(ctrl, contains('padding: followPadding,'),
           reason: 'the chase writes the mode-appropriate padding every frame');
@@ -57,7 +57,7 @@ void main() {
           reason:
               'opening or closing the offline sheet must refresh the inset');
       final map =
-          File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+          File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
       expect(map, contains('padding: _kZeroCamPadding'),
           reason: 'online recenter clears stale zone padding');
       expect(map, contains('_pauseFollowForZoneFit();'),
@@ -125,7 +125,7 @@ void main() {
       expect(fitZone.contains('bearing: _smoothedBearing'), isFalse);
       // …and the LEFT cluster carries it online with a chosen zone.
       final scr = File('lib/screens/driver/driver_online_screen.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       final leftCluster = scr.indexOf('_onZoneCompassTap');
       expect(leftCluster, isNonNegative);
       expect(scr, contains('Icons.explore_rounded'),
@@ -173,7 +173,7 @@ void main() {
     // marcador: la paridad ya no se pinea entre dos archivos — se pinea que
     // NADA en el camino del marcador/cámara/gestos esté gateado por el modo.
     final map2 =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
     test('the heading-up chase runs in BOTH modes (no _driverOnline gate)', () {
       final body = bodyOf(ctrl,
@@ -217,7 +217,7 @@ void main() {
 
   group('no double arrow after pinch + recenter (user report 2026-09-19)', () {
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
     test(
         'one guarded recenter completion resumes follow and flushes the marker',
@@ -291,7 +291,7 @@ void main() {
       expect(listener.contains('_markerFrame.value++;'), isTrue);
       // The field itself is gone from the screen state.
       final screen = File('lib/screens/driver/driver_online_screen.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       expect(screen.contains('_mapDragUntil'), isFalse);
       expect(screen.contains('_dragSettleTimer'), isFalse);
     });
@@ -322,7 +322,7 @@ void main() {
       'zoom/drag arrow handoff (user report 2026-09-26: "al hacer zoom '
       'sale otra flecha / se queda en el medio")', () {
     final map2 =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
     test(
         'the overlay repaints the SAME frame on EVERY gesture event, not '
@@ -383,7 +383,7 @@ void main() {
       'zoom clone: the trailing-edge flush (user report 2026-09-27 — '
       'pinch/double-tap duplicates the arrow)', () {
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
     test('a flush skipped on busy is re-fired when the channel drains', () {
       final pendingSets =
@@ -409,11 +409,11 @@ void main() {
       '2026-09-27/30)', () {
     test('NO chase layer survives in either driver map', () {
       final ctrlSrc = File('lib/screens/driver/driver_online_controller.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       final navSrc =
-          File('lib/screens/driver/driver_nav_view.dart').readAsStringSync();
+          File('lib/screens/driver/driver_nav_view.dart').readAsStringSync().replaceAll('\r\n', '\n');
       final screenSrc = File('lib/screens/driver/driver_online_screen.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       for (final src in [ctrlSrc, navSrc, screenSrc]) {
         expect(src.contains('_chaseCamBearing'), isFalse,
             reason: 'the linear-rate chase read robotic — rotation belongs '
@@ -424,7 +424,7 @@ void main() {
     });
 
     test('the turn-rate blend is adaptive — noise jumps earn less trust', () {
-      final sm = File('lib/utils/smooth_motion.dart').readAsStringSync();
+      final sm = File('lib/utils/smooth_motion.dart').readAsStringSync().replaceAll('\r\n', '\n');
       expect(sm.contains('measured.abs() > 45.0 ? 0.25 : 0.7'), isTrue,
           reason: 'real city turns (≤45°/s) track fast; multipath bursts '
               'land as one calm average — the flat 0.8 blend pulsed the '
@@ -439,7 +439,7 @@ void main() {
   group(
       'compass EMA (user report 2026-09-27: the arrow turns in steps and '
       'wanders before settling)', () {
-    final svc = File('lib/services/heading_service.dart').readAsStringSync();
+    final svc = File('lib/services/heading_service.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
     test('the compass branch is low-passed; the GPS course stays raw', () {
       expect(svc.contains('_compassAlpha = 0.08'), isTrue,
@@ -461,7 +461,7 @@ void main() {
       // → `_pos!` in the map builder threw → driver screen all black AND a
       // dead recenter. The anchor falls back to Miami downtown instead.
       final w = File('lib/screens/driver/driver_online_widgets.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       final mapW = bodyOf(w, 'Widget _mapW(bool isDark) {', maxLen: 2600);
       expect(mapW.contains('_pos!'), isFalse,
           reason: 'a missing fix must never crash the map build');
@@ -475,7 +475,7 @@ void main() {
       // the next fix. The LayoutBuilder bumps the marker frame on a size
       // change (post-frame: a notify mid-build is setState-in-build).
       final w = File('lib/screens/driver/driver_online_widgets.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       expect(w,
           contains('if (_onlineMapSize != null && _onlineMapSize != newSize)'),
           reason: 'the size change is detected in the LayoutBuilder');
@@ -488,13 +488,13 @@ void main() {
 
   group('offline recenter FAB + button looks (2026-10-11)', () {
     final screen =
-        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     final offline = File('lib/screens/driver/driver_online_offline.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     final widgets = File('lib/screens/driver/driver_online_widgets.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
 
     test('the offline FAB recentres through the shared glide', () {
       expect(screen.contains('!_cameraFollowing'), isTrue);
@@ -580,7 +580,7 @@ void main() {
           reason: 'the gold morph lerp is dead');
       expect(offline, contains('S.of(context).zoneSelectAction'),
           reason: 'no zone picked → the label names the task');
-      final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
+      final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync().replaceAll('\r\n', '\n');
       expect(l10n, contains('zoneSelectAction'));
       expect(l10n, contains('Selecciona zona'));
       expect(l10n, contains('Select zone'));
@@ -604,7 +604,7 @@ void main() {
               'if (mounted && !_driverOnline) _animatePanelTo(_kSheetRestFrac);'),
           reason: 'the boot rests half-open when offline');
       final ctrl = File('lib/screens/driver/driver_online_controller.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       expect(ctrl, contains('_animatePanelTo(_kSheetRestFrac)'),
           reason: 'going offline rests the sheet half-open');
       expect(ctrl, contains('_animatePanelTo(0.0)'),

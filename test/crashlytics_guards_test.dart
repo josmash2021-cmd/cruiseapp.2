@@ -5,7 +5,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-String _read(String path) => File(path).readAsStringSync();
+String _read(String path) => File(path).readAsStringSync().replaceAll('\r\n', '\n');
 
 void main() {
   group('FIX 1 — suggestion list RangeError guards', () {

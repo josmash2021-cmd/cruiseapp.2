@@ -8,7 +8,7 @@ import 'package:cruise_app/services/zone_service.dart';
 /// Guardian for the driver SECTORS: big regions with gold boundaries, four
 /// offline gold demand opacities, and gray for a manual Dispatch shutoff.
 void main() {
-  final sectorsJson = File('backend/static/fl_sectors.json').readAsStringSync();
+  final sectorsJson = File('backend/static/fl_sectors.json').readAsStringSync().replaceAll('\r\n', '\n');
 
   test('the state outlines resolve FL/AL points (the fit grouping)', () {
     // 2026-10-14 (user report: "estoy en alabama y la app abre mostrando las
@@ -52,7 +52,7 @@ void main() {
         ZoneService.visibleSectorsFor(null).length, ZoneService.sectors.length);
 
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains('_zoneVisibleIds()'),
         reason: 'per-sector visibility by driver state');
     expect(map, contains('visible && visibleIds.contains(s.id)'),
@@ -62,11 +62,11 @@ void main() {
     expect(map, contains('ZoneService.visibleSectorsFor('),
         reason: 'tap selection and the label overlay share the filter');
     final off = File('lib/screens/driver/driver_online_offline.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(off, contains('ZoneService.sectorById(_selectedZoneName!)'),
         reason: 'the GO tap clears a stale cross-state pick');
     final scr =
-        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(scr, contains('_zoneLookVisibleSig'));
   });
 
@@ -101,7 +101,7 @@ void main() {
 
   test('the map draws one SMALL source per sector with the demand ladder', () {
     final s =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     // Per-sector sources/layers — the single 83 KB all-cities source never
     // materialized on iOS; ~5 KB sources draw (the highlight's size class).
     for (final id in [
@@ -199,7 +199,7 @@ void main() {
         reason: 'sectors live on the flat searching map only — never on '
             'top of an active trip route');
     final w = File('lib/screens/driver/driver_online_widgets.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(w, contains('_zoneLayersReady = false'),
         reason: 'style reloads must recreate the custom sources');
     expect(w, contains('_zoneLabelOverlay()'),
@@ -208,7 +208,7 @@ void main() {
 
   test('sector data enters through the proven per-sector write path', () {
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(
       map.contains("id: 'sec-src-\$sid', data: emptyFc"),
       isTrue,
@@ -229,13 +229,13 @@ void main() {
     // stared at a black map for ~30 s at every boot. The work now waits
     // for the first real render and runs in parallel batches.
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains('if (!_firstRenderDone) return;'),
         reason: 'zone sync must wait for the first rendered frame');
     expect(map, contains('Future.wait(['),
         reason: 'style writes batch in parallel, never a serial chain');
     final w = File('lib/screens/driver/driver_online_widgets.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     final idle = RegExp(r'onMapIdleListener: \(_\) \{(.*?)\},\n', dotAll: true);
     final block = idle.firstMatch(w)?.group(1) ?? '';
     expect(block, contains('_syncZoneLayers()'),
@@ -244,7 +244,7 @@ void main() {
 
   test('the GO tap gates the connect client-side, fail-open', () {
     final s = File('lib/screens/driver/driver_online_offline.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     // 2026-10-14 spec: the gate moved from the FL-only cities file to the
     // SECTORS (one live dataset — the one the panel edits, Florida AND
     // Alabama). The zones kill switch kills the gate with the drawing.
@@ -262,40 +262,40 @@ void main() {
   });
 
   test('the server enforces the same gate', () {
-    final s = File('backend/routers/drivers.py').readAsStringSync();
+    final s = File('backend/routers/drivers.py').readAsStringSync().replaceAll('\r\n', '\n');
     expect(s, contains('sector_gate_blocks(db, body.lat, body.lng)'));
     expect(s, contains('"outside_service_area"'));
     // The gate reads the LIVE sector map (app_config), not just the baked
     // file — the panel's Alabama sectors gate from the moment they save.
-    final zp = File('backend/services/zone_polygons.py').readAsStringSync();
+    final zp = File('backend/services/zone_polygons.py').readAsStringSync().replaceAll('\r\n', '\n');
     expect(zp, contains('fl_sectors_geojson'));
     expect(zp, contains('_TTL_S'), reason: 'the hot PATCH path is cached');
   });
 
   test('sector drawing has a remote kill switch + the veil a watchdog', () {
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains('FeatureFlags.zonesMapEnabled'));
     final w = File('lib/screens/driver/driver_online_widgets.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(w, contains('map_veil_watchdog'));
     expect(w, contains('FeatureFlags.load()'));
-    final flags = File('lib/services/feature_flags.dart').readAsStringSync();
+    final flags = File('lib/services/feature_flags.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(flags, contains('/feature-flags'));
-    final sys = File('backend/routers/system.py').readAsStringSync();
+    final sys = File('backend/routers/system.py').readAsStringSync().replaceAll('\r\n', '\n');
     expect(sys, contains('zones_map_enabled'));
   });
 
   test('demand heat: poll in the app, endpoints on the server', () {
-    final zs = File('lib/services/zone_service.dart').readAsStringSync();
+    final zs = File('lib/services/zone_service.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(zs, contains('/zones/demand'));
     expect(zs, contains('class SectorDemand'));
     final scr =
-        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(scr, contains('_zoneDemandTimer'),
         reason: 'the 60 s poll keeps the heat fresh while the map lives');
     expect(scr, contains('_zoneDemandTimer?.cancel()'));
-    final sys = File('backend/routers/system.py').readAsStringSync();
+    final sys = File('backend/routers/system.py').readAsStringSync().replaceAll('\r\n', '\n');
     expect(sys, contains('/zones/demand'));
     expect(sys, contains('/admin/zone-demand'),
         reason: 'dispatch sets the heat from the panel');
@@ -305,7 +305,7 @@ void main() {
   });
 
   test('user-facing strings exist in ES and EN', () {
-    final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
+    final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(l10n, contains('zoneOutsideTitle'));
     expect(l10n, contains('zoneOutsideBody'));
     expect(l10n, contains('Fuera del área de servicio'));
@@ -323,7 +323,7 @@ void main() {
     expect(l10n, contains('enabled zones of Alabama'));
     expect(l10n, contains('zonas habilitadas del sur de Florida'));
     final off = File('lib/screens/driver/driver_online_offline.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(off, contains('zoneOutsideBody('),
         reason: 'the dialog passes the driver state to the copy');
     expect(off, contains('ZoneService.stateOfPoint('));
@@ -334,11 +334,11 @@ void main() {
     // the GO ignites with an elastic pop; with no selection the GO is dimmed
     // and the tap explains instead of connecting.
     final w = File('lib/screens/driver/driver_online_widgets.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(w, contains('onTapListener: _onZoneMapTap'),
         reason: 'map taps feed the sector picker');
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains('void _onZoneMapTap('));
     expect(map, contains('ZoneService.sectorContaining('),
         reason: 'the tap point feeds the sector ray-casting lookup');
@@ -347,16 +347,16 @@ void main() {
     expect(map, contains('Sector? get _sectorForHighlight'),
         reason: 'the picked sector wins the highlight over the physical one');
     final scr =
-        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(scr, contains('String? _selectedZoneName;'));
     expect(scr, contains('_goIgniteCtrl?.dispose()'));
     final off = File('lib/screens/driver/driver_online_offline.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(off, contains('S.of(context).zoneSelectHint'),
         reason: 'a dim GO explains itself instead of connecting');
     expect(off, contains('scale: igniteScale'));
     final ctrl = File('lib/screens/driver/driver_online_controller.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(ctrl.contains("'_selectedZoneName = null;'"), isFalse,
         reason: '2026-10-12 spec: the pick PERSISTS on connect — it becomes '
             'the working zone the spotlight marks online. Only the offline '
@@ -368,7 +368,7 @@ void main() {
     // With a chosen zone, everything outside it dims through the spotlight
     // mask; without a selection there is no mask.
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains('sec-dim-src'), reason: 'the mask source is back');
     expect(map, contains("'sec-dim'"), reason: 'the mask layer is back');
     expect(map, contains('_writeZoneDim'), reason: 'the mask writer is back');
@@ -386,7 +386,7 @@ void main() {
     // Both mode flips rewrite the zone look immediately (a parked driver
     // gets no GPS fix for minutes).
     final ctrl = File('lib/screens/driver/driver_online_controller.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(ctrl, contains('unawaited(_syncZoneLayers());'),
         reason: 'the flip itself syncs — not the next GPS fix');
   });
@@ -396,13 +396,13 @@ void main() {
     // se abre la app". The pick is written to prefs on tap and restored at
     // boot (never over a fresh tap of the current session).
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains("p.setString('driver_selected_zone', s.id)"),
         reason: 'the tap persists the pick');
     expect(map, contains("p.remove('driver_selected_zone')"),
         reason: 'the deselect clears it');
     final w = File('lib/screens/driver/driver_online_widgets.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(w, contains("prefs.getString('driver_selected_zone')"),
         reason: 'the boot restores the working zone');
     expect(w, contains('ZoneService.sectorById(saved) != null'),
@@ -415,7 +415,7 @@ void main() {
     // camera frames the zones of the DRIVER'S STATE once, then stays free —
     // only the manual FAB recentres (online parity 15.5).
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains('_fitHomeZones('), reason: 'the home-state frame');
     expect(map, contains('_fitSectors('));
     expect(map, contains('ZoneService.sectorsForState'),
@@ -426,7 +426,7 @@ void main() {
         reason: 'a boot fit with no fix re-runs state-scoped on the first '
             'real fix');
     final ctrl = File('lib/screens/driver/driver_online_controller.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(ctrl, contains('unawaited(_fitHomeZones());'),
         reason: 'the offline flip glides out to the driver-state zones');
     expect(ctrl, contains('_fitHomeZones(at: newLL)'),
@@ -457,27 +457,27 @@ void main() {
     // offline driver — so offline the camera is BORN at 10.8, and the flips
     // carry an explicit ease/flight.
     final w = File('lib/screens/driver/driver_online_widgets.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(
         w, contains('zoom: (!_driverOnline && FeatureFlags.zonesMapEnabled)'),
         reason: 'offline + zones: the map is born at the region view');
     expect(w, contains('_zoomEaseDone = true;'),
         reason: 'a camera born at the target must not ease back to 16');
     final ctrl = File('lib/screens/driver/driver_online_controller.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(ctrl, contains('_zoomEaseFrom'),
         reason: 'the entry ease origin is the live camera zoom, not a '
             'hardcoded 16 — mode flips glide instead of jumping');
     expect(ctrl,
         contains('zoom = _zoomEaseFrom - (_zoomEaseFrom - zoomTarget) * e;'));
     final scr =
-        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(scr, contains('double _zoomEaseFrom = 16.0;'));
   });
 
   test('one recenter has one guarded fallback and no repeat timer', () {
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains('recenter_settle'));
     expect(map, contains('.setCamera(options)'),
         reason: 'a failed native flight gets one direct-write fallback');
@@ -498,7 +498,7 @@ void main() {
     // STATIC file — the baked seed — and overwrote the newer panel-edited
     // sectors on every cold start. The versioned endpoint is now the only
     // refresh once a cache exists; the static file is just the first seed.
-    final zs = File('lib/services/zone_service.dart').readAsStringSync();
+    final zs = File('lib/services/zone_service.dart').readAsStringSync().replaceAll('\r\n', '\n');
     final load = RegExp(
         r'static Future<void> loadSectors\(\) async \{(.*?)\n  \}',
         dotAll: true);
@@ -516,13 +516,13 @@ void main() {
     // trasladándose en el mapa, sin cerrar la app". The socket event is only
     // a wake-up — the truth re-downloads by REST, exactly like the
     // app-update gate.
-    final sock = File('lib/services/socket_service.dart').readAsStringSync();
+    final sock = File('lib/services/socket_service.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(sock, contains("_socket!.on('zones_updated'"),
         reason: 'the socket wake-up is wired');
     expect(sock, contains('zonesUpdatedStream'));
     expect(sock, contains('_zonesUpdatedController'));
 
-    final zs = File('lib/services/zone_service.dart').readAsStringSync();
+    final zs = File('lib/services/zone_service.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(zs, contains('static int sectorsVersion = 0;'));
     expect(zs, contains('ValueNotifier<int> sectorsChanged'),
         reason: 'the map reacts to a real sector change');
@@ -538,7 +538,7 @@ void main() {
         reason: 'the refreshed body mirrors into the same cache key');
 
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains('void _onSectorsChanged()'));
     expect(map, contains('Future<void> _animateZoneSwap()'));
     expect(map, contains('removeStyleLayer('),
@@ -552,7 +552,7 @@ void main() {
     expect(map, contains('zones_swap'),
         reason: 'a failed reconciliation lands in the server log');
     final scr =
-        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(scr,
         contains('ZoneService.sectorsChanged.addListener(_onSectorsChanged)'));
     expect(
@@ -561,7 +561,7 @@ void main() {
             'ZoneService.sectorsChanged.removeListener(_onSectorsChanged)'),
         reason: 'the listener dies with the screen');
     final w = File('lib/screens/driver/driver_online_widgets.dart')
-        .readAsStringSync();
+        .readAsStringSync().replaceAll('\r\n', '\n');
     expect(w, contains('_zoneSectorIds = []'),
         reason: 'a style reload wipes the tracking list with the layers');
   });
@@ -574,7 +574,7 @@ void main() {
     // projection must shift by half the inset imbalance or every overlay
     // (arrow, zone labels, demand pills) floats off its ground truth.
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains('Offset _camPadShift(mapbox.CameraState cam)'),
         reason: 'the padding-shift helper exists');
     expect(
@@ -601,7 +601,7 @@ void main() {
     // funciona despues": el glide-out del flip quedaba en vuelo y aterrizaba
     // sobre el recenter. Toda acción nueva invalida el token anterior.
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     expect(map, contains('final seq = _cameraActionGate.begin();'),
         reason: 'both zone fits take the token');
     expect(map, contains('if (!_cameraActionGate.isCurrent(seq)) return;'),
@@ -615,7 +615,7 @@ void main() {
     // Al volver de Schedule el mapa tarda ~1-2 s en revivir — las etiquetas
     // no pintan sobre el velo/negro, solo con el mapa ya renderizando.
     final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync().replaceAll('\r\n', '\n');
     final i = map.indexOf('Widget _zoneLabelOverlay()');
     final block = map.substring(i, i + 700);
     expect(block, contains('if (!_mapStyleLoaded || !_firstRenderDone)'),

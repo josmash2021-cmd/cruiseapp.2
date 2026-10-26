@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// timeline and one fixed Share button.
 void main() {
   final screen = File('lib/screens/driver/driver_referral_screen.dart')
-      .readAsStringSync();
-  final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
+      .readAsStringSync().replaceAll('\r\n', '\n');
+  final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
   test('the new hero image is bundled', () {
     expect(File('assets/images/referral_hero.png').existsSync(), isTrue);

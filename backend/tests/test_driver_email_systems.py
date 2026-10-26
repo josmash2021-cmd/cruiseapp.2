@@ -157,11 +157,12 @@ async def test_doc_expiry_ignores_pending_and_far_docs(db, capture):
 async def test_weekly_summary_aggregates_and_is_idempotent(db, capture):
     now = datetime.now(timezone.utc)
     driver = await _user(db, "Ana")
-    # Two paid trips in the past ISO week, one unpaid, one this week.
-    # "3 days ago" breaks every Thursday (it lands on Monday of THIS ISO
-    # week — failed 2026-10-22): anchor deterministically INSIDE the
-    # previous ISO week for any weekday the suite runs on.
-    base = now - timedelta(days=now.isoweekday() + 2)
+    # Two paid trips in the past payout ISO week, one unpaid, one this week.
+    # Anchor inside the previous America/Chicago week: near Monday UTC,
+    # subtracting the UTC weekday would land in Chicago's CURRENT week.
+    now_ct = now.astimezone(agent._payout_tz())
+    base = (now_ct - timedelta(days=now_ct.isoweekday() + 2)).astimezone(
+        timezone.utc)
     await _trip(db, driver, None, status="completed",
                 payment_status="paid", completed_at=base,
                 driver_earnings=30.0, tip_amount=5.0)

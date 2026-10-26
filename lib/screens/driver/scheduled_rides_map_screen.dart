@@ -303,7 +303,15 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       if (!mounted) return;
       if (_available.isEmpty) {
         setState(() {
-          _errorAvail = e.toString();
+          // 2026-10-26: never print the raw exception wrapper — drivers read
+          // "ApiException" and think the marketplace is down. The server
+          // already sends the reason; a 403 here means the account is not
+          // approved yet (waitlist/pending), not a server failure.
+          _errorAvail = e is ApiException
+              ? (e.statusCode == 403
+                  ? S.of(context).accountPendingDesc
+                  : e.message)
+              : e.toString();
           _loadingAvail = false;
         });
       } else {

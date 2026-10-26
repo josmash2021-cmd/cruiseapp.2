@@ -238,6 +238,14 @@ void main() {
     });
   });
 
+  test('the boot camera stays wide until the full-route fit lands', () {
+    final boot = view.indexOf("key: const ValueKey('rider-map')");
+    expect(boot, greaterThan(-1));
+    final options = view.substring(boot, boot + 900);
+    expect(options, contains('zoom: 11.0, pitch: 0.0'));
+    expect(options, isNot(contains('zoom: 14.0')));
+  });
+
   // User report (rider watching the driver navigate): the car stalled in
   // bursts, turns came in jolts, the full route vanished at ride start, and
   // both ETAs (driver→pickup, →dropoff) were guesses.

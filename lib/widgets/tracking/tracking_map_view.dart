@@ -711,9 +711,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     });
   }
 
-  /// Fit route bounds applying precise padding for top and bottom cards.
-  /// During onTrip: adaptive zoom — short routes show full remaining route,
-  /// long routes show driver + enough ahead to see well (not zoomed out too far).
+  /// Fit the current route with card-aware padding, never a close-up preset.
   /// During arrived: no-op — camera is locked via _fitArrivedBounds().
   void _fitRouteBounds() {
     if (kIsWeb) {
@@ -741,10 +739,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         _phase == _TrackPhase.nearDestination) {
       return;
     }
-    // Same reasoning for the approach phase, which now has its own
-    // continuous framer. The first fit still runs — it lands before the
-    // framer has seeded — and gives the opening shot the framer then
-    // tightens from.
+    // The approach uses the same content-driven full-route fit as the trip.
+    // A later pass only runs before that fit has taken ownership.
     if (_phase == _TrackPhase.arriving &&
         (_mapCamera?.isFollowFramingActive ?? false)) {
       return;
@@ -1424,7 +1420,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
                   widget.pickupLatLng.latitude,
                 ),
               ),
-              zoom: 14.0, pitch: 0.0,
+              zoom: 11.0, pitch: 0.0,
             ),
             textureView: true,
             onMapCreated: (ctrl) async {

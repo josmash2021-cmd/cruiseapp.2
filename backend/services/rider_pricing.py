@@ -365,7 +365,9 @@ def _select_promotion(
         percent, grant, max_miles, reason = percent_options[0]
         final = int(round(original_cents * (100 - percent) / 100))
         return {
-            "promotion_grant_id": grant.id,
+            # A Free grant's over-the-mileage fallback is a plain discount:
+            # it must not reserve or consume one of the rider's free uses.
+            "promotion_grant_id": None if reason == "max_miles" else grant.id,
             "is_free": False,
             "discount_percent": percent,
             "discount_amount_cents": original_cents - final,

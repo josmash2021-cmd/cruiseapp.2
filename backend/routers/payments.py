@@ -988,13 +988,16 @@ async def _mapbox_route(p_lat: float, p_lng: float, d_lat: float, d_lng: float):
 
 
 @router.post("/bookings/web/quote")
-async def web_quote(request: Request):
+async def web_quote(request: Request, db: AsyncSession = Depends(get_db)):
     """Price a website ride and return a signed quote.
 
     Body: {pickup:{lat,lng}, dropoff:{lat,lng}, vehicle_type, mode:'ride'|'hourly',
-           hours, is_airport, airport_code}
+           hours, is_airport, airport_code, user_token?}
     Returns every tier's price (the page shows four cards) plus a token per
-    tier; the page sends back the token for whichever the rider picks.
+    tier; the page sends back the token for whichever the rider picks. With a
+    valid rider JWT in user_token the response also carries a persistent
+    RideQuote (`quote_id`) and the promotion result per tier (a new web rider's
+    free rides / 30% fallback); guests get the exact same shape as before.
     """
     _verify_web_origin(request)
     client_ip = request.client.host if request.client else "unknown"
@@ -1049,6 +1052,35 @@ async def web_quote(request: Request):
         raise HTTPException(503, "Could not calculate the route. Please try again.")
     meters, seconds = route
 
+    quote_record = None
+    promo_by_tier = {}
+    user_token = body.get("user_token") or ""
+    if user_token:
+        uid = _decode_user_from_token(user_token)
+        if uid:
+            r = await db.execute(select(User).where(User.id == uid, User.role == "rider"))
+            rider = r.scalar_one_or_none()
+            if rider is not None and rider.status not in ("deleted", "pending_deletion"):
+                from services.web_signup_promotion import create_web_ride_quote
+                quote_record, promo_by_tier = await create_web_ride_quote(
+                    db, rider,
+                    p_lat=p_lat, p_lng=p_lng, d_lat=d_lat, d_lng=d_lng,
+                    meters=meters, seconds=seconds,
+                    airport_code=airport_code, is_airport=is_airport,
+                )
+                await db.commit()
+
+    # A persistent RideQuote outlives nothing: the signed per-tier token must
+    # expire with it, or the page could create a Stripe hold against a quote
+    # the booking endpoint already considers gone.
+    token_exp = now + QUOTE_TTL_SECONDS
+    if quote_record is not None:
+        expires_at = quote_record.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        token_exp = int(expires_at.timestamp())
+        out["expires_in"] = max(0, token_exp - now)
+
     for tier in tiers:
         cents = web_pricing.total_cents(
             tier, seconds=seconds, meters=meters, mode="ride",
@@ -1056,17 +1088,34 @@ async def web_quote(request: Request):
         )
         if cents <= 0:
             continue
+        final_cents = cents
+        promo_fields = {}
+        if tier in promo_by_tier:
+            original_cents, selection = promo_by_tier[tier]
+            final_cents = int(selection["promo_total_cents"])
+            promo_fields = {
+                "original_cents": original_cents,
+                "is_free": bool(selection["is_free"]),
+                "discount_percent": selection["discount_percent"],
+                "free_max_miles": selection["free_max_miles"],
+                "free_ineligible_reason": selection["free_ineligible_reason"],
+                "pricing_quote_id": quote_record.id,
+            }
         out["tiers"][tier] = {
-            "cents": cents,
+            "cents": final_cents,
             "quote_token": _quote_sign({
-                "cents": cents, "tier": tier, "mode": "ride",
+                "cents": final_cents, "tier": tier, "mode": "ride",
                 "mi": round(meters / web_pricing.METERS_PER_MILE, 2),
                 "min": round(seconds / 60.0),
-                "iat": now, "exp": now + QUOTE_TTL_SECONDS,
+                "iat": now, "exp": token_exp,
             }),
+            **promo_fields,
         }
     if not out["tiers"]:
         raise HTTPException(400, "Could not price this route")
+    if quote_record is not None:
+        out["quote_id"] = quote_record.id
+        out["quote_expires_at"] = quote_record.expires_at.isoformat()
     out["distance_meters"] = round(meters)
     out["duration_seconds"] = round(seconds)
     return out
@@ -1169,6 +1218,8 @@ async def create_web_payment_intent(request: Request, db: AsyncSession = Depends
     currency = body.get("currency", "usd")
     description = body.get("description", "Cruise Ride")
     metadata = body.get("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
 
     if amount <= 0 or amount > 100000:
         raise HTTPException(400, "Invalid amount")
@@ -1189,6 +1240,15 @@ async def create_web_payment_intent(request: Request, db: AsyncSession = Depends
                 u = r.scalar_one_or_none()
                 if u and u.status not in ("deleted", "pending_deletion"):
                     customer_id = await _get_or_create_stripe_customer(u, db)
+                    # Ownership is stamped server-side — client metadata is
+                    # never trusted for the rider binding validate_trip_hold
+                    # enforces when the booking is created.
+                    metadata = {
+                        **metadata,
+                        "kind": "fare",
+                        "rider_id": str(u.id),
+                        "user_id": str(u.id),
+                    }
         except Exception as _e:
             logging.warning("[WebPayIntent] user_token decode failed: %s", _e)
 
@@ -1786,12 +1846,17 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     vehicle_type = (body.get("vehicle_type") or "comfort").lower()
     fare_cents = int(body.get("amount_cents", 0))
     payment_intent_id = body.get("payment_intent_id")
+    pricing_quote_id = body.get("pricing_quote_id") or body.get("quote_id") or None
     # trip.fare is what gets captured when the ride completes, so it must be a
     # number this server stands behind. Prefer the signed quote; fall back to
     # re-running the engine over a route we fetch ourselves. Only if both are
     # unavailable do we keep the client's figure, and then it is logged.
-    _quote_claims = _quote_decode(body.get("quote_token") or "")
-    if _quote_claims and int(_quote_claims.get("cents") or 0) > 0:
+    # With a persistent pricing_quote_id the fare comes from the stored
+    # RideQuote selection instead (resolved below, once the rider is known).
+    _quote_claims = None if pricing_quote_id else _quote_decode(body.get("quote_token") or "")
+    if pricing_quote_id:
+        _server_cents = 0
+    elif _quote_claims and int(_quote_claims.get("cents") or 0) > 0:
         _server_cents = int(_quote_claims["cents"])
     else:
         _server_cents = 0
@@ -1811,7 +1876,9 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
                     )
         except Exception as e:
             logging.warning("[WebBooking] server-side repricing failed: %s", e)
-    if _server_cents > 0:
+    if pricing_quote_id:
+        pass  # fare and promotion come from the stored RideQuote below
+    elif _server_cents > 0:
         if fare_cents and fare_cents < _server_cents and WEB_PRICING_ENFORCE:
             logging.warning(
                 "[WebBooking] rejected: client fare %s below server fare %s (%s)",
@@ -1855,6 +1922,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     #   2) Else fall back to WEB_SYSTEM_USER_ID env var.
     #   3) Else look up/auto-create a shared web@cruiseinride.com account.
     rider_id = 0
+    rider_user = None
     user_token = body.get("user_token") or ""
     if user_token:
         try:
@@ -1865,6 +1933,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
                 u = r.scalar_one_or_none()
                 if u and u.status not in ("deleted", "pending_deletion"):
                     rider_id = u.id
+                    rider_user = u
         except Exception as _e:
             logging.warning("[WebBooking] user_token decode failed: %s", _e)
 
@@ -1944,11 +2013,6 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
         else:
             scheduled_at = parsed
 
-    fare = fare_cents / 100.0 if fare_cents else None
-    notes_text = f"Web booking \u2014 {contact_name}"
-    if contact_phone:
-        notes_text += f" \u00b7 {contact_phone}"
-
     # A future scheduled booking must enter the scheduled-ride marketplace
     # rather than the live dispatch path — otherwise the driver offer card
     # fires right now for a trip that is not actually ready to pick up.
@@ -1957,8 +2021,38 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     is_future_scheduled = scheduled_at is not None
     trip_status = "scheduled" if is_future_scheduled else "requested"
 
+    selection = None
+    if pricing_quote_id:
+        if rider_user is None:
+            raise HTTPException(409, "Quote requires the signed-in rider. Please sign in and refresh prices.")
+        from services.rider_pricing import load_quote_selection
+        from services.promotion_redemptions import quote_snapshot_fields
+        selection = await load_quote_selection(
+            db,
+            rider_user.id,
+            pricing_quote_id,
+            vehicle_type,
+            {
+                "pickup_lat": pickup_lat,
+                "pickup_lng": pickup_lng,
+                "dropoff_lat": dropoff_lat,
+                "dropoff_lng": dropoff_lng,
+                "is_airport": bool(body.get("is_airport")),
+            },
+        )
+        fare_cents = int(selection["promo_total_cents"])
+        vehicle_type = selection["tier"]
+        if selection["is_free"]:
+            # Free courtesy ride: no Stripe, no PaymentIntent, no hold.
+            payment_intent_id = None
+
+    fare = fare_cents / 100.0 if fare_cents else (0.0 if selection and selection["is_free"] else None)
+    notes_text = f"Web booking \u2014 {contact_name}"
+    if contact_phone:
+        notes_text += f" \u00b7 {contact_phone}"
+
     try:
-        trip = Trip(
+        trip_kwargs = dict(
             rider_id=rider_id,
             pickup_address=pickup_address,
             pickup_lat=pickup_lat,
@@ -1980,9 +2074,46 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
             payment_status="held" if payment_intent_id else "unpaid",
             pickup_pin=_gen_pickup_pin(),
         )
-        db.add(trip)
-        await db.commit()
-        await db.refresh(trip)
+        if selection:
+            trip_kwargs.update(quote_snapshot_fields(selection))
+            _is_sandbox = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "") != "production"
+            _tester_ids = {
+                int(p) for p in (s.strip() for s in os.environ.get("TEST_MODE_RIDER_IDS", "").split(","))
+                if p.isdigit()
+            }
+            _payment_exempt = _is_sandbox or rider_user.id in _tester_ids
+            # Retrieve the hold so finalize_booking can validate it — and so
+            # its compensation path can cancel the hold if booking fails.
+            hold_intent = None
+            if payment_intent_id and not _payment_exempt:
+                if not _HAS_STRIPE:
+                    raise HTTPException(503, "Stripe not configured")
+                from services.payment_security import stripe_call
+                try:
+                    hold_intent = await stripe_call(_stripe_mod.PaymentIntent.retrieve, payment_intent_id)
+                except Exception as _hold_err:
+                    logging.warning("[WebBooking] hold retrieve failed for %s: %s", payment_intent_id, _hold_err)
+                    raise HTTPException(402, "Payment hold could not be verified. Please retry payment.")
+            from services.booking_pricing import finalize_booking
+            trip, _ = await finalize_booking(
+                db,
+                Trip(**trip_kwargs),
+                selection,
+                rider_user,
+                hold_intent,
+                payment_exempt=_payment_exempt,
+                # Web holds are only retrieved above — ownership/amount still
+                # must be proven inside finalize (the app paths pre-validate).
+                hold_prevalidated=False,
+            )
+        else:
+            trip = Trip(**trip_kwargs)
+            db.add(trip)
+            await db.commit()
+            await db.refresh(trip)
+    except HTTPException:
+        await db.rollback()
+        raise
     except Exception as e:
         await db.rollback()
         logging.error("[WebBooking] Create trip failed: %s", e)
@@ -4086,11 +4217,21 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     try:
+        await db.flush()
+        from services.web_signup_promotion import grant_web_signup_promotion
+        await grant_web_signup_promotion(db, user)
         await db.commit()
         await db.refresh(user)
     except IntegrityError:
         await db.rollback()
         raise HTTPException(409, "Email or phone already registered")
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as _signup_err:
+        await db.rollback()
+        logging.error("[WebAuth] Registration aborted — welcome promotion failed: %s", _signup_err)
+        raise HTTPException(500, "Could not complete registration")
 
     # Handle profile photo upload (base64 data URL from wizard)
     photo_data = body.get("photo_data") or ""
@@ -4447,11 +4588,21 @@ async def web_social_auth(request: Request, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     try:
+        await db.flush()
+        from services.web_signup_promotion import grant_web_signup_promotion
+        await grant_web_signup_promotion(db, user)
         await db.commit()
         await db.refresh(user)
     except IntegrityError:
         await db.rollback()
         raise HTTPException(409, "Account already exists")
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as _signup_err:
+        await db.rollback()
+        logging.error("[WebAuth] Social registration aborted — welcome promotion failed: %s", _signup_err)
+        raise HTTPException(500, "Could not complete registration")
 
     token = _create_token(user.id, role=user.role, status="active")
     refresh = _create_refresh_token(user.id)

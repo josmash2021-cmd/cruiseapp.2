@@ -74,11 +74,12 @@ async def apply_cruise_cash_to_trip(db, trip, rider_id: int) -> dict:
     return {"spend_cents": spend, "remaining_cents": remaining}
 
 
-async def finalize_booking(db, trip, selection, user, hold_intent, *, payment_exempt: bool):
+async def finalize_booking(db, trip, selection, user, hold_intent, *, payment_exempt: bool, hold_prevalidated: bool = True):
     import logging
     from fastapi import HTTPException
     from config import _stripe_mod
     from services.payment_security import (
+        _payment_intent_in_use,
         amount_authorized,
         payment_status_for_intent,
         stripe_call,
@@ -104,7 +105,8 @@ async def finalize_booking(db, trip, selection, user, hold_intent, *, payment_ex
             raise HTTPException(409, "A zero fare requires a valid courtesy promotion")
 
         if remaining_cents > 0 and pi_id and not payment_exempt and (
-            amount_authorized(hold_intent) < remaining_cents
+            not hold_prevalidated
+            or amount_authorized(hold_intent) < remaining_cents
             or (
                 stripe_value(hold_intent, "status", "") == "processing"
                 and amount_authorized(hold_intent) != remaining_cents
@@ -142,7 +144,13 @@ async def finalize_booking(db, trip, selection, user, hold_intent, *, payment_ex
         return trip, cruise_cash
     except Exception as exc:
         await db.rollback()
-        if hold_intent and stripe_value(hold_intent, "status", "") == "requires_capture":
+        # Compensate the hold we can no longer fund a trip with — but never
+        # cancel one already linked to another (committed) trip.
+        if (
+            hold_intent
+            and stripe_value(hold_intent, "status", "") == "requires_capture"
+            and not await _payment_intent_in_use(db, pi_id, None)
+        ):
             try:
                 await stripe_call(_stripe_mod.PaymentIntent.cancel, pi_id)
             except Exception as cancel_error:

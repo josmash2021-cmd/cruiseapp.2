@@ -37,3 +37,23 @@ def test_payout_exclusion_has_migrations_and_reconcile_guard():
     assert '("trips", "payout_excluded", "BOOLEAN DEFAULT FALSE")' in src
     main = open("main.py", encoding="utf-8").read()
     assert "payout_excluded IS NOT TRUE" in main
+
+
+def test_rider_pricing_schema_has_boot_migrations():
+    src = open("models/database.py", encoding="utf-8").read()
+    assert src.count("await create_pricing_tables(conn)") == 2
+    for table in (
+        "RideQuote.__table__",
+        "RiderPromotionGrant.__table__",
+        "RiderPromotionGrantRider.__table__",
+        "RiderPromotionUsage.__table__",
+        "RiderPromotionRedemption.__table__",
+    ):
+        assert table in src
+    for column in (
+        "pricing_quote_id", "promotion_redemption_id", "pricing_version",
+        "original_fare_cents", "rider_promo_total_cents", "driver_fare_cents",
+        "platform_credit_cents", "platform_credit_applied_cents",
+        "cruise_cash_cents", "quoted_distance_miles", "funding_source",
+    ):
+        assert src.count(f'("trips", "{column}",') == 2, column

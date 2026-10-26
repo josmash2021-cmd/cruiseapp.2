@@ -383,9 +383,12 @@ class GhostDriverAgent:
             # If we reach 15 min but never reoffered (edge case: scan skipped
             # the 13-min window), still proceed — a rider stuck 15 min with
             # a ghost driver must not be left hanging.
+            had_driver = bool(trip.driver_id or trip.driver_assigned_at)
             trip.status = "cancelled"
             trip.cancel_reason = "auto:driver_abandoned_no_replacement"
             trip.updated_at = datetime.now(timezone.utc)
+            from services.promotion_redemptions import settle_promotion_on_cancel
+            await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
             await db.commit()
 
             logger.warning(

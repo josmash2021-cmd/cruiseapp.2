@@ -32,6 +32,7 @@ def _headers(token: str) -> dict:
 class TestReadPollPathClassification:
     def test_poll_gets_are_exempt(self):
         assert _is_read_poll_path("/trips/active")
+        assert _is_read_poll_path("/pricing/revision")
         assert _is_read_poll_path("/support/chats")
         assert _is_read_poll_path("/trips/625/poll")
         assert _is_read_poll_path("/trips/625/chat")

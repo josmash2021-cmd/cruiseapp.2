@@ -374,19 +374,19 @@ async def capture_payment_intent(intent_id: str, user: User = Depends(_get_curre
     if trip.status != "completed":
         raise HTTPException(409, "Only a completed trip can be captured here")
 
-    from routers.trips import _charge_trip, _credit_driver_earnings
+    from routers.trips import _charge_trip
+    from services.completed_trip_settlement import settle_completed_trip
     result = await _charge_trip(trip, db)
-    if trip.payment_status in ("paid", "partial"):
-        collected = result.get("collected_cents")
-        amount = collected / 100.0 if collected is not None else None
-        if await _credit_driver_earnings(db, trip, collected_amount=amount):
-            await db.commit()
+    collected = result.get("collected_cents")
+    amount = collected / 100.0 if collected is not None else None
+    await settle_completed_trip(db, trip, collected_amount=amount)
+    await db.commit()
     return {
         "payment_intent_id": intent_id,
         "status": result.get("status"),
         "payment_status": trip.payment_status,
         "amount": result.get("amount", 0),
-        "captured": trip.payment_status in ("paid", "partial"),
+        "captured": trip.payment_status in ("paid", "partial", "not_required"),
     }
 
 
@@ -1630,6 +1630,15 @@ async def get_trip_payment_details(trip_id: int, db: AsyncSession = Depends(get_
         "refund_amount": float(trip.refund_amount or 0.0),
         "driver_earnings": float(trip.driver_earnings or 0.0),
         "platform_fee": float(trip.platform_fee or 0.0),
+        "original_fare_cents": trip.original_fare_cents,
+        "rider_promo_total_cents": trip.rider_promo_total_cents,
+        "driver_fare_cents": trip.driver_fare_cents,
+        "platform_credit_cents": trip.platform_credit_cents,
+        "platform_credit_applied_cents": trip.platform_credit_applied_cents,
+        "cruise_cash_cents": trip.cruise_cash_cents,
+        "funding_source": trip.funding_source,
+        "pricing_version": trip.pricing_version,
+        "quoted_distance_miles": trip.quoted_distance_miles,
         "tip_amount": float(trip.tip_amount or 0.0),
     }
 
@@ -2520,6 +2529,7 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
 
     previous_status = trip.status
     previous_driver_id = trip.driver_id
+    had_driver = bool(previous_driver_id or trip.driver_assigned_at)
 
     # Gather drivers to notify BEFORE we expire offers (needed for FCM fan-out)
     affected_driver_ids: set[int] = set()
@@ -2570,6 +2580,8 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
     trip.cancel_reason = "rider_web_cancel"
     trip.payment_status = new_payment_status
     trip.updated_at = datetime.now(timezone.utc)
+    from services.promotion_redemptions import settle_promotion_on_cancel
+    await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
     await db.commit()
 
     # Invalidate cache + SSE push to affected drivers

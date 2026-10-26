@@ -257,8 +257,8 @@ async def _handle_payment_intent_succeeded(data_object: dict, client_ip: str):
         trip.payment_status = "paid" if total >= fare_cents else "partial"
         trip.updated_at = datetime.now(timezone.utc)
         if trip.status == "completed":
-            from routers.trips import _credit_driver_earnings
-            await _credit_driver_earnings(
+            from services.completed_trip_settlement import settle_completed_trip
+            await settle_completed_trip(
                 db, trip, collected_amount=total / 100.0,
             )
         await db.commit()

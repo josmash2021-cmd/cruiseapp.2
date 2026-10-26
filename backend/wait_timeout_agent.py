@@ -255,6 +255,7 @@ class WaitTimeoutAgent:
         """Cancel the trip and set appropriate cancellation reason."""
         from models.database import Trip
 
+        had_driver = bool(trip.driver_id or trip.driver_assigned_at)
         trip.status = "cancelled"
         trip.cancel_reason = "auto:wait_timeout"
         trip.updated_at = datetime.now(timezone.utc)
@@ -294,6 +295,9 @@ class WaitTimeoutAgent:
                     "[WaitTimeout] Driver fee credit failed for trip #%d: %s",
                     trip.id, e,
                 )
+
+        from services.promotion_redemptions import settle_promotion_on_cancel
+        await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
 
         logger.warning(
             "[WaitTimeout] Cancelling trip #%d — driver waited %d min (threshold: %d min), "

@@ -362,6 +362,9 @@ class DataGuardian:
                         _select(Trip).where(Trip.id == trip_id)
                     )
                     _trip_obj = _trip_row.scalar_one_or_none()
+                    had_driver = bool(
+                        _trip_obj and (_trip_obj.driver_id or _trip_obj.driver_assigned_at)
+                    )
                     if _trip_obj is not None and pi_id and pay_status == "held":
                         from routers.trips import _release_or_capture_fee_on_cancel
                         new_payment_status = await _release_or_capture_fee_on_cancel(_trip_obj)
@@ -403,6 +406,11 @@ class DataGuardian:
                             updated_at = NOW()
                         WHERE id = :trip_id
                     """), {"trip_id": trip_id, "pay_status": new_payment_status})
+                    if _trip_obj is not None:
+                        from services.promotion_redemptions import settle_promotion_on_cancel
+                        await settle_promotion_on_cancel(
+                            session, _trip_obj, had_driver=had_driver,
+                        )
                     self._trips_fixed += 1
                     # Sync cancellation to Firestore so the rider app picks it up
                     try:
@@ -494,6 +502,7 @@ class DataGuardian:
                     _t = (await session.execute(
                         _select(Trip).where(Trip.id == trip_id)
                     )).scalar_one_or_none()
+                    had_driver = bool(_t and (_t.driver_id or _t.driver_assigned_at))
                     if _t is not None and pi_id and pay_status == "held":
                         from routers.trips import _release_or_capture_fee_on_cancel
                         new_pay = await _release_or_capture_fee_on_cancel(_t)
@@ -509,6 +518,9 @@ class DataGuardian:
                             updated_at = NOW()
                         WHERE id = :trip_id
                     """), {"trip_id": trip_id, "pay_status": new_pay})
+                    if _t is not None:
+                        from services.promotion_redemptions import settle_promotion_on_cancel
+                        await settle_promotion_on_cancel(session, _t, had_driver=had_driver)
                     self._trips_fixed += 1
                     try:
                         from config import _HAS_FIRESTORE, firestore_sync
@@ -574,6 +586,7 @@ class DataGuardian:
                     _t = (await session.execute(
                         _select(Trip).where(Trip.id == trip_id)
                     )).scalar_one_or_none()
+                    had_driver = bool(_t and (_t.driver_id or _t.driver_assigned_at))
                     if _t is not None and pi_id and pay_status == "held":
                         from routers.trips import _release_or_capture_fee_on_cancel
                         new_pay = await _release_or_capture_fee_on_cancel(_t)
@@ -583,6 +596,9 @@ class DataGuardian:
                             payment_status = :pay_status
                         WHERE id = :trip_id
                     """), {"trip_id": trip_id, "pay_status": new_pay})
+                    if _t is not None:
+                        from services.promotion_redemptions import settle_promotion_on_cancel
+                        await settle_promotion_on_cancel(session, _t, had_driver=had_driver)
                     self._trips_fixed += 1
                     try:
                         from config import _HAS_FIRESTORE, firestore_sync

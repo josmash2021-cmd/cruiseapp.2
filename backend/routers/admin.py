@@ -40,7 +40,10 @@ from utils.helpers import (
 from utils.ssn_encryption import is_ssn_provided, decrypt_ssn, get_ssn_masked, format_ssn_for_display
 from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import send_sms_async
-from services.socketio_service import notify_user, emit_trip_status
+from services.socketio_service import notify_user, emit_trip_status, sio
+from services.rider_pricing import (
+    PricingConfigPatch, get_pricing_config, update_pricing_config,
+)
 from config import (
     PUBLIC_URL, UPLOADS_DIR,
     firestore_sync, _HAS_FIRESTORE,
@@ -83,7 +86,7 @@ async def _terminate_account_session(db: AsyncSession, user: User, status: str):
         )
 
 # ══════════════════════════════════════════════════════════
-#  In-memory pricing configuration (admin-editable at runtime)
+#  Legacy quote surcharges; Dispatch pricing now lives in rider_pricing.py + AppConfig
 # ══════════════════════════════════════════════════════════
 _pricing_config: dict = {
     "base_fare": 5.0,
@@ -298,6 +301,7 @@ async def admin_update_trip(trip_id: int, body: AdminUpdateTripIn, db: AsyncSess
     if not trip:
         raise HTTPException(404, "Trip not found")
     update_data = body.model_dump(exclude_unset=True)
+    had_driver = bool(trip.driver_id or trip.driver_assigned_at)
     for key, value in update_data.items():
         setattr(trip, key, value)
 
@@ -310,10 +314,13 @@ async def admin_update_trip(trip_id: int, body: AdminUpdateTripIn, db: AsyncSess
     # (payment_status == "paid").
     new_status = (update_data.get("status") or "").lower()
     if new_status == "completed":
-        from routers.trips import _credit_driver_earnings
-        await _credit_driver_earnings(db, trip)
+        from services.completed_trip_settlement import settle_completed_trip
+        await settle_completed_trip(db, trip)
         if not trip.completed_at:
             trip.completed_at = datetime.now(timezone.utc)
+    elif new_status == "cancelled":
+        from services.promotion_redemptions import settle_promotion_on_cancel
+        await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
 
     await db.commit()
     await db.refresh(trip)
@@ -430,9 +437,12 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Trip).where(Trip.status.in_(active)))
     trips = result.scalars().all()
     canceled = []
+    from services.promotion_redemptions import settle_promotion_on_cancel
     for t in trips:
+        had_driver = bool(t.driver_id or t.driver_assigned_at)
         t.status = "cancelled"
         t.cancel_reason = "admin_bulk_cleanup"
+        await settle_promotion_on_cancel(db, t, had_driver=had_driver)
         canceled.append(t.id)
     await db.commit()
     if _HAS_FIRESTORE:
@@ -517,8 +527,11 @@ async def admin_cancel_trip(trip_id: int, body: AdminCancelTripIn, db: AsyncSess
         raise HTTPException(404, "Trip not found")
     if trip.status in ("completed", "cancelled", "canceled"):
         raise HTTPException(400, f"Trip already in terminal state '{trip.status}'")
+    had_driver = bool(trip.driver_id or trip.driver_assigned_at)
     trip.status = "cancelled"
     trip.cancel_reason = reason or "admin_cancel"
+    from services.promotion_redemptions import settle_promotion_on_cancel
+    await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
     await db.commit()
     await db.refresh(trip)
     # The rider's lock-screen trip card dies with the trip (2026-09-23).
@@ -1636,6 +1649,15 @@ def _live_trip_payload(trip: Trip, rider: User | None,
         },
         "driver": driver_info,
         "fare": trip.fare,
+        "original_fare_cents": trip.original_fare_cents,
+        "rider_promo_total_cents": trip.rider_promo_total_cents,
+        "driver_fare_cents": trip.driver_fare_cents,
+        "platform_credit_cents": trip.platform_credit_cents,
+        "platform_credit_applied_cents": trip.platform_credit_applied_cents,
+        "cruise_cash_cents": trip.cruise_cash_cents,
+        "funding_source": trip.funding_source,
+        "pricing_version": trip.pricing_version,
+        "quoted_distance_miles": trip.quoted_distance_miles,
         "created_at": trip.created_at.isoformat() if trip.created_at else None,
         "vehicle_type": trip.vehicle_type,
         "is_web_booking": False,
@@ -2061,33 +2083,30 @@ async def admin_broadcast_riders(
 # ══════════════════════════════════════════════════════════
 
 @router.get("/admin/pricing", dependencies=[Depends(_require_dispatch_auth)])
-async def admin_get_pricing():
-    """Return current pricing configuration."""
-    return _pricing_config.copy()
+async def admin_get_pricing(db: AsyncSession = Depends(get_db)):
+    return await get_pricing_config(db)
 
 
 @router.patch("/admin/pricing", dependencies=[Depends(_require_dispatch_auth)])
-async def admin_update_pricing(request: Request):
-    """Update pricing configuration. Accepts partial updates."""
-    body = await request.json()
-    if not isinstance(body, dict) or not body:
-        raise HTTPException(400, "Request body must be a non-empty JSON object")
-    allowed_keys = set(_pricing_config.keys())
-    for key, value in body.items():
-        if key not in allowed_keys:
-            raise HTTPException(400, f"Unknown pricing key: {key}")
-        # Validate nested dicts stay as dicts
-        if key in ("vehicle_multipliers", "surge"):
-            if not isinstance(value, dict):
-                raise HTTPException(400, f"{key} must be a JSON object")
-            # Merge nested dict (partial update within nested)
-            _pricing_config[key].update(value)
-        else:
-            if not isinstance(value, (int, float)):
-                raise HTTPException(400, f"{key} must be a number")
-            _pricing_config[key] = float(value)
-    _security_audit_log("ADMIN_PRICING_UPDATED", "admin", f"keys={list(body.keys())}")
-    return _pricing_config.copy()
+async def admin_update_pricing(
+    body: PricingConfigPatch,
+    db: AsyncSession = Depends(get_db),
+    actor: dict = Depends(_require_dispatch_auth),
+):
+    if not body.model_fields_set:
+        raise HTTPException(400, "No pricing changes supplied")
+    config = await update_pricing_config(db, body)
+    await db.commit()
+    _security_audit_log(
+        "ADMIN_PRICING_UPDATED",
+        str(actor.get("sub") or actor.get("type") or "dispatch"),
+        json.dumps({"version": config["version"], "changes": body.model_dump(exclude_none=True)}),
+    )
+    try:
+        await sio.emit("pricing_updated", {"version": config["version"]})
+    except Exception as exc:
+        logging.warning("[Admin] pricing socket failed: %s", exc)
+    return config
 
 
 # ══════════════════════════════════════════════════════════
@@ -2149,6 +2168,7 @@ async def admin_revenue_report(
     totals_q = await db.execute(
         select(
             func.coalesce(func.sum(Trip.fare), 0).label("total_revenue"),
+            func.coalesce(func.sum(Trip.platform_credit_applied_cents), 0).label("promotional_cost_cents"),
             func.count(Trip.id).label("total_trips"),
         ).where(
             and_(
@@ -2162,27 +2182,30 @@ async def admin_revenue_report(
     # Daily breakdown — cast created_at to date for grouping
     daily_q = await db.execute(
         select(
-            cast(Trip.created_at, Date).label("day"),
+            cast(func.date(Trip.created_at), String).label("day"),
             func.coalesce(func.sum(Trip.fare), 0).label("revenue"),
+            func.coalesce(func.sum(Trip.platform_credit_applied_cents), 0).label("promotional_cost_cents"),
             func.count(Trip.id).label("trips"),
         ).where(
             and_(
                 Trip.status == "completed",
                 Trip.created_at >= since,
             )
-        ).group_by(cast(Trip.created_at, Date))
-        .order_by(cast(Trip.created_at, Date))
+        ).group_by(cast(func.date(Trip.created_at), String))
+        .order_by(cast(func.date(Trip.created_at), String))
     )
     daily_rows = daily_q.all()
 
     return {
         "period": period,
         "total_revenue": round(float(totals.total_revenue or 0), 2),
+        "promotional_cost": round(float(totals.promotional_cost_cents or 0) / 100.0, 2),
         "total_trips": totals.total_trips or 0,
         "daily": [
             {
                 "date": str(row.day),
                 "revenue": round(float(row.revenue or 0), 2),
+                "promotional_cost": round(float(row.promotional_cost_cents or 0) / 100.0, 2),
                 "trips": row.trips or 0,
             }
             for row in daily_rows

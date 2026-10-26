@@ -16,6 +16,7 @@ from services.fcm_service import _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
 from services import vehicle_tiers
+from services.platform_earnings import driver_fare_basis
 from config import _HAS_FIRESTORE, firestore_sync
 
 router = APIRouter(tags=["scheduled"])
@@ -111,7 +112,7 @@ def _scheduled_trip_card(trip: Trip, driver_lat: float = 0, driver_lng: float = 
         dist_km = round(_haversine(driver_lat, driver_lng, trip.pickup_lat, trip.pickup_lng), 1)
 
     driver_fare = round(
-        float(trip.fare or 0) * vehicle_tiers.driver_share_for_trip(trip), 2,
+        driver_fare_basis(trip) * vehicle_tiers.driver_share_for_trip(trip), 2,
     )
     rider_name = ""
     rider_photo = None

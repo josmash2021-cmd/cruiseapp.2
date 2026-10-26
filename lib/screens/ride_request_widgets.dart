@@ -26,7 +26,6 @@ final _whitespaceRe = RegExp(r'\s+');
 // ════════════════════════════════════════════════════════════
 
 extension _RideRequestWidgets on _RideRequestScreenState {
-
   // ── "Where to?" bar ──
 
   String get _rideBadgeLabel {
@@ -190,55 +189,21 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   Widget _buildRoutePreviewSheet(AppColors c, double bottomPad) {
     final s = _ctrl.state;
 
-    // Fast-ride tier override (single "Comfort" option, ~$160/hr).
+    // Fast Ride keeps its single-Standard layout, but uses the same server
+    // quote as every other booking entry — never a local fare multiplier.
     List<RideOption> displayOptions = s.rideOptions;
-    if (widget.fastRide && s.rideOptions.isNotEmpty) {
-      final baseFusion = s.rideOptions.last;
-      final expressPrice =
-          (baseFusion.priceEstimate * 3.2).roundToDouble();
-      displayOptions = [
-        RideOption(
-          id: 'comfort_express',
-          name: 'Comfort',
-          description: 'Express pickup · Premium',
-          priceEstimate: expressPrice,
-          etaMinutes: 2 + (baseFusion.etaMinutes ~/ 3),
-          icon: '⚡',
-          capacity: 4,
-        ),
-      ];
-    }
-
-    // 10% promo discount.
-    if (widget.applyPromo) {
+    if (widget.fastRide) {
       displayOptions = displayOptions
-          .map(
-            (o) => RideOption(
-              id: o.id,
-              name: o.name,
-              description: o.description,
-              priceEstimate:
-                  (o.priceEstimate * 0.9 * 100).roundToDouble() / 100,
-              etaMinutes: o.etaMinutes,
-              icon: o.icon,
-              capacity: o.capacity,
-            ),
-          )
+          .where((option) => option.canonicalTier == 'standard')
           .toList();
     }
 
-    // Still no fabricated prices — but the sheet is never empty either.
-    //
-    // A booking sheet with nothing in it reads as broken however it got that
-    // way: no route, no pickup, a fare call still in flight. The four tiers
-    // are known without any of that, so they are drawn regardless, and the
-    // one thing that cannot be known — the money — is left as a dash.
-    //
-    // The old rule stands and is what makes this safe: a price of zero is
-    // never printed as a price, and Request Ride is disabled until real
-    // fares land, so nobody can book at a rate the app made up.
-    final bool faresReady = displayOptions.isNotEmpty;
-    if (!faresReady) displayOptions = _placeholderTiers();
+    // Unknown money stays a dash. A non-empty local list is not enough to
+    // enable booking: every visible tier must belong to the active quote.
+    if (displayOptions.isEmpty) displayOptions = _placeholderTiers();
+    final bool faresReady = s.quote != null &&
+        displayOptions.isNotEmpty &&
+        displayOptions.every((option) => option.hasServerPrice);
 
     // Fixed top→bottom tier order (user spec 2026-08-22; Electric Pro added
     // 2026-10-13): Black, Premium, Electric Pro, Compact, Standard. The
@@ -450,12 +415,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       if (v > 120 && !_sheetCollapsed) {
                         HapticService.selectionClick();
                         _syncCameraWithSheetToggle(
-                            collapsing: true, tierCount: _displayTierCount);
+                                  collapsing: true,
+                                  tierCount: _displayTierCount);
                         _setState(() => _sheetCollapsed = true);
                       } else if (v < -120 && _sheetCollapsed) {
                         HapticService.selectionClick();
                         _syncCameraWithSheetToggle(
-                            collapsing: false, tierCount: _displayTierCount);
+                                  collapsing: false,
+                                  tierCount: _displayTierCount);
                         _setState(() => _sheetCollapsed = false);
                       }
                     },
@@ -474,26 +441,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           ),
                         ),
                         // No title (2026-08-24, Lyft-style): the list starts
-                        // right under the handle. Only the Airport / 10% OFF
-                        // pills keep this row when they apply.
-                        if (_ctrl.state.isAirportTrip || widget.applyPromo)
+                              // right under the handle.
+                              if (_ctrl.state.isAirportTrip)
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              if (_ctrl.state.isAirportTrip)
                                 _headerPill(
                                   icon: Icons.flight_rounded,
                                   text: S.of(context).airportLabel,
                                   color: const Color(0xFF4285F4),
                                 ),
-                              if (widget.applyPromo) ...[
-                                if (_ctrl.state.isAirportTrip)
-                                  const SizedBox(width: 8),
-                                _headerPill(
-                                  text: '10% OFF',
-                                  color: const Color(0xFFE8C547),
-                                ),
-                              ],
                             ],
                           ),
                       ],
@@ -529,12 +486,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     duration: const Duration(milliseconds: 300),
                     child: (_skeletonForced || !faresReady) &&
                             _ctrl.state.pickup != null &&
-                            _ctrl.state.dropoff != null
+                                  _ctrl.state.dropoff != null &&
+                                  !(s.quoteFailed && s.quote == null)
                         ? _buildSkeletonTierRows()
                         : Column(
                             key: const ValueKey('tierRows'),
                             mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                             children: [
                               for (final o in displayOptions)
                                 _buildTierRow(
@@ -564,6 +523,41 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     const SizedBox(height: 4),
                     _buildMissingEndpointNotice(),
                   ],
+                        if (s.quoteFailed &&
+                            s.quote == null &&
+                            s.pickup != null &&
+                            s.dropoff != null) ...[
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.04),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    S.of(context).fareEstimateErrorMsg,
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.65),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      unawaited(_ctrl.refreshQuote()),
+                                  child: Text(S.of(context).retry),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
 
                   // ── Action panel ── FLAT on the sheet's own background
                   // (2026-08-24, Lyft-style): payment method at the left,
@@ -719,8 +713,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   /// Lyft-style loading state: four grey skeleton rows standing in for the
   /// tiers while the fares are being computed (circle + two bars each).
   Widget _buildSkeletonTierRows() {
-    Widget bar(double w, {double h = 12, double opacity = 0.10}) =>
-        Container(
+    Widget bar(double w, {double h = 12, double opacity = 0.10}) => Container(
           width: w,
           height: h,
           decoration: BoxDecoration(
@@ -735,8 +728,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             // Lyft skeleton: near-flat dark fill with a thin visible outline.
             color: Colors.white.withValues(alpha: 0.02),
             borderRadius: BorderRadius.circular(16),
-            border:
-                Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
           ),
           child: Row(
             children: [
@@ -790,7 +782,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
   Widget _buildTierRow(AppColors c, RideOption opt, bool selected,
       {bool hidden = false}) {
-    final promo = _promoPrice(opt);
     final String displayName = _tierDisplayName(opt);
 
     // Compact line under the name: "in 5 min". Placeholder tiers carry no
@@ -798,14 +789,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final String waitText = opt.etaMinutes > 0
         ? S.of(context).inMinEta(opt.etaMinutes)
         : _gridWaitRangeText(_tierKeyForOption(opt));
-
-    final priceStyle = TextStyle(
-      fontFamily: 'Poppins',
-      color: Colors.white,
-      fontSize: selected ? 20 : 15,
-      fontWeight: FontWeight.w800,
-      letterSpacing: -0.3,
-    );
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 280),
@@ -975,14 +958,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 Stack(
                                   clipBehavior: Clip.none,
                                   children: [
-                                    AnimatedSwitcher(
-                                      duration: const Duration(milliseconds: 250),
-                                      child: Text(
-                                        promo.priceText,
-                                        key: ValueKey(
-                                            'tierPrice_${opt.id}_${promo.priceText}'),
-                                        style: priceStyle,
-                                      ),
+                                    QuotedFareView(
+                                      option: opt,
+                                      cruiseCashCents: _cruiseCashCents,
+                                      selected: selected,
+                                      freeLabel: S.of(context).free,
+                                      cruiseCashLabel: S.of(context).cruiseCash,
                                     ),
                                     if (opt.id == 'electric_pro')
                                       Positioned(
@@ -991,15 +972,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                         // padding), 2px past its right edge.
                                         top: selected ? -24 : -18,
                                         right: -14,
-                                        child: const ElectricBoltBadge(
-                                            size: 30),
+                                        child:
+                                            const ElectricBoltBadge(size: 30),
                                       ),
                                   ],
                                 ),
                                 // Lyft layout: the "in X min · H:MM" line
                                 // sits right under the price, plain grey —
                                 // no icon chip (2026-08-24).
-                                if (selected && _tierEtaLine(opt).isNotEmpty) ...[
+                                if (selected &&
+                                    _tierEtaLine(opt).isNotEmpty) ...[
                                   const SizedBox(height: 3),
                                   Text(
                                     _tierEtaLine(opt),
@@ -1116,6 +1098,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   /// keeps measuring sheet+panel exactly as before. Grows in with
   /// AnimatedSize the first time a tier is picked.
   Widget _buildActionPanel(AppColors c, RideOption option, bool faresReady) {
+    final needsPaymentMethod = !option.hasServerPrice ||
+        rideHoldAmountCents(
+              option: option,
+              balanceCents: _cruiseCashCents,
+            ) >
+            0;
     return AnimatedSize(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOutCubic,
@@ -1153,7 +1141,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               // And not before the fares are real, or Cruise Cash comes up
               // short of the FULL fare (user spec 2026-08-04).
               enabled: !_isProcessingPayment &&
-                  _hasAnyPaymentMethod &&
+                  (!needsPaymentMethod || _hasAnyPaymentMethod) &&
                   (_isScheduledMode || !_noDriversNearby) &&
                   faresReady &&
                   !_cruiseCashShort(option),
@@ -1162,8 +1150,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               // inline — it opens the pickup-pin page first, and the SAME
               // payment pipeline runs from there. The label crossfades on
               // every tier change inside the button itself.
-              label:
-                  S.of(context).selectTierLabel(_tierDisplayName(option)),
+              label: S.of(context).selectTierLabel(_tierDisplayName(option)),
               onTap: () {
                 HapticService.mediumImpact();
                 _openPickupConfirm(c, option);
@@ -1240,7 +1227,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         // The wheels show the real drop-off/pickup clock times when they
         // have the trip's minutes; without a route they omit those lines
         // rather than guessing.
-        estimatedMinutes: (secs != null && secs > 0) ? (secs / 60).ceil() : null,
+        estimatedMinutes:
+            (secs != null && secs > 0) ? (secs / 60).ceil() : null,
         prefilledPickup: pickup,
         prefilledDropoff: dropoff,
         prefilledPickupLabel: st.pickupLabel,
@@ -1259,10 +1247,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   /// button is disabled in that state instead of letting a request start
   /// that no method can pay for.
   bool _cruiseCashShort(RideOption opt) {
-    if (_selectedPaymentMethod != 'cruise_cash') return false;
-    final double price =
-        widget.applyPromo ? opt.priceEstimate * 0.9 : opt.priceEstimate;
-    return _cruiseCashCents < (price * 100).round();
+    if (_selectedPaymentMethod != 'cruise_cash' || opt.isFree) return false;
+    if (!opt.hasServerPrice) return true;
+    return _cruiseCashCents < opt.promoTotalCents!;
   }
 
   /// Gap between the sheet and the screen's bottom edge: 24 px while the
@@ -1329,47 +1316,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // Image.asset of it falls back to cruisert_compact.png (OTA rule 2026-10-13).
     if (key.contains('electric')) return 'assets/images/car_electric.png';
     if (key.contains('suv xl')) return 'assets/images/cruisert_suvxl.png';
-    if (key.contains('vip') || key.contains('suburban')) return 'assets/images/cruisert1.png';
+    if (key.contains('vip') || key.contains('suburban'))
+      return 'assets/images/cruisert1.png';
     // The camry tier shows as COMPACT, so it carries the compact SUV render
     // rather than the sedan one. Matched on the internal name, which is still
     // 'Sedan' — the ids never move, only what the rider is shown.
-    if (key.contains('sedan') || key.contains('camry')) return 'assets/images/cruisert_compact.png';
+    if (key.contains('sedan') || key.contains('camry'))
+      return 'assets/images/cruisert_compact.png';
     return 'assets/images/cruisert3.png';
-  }
-
-  /// Promo / Cruise Cash price math for an option — ONE source for the
-  /// expanded card and the detail panel.
-  ///
-  /// The panel used to render the raw estimate while dispatch charged the
-  /// discounted fare: the rider saw $25 and paid $20. A surprise in the
-  /// rider's favour is still a surprise — both surfaces show the same
-  /// numbers now.
-  ///
-  /// Promo math: when the rider entered through the 10% off button,
-  /// widget.applyPromo is true and the rendered price is 90% of the
-  /// estimate. We keep the original priceEstimate visible (struck
-  /// through, smaller, gray) so they SEE the discount being applied.
-  /// Cruise Cash preview: capped at $50/ride and never below 0. Backend
-  /// re-applies the same math at dispatch time, so what the rider sees
-  /// here is what they'll be charged.
-  ({double basePrice, double finalPrice, bool priceKnown, String priceText, String oldPriceText})
-      _promoPrice(RideOption opt) {
-    final double basePrice = opt.priceEstimate;
-    final double promoPrice = widget.applyPromo ? basePrice * 0.9 : basePrice;
-    final double ccApplied = (_cruiseCashCents / 100.0)
-        .clamp(0.0, 50.0)
-        .clamp(0.0, promoPrice);
-    final double finalPrice =
-        (promoPrice - ccApplied).clamp(0.0, double.infinity);
-    // Zero means the fares have not landed. A dash, never "$0.00".
-    final bool priceKnown = basePrice > 0;
-    return (
-      basePrice: basePrice,
-      finalPrice: finalPrice,
-      priceKnown: priceKnown,
-      priceText: priceKnown ? '\$${finalPrice.toStringAsFixed(2)}' : '—',
-      oldPriceText: priceKnown ? '\$${basePrice.toStringAsFixed(2)}' : '—',
-    );
   }
 
   /// The tier key the wait-estimate endpoint filters by, from a ride
@@ -1421,7 +1375,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
   // ── OLD card kept for reference during migration — now unused ──
   // ignore: unused_element
-  Widget _buildRideOptionCardLegacy(AppColors c, RideOption opt, bool selected) {
+  Widget _buildRideOptionCardLegacy(
+      AppColors c, RideOption opt, bool selected) {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
 
@@ -1429,7 +1384,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final bool isVIP = isSuv;
     final bool isPremium = !isSuv && !isFusion;
     final bool isComfort = isFusion;
-    final String tierLabel = isVIP ? 'VIP' : isPremium ? 'PREMIUM' : 'COMFORT';
+    final String tierLabel = isVIP
+        ? 'VIP'
+        : isPremium
+            ? 'PREMIUM'
+            : 'COMFORT';
     final List<Color> gradient = isVIP
         ? const [Color(0xFFE8C547), Color(0xFFD4A574)]
         : isPremium
@@ -1458,9 +1417,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         // Gold crystal / glass effect when selected
-        color: selected
-            ? const Color(0xFF1A1708)
-            : const Color(0xFF1E1E1E),
+          color: selected ? const Color(0xFF1A1708) : const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: selected
@@ -1534,19 +1491,24 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   builder: (_, __) {
                     final t = badgeAnim.value;
                     // Pulsing outer glow intensity
-                    final glowAlpha = (0.35 + 0.25 * math.sin(t * 2 * math.pi)).clamp(0.0, 1.0);
+                          final glowAlpha =
+                              (0.35 + 0.25 * math.sin(t * 2 * math.pi))
+                                  .clamp(0.0, 1.0);
                     return Stack(
                       alignment: Alignment.center,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 5),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(colors: gradient),
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
-                                color: accent.withValues(alpha: glowAlpha),
-                                blurRadius: 16 + 6 * math.sin(t * 2 * math.pi),
+                                      color:
+                                          accent.withValues(alpha: glowAlpha),
+                                      blurRadius:
+                                          16 + 6 * math.sin(t * 2 * math.pi),
                                 offset: const Offset(0, 2),
                               ),
                             ],
@@ -1554,7 +1516,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(tierIcon, color: tierTextColor, size: 12),
+                                    Icon(tierIcon,
+                                        color: tierTextColor, size: 12),
                               const SizedBox(width: 5),
                               Text(
                                 tierLabel,
@@ -1576,13 +1539,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               borderRadius: BorderRadius.circular(20),
                               child: IgnorePointer(
                                 child: Transform.translate(
-                                  offset: Offset(200 * (t * 2.0 - 0.5), 0),
+                                        offset:
+                                            Offset(200 * (t * 2.0 - 0.5), 0),
                                   child: Container(
                                     width: 56,
                                     decoration: BoxDecoration(
                                       gradient: LinearGradient(colors: [
                                         Colors.transparent,
-                                        const Color(0xFFFFE88A).withValues(alpha: 0.35),
+                                              const Color(0xFFFFE88A)
+                                                  .withValues(alpha: 0.35),
                                         Colors.transparent,
                                       ]),
                                     ),
@@ -1597,7 +1562,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               borderRadius: BorderRadius.circular(20),
                               child: IgnorePointer(
                                 child: Transform.translate(
-                                  offset: Offset(180 * (t * 2.6 - 0.8), 0),
+                                        offset:
+                                            Offset(180 * (t * 2.6 - 0.8), 0),
                                   child: Transform.rotate(
                                     angle: 0.35,
                                     child: Container(
@@ -1605,7 +1571,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(colors: [
                                           Colors.transparent,
-                                          Colors.white.withValues(alpha: 0.7),
+                                                Colors.white
+                                                    .withValues(alpha: 0.7),
                                           Colors.transparent,
                                         ]),
                                       ),
@@ -1623,7 +1590,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               borderRadius: BorderRadius.circular(20),
                               child: IgnorePointer(
                                 child: Transform.translate(
-                                  offset: Offset(180 * (t * 2.4 - 0.7), 0),
+                                        offset:
+                                            Offset(180 * (t * 2.4 - 0.7), 0),
                                   child: Transform.rotate(
                                     angle: 0.3,
                                     child: Container(
@@ -1631,8 +1599,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(colors: [
                                           Colors.transparent,
-                                          Colors.white.withValues(alpha: 0.55),
-                                          const Color(0xFFE0E0E0).withValues(alpha: 0.25),
+                                                Colors.white
+                                                    .withValues(alpha: 0.55),
+                                                const Color(0xFFE0E0E0)
+                                                    .withValues(alpha: 0.25),
                                           Colors.transparent,
                                         ]),
                                       ),
@@ -1649,7 +1619,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               borderRadius: BorderRadius.circular(20),
                               child: IgnorePointer(
                                 child: Transform.translate(
-                                  offset: Offset(180 * (t * 2.4 - 0.7), 0),
+                                        offset:
+                                            Offset(180 * (t * 2.4 - 0.7), 0),
                                   child: Transform.rotate(
                                     angle: 0.3,
                                     child: Container(
@@ -1657,7 +1628,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(colors: [
                                           Colors.transparent,
-                                          const Color(0xFF81C784).withValues(alpha: 0.5),
+                                                const Color(0xFF81C784)
+                                                    .withValues(alpha: 0.5),
                                           Colors.transparent,
                                         ]),
                                       ),
@@ -1704,7 +1676,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 Builder(
                   builder: (_) {
                     final routeMins = _ctrl.state.route != null
-                        ? _parseDurationMins(_ctrl.state.route!.durationText)
+                              ? _parseDurationMins(
+                                  _ctrl.state.route!.durationText)
                         : 0;
                     final arrival = DateTime.now().add(
                       Duration(minutes: opt.etaMinutes + routeMins),
@@ -1727,7 +1700,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           arrivalStr,
                         ),
                         const SizedBox(width: 6),
-                        _chipWidget(Icons.person_rounded, '${opt.capacity}'),
+                              _chipWidget(
+                                  Icons.person_rounded, '${opt.capacity}'),
                       ],
                     );
                   },
@@ -1745,7 +1719,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (_ctrl.state.route == null || _ctrl.state.rideOptions.isEmpty)
+                  if (_ctrl.state.route == null ||
+                      _ctrl.state.rideOptions.isEmpty)
                   _buildPriceShimmer(width: 54, height: 18)
                 else
                   Text(
@@ -1755,7 +1730,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
-                      color: selected ? const Color(0xFFD0D4DC) : const Color(0xFFB0B4BC),
+                        color: selected
+                            ? const Color(0xFFD0D4DC)
+                            : const Color(0xFFB0B4BC),
                       letterSpacing: -0.3,
                     ),
                   ),
@@ -1984,8 +1961,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
   /// The five tiers with everything the route decides left out.
   ///
-  /// Ids and names match what [_generateRideOptions] builds, because the same
-  /// card widgets read them to pick the badge, the label and the car. A price
+  /// Ids and names match the controller placeholders and the quote mapping.
+  /// The same card widgets read them to pick the badge, label and car. A price
   /// of zero is the signal for "not known yet" — every place that prints money
   /// checks for it and prints a dash instead.
   List<RideOption> _placeholderTiers() => const [
@@ -2055,9 +2032,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       child: Column(
         children: [
           Text(
-            needsPickup
-                ? S.of(context).setPickupOnMap
-                : S.of(context).whereTo,
+            needsPickup ? S.of(context).setPickupOnMap : S.of(context).whereTo,
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.7),
@@ -2294,16 +2269,21 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               child: AnimatedBuilder(
                                 animation: _radarCtrl,
                                 builder: (context, _) {
-                                  Widget ring(double baseSize, double delay) {
+                                          Widget ring(
+                                              double baseSize, double delay) {
                                     // _radarCtrl runs 2400ms; normalize to 2.8s
                                     // and offset by delay (0 or 0.9s).
-                                    final t = ((_radarCtrl.value * 2400 - delay * 1000) /
+                                            final t =
+                                                ((_radarCtrl.value * 2400 -
+                                                            delay * 1000) /
                                             2800)
                                         .clamp(0.0, 1.0);
-                                    final scale = 0.6 + (1.25 - 0.6) * t;
+                                            final scale =
+                                                0.6 + (1.25 - 0.6) * t;
                                     final opacity = t < 0.15
                                         ? (t / 0.15) * 0.55
-                                        : 0.55 * (1 - (t - 0.15) / 0.85);
+                                                : 0.55 *
+                                                    (1 - (t - 0.15) / 0.85);
                                     return Transform.scale(
                                       scale: scale,
                                       child: Container(
@@ -2312,8 +2292,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
                                           border: Border.all(
-                                            color: const Color(0xFFE8C547)
-                                                .withValues(alpha: opacity.clamp(0.0, 1.0)),
+                                                    color: const Color(
+                                                            0xFFE8C547)
+                                                        .withValues(
+                                                            alpha:
+                                                                opacity.clamp(
+                                                                    0.0, 1.0)),
                                             width: 1.5,
                                           ),
                                         ),
@@ -2336,14 +2320,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                           color: Colors.black,
                                           shape: BoxShape.circle,
                                           border: Border.all(
-                                            color: const Color(0xFFE8C547)
-                                                .withValues(alpha: 0.35),
+                                                    color:
+                                                        const Color(0xFFE8C547)
+                                                            .withValues(
+                                                                alpha: 0.35),
                                             width: 1.5,
                                           ),
                                           boxShadow: [
                                             BoxShadow(
-                                              color: const Color(0xFFE8C547)
-                                                  .withValues(alpha: 0.15),
+                                                      color: const Color(
+                                                              0xFFE8C547)
+                                                          .withValues(
+                                                              alpha: 0.15),
                                               blurRadius: 16,
                                             ),
                                           ],
@@ -2368,15 +2356,19 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             // ── Status + route ──
                             Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                 children: [
                                   // Animated status message
                                   SizedBox(
                                     height: 22,
                                     child: AnimatedSwitcher(
-                                      duration: const Duration(milliseconds: 400),
-                                      switchInCurve: Curves.easeOutCubic,
-                                      switchOutCurve: Curves.easeInCubic,
+                                              duration: const Duration(
+                                                  milliseconds: 400),
+                                              switchInCurve:
+                                                  Curves.easeOutCubic,
+                                              switchOutCurve:
+                                                  Curves.easeInCubic,
                                       transitionBuilder: (child, anim) {
                                         final slideIn = Tween<Offset>(
                                           begin: const Offset(0, 0.5),
@@ -2390,12 +2382,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                           ),
                                         );
                                       },
-                                      layoutBuilder: (currentChild, previousChildren) {
+                                              layoutBuilder: (currentChild,
+                                                  previousChildren) {
                                         return Stack(
-                                          alignment: AlignmentDirectional.centerStart,
+                                                  alignment:
+                                                      AlignmentDirectional
+                                                          .centerStart,
                                           children: [
                                             ...previousChildren,
-                                            if (currentChild != null) currentChild,
+                                                    if (currentChild != null)
+                                                      currentChild,
                                           ],
                                         );
                                       },
@@ -2431,17 +2427,20 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                         child: Text(
                                           pickupText,
                                           maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontSize: 11,
                                             color: Colors.white
-                                                .withValues(alpha: 0.50),
+                                                        .withValues(
+                                                            alpha: 0.50),
                                             fontWeight: FontWeight.w500,
                                           ),
                                         ),
                                       ),
                                       Padding(
-                                        padding: const EdgeInsets.symmetric(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
                                             horizontal: 5),
                                         child: Icon(
                                           Icons.arrow_forward_rounded,
@@ -2454,11 +2453,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                         child: Text(
                                           dropoffText,
                                           maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontSize: 11,
                                             color: Colors.white
-                                                .withValues(alpha: 0.50),
+                                                        .withValues(
+                                                            alpha: 0.50),
                                             fontWeight: FontWeight.w500,
                                           ),
                                         ),
@@ -2480,8 +2481,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             return Container(
                               height: 3,
                               decoration: BoxDecoration(
-                                color:
-                                    Colors.white.withValues(alpha: 0.07),
+                                        color: Colors.white
+                                            .withValues(alpha: 0.07),
                                 borderRadius: BorderRadius.circular(2),
                               ),
                               child: FractionallySizedBox(
@@ -2495,7 +2496,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                     stops: [
                                       (_shimmerCtrl.value - 0.3)
                                           .clamp(0.0, 1.0),
-                                      _shimmerCtrl.value.clamp(0.0, 1.0),
+                                              _shimmerCtrl.value
+                                                  .clamp(0.0, 1.0),
                                       (_shimmerCtrl.value + 0.3)
                                           .clamp(0.0, 1.0),
                                     ],
@@ -2508,7 +2510,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                   child: Container(
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFE8C547),
-                                      borderRadius: BorderRadius.circular(2),
+                                              borderRadius:
+                                                  BorderRadius.circular(2),
                                     ),
                                   ),
                                 ),
@@ -2528,7 +2531,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           onTap: _showRiderCancelSearchSheet,
                           borderRadius: BorderRadius.circular(8),
                           splashColor: Colors.transparent,
-                          highlightColor: Colors.white.withValues(alpha: 0.04),
+                                  highlightColor:
+                                      Colors.white.withValues(alpha: 0.04),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 28, vertical: 12),
@@ -2537,7 +2541,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w500,
-                                color: Colors.white.withValues(alpha: 0.45),
+                                        color: Colors.white
+                                            .withValues(alpha: 0.45),
                                 letterSpacing: 0.1,
                               ),
                             ),
@@ -2703,9 +2708,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     color: info.color,
                     fontSize: size * 0.56,
                     fontWeight: FontWeight.w900,
-                    fontStyle: info.italic
-                        ? FontStyle.italic
-                        : FontStyle.normal,
+                    fontStyle:
+                        info.italic ? FontStyle.italic : FontStyle.normal,
                     fontFamily: 'Roboto',
                   ),
                 ),
@@ -2779,7 +2783,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             children: [
               Icon(Icons.apple, color: Colors.white, size: 28),
               SizedBox(width: 6),
-              Text('Apple Pay', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: -0.3)),
+              Text('Apple Pay',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.3)),
             ],
           ),
         ),
@@ -2802,7 +2811,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               TextSpan(text: 'o', style: TextStyle(color: Color(0xFFFBBC05))),
               TextSpan(text: 'g', style: TextStyle(color: Color(0xFF4285F4))),
               TextSpan(text: 'le ', style: TextStyle(color: Color(0xFF34A853))),
-              TextSpan(text: 'Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              TextSpan(
+                  text: 'Pay',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -2902,7 +2914,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             border: Border.all(color: gold, width: 2),
                             boxShadow: [
                               BoxShadow(
-                                color: gold.withValues(alpha: 0.3 * checkCtrl.value),
+                                        color: gold.withValues(
+                                            alpha: 0.3 * checkCtrl.value),
                                 blurRadius: 24,
                                 spreadRadius: 4,
                               ),
@@ -2991,7 +3004,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               blurRadius: 14,
                             ),
                             BoxShadow(
-                              color: Colors.white.withValues(alpha: 0.045),
+                                    color:
+                                        Colors.white.withValues(alpha: 0.045),
                               offset: const Offset(-4, -4),
                               blurRadius: 10,
                             ),
@@ -3017,7 +3031,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             // Name + rating
                             Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     driver.name,
@@ -3049,7 +3064,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                   Text(
                                     '${driver.vehicleColor} ${driver.vehicleMake} ${driver.vehicleModel}',
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.55),
+                                            color: Colors.white
+                                                .withValues(alpha: 0.55),
                                       fontSize: 13,
                                     ),
                                     maxLines: 1,
@@ -3071,7 +3087,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 decoration: neuBox(
                                   radius: 8,
                                   pressed: true,
-                                  borderColor: gold.withValues(alpha: 0.3),
+                                        borderColor:
+                                            gold.withValues(alpha: 0.3),
                                 ),
                                 child: Text(
                                   driver.vehiclePlate,
@@ -3102,7 +3119,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         child: LinearProgressIndicator(
                           value: value,
                           backgroundColor: Colors.white12,
-                          valueColor: const AlwaysStoppedAnimation(gold),
+                                  valueColor:
+                                      const AlwaysStoppedAnimation(gold),
                           minHeight: 3,
                         ),
                       ),
@@ -3389,7 +3407,6 @@ class _PressableScaleState extends State<_PressableScale> {
   }
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════
 //  Subtle gold particle painter for the "Searching nearby drivers" card.
 //  Lightweight version of SearchingDriverScreen particles — fewer dots,
@@ -3616,8 +3633,7 @@ class _FasterBadgeState extends State<FasterBadge>
                     color: const Color(0xFFF5D990),
                     shadows: [
                       Shadow(
-                        color: const Color(0xFFE8C547)
-                            .withValues(alpha: glow),
+                        color: const Color(0xFFE8C547).withValues(alpha: glow),
                         blurRadius: 8,
                       ),
                     ],

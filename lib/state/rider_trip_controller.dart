@@ -3,12 +3,21 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/lat_lng.dart';
+import '../models/ride_quote.dart';
 
 import '../services/api_service.dart';
 import '../services/directions_service.dart';
 import '../services/places_service.dart';
 import '../services/cache_service.dart';
+import '../services/socket_service.dart';
 import '../config/api_keys.dart';
+
+export '../models/ride_quote.dart';
+
+typedef RideQuoteFetcher = Future<Map<String, dynamic>> Function(
+  Map<String, dynamic> body,
+);
+typedef PricingRevisionFetcher = Future<Map<String, dynamic>> Function();
 
 // ═══════════════════════════════════════════════════════════════════
 //  Rider trip phases — mirrors Uber rider flow
@@ -26,31 +35,6 @@ enum RiderPhase {
   onTrip, // Rider in the car
   completed, // Trip done
   cancelled, // Cancelled by rider or driver
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  Ride type option
-// ═══════════════════════════════════════════════════════════════════
-class RideOption {
-  final String id;
-  final String name;
-  final String description;
-  final double priceEstimate; // USD
-  final int etaMinutes;
-  final String icon; // emoji or asset ref
-  final int capacity;
-  final double surgeMultiplier; // 1.0 = no surge
-
-  const RideOption({
-    required this.id,
-    required this.name,
-    required this.description,
-    required this.priceEstimate,
-    required this.etaMinutes,
-    required this.icon,
-    this.capacity = 4,
-    this.surgeMultiplier = 1.0,
-  });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -87,6 +71,8 @@ class MatchedDriver {
 // ═══════════════════════════════════════════════════════════════════
 //  State snapshot emitted by the controller
 // ═══════════════════════════════════════════════════════════════════
+const Object _unsetRiderValue = Object();
+
 class RiderTripState {
   final RiderPhase phase;
 
@@ -96,10 +82,11 @@ class RiderTripState {
   final String pickupLabel;
   final String dropoffLabel;
 
-  // Route
+  // Route and its server-side price snapshot.
   final RouteResult? route;
-
-  // Ride options
+  final RideQuote? quote;
+  final bool quoteLoading;
+  final bool quoteFailed;
   final List<RideOption> rideOptions;
   final RideOption? selectedOption;
 
@@ -114,6 +101,7 @@ class RiderTripState {
   // Scheduling & airport
   final DateTime? scheduledAt;
   final bool isAirportTrip;
+  final bool meetInside;
 
   // Airport metadata — populated when the rider comes through the
   // AirportTerminalSheet flow. Mirrors the Shopify widget's
@@ -160,6 +148,9 @@ class RiderTripState {
     this.pickupLabel = '',
     this.dropoffLabel = '',
     this.route,
+    this.quote,
+    this.quoteLoading = false,
+    this.quoteFailed = false,
     this.rideOptions = const [],
     this.selectedOption,
     this.driver,
@@ -168,6 +159,7 @@ class RiderTripState {
     this.driverBearing = 0,
     this.scheduledAt,
     this.isAirportTrip = false,
+    this.meetInside = false,
     this.airportCode,
     this.airportTerminal,
     this.airportPickupZone,
@@ -190,14 +182,18 @@ class RiderTripState {
     String? pickupLabel,
     String? dropoffLabel,
     RouteResult? route,
+    Object? quote = _unsetRiderValue,
+    bool? quoteLoading,
+    bool? quoteFailed,
     List<RideOption>? rideOptions,
-    RideOption? selectedOption,
+    Object? selectedOption = _unsetRiderValue,
     MatchedDriver? driver,
     int? etaMinutes,
     LatLng? driverLocation,
     double? driverBearing,
     DateTime? scheduledAt,
     bool? isAirportTrip,
+    bool? meetInside,
     String? airportCode,
     String? airportTerminal,
     String? airportPickupZone,
@@ -219,14 +215,21 @@ class RiderTripState {
       pickupLabel: pickupLabel ?? this.pickupLabel,
       dropoffLabel: dropoffLabel ?? this.dropoffLabel,
       route: route ?? this.route,
+      quote:
+          identical(quote, _unsetRiderValue) ? this.quote : quote as RideQuote?,
+      quoteLoading: quoteLoading ?? this.quoteLoading,
+      quoteFailed: quoteFailed ?? this.quoteFailed,
       rideOptions: rideOptions ?? this.rideOptions,
-      selectedOption: selectedOption ?? this.selectedOption,
+      selectedOption: identical(selectedOption, _unsetRiderValue)
+          ? this.selectedOption
+          : selectedOption as RideOption?,
       driver: driver ?? this.driver,
       etaMinutes: etaMinutes ?? this.etaMinutes,
       driverLocation: driverLocation ?? this.driverLocation,
       driverBearing: driverBearing ?? this.driverBearing,
       scheduledAt: scheduledAt ?? this.scheduledAt,
       isAirportTrip: isAirportTrip ?? this.isAirportTrip,
+      meetInside: meetInside ?? this.meetInside,
       airportCode: airportCode ?? this.airportCode,
       airportTerminal: airportTerminal ?? this.airportTerminal,
       airportPickupZone: airportPickupZone ?? this.airportPickupZone,
@@ -265,6 +268,7 @@ class RiderTripCancelCodes {
   static const clientCreateFailed = 'client:create_failed';
   static const clientConnectionError = 'client:connection_error';
   static const clientPaymentDeclined = 'client:payment_declined';
+  static const clientQuoteRefreshRequired = 'client:quote_refresh_required';
 
   /// True when the cancel was the "no driver available" timeout for an
   /// on-demand request. Gets the smooth home-screen handoff + gold toast.
@@ -282,24 +286,51 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   RiderTripState get state => _state;
 
   static const Duration _dispatchPollInterval = Duration(milliseconds: 800);
+  static const Duration _quotePollInterval = Duration(seconds: 20);
+  static const Duration _quoteDebounceDelay = Duration(milliseconds: 350);
 
   final DirectionsService _directions = DirectionsService(ApiKeys.webServices);
+  final RideQuoteFetcher _quoteFetcher;
+  final PricingRevisionFetcher _revisionFetcher;
 
   Timer? _searchTimer;
   Timer? _pollTimer;
   Timer? _timeoutTimer; // Fix 1: client-side search timeout
   Timer? _fsCancelDebounce; // Debounce timer for stale Firestore cancel events
-  StreamSubscription<DocumentSnapshot>? _fsMatchSub; // Firestore trip doc watcher
+  StreamSubscription<DocumentSnapshot>?
+      _fsMatchSub; // Firestore trip doc watcher
+  StreamSubscription<Map<String, dynamic>>? _pricingSub;
+  Timer? _quoteDebounce;
+  Timer? _quotePollTimer;
+  Future<void>? _quoteInFlight;
+  int _routeSeq = 0;
+  int _quoteSeq = 0;
+  int _revisionSeq = 0;
+  int? _pricingVersion;
+  String? _promotionsRevision;
+  bool _quoteFrozen = false;
+  String? _frozenQuoteSignature;
+  bool _categoryVisible = true;
+  bool _appInForeground = true;
+  bool _disposed = false;
   bool _isRequesting = false; // Fix 2: anti-double-tap guard
-  bool _driverMatched = false; // true once driver match is confirmed — blocks stale polls
-  double _surgeMultiplier = 1.0; // Surge pricing multiplier from backend
-  String? _currentStatus; // Last confirmed backend status string for transition validation
+  bool _driverMatched =
+      false; // true once driver match is confirmed — blocks stale polls
+  String?
+      _currentStatus; // Last confirmed backend status string for transition validation
   /// True while RiderTrackingScreen is on the navigation stack.
   /// Prevents _refreshActiveTripOnResume from falsely transitioning to cancelled.
   bool isOnTrackingScreen = false;
 
-  RiderTripController() {
+  RiderTripController({
+    RideQuoteFetcher? quoteFetcher,
+    PricingRevisionFetcher? revisionFetcher,
+    Stream<Map<String, dynamic>>? pricingUpdates,
+  })  : _quoteFetcher = quoteFetcher ?? ApiService.createRideQuote,
+        _revisionFetcher = revisionFetcher ?? ApiService.getPricingRevision {
     WidgetsBinding.instance.addObserver(this); // M3: observe lifecycle
+    _pricingSub = (pricingUpdates ?? SocketService.pricingUpdatedStream)
+        .listen(_onPricingUpdated);
   }
 
   /// Save trip state to persistent cache for instant recovery on app reopen.
@@ -307,7 +338,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _saveTripStateToCache() async {
     // Save trip ID when trip is active
     final tripId = _state.tripId;
-    if (tripId != null && (_state.phase == RiderPhase.driverAssigned ||
+    if (tripId != null &&
+        (_state.phase == RiderPhase.driverAssigned ||
         _state.phase == RiderPhase.driverArriving ||
         _state.phase == RiderPhase.onTrip)) {
       await CacheService.saveActiveTripId(tripId.toString());
@@ -340,23 +372,45 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // M3: when app returns to foreground with an active trip, re-sync state
     if (state == AppLifecycleState.resumed) {
+      _appInForeground = true;
       _refreshActiveTripOnResume();
+      _syncQuotePolling();
+      unawaited(_checkPricingRevision());
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _appInForeground = false;
+      _quoteDebounce?.cancel();
+      _quotePollTimer?.cancel();
     }
+    }
+
+  void setCategorySelectionVisible(bool visible) {
+    if (_categoryVisible == visible) return;
+    _categoryVisible = visible;
+    _syncQuotePolling();
+    if (visible) unawaited(_checkPricingRevision());
   }
 
   Future<void> _refreshActiveTripOnResume() async {
     final tripId = _state.tripId;
-    if (tripId == null) { return; } // no trip
+    if (tripId == null) {
+      return;
+    } // no trip
     // Skip if the tracking screen is active — it manages its own real-time listeners
-    if (isOnTrackingScreen) { return; }
+    if (isOnTrackingScreen) {
+      return;
+    }
     final phase = _state.phase;
     // Only refresh when actively on-trip. Skip driverAssigned/driverArriving —
     // those phases already have a confirmed match and the UI is transitioning
     // to the tracking screen. Re-checking here causes false cancellations
     // (e.g. when an FCM push triggers a lifecycle resumed event).
-    if (phase != RiderPhase.onTrip) { return; }
+    if (phase != RiderPhase.onTrip) {
+      return;
+    }
     try {
       final status = await ApiService.getDispatchStatus(tripId);
       final tripStatus = status['status']?.toString() ?? '';
@@ -388,15 +442,19 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   // ─── Location selection ──────────────────────────────────────
 
   void setPickup(PlaceDetails place, String label) {
+    final previous = _state.pickup;
+    final unchanged = previous?.lat == place.lat && previous?.lng == place.lng;
     _state = _state.copyWith(pickup: place, pickupLabel: label);
     notifyListeners();
-    _tryFetchRoute();
+    if (!unchanged || _state.route == null) _tryFetchRoute();
   }
 
   void setDropoff(PlaceDetails place, String label) {
+    final previous = _state.dropoff;
+    final unchanged = previous?.lat == place.lat && previous?.lng == place.lng;
     _state = _state.copyWith(dropoff: place, dropoffLabel: label);
     notifyListeners();
-    _tryFetchRoute();
+    if (!unchanged || _state.route == null) _tryFetchRoute();
   }
 
   /// The driver's note from the pickup-confirm page. Empty clears — the
@@ -417,6 +475,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       stopLng: lng,
     );
     notifyListeners();
+    _tryFetchRoute();
   }
 
   /// The stop as a point, or null when there is none (or only the text
@@ -432,7 +491,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   /// Retry fetching the route after a failure.
   void retryFetchRoute() => _tryFetchRoute();
 
-  /// Set a pre-fetched route directly without triggering a network request.
+  /// Set a pre-fetched route directly; pricing still comes from the server.
   void setPreloadedRoute({
     required PlaceDetails pickup,
     required String pickupLabel,
@@ -440,18 +499,17 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     required String dropoffLabel,
     required RouteResult route,
   }) {
-    final options = _generateRideOptions(route);
+    _routeSeq++;
     _state = _state.copyWith(
       pickup: pickup,
       pickupLabel: pickupLabel,
       dropoff: dropoff,
       dropoffLabel: dropoffLabel,
       route: route,
-      rideOptions: options,
-      selectedOption: null,
       phase: RiderPhase.previewRoute,
+      routeFetchFailed: false,
     );
-    notifyListeners();
+    _restartQuoteForInputs();
   }
 
   void startLocationSelection() {
@@ -473,11 +531,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     if (_state.phase != RiderPhase.pickingLocation) return;
     _state = _state.copyWith(phase: RiderPhase.previewRoute);
     notifyListeners();
+    _syncQuotePolling();
   }
 
   void setSchedule(DateTime? dateTime) {
+    if (_state.scheduledAt == dateTime) return;
     _state = _state.copyWith(scheduledAt: dateTime);
-    notifyListeners();
+    _restartQuoteForInputs();
   }
 
   /// Stash all the airport metadata at once so the dispatch call can
@@ -496,7 +556,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       airportPickupZone: pickupZone,
       airportFlight: flight,
     );
-    notifyListeners();
+    _restartQuoteForInputs();
   }
 
   /// Wipe airport metadata back to null / false. Call this whenever a
@@ -504,6 +564,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   /// code / terminal / flight don't leak into the new dispatch payload.
   void clearAirportMetadata() {
     if (!_state.isAirportTrip &&
+        !_state.meetInside &&
         _state.airportCode == null &&
         _state.airportTerminal == null &&
         _state.airportPickupZone == null &&
@@ -517,26 +578,35 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       pickupLabel: _state.pickupLabel,
       dropoffLabel: _state.dropoffLabel,
       route: _state.route,
-      rideOptions: _state.rideOptions,
-      selectedOption: _state.selectedOption,
       driver: _state.driver,
       etaMinutes: _state.etaMinutes,
       driverLocation: _state.driverLocation,
       driverBearing: _state.driverBearing,
       scheduledAt: _state.scheduledAt,
       isAirportTrip: false,
+      pickupNote: _state.pickupNote,
+      stopAddress: _state.stopAddress,
+      stopLat: _state.stopLat,
+      stopLng: _state.stopLng,
       tripId: _state.tripId,
       firestoreTripId: _state.firestoreTripId,
       cancelReason: _state.cancelReason,
       cancelCode: _state.cancelCode,
       routeFetchFailed: _state.routeFetchFailed,
     );
-    notifyListeners();
+    _restartQuoteForInputs();
   }
 
   void setAirportTrip(bool isAirport) {
+    if (_state.isAirportTrip == isAirport) return;
     _state = _state.copyWith(isAirportTrip: isAirport);
-    notifyListeners();
+    _restartQuoteForInputs();
+  }
+
+  void setMeetInside(bool value) {
+    if (_state.meetInside == value) return;
+    _state = _state.copyWith(meetInside: value);
+    _restartQuoteForInputs();
   }
 
   // ─── Route preview ──────────────────────────────────────────
@@ -544,6 +614,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _tryFetchRoute() async {
     if (_state.pickup == null || _state.dropoff == null) return;
 
+    final requestSeq = ++_routeSeq;
     final origin = LatLng(_state.pickup!.lat, _state.pickup!.lng);
     final dest = LatLng(_state.dropoff!.lat, _state.dropoff!.lng);
     // A stop makes the route origin → stop → destination, one continuous
@@ -551,14 +622,14 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final stop = stopPoint;
     final waypoints = stop == null ? null : [stop];
 
-    // INSTANT: Show estimated route + estimated prices immediately.
-    // Cards appear right away — no shimmer wait.
     final estimatedRoute = _directions.getEstimatedRoute(
       origin: origin,
       destination: dest,
       waypoints: waypoints,
     );
-    final estimatedOptions = _generateRideOptions(estimatedRoute);
+    final airportTrip = _state.airportCode != null ||
+        _isAirport(_state.pickupLabel) ||
+        _isAirport(_state.dropoffLabel);
     _state = _state.copyWith(
       // Never flip the phase out of the map picker: that flip mid-drag
       // unmounted the picker overlays and fired the route-fit flight
@@ -573,73 +644,48 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         RiderPhase.searchingDriver ||
         RiderPhase.driverAssigned ||
         RiderPhase.driverArriving ||
-        RiderPhase.onTrip => _state.phase,
+        RiderPhase.onTrip =>
+          _state.phase,
         _ => RiderPhase.previewRoute,
       },
       route: estimatedRoute,
-      rideOptions: estimatedOptions,
-      selectedOption: null,
+      isAirportTrip: airportTrip,
       routeFetchFailed: false,
     );
-    notifyListeners();
+    _restartQuoteForInputs();
 
-    // BACKGROUND: Fetch real route + surge and refine prices when ready.
-    // Don't let slow surge block cards — fetch both in parallel,
-    // update route+prices as soon as directions arrive.
-    RouteResult? routeResult;
     try {
-      // Fire surge request in parallel but don't block on it
-      final surgeFuture = ApiService.getCurrentSurge(_state.pickup!.lat, _state.pickup!.lng)
-          .timeout(const Duration(seconds: 5))
-          .catchError((_) => <String, dynamic>{'surge_multiplier': 1.0});
-      // Real route from Directions API
-      routeResult = await _directions.getRoute(
-          origin: origin, destination: dest, waypoints: waypoints);
-
-      // Update with real route immediately (don't wait for surge)
-      if (routeResult != null) {
-        final options = _generateRideOptions(routeResult);
+      final routeResult = await _directions.getRoute(
+        origin: origin,
+        destination: dest,
+        waypoints: waypoints,
+      );
+      if (_disposed || requestSeq != _routeSeq) return;
+      if (routeResult == null) {
+        _state = _state.copyWith(routeFetchFailed: true);
+      } else {
         _state = _state.copyWith(
-          // Same picker guard as the estimated route above, plus the
-          // post-request guard: never leave searchingDriver/assigned/onTrip.
           phase: switch (_state.phase) {
             RiderPhase.pickingLocation => RiderPhase.pickingLocation,
             RiderPhase.requesting ||
             RiderPhase.searchingDriver ||
             RiderPhase.driverAssigned ||
             RiderPhase.driverArriving ||
-            RiderPhase.onTrip => _state.phase,
+            RiderPhase.onTrip =>
+              _state.phase,
             _ => RiderPhase.previewRoute,
           },
           route: routeResult,
-          rideOptions: options,
-          selectedOption: null,
           routeFetchFailed: false,
         );
-        notifyListeners();
       }
-
-      // Apply surge multiplier when it arrives and recalculate
-      try {
-        final surgeData = await surgeFuture;
-        final surge = (surgeData['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
-        if (surge != _surgeMultiplier) {
-          _surgeMultiplier = surge;
-          final refreshedOptions = _generateRideOptions(routeResult ?? estimatedRoute);
-          _state = _state.copyWith(rideOptions: refreshedOptions);
           notifyListeners();
-        }
-      } catch (_) {
-        _surgeMultiplier = 1.0;
-      }
-    } catch (_) {
-      _surgeMultiplier = 1.0;
-      if (routeResult == null) {
-        // Route failed — keep estimated prices already shown
+    } catch (e) {
+      if (_disposed || requestSeq != _routeSeq) return;
+      debugPrint('[RiderTrip] route fetch failed: $e');
         _state = _state.copyWith(routeFetchFailed: true);
         notifyListeners();
       }
-    }
   }
 
   static bool _isAirport(String label) {
@@ -652,147 +698,289 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         RegExp(r'\b(mia|jfk|lax|atl|ord|dfw|bhm|sfo|ewr|lga)\b').hasMatch(l);
   }
 
-  List<RideOption> _generateRideOptions(RouteResult route) {
-    // Prefer traffic-aware durationSeconds from the API; fall back to parsing durationText
-    final rawMins = route.durationSeconds != null && route.durationSeconds! > 0
-        ? (route.durationSeconds! / 60.0).ceil()
-        : _parseDurationMinutes(route.durationText);
-    final rawMiles = route.distanceMeters / 1609.344;
-
-    // Sanity clamp: a corrupt route (bad coordinates, or the straight-line
-    // fallback between far-apart points) otherwise explodes the fare — a
-    // $33k estimate once reached Apple Pay and was rejected by the backend
-    // ($1,000 PaymentIntent cap), surfacing as a bogus "Payment Declined".
-    // Cap inputs at 500 mi / 12 h and flag the estimate as unreliable.
-    const double maxMiles = 500.0;
-    const int maxMins = 720;
-    final routeIsSane =
-        rawMiles > 0 && rawMiles <= maxMiles && rawMins > 0 && rawMins <= maxMins;
-    if (!routeIsSane) {
-      debugPrint(
-          '[RiderTrip] insane route (${rawMiles.toStringAsFixed(1)} mi, $rawMins min) — clamping fare inputs');
-      _state = _state.copyWith(routeFetchFailed: true);
-    }
-    final mins = rawMins < 1 ? 1 : (rawMins > maxMins ? maxMins : rawMins);
-    final miles = rawMiles < 0.5 ? 0.5 : (rawMiles > maxMiles ? maxMiles : rawMiles);
-
-    // ── Competitive anchor: matches the cheaper of Uber/Lyft's cards ──
-    //
-    // There is no official real-time pricing API from either company, so
-    // the anchor is the published rate card per tier (the cheaper of the
-    // two) and our total matches it — the rider pays the same as on Uber
-    // (pricing policy 2026-08). Our surge multiplier moves for the same
-    // reasons theirs does — traffic, rain, holidays — so the match holds
-    // on those days too.
-    (double, double, double, double, double) anchorRates(String tier) {
-      switch (tier) {
-        case 'vip':
-          return (7.50, 2.75, 0.50, 3.00, 20.00);
-        case 'premium':
-          return (3.00, 1.75, 0.30, 2.75, 12.00);
-        // Electric Pro (2026-10-13): the midpoint between Standard and
-        // Premium — only electric vehicles serve it (backend eligibility).
-        case 'electric_pro':
-          return (2.50, 1.40, 0.25, 2.60, 10.00);
-        case 'compact':
-          return (2.50, 1.15, 0.22, 2.50, 9.00);
-        default: // standard
-          return (2.00, 1.00, 0.20, 2.50, 8.00);
-      }
+  int _routeDurationMinutes(RouteResult? route) {
+    if (route == null) return 0;
+    final seconds = route.durationSeconds;
+    if (seconds != null && seconds > 0) return (seconds / 60).ceil();
+    return _parseDurationMinutes(route.durationText);
     }
 
-    // Miami-market cards run ~8% above Birmingham's; everywhere else 1.0.
-    final plat = _state.pickup?.lat ?? 0;
-    final plng = _state.pickup?.lng ?? 0;
-    final inFlorida =
-        plat >= 24.3 && plat <= 31.1 && plng >= -87.7 && plng <= -79.8;
-    final stateMult = inFlorida ? 1.08 : 1.0;
-    double anchoredTotal(String tier) {
-      final r = anchorRates(tier);
-      final anchor =
-          (r.$1 + miles * r.$2 + mins * r.$3 + r.$4) * stateMult;
-      return anchor > r.$5 ? anchor : r.$5;
-    }
-
-    // Florida launch promo (user spec 2026-08-04): $5 off EVERY trip whose
-    // pickup is in Florida, taken off the FINAL price (after airport and
-    // surge) so the discount the rider sees is exactly five dollars.
-    // Floored at $3 so a short trip can never go free or negative.
-    double flDiscount(double v) =>
-        inFlorida ? math.max(v - 5.0, 3.0) : v;
-
-    // Airport surcharge: +$8 flat + 15% uplift, on top of the anchor.
-    final airportTrip =
-        _isAirport(_state.pickupLabel) || _isAirport(_state.dropoffLabel);
-    double withAirport(double v) => airportTrip ? (v + 8.0) * 1.15 : v;
-    _state = _state.copyWith(isAirportTrip: airportTrip);
-
-    // Apply surge multiplier (fetched async, default 1.0)
-    final surge = _surgeMultiplier;
-
-    // Use real route duration from API (traffic-aware seconds) when available,
-    // otherwise parse "12 min" or "1 h 5 min" text from durationText.
-    // Add small category offsets (VIP vehicles take slightly longer to arrive).
-    final baseDuration = mins.clamp(1, 120);
-
+  List<RideOption> _placeholderRideOptions() {
+    final duration = _routeDurationMinutes(_state.route);
     return [
       RideOption(
         id: 'suburban',
         name: 'VIP',
         description: 'Spacious • Leather • Snacks & Drinks',
-        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('vip')) * surge)),
-        etaMinutes: baseDuration + 3,
+        priceEstimate: 0,
+        etaMinutes: duration == 0 ? 0 : duration + 3,
         icon: '🚐',
         capacity: 7,
-        surgeMultiplier: surge,
       ),
-      // SUV XL sits between BLACK and PREMIUM: priced 10% over Premium,
-      // paid 68/32 in the driver's favour, 5 free wait minutes then $1/min.
-      // Any driver with a registered SUV can take it.
       RideOption(
         id: 'suv_xl',
         name: 'SUV XL',
         description: 'Up to 6 • XL luggage • Climate',
-        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('premium')) * surge)),
-        etaMinutes: baseDuration + 2,
+        priceEstimate: 0,
+        etaMinutes: duration == 0 ? 0 : duration + 2,
         icon: '🚙',
         capacity: 6,
-        surgeMultiplier: surge,
       ),
       RideOption(
         id: 'electric_pro',
         name: 'Electric Pro',
         description: 'Electric • Zero emissions • Silent ride',
-        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('electric_pro')) * surge)),
-        etaMinutes: baseDuration + 2,
+        priceEstimate: 0,
+        etaMinutes: duration == 0 ? 0 : duration + 2,
         icon: '⚡',
         capacity: 5,
-        surgeMultiplier: surge,
       ),
       RideOption(
         id: 'camry',
         name: 'Sedan',
         description: 'Comfort • Climate • Charger',
-        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('compact')) * surge)),
-        etaMinutes: baseDuration + 2,
+        priceEstimate: 0,
+        etaMinutes: duration == 0 ? 0 : duration + 2,
         icon: '🚙',
         capacity: 4,
-        surgeMultiplier: surge,
       ),
       RideOption(
         id: 'fusion',
         name: 'Comfort',
         description: 'Clean • Safe • Efficient',
-        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('standard')) * surge)),
-        etaMinutes: baseDuration,
+        priceEstimate: 0,
+        etaMinutes: duration,
         icon: '🚗',
         capacity: 4,
-        surgeMultiplier: surge,
       ),
     ];
   }
 
-  double _round(double v) => (v * 100).roundToDouble() / 100;
+  bool get _hasQuoteEndpoints =>
+      _state.pickup != null && _state.dropoff != null;
+
+  void _restartQuoteForInputs() {
+    _quoteFrozen = false;
+    _frozenQuoteSignature = null;
+    _quoteSeq++;
+    _quoteDebounce?.cancel();
+    final options = _placeholderRideOptions();
+    final selectedId = _state.selectedOption?.id;
+    RideOption? selected;
+    for (final option in options) {
+      if (option.id == selectedId) selected = option;
+    }
+    _state = _state.copyWith(
+      quote: null,
+      quoteLoading: _hasQuoteEndpoints,
+      quoteFailed: false,
+      rideOptions: options,
+      selectedOption: selected,
+    );
+    notifyListeners();
+    if (_hasQuoteEndpoints) {
+      _scheduleQuoteRefresh();
+    } else {
+      _syncQuotePolling();
+    }
+  }
+
+  double _quoteCoordinate(double value) =>
+      double.parse(value.toStringAsFixed(6));
+
+  Map<String, dynamic>? _quoteBody() {
+    final pickup = _state.pickup;
+    final dropoff = _state.dropoff;
+    if (pickup == null || dropoff == null) return null;
+    final stopLat = _state.stopLat;
+    final stopLng = _state.stopLng;
+    return <String, dynamic>{
+      'pickup_lat': _quoteCoordinate(pickup.lat),
+      'pickup_lng': _quoteCoordinate(pickup.lng),
+      'dropoff_lat': _quoteCoordinate(dropoff.lat),
+      'dropoff_lng': _quoteCoordinate(dropoff.lng),
+      if (stopLat != null && stopLng != null) ...{
+        'stop_lat': _quoteCoordinate(stopLat),
+        'stop_lng': _quoteCoordinate(stopLng),
+      },
+      'is_scheduled': _state.scheduledAt != null,
+      'is_airport': _state.isAirportTrip,
+      'meet_inside': _state.meetInside,
+    };
+  }
+
+  String _quoteSignature(Map<String, dynamic> body) => <Object?>[
+        body['pickup_lat'],
+        body['pickup_lng'],
+        body['dropoff_lat'],
+        body['dropoff_lng'],
+        body['stop_lat'],
+        body['stop_lng'],
+        body['is_scheduled'],
+        body['is_airport'],
+        body['meet_inside'],
+      ].join('|');
+
+  bool get _canAutoRefreshQuote =>
+      !_disposed &&
+      !_quoteFrozen &&
+      _appInForeground &&
+      _categoryVisible &&
+      _hasQuoteEndpoints &&
+      (_state.phase == RiderPhase.previewRoute ||
+          _state.phase == RiderPhase.selectingRide);
+
+  void _onPricingUpdated(Map<String, dynamic> _) {
+    if (_canAutoRefreshQuote) _scheduleQuoteRefresh();
+  }
+
+  void _syncQuotePolling() {
+    _quotePollTimer?.cancel();
+    if (!_canAutoRefreshQuote) return;
+    _quotePollTimer = Timer.periodic(_quotePollInterval, (_) {
+      unawaited(_checkPricingRevision());
+    });
+  }
+
+  void _scheduleQuoteRefresh() {
+    if (_disposed || _quoteFrozen) return;
+    _quoteDebounce?.cancel();
+    _quoteDebounce = Timer(_quoteDebounceDelay, () {
+      if (!_disposed && !_quoteFrozen) unawaited(refreshQuote());
+    });
+  }
+
+  Future<void> refreshQuote() {
+    _quoteDebounce?.cancel();
+    return _requestQuote();
+  }
+
+  Future<void> _requestQuote() {
+    final body = _quoteBody();
+    if (body == null) return Future.value();
+    final signature = _quoteSignature(body);
+    final requestSeq = ++_quoteSeq;
+    if (_state.quote == null && !_state.quoteLoading) {
+      _state = _state.copyWith(quoteLoading: true, quoteFailed: false);
+      notifyListeners();
+    }
+    final future = _fetchAndApplyQuote(body, signature, requestSeq);
+    _quoteInFlight = future;
+    return future;
+  }
+
+  Future<void> _fetchAndApplyQuote(
+    Map<String, dynamic> body,
+    String signature,
+    int requestSeq,
+  ) async {
+    try {
+      final response = await _quoteFetcher(body);
+      final quote = RideQuote.fromJson(response);
+      final options = rideOptionsFromQuote(response);
+      if (options.isEmpty || options.any((option) => !option.hasServerPrice)) {
+        throw const FormatException('Quote is missing usable tier prices');
+      }
+      if (_disposed ||
+          requestSeq != _quoteSeq ||
+          signature != _quoteSignature(_quoteBody() ?? const {})) {
+        return;
+      }
+      final selectedId = _state.selectedOption?.id;
+      RideOption? selected;
+      for (final option in options) {
+        if (option.id == selectedId) selected = option;
+      }
+      _pricingVersion = quote.pricingVersion;
+      _state = _state.copyWith(
+        quote: quote,
+        quoteLoading: false,
+        quoteFailed: false,
+        rideOptions: options,
+        selectedOption: selected,
+      );
+      notifyListeners();
+      unawaited(_checkPricingRevision());
+    } catch (e) {
+      if (_disposed || requestSeq != _quoteSeq) return;
+      debugPrint('[RiderTrip] quote fetch failed: $e');
+      _state = _state.copyWith(quoteLoading: false, quoteFailed: true);
+      notifyListeners();
+    } finally {
+      if (requestSeq == _quoteSeq) {
+        _quoteInFlight = null;
+        _syncQuotePolling();
+      }
+    }
+  }
+
+  Future<void> _checkPricingRevision() async {
+    if (_disposed || _quoteFrozen) return;
+    final requestSeq = ++_revisionSeq;
+    try {
+      final response = await _revisionFetcher();
+      if (_disposed || requestSeq != _revisionSeq || _quoteFrozen) return;
+      final version = (response['pricing_version'] as num?)?.toInt();
+      final promotions = response['promotions_revision']?.toString() ?? '0';
+      final pricingChanged = _state.quote != null &&
+          _pricingVersion != null &&
+          version != _pricingVersion;
+      final promotionsChanged =
+          _promotionsRevision != null && promotions != _promotionsRevision;
+      _promotionsRevision = promotions;
+      final expiring = _state.quote?.expiresWithin(
+            const Duration(seconds: 60),
+          ) ??
+          false;
+      if (_canAutoRefreshQuote &&
+          (pricingChanged || promotionsChanged || expiring)) {
+        _scheduleQuoteRefresh();
+      }
+    } catch (e) {
+      if (!_disposed && requestSeq == _revisionSeq) {
+        debugPrint('[RiderTrip] pricing revision failed: $e');
+      }
+    }
+  }
+
+  Future<bool> prepareQuoteForConfirmation() async {
+    _quoteDebounce?.cancel();
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final inFlight = _quoteInFlight;
+      if (inFlight != null) await inFlight;
+      final quote = _state.quote;
+      final option = _state.selectedOption;
+      final body = _quoteBody();
+      if (quote != null &&
+          option != null &&
+          option.hasServerPrice &&
+          !_state.quoteFailed &&
+          body != null &&
+          !quote.expiresWithin(const Duration(seconds: 60))) {
+        _quoteFrozen = true;
+        _frozenQuoteSignature = _quoteSignature(body);
+        _quotePollTimer?.cancel();
+        return true;
+      }
+      if (attempt == 0 && body != null) await _requestQuote();
+    }
+    return false;
+  }
+
+  void releaseQuoteConfirmation() {
+    _quoteFrozen = false;
+    _frozenQuoteSignature = null;
+    _syncQuotePolling();
+  }
+
+  bool get hasFrozenQuoteForConfirmation {
+    final body = _quoteBody();
+    return _quoteFrozen &&
+        body != null &&
+        _frozenQuoteSignature == _quoteSignature(body) &&
+        _state.quote != null &&
+        !_state.quote!.expiresWithin(Duration.zero);
+  }
 
   int _parseDurationMinutes(String text) {
     // "12 min" or "1 h 5 min"
@@ -816,6 +1004,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   void showRideOptions() {
     _state = _state.copyWith(phase: RiderPhase.selectingRide);
     notifyListeners();
+    _syncQuotePolling();
+    if (_state.quote == null && !_state.quoteLoading) {
+      _restartQuoteForInputs();
+    }
   }
 
   void selectRideOption(RideOption option) {
@@ -851,6 +1043,18 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
     // Save pre-request state for rollback on error
     final previousPhase = _state.phase;
+    final prepared = await prepareQuoteForConfirmation();
+    if (!prepared || !hasFrozenQuoteForConfirmation) {
+      _isRequesting = false;
+      releaseQuoteConfirmation();
+      _state = _state.copyWith(
+        cancelReason:
+            'Prices changed or are unavailable. Refresh them and try again.',
+        cancelCode: RiderTripCancelCodes.clientQuoteRefreshRequired,
+      );
+      notifyListeners();
+      return;
+    }
     final previousOption = _state.selectedOption;
 
     _state = _state.copyWith(phase: RiderPhase.requesting);
@@ -879,7 +1083,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         // canonical English fallback for callers that don't translate.
         _state = _state.copyWith(
           phase: RiderPhase.cancelled,
-          cancelReason: 'No internet connection. Check your network and try again.',
+          cancelReason:
+              'No internet connection. Check your network and try again.',
           cancelCode: RiderTripCancelCodes.clientNoInternet,
         );
         notifyListeners();
@@ -899,15 +1104,19 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       var pickupAddr = _state.pickupLabel;
       var dropoffAddr = _state.dropoffLabel;
       final places = PlacesService(ApiKeys.webServices);
-      if (pickupAddr.isEmpty || pickupAddr.toLowerCase() == 'current location') {
+      if (pickupAddr.isEmpty ||
+          pickupAddr.toLowerCase() == 'current location') {
         try {
-          final resolved = await places.reverseGeocode(lat: pickup.lat, lng: pickup.lng);
+          final resolved =
+              await places.reverseGeocode(lat: pickup.lat, lng: pickup.lng);
           if (resolved != null && resolved.isNotEmpty) pickupAddr = resolved;
         } catch (_) {}
       }
-      if (dropoffAddr.isEmpty || dropoffAddr.toLowerCase() == 'current location') {
+      if (dropoffAddr.isEmpty ||
+          dropoffAddr.toLowerCase() == 'current location') {
         try {
-          final resolved = await places.reverseGeocode(lat: dropoff.lat, lng: dropoff.lng);
+          final resolved =
+              await places.reverseGeocode(lat: dropoff.lat, lng: dropoff.lng);
           if (resolved != null && resolved.isNotEmpty) dropoffAddr = resolved;
         } catch (_) {}
       }
@@ -926,14 +1135,16 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       final result = await ApiService.dispatchRideRequest(
         riderId: userId,
         pickupAddress: pickupAddr.isNotEmpty ? pickupAddr : 'current location',
-        dropoffAddress: dropoffAddr.isNotEmpty ? dropoffAddr : 'current location',
+        dropoffAddress:
+            dropoffAddr.isNotEmpty ? dropoffAddr : 'current location',
         pickupLat: pickup.lat,
         pickupLng: pickup.lng,
         dropoffLat: dropoff.lat,
         dropoffLng: dropoff.lng,
-        fare: _state.selectedOption?.priceEstimate,
-        vehicleType: _state.selectedOption?.name,
+        quoteId: _state.quote!.id,
+        vehicleType: _state.selectedOption!.canonicalTier,
         isAirport: _state.isAirportTrip,
+        meetInside: _state.meetInside,
         airportCode: _state.airportCode,
         terminal: _state.airportTerminal,
         pickupZone: _state.airportPickupZone,
@@ -941,9 +1152,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         stripePaymentIntentId: _heldPaymentIntentId,
         stopLat: _state.stopLat,
         stopLng: _state.stopLng,
-        stopAddress: (_state.stopAddress ?? '').isNotEmpty
-            ? _state.stopAddress
-            : null,
+        stopAddress:
+            (_state.stopAddress ?? '').isNotEmpty ? _state.stopAddress : null,
       );
 
       final tripId = result['trip_id'] as int?;
@@ -973,6 +1183,27 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       // the rider fixes their card instead of retrying a doomed request.
       final apiErr = e is ApiException ? e : null;
       final isPaymentDeclined = apiErr?.statusCode == 402;
+      final requiresRequote = apiErr?.statusCode == 409;
+      if (requiresRequote) {
+        releaseQuoteConfirmation();
+        final staleHold = _heldPaymentIntentId;
+        _heldPaymentIntentId = null;
+        if (staleHold != null) {
+          unawaited(ApiService.cancelPaymentIntent(staleHold));
+        }
+        _state = _state.copyWith(
+          phase: previousPhase,
+          quote: null,
+          quoteLoading: true,
+          quoteFailed: false,
+          cancelReason:
+              'Prices changed or expired. Review the refreshed price and try again.',
+          cancelCode: RiderTripCancelCodes.clientQuoteRefreshRequired,
+        );
+        notifyListeners();
+        await refreshQuote();
+        return;
+      }
       // Rollback to previous state so rider can retry
       _state = _state.copyWith(
         phase: previousPhase,
@@ -995,9 +1226,17 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   /// Prevents invalid status regressions caused by stale Firestore updates.
   bool _isValidTransition(String? from, String to) {
     // Terminal states cannot transition to anything else
-    if (from == 'completed' || from == 'cancelled' || from == 'canceled') return false;
+    if (from == 'completed' || from == 'cancelled' || from == 'canceled')
+      return false;
     // Ordered status progression
-    const order = ['searching', 'accepted', 'driver_en_route', 'driver_arrived', 'in_progress', 'completed'];
+    const order = [
+      'searching',
+      'accepted',
+      'driver_en_route',
+      'driver_arrived',
+      'in_progress',
+      'completed'
+    ];
     final fromIdx = order.indexOf(from ?? '');
     final toIdx = order.indexOf(to);
     // If either status is unknown (e.g. 'cancelled'), allow — other guards handle it
@@ -1028,12 +1267,18 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       // Do NOT skip if the driver has already accepted (fast-accept race condition).
       if (fsFirstEvent) {
         fsFirstEvent = false;
-        if (status == 'searching' || status == 'pending' || status == 'requested' || status == 'cancelled' || status == 'canceled' || status.isEmpty) return;
+        if (status == 'searching' ||
+            status == 'pending' ||
+            status == 'requested' ||
+            status == 'cancelled' ||
+            status == 'canceled' ||
+            status.isEmpty) return;
         // status == 'accepted' or 'driver_en_route' on first event → fall through and process
       }
       // State machine: reject invalid status regressions (e.g. stale cancelled after match)
       if (!_isValidTransition(_currentStatus, status)) {
-        debugPrint('[RiderTrip] Firestore: ignoring invalid transition $_currentStatus → $status');
+        debugPrint(
+            '[RiderTrip] Firestore: ignoring invalid transition $_currentStatus → $status');
         return;
       }
       if (status == 'accepted' || status == 'driver_en_route') {
@@ -1046,7 +1291,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         try {
           _onDriverMatched(data, tripId);
         } catch (e) {
-          debugPrint('⚠️ _onDriverMatched from Firestore threw: $e — restarting poll');
+          debugPrint(
+              '⚠️ _onDriverMatched from Firestore threw: $e — restarting poll');
           _driverMatched = false;
           _startDispatchPolling(tripId);
         }
@@ -1067,9 +1313,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           // can branch into the smooth-toast flow when it's an auto-cancel.
           // The snapshot data (`data`) is the raw Firestore map —
           // `_currentStatus` is just the status string, not the doc.
-          final rawReason = (data['cancelReason'] ??
-                  data['cancel_reason'])
-              ?.toString();
+          final rawReason =
+              (data['cancelReason'] ?? data['cancel_reason'])?.toString();
           _state = _state.copyWith(
             phase: RiderPhase.cancelled,
             cancelReason: _userFriendlyCancelReason(rawReason),
@@ -1107,7 +1352,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // ── Polling fallback — safety net behind Firestore real-time listener ──
     Future<void> checkStatus(Timer? timer) async {
       // If driver already matched (e.g. via Firestore), ignore stale poll responses
-      if (_driverMatched) { timer?.cancel(); return; }
+      if (_driverMatched) {
+        timer?.cancel();
+        return;
+      }
       try {
         final status = await ApiService.getDispatchStatus(tripId);
         final tripStatus = status['status']?.toString() ?? '';
@@ -1119,13 +1367,17 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           try {
             _onDriverMatched(status, tripId);
           } catch (e) {
-            debugPrint('⚠️ _onDriverMatched from poll threw: $e — will retry next poll');
+            debugPrint(
+                '⚠️ _onDriverMatched from poll threw: $e — will retry next poll');
             _driverMatched = false;
             // Don't cancel timer — let next poll retry
           }
         } else if (tripStatus == 'cancelled' || tripStatus == 'canceled') {
           // Guard D: ignore stale poll result if driver was already matched
-          if (_driverMatched) { timer?.cancel(); return; }
+          if (_driverMatched) {
+            timer?.cancel();
+            return;
+          }
           // Check if backend has assigned a driver despite the cancelled status
           // (data race: driver accepted but DB hasn't propagated yet)
           final tripData = status['trip'] as Map<String, dynamic>?;
@@ -1133,7 +1385,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
               tripData!['driver_id'].toString().isNotEmpty;
           if (hasDriverId) {
             // Driver is assigned — treat as match, let next poll confirm
-            debugPrint('[RiderTrip] Poll saw cancelled but driver_id present — ignoring stale cancel');
+            debugPrint(
+                '[RiderTrip] Poll saw cancelled but driver_id present — ignoring stale cancel');
             return;
           }
           timer?.cancel();
@@ -1177,7 +1430,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // Validate driver_id exists before creating MatchedDriver.
     final driverId = field('driver_id', 'driverId');
     if (driverId == null || driverId.isEmpty) {
-      debugPrint('⚠️ Driver matched but driver_id is null/empty — will retry on next poll');
+      debugPrint(
+          '⚠️ Driver matched but driver_id is null/empty — will retry on next poll');
       _startDispatchPolling(tripId);
       return;
     }
@@ -1185,14 +1439,19 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
     // Extract photo URL — try flat field first, then nested driver object
     final photoUrl = field('driver_photo_url', 'driverPhotoUrl') ??
-        (data['driver'] is Map ? (data['driver'] as Map)['photo_url']?.toString() : null) ??
+        (data['driver'] is Map
+            ? (data['driver'] as Map)['photo_url']?.toString()
+            : null) ??
         '';
 
     final driver = MatchedDriver(
       id: driverId,
       name: field('driver_name', 'driverName') ?? 'Driver',
-      rating: (data['driver_rating'] ?? data['driverRating'] as num?)?.toDouble() ?? 4.9,
-      totalTrips: (data['driver_trips'] ?? data['driverTrips'] as num?)?.toInt() ?? 0,
+      rating:
+          (data['driver_rating'] ?? data['driverRating'] as num?)?.toDouble() ??
+              4.9,
+      totalTrips:
+          (data['driver_trips'] ?? data['driverTrips'] as num?)?.toInt() ?? 0,
       vehicleMake: field('vehicle_make', 'vehicleMake') ?? '',
       vehicleModel: field('vehicle_model', 'vehicleModel') ?? '',
       vehicleColor: field('vehicle_color', 'vehicleColor') ?? '',
@@ -1262,8 +1521,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final lat1 = from.latitude * math.pi / 180;
     final lat2 = to.latitude * math.pi / 180;
     final y = math.sin(dLon) * math.cos(lat2);
-    final x =
-        math.cos(lat1) * math.sin(lat2) -
+    final x = math.cos(lat1) * math.sin(lat2) -
         math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
     return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
   }
@@ -1379,6 +1637,16 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _timeoutTimer?.cancel();
     _fsCancelDebounce?.cancel();
     _fsMatchSub?.cancel();
+    _quoteDebounce?.cancel();
+    _quotePollTimer?.cancel();
+    _routeSeq++;
+    _quoteSeq++;
+    _revisionSeq++;
+    _quoteInFlight = null;
+    _quoteFrozen = false;
+    _frozenQuoteSignature = null;
+    _pricingVersion = null;
+    _promotionsRevision = null;
     _isRequesting = false;
     _driverMatched = false;
     _currentStatus = null;
@@ -1391,12 +1659,21 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // M3: unregister lifecycle observer
+    _disposed = true;
+    WidgetsBinding.instance
+        .removeObserver(this); // M3: unregister lifecycle observer
     _searchTimer?.cancel();
     _pollTimer?.cancel();
     _timeoutTimer?.cancel();
     _fsCancelDebounce?.cancel();
     _fsMatchSub?.cancel();
+    _quoteDebounce?.cancel();
+    _quotePollTimer?.cancel();
+    _routeSeq++;
+    _quoteSeq++;
+    _revisionSeq++;
+    _quoteInFlight = null;
+    _pricingSub?.cancel();
     super.dispose();
   }
 

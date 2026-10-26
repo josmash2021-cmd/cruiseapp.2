@@ -31,6 +31,7 @@ from utils.security import (
 from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, user_lang
 from services.fcm_service import _send_fcm_push_async
 from services import rating_actions, vehicle_tiers
+from services.platform_earnings import driver_fare_basis
 from services.sms_service import (
     notify_guest_driver_assigned,
     notify_guest_driver_en_route,
@@ -220,11 +221,18 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
         # collected shows the driver $0 — never the recomputed share.
         visible_fare = 0.0
     else:
-        visible_fare = round((float(trip.fare or 0.0) * driver_rate) + tip, 2)
+        visible_fare = round((driver_fare_basis(trip) * driver_rate) + tip, 2)
     data["fare"] = visible_fare
     data["driver_earnings"] = visible_fare
-    # Never expose platform_fee to drivers
+    # Never expose platform_fee or promotion settlement internals to drivers
     data.pop("platform_fee", None)
+    for key in (
+        "pricing_quote_id", "promotion_redemption_id", "pricing_version",
+        "original_fare_cents", "rider_promo_total_cents", "driver_fare_cents",
+        "platform_credit_cents", "platform_credit_applied_cents",
+        "cruise_cash_cents", "funding_source",
+    ):
+        data.pop(key, None)
     # The pickup PIN is the rider's to read out — the driver must TYPE it,
     # never read it off their own payload.
     data.pop("pickup_pin", None)
@@ -452,59 +460,13 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
 
 @router.post("/trips", dependencies=[Depends(_verify_api_key)])
 async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    # SECURITY: Validate rider has a valid payment method before creating trip
-    # (skip for test mode / sandbox where no real charge occurs)
     is_sandbox = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "") != "production"
-    # Named accounts may book without a card, for testing against production.
-    #
-    # The request cannot say "this is a test booking" — CreateTripIn carries no
-    # payment method — so trusting the client here would mean any caller could
-    # skip the check by claiming to be a tester, and this check is the only
-    # thing standing between the app and free rides.
-    #
-    # An id allowlist cannot be spoofed: `user` comes from the JWT. Empty by
-    # default, so production is unchanged until someone is explicitly named in
-    # TEST_MODE_RIDER_IDS.
     _raw_testers = os.environ.get("TEST_MODE_RIDER_IDS", "")
     _tester_ids = {
         int(p) for p in (s.strip() for s in _raw_testers.split(",")) if p.isdigit()
     }
     if user.id in _tester_ids:
         logging.info("[Trips] rider %s is a named tester — payment check skipped", user.id)
-    if not is_sandbox and user.role == "rider" and user.id not in _tester_ids:
-        pm_r = await db.execute(
-            select(RiderPaymentMethod).where(
-                RiderPaymentMethod.user_id == user.id,
-                # A saved Apple Pay / Google Pay card is as chargeable
-                # off-session as a typed-in card (2026-08-29): the wallet
-                # sheet saves the underlying PM to the rider's customer.
-                # Bank accounts stay excluded — ACH cannot hold.
-                RiderPaymentMethod.method_type.in_(
-                    ("stripe_card", "apple_pay", "google_pay")),
-                RiderPaymentMethod.stripe_pm_id.isnot(None),
-            )
-        )
-        has_pm = pm_r.scalar_one_or_none() is not None
-        if not has_pm:
-            raise HTTPException(
-                400,
-                "No payment method on file. Please add a card in Payment Methods before booking.",
-            )
-        # Lyft model (2026-08-25, user spec): a SCHEDULED ride books with
-        # NO hold at all — the fare is only authorised when the ride
-        # dispatches (main.py creates the hold off-session) and captured
-        # when it completes. Immediate rides keep the up-front hold:
-        # without it the ride is a free ride when the charge fails.
-        if not body.stripe_payment_intent_id and not body.scheduled_at:
-            raise HTTPException(
-                402,
-                "A payment hold is required before booking. Please retry payment.",
-            )
-
-    # A rider books only once the account is approved — identity captured is
-    # not enough. Covers immediate, scheduled AND airport rides: all three
-    # are created through this endpoint. The app gates the same flows in the
-    # UI; this is the server-side door, so a raw API call cannot skip it.
     if user.role == "rider" and not (
         user.is_verified or user.verification_status == "approved"
     ):
@@ -514,81 +476,116 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
             "for approval before requesting rides.",
         )
 
-    from routers.misc import routing_preview
-    quote = await routing_preview(
-        pickup_lat=body.pickup_lat,
-        pickup_lng=body.pickup_lng,
-        dropoff_lat=body.dropoff_lat,
-        dropoff_lng=body.dropoff_lng,
-        vehicle_type=body.vehicle_type or "comfort",
-        is_scheduled=bool(body.scheduled_at),
-        is_airport=bool(body.is_airport),
-        meet_inside=False,
-        db=db,
-    )
-    fare_info = quote.get("fare_estimate") or {}
-    fare_total = fare_info.get("total")
-    if not isinstance(fare_total, (int, float)) or not math.isfinite(fare_total) or fare_total <= 0:
+    data = body.model_dump()
+    data["rider_id"] = user.id
+    selection = None
+    if body.quote_id:
+        from services.rider_pricing import load_quote_selection
+        from services.promotion_redemptions import quote_snapshot_fields
+        selection = await load_quote_selection(
+            db, user.id, body.quote_id, data.get("vehicle_type") or "standard", data,
+        )
+        fare_total = selection["promo_total_cents"] / 100.0
+        data.update(quote_snapshot_fields(selection))
+        data["vehicle_type"] = selection["tier"]
+    else:
+        from routers.misc import routing_preview
+        quote = await routing_preview(
+            pickup_lat=body.pickup_lat,
+            pickup_lng=body.pickup_lng,
+            dropoff_lat=body.dropoff_lat,
+            dropoff_lng=body.dropoff_lng,
+            vehicle_type=body.vehicle_type or "comfort",
+            is_scheduled=bool(body.scheduled_at),
+            is_airport=bool(body.is_airport),
+            meet_inside=False,
+            db=db,
+        )
+        fare_info = quote.get("fare_estimate") or {}
+        fare_total = fare_info.get("total")
+        if not isinstance(fare_total, (int, float)) or not math.isfinite(fare_total) or fare_total <= 0:
+            raise HTTPException(502, "Could not calculate the ride price")
+        data["fare"] = round(float(fare_total), 2)
+        data["scheduled_surcharge"] = float(fare_info.get("scheduled_surcharge") or 0.0)
+        data["airport_fee_applied"] = float(fare_info.get("airport_fee") or 0.0)
+        data["meet_greet_fee"] = float(fare_info.get("meet_greet_fee") or 0.0)
+    if not math.isfinite(fare_total) or (fare_total <= 0 and not (selection and selection["is_free"])):
         raise HTTPException(502, "Could not calculate the ride price")
 
+    from services.booking_pricing import cruise_cash_requirement
+    requirement = await cruise_cash_requirement(
+        db, user.id, int(round(fare_total * 100)), bool(selection and selection["is_free"]),
+    )
+    required_hold_cents = requirement["required_hold_cents"]
     hold_intent = None
-    if body.stripe_payment_intent_id and not is_sandbox and user.id not in _tester_ids:
-        if not _HAS_STRIPE:
-            raise HTTPException(503, "Stripe not configured")
-        hold_intent = await validate_trip_hold(
-            db,
-            payment_intent_id=body.stripe_payment_intent_id,
-            rider=user,
-            expected_cents=int(round(fare_total * 100)),
-            stripe_module=_stripe_mod,
-        )
+    if not is_sandbox and user.role == "rider" and user.id not in _tester_ids:
+        if required_hold_cents > 0:
+            pm_r = await db.execute(
+                select(RiderPaymentMethod).where(
+                    RiderPaymentMethod.user_id == user.id,
+                    RiderPaymentMethod.method_type.in_(("stripe_card", "apple_pay", "google_pay")),
+                    RiderPaymentMethod.stripe_pm_id.isnot(None),
+                )
+            )
+            if pm_r.scalar_one_or_none() is None:
+                raise HTTPException(
+                    400,
+                    "No payment method on file. Please add a card in Payment Methods before booking.",
+                )
+            if not body.stripe_payment_intent_id and not body.scheduled_at:
+                raise HTTPException(
+                    402,
+                    "A payment hold is required before booking. Please retry payment.",
+                )
+        if body.stripe_payment_intent_id:
+            if not _HAS_STRIPE:
+                raise HTTPException(503, "Stripe not configured")
+            hold_intent = await validate_trip_hold(
+                db,
+                payment_intent_id=body.stripe_payment_intent_id,
+                rider=user,
+                expected_cents=max(required_hold_cents, 1),
+                increment_if_needed=required_hold_cents > 0,
+                stripe_module=_stripe_mod,
+            )
+            data["payment_status"] = payment_status_for_intent(hold_intent)
 
-    data = body.model_dump()
-    # SECURITY: Force rider_id to be the authenticated user (prevent spoofing)
-    data["rider_id"] = user.id
-    data["fare"] = round(float(fare_total), 2)
-    data["scheduled_surcharge"] = float(fare_info.get("scheduled_surcharge") or 0.0)
-    data["airport_fee_applied"] = float(fare_info.get("airport_fee") or 0.0)
-    data["meet_greet_fee"] = float(fare_info.get("meet_greet_fee") or 0.0)
-    if hold_intent is not None:
-        data["payment_status"] = payment_status_for_intent(hold_intent)
-    # Parse scheduled_at string → timezone-aware datetime (column is TIMESTAMP WITH TIME ZONE)
     raw_sa = data.get("scheduled_at")
     if raw_sa:
         if isinstance(raw_sa, str):
             try:
                 parsed = datetime.fromisoformat(raw_sa.replace("Z", "+00:00"))
-                # Ensure timezone-aware (default to UTC if naive)
                 if parsed.tzinfo is None:
                     parsed = parsed.replace(tzinfo=timezone.utc)
                 data["scheduled_at"] = parsed
             except ValueError:
                 data["scheduled_at"] = None
-        elif hasattr(raw_sa, 'tzinfo') and raw_sa.tzinfo is None:
-            # Naive datetime → assume UTC
+        elif hasattr(raw_sa, "tzinfo") and raw_sa.tzinfo is None:
             data["scheduled_at"] = raw_sa.replace(tzinfo=timezone.utc)
-        # If scheduled_at is set, mark as scheduled
         if data.get("scheduled_at") is not None:
             data["status"] = "scheduled"
-    # Remove None optional fields that Trip model doesn't accept
+    data.pop("quote_id", None)
     data = {k: v for k, v in data.items() if v is not None or k in (
         "fare", "vehicle_type", "scheduled_at", "airport_code", "terminal",
         "pickup_zone", "notes", "stripe_payment_intent_id",
     )}
-    # Booking-time stop ("+"): flat fields → trips.stops JSON (helper pops
-    # them; Trip has no such columns and **data would 500).
     booking_stops_json(data)
-    # 4-digit pickup handshake for the rider's Find-My screen (2026-09-12)
     data["pickup_pin"] = _gen_pickup_pin()
     try:
-        trip = Trip(**data)
-        db.add(trip)
-        await db.commit()
-        await db.refresh(trip)
-    except Exception as e:
-        logging.error("create_trip DB error: %s", e)
-        await db.rollback()
-        raise HTTPException(500, f"Failed to create trip: {e}")
+        from services.booking_pricing import finalize_booking
+        trip, _ = await finalize_booking(
+            db,
+            Trip(**data),
+            selection,
+            user,
+            hold_intent,
+            payment_exempt=is_sandbox or user.id in _tester_ids,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("create_trip booking failed: %s", exc)
+        raise HTTPException(500, "Failed to create trip") from exc
 
     # ── Dispatch immediately ──
     # Creating a trip used to send it to nobody: offers were only ever made
@@ -1089,6 +1086,8 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
     """Collect the final fare and report the exact cumulative amount received."""
     if trip.payment_status == "paid":
         return {"status": "already_paid", "message": "Trip already charged"}
+    if trip.payment_status == "not_required" or float(trip.fare or 0.0) <= 0:
+        return {"status": "not_required", "payment_intent_id": None, "collected_cents": 0}
     if not _HAS_STRIPE:
         trip.payment_status = "paid"
         await db.commit()
@@ -1242,14 +1241,14 @@ async def charge_trip_endpoint(trip_id: int, user: User = Depends(_get_current_u
     if trip.status != "completed":
         raise HTTPException(400, f"Trip is not completed (status: {trip.status})")
     result = await _charge_trip(trip, db)
-    if trip.payment_status in ("paid", "partial"):
-        try:
-            collected = result.get("collected_cents")
-            amount = collected / 100.0 if collected is not None else None
-            if await _credit_driver_earnings(db, trip, collected_amount=amount):
-                await db.commit()
-        except Exception as e:
-            logging.error("[Charge] driver split failed for trip %s: %s", trip_id, e)
+    try:
+        from services.completed_trip_settlement import settle_completed_trip
+        collected = result.get("collected_cents")
+        amount = collected / 100.0 if collected is not None else None
+        await settle_completed_trip(db, trip, collected_amount=amount)
+        await db.commit()
+    except Exception as e:
+        logging.error("[Charge] driver split failed for trip %s: %s", trip_id, e)
     return result
 
 
@@ -1456,13 +1455,15 @@ async def add_trip_stop(trip_id: int, body: TripStopIn,
     if existing:
         raise HTTPException(409, "Trip already has a stop (one per trip)")
 
-    # Money band: floor at the $2.50 stop fee, cap at $200 of extra —
-    # outside that the client math is broken, not the road.
-    extra = int(body.extra_cents)
-    if extra < 250:
+    route_update = None
+    if trip.pricing_quote_id:
         extra = 250
-    if extra > 20000:
-        raise HTTPException(400, "Stop extra out of range")
+    else:
+        extra = int(body.extra_cents)
+        if extra < 250:
+            extra = 250
+        if extra > 20000:
+            raise HTTPException(400, "Stop extra out of range")
 
     stop = {
         "lat": body.lat,
@@ -1471,8 +1472,12 @@ async def add_trip_stop(trip_id: int, body: TripStopIn,
         "extra_cents": extra,
         "added_at": utc_now().isoformat(),
     }
+    if trip.pricing_quote_id:
+        from services.trip_route_pricing import reprice_quoted_trip
+        route_update = await reprice_quoted_trip(db, trip, stop=stop)
+    else:
+        trip.fare = round((trip.fare or 0.0) + extra / 100.0, 2)
     trip.stops = json.dumps([stop])
-    trip.fare = round((trip.fare or 0.0) + extra / 100.0, 2)
     await db.commit()
 
     if _HAS_FIRESTORE:
@@ -1488,7 +1493,7 @@ async def add_trip_stop(trip_id: int, body: TripStopIn,
         body_en=stop["label"] or "The rider added a stop — open Cruise")
     logging.info("[Stops] Trip %s: stop added (+$%.2f) by user %s",
                  trip.id, extra / 100.0, user.id)
-    return {"status": "ok", "stops": [stop], "fare": trip.fare}
+    return {"status": "ok", "stops": [stop], "fare": trip.fare, "pricing": route_update}
 
 
 @router.patch("/trips/{trip_id}/destination", dependencies=[Depends(_verify_api_key)])
@@ -1506,13 +1511,17 @@ async def change_trip_destination(trip_id: int, body: TripDestinationIn,
     if not (-90.0 <= body.lat <= 90.0 and -180.0 <= body.lng <= 180.0):
         raise HTTPException(400, "Invalid coordinates")
 
+    route_update = None
+    if trip.pricing_quote_id:
+        from services.trip_route_pricing import reprice_quoted_trip
+        route_update = await reprice_quoted_trip(
+            db, trip, destination={"lat": body.lat, "lng": body.lng},
+        )
     trip.dropoff_lat = body.lat
     trip.dropoff_lng = body.lng
     if (body.label or "").strip():
         trip.dropoff_address = body.label.strip()[:300]
-    if body.new_fare is not None:
-        # Full re-price from the client's anchored math; same honest band
-        # every fare in this codebase lives in.
+    if not trip.pricing_quote_id and body.new_fare is not None:
         if not (3.0 <= body.new_fare <= 500.0):
             raise HTTPException(400, "Fare out of range")
         trip.fare = round(body.new_fare, 2)
@@ -1533,7 +1542,7 @@ async def change_trip_destination(trip_id: int, body: TripDestinationIn,
         title_en="Destination changed",
         body_en=trip.dropoff_address or "The rider changed the destination — open Cruise")
     logging.info("[Stops] Trip %s: destination changed by user %s", trip.id, user.id)
-    return {"status": "ok", "dropoff_address": trip.dropoff_address, "fare": trip.fare}
+    return {"status": "ok", "dropoff_address": trip.dropoff_address, "fare": trip.fare, "pricing": route_update}
 
 
 @router.get("/trips/{trip_id}/fare-breakdown", dependencies=[Depends(_verify_api_key)])
@@ -1588,6 +1597,14 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
             driver_first_name = drv.first_name
     # Generate receipt number
     receipt_number = f"CR-{trip.id:08d}"
+    original_cents = getattr(trip, "original_fare_cents", None)
+    promo_cents = getattr(trip, "rider_promo_total_cents", None)
+    original_fare = original_cents / 100.0 if original_cents is not None else None
+    promo_total = promo_cents / 100.0 if promo_cents is not None else None
+    if trip.funding_source == "platform_courtesy" and not trip.fare:
+        payment_method_display = "Cortesía — sin cargo" if user_lang(user) == "es" else "Courtesy — no charge"
+    elif not trip.fare and int(trip.cruise_cash_cents or 0) > 0:
+        payment_method_display = "Cruise Cash"
     return {
         "trip_id": trip.id,
         "receipt_number": receipt_number,
@@ -1609,7 +1626,18 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
         "airport_fee": airport_fee_applied,
         "meet_greet_fee": meet_greet_fee,
         "tip_amount": tip,
-        "total": trip.fare or total,
+        "total": trip.fare if trip.fare is not None else total,
+        "original_fare": original_fare,
+        "promo_total": promo_total,
+        "promotion_discount": round(original_fare - promo_total, 2) if original_fare is not None and promo_total is not None else None,
+        "is_courtesy": trip.funding_source == "platform_courtesy",
+        "funding_source": trip.funding_source,
+        "cruise_cash": int(trip.cruise_cash_cents or 0) / 100.0,
+        "driver_fare": int(trip.driver_fare_cents) / 100.0 if trip.driver_fare_cents is not None else None,
+        "platform_credit": int(trip.platform_credit_cents or 0) / 100.0,
+        "platform_credit_applied": int(trip.platform_credit_applied_cents or 0) / 100.0,
+        "pricing_version": trip.pricing_version,
+        "quoted_distance_miles": trip.quoted_distance_miles,
         "platform_fee": trip.platform_fee,
         "driver_earnings": trip.driver_earnings,
         "refund_amount": trip.refund_amount or 0.0,
@@ -1905,6 +1933,7 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
         )
 
     # Store the CANONICAL status, not the raw client input
+    had_driver = bool(trip.driver_id or trip.driver_assigned_at)
     trip.status = canonical_new
     trip.updated_at = datetime.now(timezone.utc)
     # Record arrival timestamp for wait time fee calculation. Set ONCE on
@@ -1935,7 +1964,9 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
         # the rider-side _buildWaitTimerBadge UI in
         # rider_confirm_pickup_screen.dart.
         if trip.arrived_at:
-            wait_seconds = (trip.started_at - trip.arrived_at).total_seconds()
+            arrived_at = trip.arrived_at if trip.arrived_at.tzinfo else trip.arrived_at.replace(tzinfo=timezone.utc)
+            started_at = trip.started_at if trip.started_at.tzinfo else trip.started_at.replace(tzinfo=timezone.utc)
+            wait_seconds = (started_at - arrived_at).total_seconds()
             free_wait_min, per_min_rate = _wait_policy(
                 trip.vehicle_type, bool(trip.is_airport)
             )
@@ -1949,10 +1980,9 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
             # Roll the wait fee into the fare so payment / earnings split
             # downstream see the full amount the rider pays.
             if wait_charge > 0:
-                # Extend the hold to the new total BEFORE raising the fare.
-                # Issuers that don't support incremental authorization →
-                # warning and continue; the completion shortfall charge in
-                # _charge_trip remains the backstop.
+                if trip.pricing_quote_id and not trip.fare:
+                    trip.payment_status = "unpaid"
+                    trip.stripe_payment_intent_id = None
                 if trip.stripe_payment_intent_id and _HAS_STRIPE:
                     try:
                         _stripe_mod.PaymentIntent.increment_authorization(
@@ -1963,7 +1993,33 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
                         logging.warning(
                             "[WaitFee] increment_authorization failed for trip %s: %s",
                             trip.id, _inc_err)
+                elif trip.pricing_quote_id and _HAS_STRIPE:
+                    try:
+                        rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+                        rider_row = rider_result.scalar_one_or_none()
+                        from services.trip_route_pricing import _new_route_hold
+                        request = {
+                            "pickup_lat": trip.pickup_lat, "pickup_lng": trip.pickup_lng,
+                            "dropoff_lat": trip.dropoff_lat, "dropoff_lng": trip.dropoff_lng,
+                            "stop_lat": None, "stop_lng": None,
+                            "is_scheduled": bool(trip.scheduled_at),
+                            "is_airport": bool(trip.is_airport),
+                            "meet_inside": bool(trip.meet_inside),
+                        }
+                        intent = await _new_route_hold(
+                            db, trip, rider_row,
+                            int(round(((trip.fare or 0.0) + wait_charge) * 100)), request,
+                        )
+                        trip.payment_status = payment_status_for_intent(intent)
+                    except Exception as _hold_err:
+                        logging.warning("[WaitFee] new hold failed for trip %s: %s", trip.id, _hold_err)
+                        trip.payment_status = "unpaid"
                 trip.fare = round((trip.fare or 0.0) + wait_charge, 2)
+                if trip.pricing_quote_id:
+                    wait_cents = int(round(wait_charge * 100))
+                    trip.original_fare_cents = int(trip.original_fare_cents or 0) + wait_cents
+                    trip.rider_promo_total_cents = int(trip.rider_promo_total_cents or 0) + wait_cents
+                    trip.driver_fare_cents = int(trip.driver_fare_cents or 0) + wait_cents
     if canonical_new == "completed":
         trip.completed_at = datetime.now(timezone.utc)
         # Auto-calculate distance (haversine) if not already set
@@ -1973,11 +2029,13 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
             trip.distance = round(dist_km * 0.621371, 1)  # km → miles
         # Auto-calculate duration from started_at → completed_at
         if not trip.duration and trip.started_at:
-            delta = trip.completed_at - trip.started_at
+            started_at = trip.started_at if trip.started_at.tzinfo else trip.started_at.replace(tzinfo=timezone.utc)
+            delta = trip.completed_at - started_at
             trip.duration = max(1, int(delta.total_seconds() / 60))
         elif not trip.duration and trip.created_at:
             # Fallback: use created_at → completed_at if started_at was never set
-            delta = trip.completed_at - trip.created_at
+            created_at = trip.created_at if trip.created_at.tzinfo else trip.created_at.replace(tzinfo=timezone.utc)
+            delta = trip.completed_at - created_at
             trip.duration = max(1, int(delta.total_seconds() / 60))
         elif not trip.duration and trip.distance:
             # Last resort: estimate from distance
@@ -2020,6 +2078,10 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
                 "[driver_referrals] bump hook failed for trip %s: %s",
                 trip.id, e,
             )
+
+    if canonical_new == "cancelled":
+        from services.promotion_redemptions import settle_promotion_on_cancel
+        await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
 
     await db.commit()
     await db.refresh(trip)
@@ -2166,12 +2228,13 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
         except Exception as e:
             logging.error("[AutoCharge] Failed for trip %s: %s", trip_id, e)
 
-    if canonical_new == "completed" and trip.payment_status in ("paid", "partial"):
+    if canonical_new == "completed":
         try:
+            from services.completed_trip_settlement import settle_completed_trip
             collected = charge_result.get("collected_cents") if charge_result else None
             amount = collected / 100.0 if collected is not None else None
-            if await _credit_driver_earnings(db, trip, collected_amount=amount):
-                await db.commit()
+            await settle_completed_trip(db, trip, collected_amount=amount)
+            await db.commit()
         except Exception as e:
             logging.error("[Split] credit failed for trip %s: %s", trip_id, e)
 
@@ -2202,8 +2265,14 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
                     locale=user_lang(rider),
                     data={"type": "trip_started", "trip_id": str(trip_id)})
             elif canonical_new == "completed":
-                # Fix H7: differentiate notification based on actual charge outcome
-                if trip.payment_status == "paid":
+                if trip.funding_source == "platform_courtesy" and not trip.fare:
+                    await _send_fcm_push_async(rider.fcm_token, title="Viaje completado",
+                        body="Tu viaje Free ha terminado. La cortesía cubrió el total; no se realizó ningún cargo.",
+                        title_en="Trip Completed",
+                        body_en="Your Free trip is complete. The courtesy covered everything; no charge was made.",
+                        locale=user_lang(rider),
+                        data={"type": "trip_completed", "trip_id": str(trip_id)})
+                elif trip.payment_status == "paid":
                     fare_str = f"${trip.fare:.2f}" if trip.fare else ""
                     await _send_fcm_push_async(rider.fcm_token, title="Viaje completado",
                         body=f"Tu viaje ha terminado. {fare_str} cargados a tu tarjeta.",
@@ -2397,6 +2466,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
             cancellation_fee = 5.0
     # Capture previous status BEFORE overwriting (needed for webhook payload)
     previous_status = trip.status
+    had_driver = bool(trip.driver_id or trip.driver_assigned_at)
     trip.status = "cancelled"
     trip.cancel_reason = reason
     trip.cancellation_fee = cancellation_fee
@@ -2461,6 +2531,9 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # (same 60/40 ledger split as completed-trip fares; 40% = Company revenue).
     if cancellation_fee > 0:
         await _credit_driver_cancellation_fee(db, trip)
+
+    from services.promotion_redemptions import settle_promotion_on_cancel
+    await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
 
     await db.commit()
     await db.refresh(trip)
@@ -2638,11 +2711,14 @@ async def driver_cancel_trip(
             ),
             user_id=user.id,
         )
+        had_driver = bool(trip.driver_id or trip.driver_assigned_at)
         trip.status = "cancelled"
         trip.cancel_reason = reason
         trip.cancellation_fee = 0.0
         trip.updated_at = datetime.now(timezone.utc)
         trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
+        from services.promotion_redemptions import settle_promotion_on_cancel
+        await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
         await db.commit()
         await db.refresh(trip)
         try:
@@ -3742,7 +3818,37 @@ async def end_wait_time(trip_id: int, user: User = Depends(_get_current_user), d
     wait_charge = round(max(0, wait_minutes - 2) * 0.50, 2)
     trip.wait_time_minutes = wait_minutes
     trip.wait_time_charge = wait_charge
+    was_zero_fare = not trip.fare
+    if trip.pricing_quote_id and was_zero_fare and wait_charge > 0:
+        trip.payment_status = "unpaid"
+        trip.stripe_payment_intent_id = None
+    if trip.pricing_quote_id and not trip.stripe_payment_intent_id and wait_charge > 0 and _HAS_STRIPE:
+        try:
+            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider_row = rider_result.scalar_one_or_none()
+            from services.trip_route_pricing import _new_route_hold
+            request = {
+                "pickup_lat": trip.pickup_lat, "pickup_lng": trip.pickup_lng,
+                "dropoff_lat": trip.dropoff_lat, "dropoff_lng": trip.dropoff_lng,
+                "stop_lat": None, "stop_lng": None,
+                "is_scheduled": bool(trip.scheduled_at),
+                "is_airport": bool(trip.is_airport),
+                "meet_inside": bool(trip.meet_inside),
+            }
+            intent = await _new_route_hold(
+                db, trip, rider_row,
+                int(round(((trip.fare or 0.0) + wait_charge) * 100)), request,
+            )
+            trip.payment_status = payment_status_for_intent(intent)
+        except Exception as _hold_err:
+            logging.warning("[WaitFee] end-wait hold failed for trip %s: %s", trip.id, _hold_err)
+            trip.payment_status = "unpaid"
     trip.fare = round((trip.fare or 0) + wait_charge, 2)
+    if trip.pricing_quote_id and wait_charge > 0:
+        wait_cents = int(round(wait_charge * 100))
+        trip.original_fare_cents = int(trip.original_fare_cents or 0) + wait_cents
+        trip.rider_promo_total_cents = int(trip.rider_promo_total_cents or 0) + wait_cents
+        trip.driver_fare_cents = int(trip.driver_fare_cents or 0) + wait_cents
     await db.commit()
     return {"wait_time_minutes": wait_minutes, "wait_time_charge": wait_charge, "new_total_fare": trip.fare}
 

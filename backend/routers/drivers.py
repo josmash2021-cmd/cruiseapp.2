@@ -32,6 +32,7 @@ from utils.image_validation import validate_image_bytes
 from services.fcm_service import _send_fcm_push_async
 from services.approach_notifications import maybe_notify_rider_approach
 from services import vehicle_tiers
+from services.platform_earnings import driver_fare_basis
 from config import (
     PUBLIC_URL, STRIPE_SECRET, _HAS_STRIPE, _stripe_mod,
     CHECKR_API_KEY, CHECKR_BASE_URL,
@@ -226,7 +227,7 @@ def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
     if trip.status in ("completed", "cancelled") and trip.payment_status != "paid":
         return 0.0, 0.0
     driver_rate = _get_driver_rate(trip)
-    base = round(float(trip.fare or 0.0) * driver_rate, 2)
+    base = round(driver_fare_basis(trip) * driver_rate, 2)
     return base, round(base + tip, 2)
 
 
@@ -249,6 +250,13 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
             float(trip.fare or 0.0) * platform_rate, 2,
         )
     data["driver_base_earnings"] = base
+    for key in (
+        "pricing_quote_id", "promotion_redemption_id", "pricing_version",
+        "original_fare_cents", "rider_promo_total_cents", "driver_fare_cents",
+        "platform_credit_cents", "platform_credit_applied_cents",
+        "cruise_cash_cents", "funding_source",
+    ):
+        data.pop(key, None)
     # Guest-booking override for driver-facing rider name/phone. Fires
     # whenever guest fields are set — not only when rider_id is NULL —
     # because web/Shopify bookings point rider_id at the shared

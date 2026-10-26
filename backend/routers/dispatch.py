@@ -34,6 +34,7 @@ from config import (
 )
 from services.event_bus import event_bus
 from services import vehicle_tiers
+from services.platform_earnings import driver_fare_basis, driver_offer_dict
 from routers.admin import _pricing_config
 from utils.bounded_cache import TTLCache, BoundedDict
 
@@ -848,7 +849,7 @@ async def _send_offer_to_driver(
         await db.refresh(offer)
 
     _pending_cache.pop(driver.id, None)
-    estimated_driver_fare = round(float(trip.fare or 0.0) * vehicle_tiers.driver_share_for_trip(trip), 2)
+    estimated_driver_fare = round(driver_fare_basis(trip) * vehicle_tiers.driver_share_for_trip(trip), 2)
 
     # Chaining: a driver offered a ride while still finishing another one
     # gets the offer flagged so the app can show it over the trip screen
@@ -925,7 +926,7 @@ async def _send_offer_to_driver(
         "created_at": offer.created_at.isoformat() if offer.created_at else None,
         "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
         "chained": chained,
-        **_trip_dict(trip),
+        **driver_offer_dict(trip),
         "fare": estimated_driver_fare,
         "driver_earnings": estimated_driver_fare,
     }]))
@@ -1759,38 +1760,46 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     }
     pi_id = data.get("stripe_payment_intent_id")
     hold_intent = None
-    from routers.misc import routing_preview
-    quote = await routing_preview(
-        pickup_lat=data["pickup_lat"], pickup_lng=data["pickup_lng"],
-        dropoff_lat=data["dropoff_lat"], dropoff_lng=data["dropoff_lng"],
-        vehicle_type=data.get("vehicle_type") or "comfort",
-        is_scheduled=bool(data.get("scheduled_at")),
-        is_airport=bool(data.get("is_airport")),
-        meet_inside=bool(data.get("meet_inside")), db=db,
-    )
-    fare_info = quote.get("fare_estimate") or {}
-    fare_total = fare_info.get("total")
-    if not isinstance(fare_total, (int, float)) or fare_total <= 0:
-        raise HTTPException(502, "Could not calculate the ride price")
-    data["fare"] = round(float(fare_total), 2)
-    data["scheduled_surcharge"] = float(fare_info.get("scheduled_surcharge") or 0.0)
-    data["airport_fee_applied"] = float(fare_info.get("airport_fee") or 0.0)
-    data["meet_greet_fee"] = float(fare_info.get("meet_greet_fee") or 0.0)
-
-    if not pi_id and not is_sandbox and user.id not in _tester_ids:
-        from models.database import CruiseCashBalance
-        balance_result = await db.execute(
-            select(CruiseCashBalance).where(CruiseCashBalance.user_id == user.id)
+    selection = None
+    if body.quote_id:
+        from services.rider_pricing import load_quote_selection
+        from services.promotion_redemptions import quote_snapshot_fields
+        selection = await load_quote_selection(
+            db, user.id, body.quote_id, data.get("vehicle_type") or "standard", data,
         )
-        balance = balance_result.scalar_one_or_none()
-        balance_cents = getattr(balance, "balance_cents", 0) or 0
-        fare_cents = int(round(fare_total * 100))
-        covered_cents = min(balance_cents, fare_cents, 5000)
-        if covered_cents < fare_cents:
-            raise HTTPException(
-                402,
-                "A payment hold is required before requesting a ride. Please retry payment.",
-            )
+        fare_total = selection["promo_total_cents"] / 100.0
+        data.update(quote_snapshot_fields(selection))
+    else:
+        from routers.misc import routing_preview
+        quote = await routing_preview(
+            pickup_lat=data["pickup_lat"], pickup_lng=data["pickup_lng"],
+            dropoff_lat=data["dropoff_lat"], dropoff_lng=data["dropoff_lng"],
+            vehicle_type=data.get("vehicle_type") or "comfort",
+            is_scheduled=bool(data.get("scheduled_at")),
+            is_airport=bool(data.get("is_airport")),
+            meet_inside=bool(data.get("meet_inside")), db=db,
+        )
+        fare_info = quote.get("fare_estimate") or {}
+        fare_total = fare_info.get("total")
+        if not isinstance(fare_total, (int, float)) or not math.isfinite(fare_total) or fare_total <= 0:
+            raise HTTPException(502, "Could not calculate the ride price")
+        data["fare"] = round(float(fare_total), 2)
+        data["scheduled_surcharge"] = float(fare_info.get("scheduled_surcharge") or 0.0)
+        data["airport_fee_applied"] = float(fare_info.get("airport_fee") or 0.0)
+        data["meet_greet_fee"] = float(fare_info.get("meet_greet_fee") or 0.0)
+    if not math.isfinite(fare_total) or (fare_total <= 0 and not (selection and selection["is_free"])):
+        raise HTTPException(502, "Could not calculate the ride price")
+
+    from services.booking_pricing import cruise_cash_requirement
+    requirement = await cruise_cash_requirement(
+        db, user.id, int(round(fare_total * 100)), bool(selection and selection["is_free"]),
+    )
+    required_hold_cents = requirement["required_hold_cents"]
+    if not pi_id and required_hold_cents > 0 and not is_sandbox and user.id not in _tester_ids:
+        raise HTTPException(
+            402,
+            "A payment hold is required before requesting a ride. Please retry payment.",
+        )
 
     if pi_id and not is_sandbox and user.id not in _tester_ids:
         from services.payment_security import validate_trip_hold
@@ -1798,8 +1807,8 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             db,
             payment_intent_id=pi_id,
             rider=user,
-            expected_cents=int(round(fare_total * 100)),
-            increment_if_needed=True,
+            expected_cents=max(required_hold_cents, 1),
+            increment_if_needed=required_hold_cents > 0,
             stripe_module=_stripe_mod,
         )
         from services.payment_security import stripe_value
@@ -1812,64 +1821,19 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     # 4-digit pickup handshake for the rider's Find-My screen (2026-09-12)
     data["pickup_pin"] = _gen_pickup_pin()
 
-    # Booking-time stop ("+"): flat fields → trips.stops JSON, same shape
-    # as the mid-trip endpoint (Trip(**data) would reject the flat fields).
+    data.pop("quote_id", None)
+    if selection:
+        data["vehicle_type"] = selection["tier"]
     booking_stops_json(data)
-
-    trip = Trip(**data)
-    db.add(trip)
-    await db.commit()
-    await db.refresh(trip)
-
-    if trip.stripe_payment_intent_id and trip.payment_status == "unpaid":
-        if hold_intent is not None:
-            from services.payment_security import payment_status_for_intent
-            trip.payment_status = payment_status_for_intent(hold_intent)
-        else:
-            trip.payment_status = "held"
-        await db.commit()
-        await db.refresh(trip)
-
-    # ── Cruise Cash discount ──────────────────────────────────
-    # Apply any Cruise Cash the rider has accumulated to this trip's
-    # fare. Up to $50 per ride; if the balance covers everything, the
-    # downstream Stripe charge becomes $0. Logs a transaction tied to
-    # this trip so the rider sees it in their wallet history.
-    try:
-        if trip.fare and trip.fare > 0:
-            from routers.referrals import apply_cruise_cash_to_fare
-            fare_cents = int(round(float(trip.fare) * 100))
-            remaining_cents = await apply_cruise_cash_to_fare(
-                db, user.id, fare_cents, ref_trip_id=trip.id,
-            )
-            applied_cents = fare_cents - remaining_cents
-            if applied_cents > 0:
-                # Persist the new effective fare so commission split,
-                # Stripe charge, and dispatch all see the post-discount
-                # number. Original fare is recoverable from the
-                # cruise_cash_transactions row tied to this trip.
-                trip.fare = round(remaining_cents / 100.0, 2)
-                if remaining_cents == 0 and not is_sandbox and user.id not in _tester_ids:
-                    if trip.stripe_payment_intent_id:
-                        from services.payment_security import stripe_value
-                        if hold_intent and stripe_value(hold_intent, "status", "") == "requires_capture":
-                            from routers.trips import _release_or_capture_fee_on_cancel
-                            released = await _release_or_capture_fee_on_cancel(trip)
-                            trip.payment_status = (
-                                "paid" if released == "cancelled" else "pending_refund"
-                            )
-                        else:
-                            trip.payment_status = "pending_refund"
-                    else:
-                        trip.payment_status = "paid"
-                else:
-                    trip.payment_status = "paid"
-                await db.commit()
-                await db.refresh(trip)
-                logging.info("[cruise-cash] applied %s cents to trip %s (remaining %s)",
-                             applied_cents, trip.id, remaining_cents)
-    except Exception as e:
-        logging.warning("[cruise-cash] apply failed for trip %s: %s", trip.id, e)
+    from services.booking_pricing import finalize_booking
+    trip, _ = await finalize_booking(
+        db,
+        Trip(**data),
+        selection,
+        user,
+        hold_intent,
+        payment_exempt=is_sandbox or user.id in _tester_ids,
+    )
 
     # Sync trip to Firestore for dispatch_app.
     # Use the guest-aware resolver so web/Shopify bookings show the guest
@@ -2117,7 +2081,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     for offer, trip, rider in rows:
         rider_name, rider_phone = _resolve_rider_display(trip, rider)
         rider_photo_url = (_abs_photo_url(rider.photo_url) or "") if rider else ""
-        estimated_driver_fare = round(float(trip.fare or 0.0) * vehicle_tiers.driver_share_for_trip(trip), 2)
+        estimated_driver_fare = round(driver_fare_basis(trip) * vehicle_tiers.driver_share_for_trip(trip), 2)
         _rating, _rating_count = _rider_rep.get(trip.rider_id, (0.0, 0))
         offers.append({
             "rider_rating": _rating,
@@ -2132,7 +2096,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
             "created_at": offer.created_at.isoformat() if offer.created_at else None,
             "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
             "chained": _chained,
-            **_trip_dict(trip),
+            **driver_offer_dict(trip),
             "fare": estimated_driver_fare,
             "driver_earnings": estimated_driver_fare,
         })
@@ -2569,7 +2533,7 @@ async def list_available_trips(driver_id: int = Query(...), user: User = Depends
         if dist_km > radius_km:
             continue  # bounding-box corners overshoot the circle
         est_driver_fare = round(
-            float(t.fare or 0.0) * vehicle_tiers.driver_share_for_trip(t), 2,
+            driver_fare_basis(t) * vehicle_tiers.driver_share_for_trip(t), 2,
         )
         minutes = int(t.duration) if t.duration else 0
         miles = float(t.distance) if t.distance else 0.0

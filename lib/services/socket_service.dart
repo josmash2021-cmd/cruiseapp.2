@@ -44,7 +44,8 @@ class SocketService {
   static Timer? _heartbeatTimer;
   static DateTime? _lastPongTime;
   static var _connectionHealthController = StreamController<bool>.broadcast();
-  static Stream<bool> get connectionHealthStream => _connectionHealthController.stream;
+  static Stream<bool> get connectionHealthStream =>
+      _connectionHealthController.stream;
 
   // ── Event streams ───────────────────────────────────────────────────
   static var _driverLocationController =
@@ -68,6 +69,8 @@ class SocketService {
   static var _goOnlineGateController =
       StreamController<Map<String, dynamic>>.broadcast();
   static var _faceCheckReviewController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  static var _pricingUpdatedController =
       StreamController<Map<String, dynamic>>.broadcast();
 
   /// Stream of driver location updates.
@@ -141,6 +144,11 @@ class SocketService {
   static Stream<Map<String, dynamic>> get faceCheckReviewStream =>
       _faceCheckReviewController.stream;
 
+  /// Wake-up for global pricing edits or a promotion assigned to this rider.
+  /// Listeners re-quote through REST; the payload is not a fare authority.
+  static Stream<Map<String, dynamic>> get pricingUpdatedStream =>
+      _pricingUpdatedController.stream;
+
   // ── Public API ──────────────────────────────────────────────────────
 
   static bool get isConnected => _connected;
@@ -170,8 +178,12 @@ class SocketService {
 
     // If token looks stale, try to refresh before connecting
     // This prevents auth_error → disconnect → reconnect loops
-    if (token == null || token.isEmpty || token == 'null' || _isTokenLikelyExpired(token)) {
-      debugPrint('[Socket.io] Token missing or likely expired — attempting refresh');
+    if (token == null ||
+        token.isEmpty ||
+        token == 'null' ||
+        _isTokenLikelyExpired(token)) {
+      debugPrint(
+          '[Socket.io] Token missing or likely expired — attempting refresh');
       final refreshed = await ApiService.refreshAccessToken();
       if (refreshed) {
         token = await ApiService.getToken();
@@ -252,7 +264,8 @@ class SocketService {
     _socket!.onConnectError((error) {
       _connecting = false;
       debugPrint('[Socket.io] ❌ Connection error: $error');
-      AnalyticsService.instance.logEvent('socket_error', parameters: {'error': error.toString()});
+      AnalyticsService.instance
+          .logEvent('socket_error', parameters: {'error': error.toString()});
     });
 
     _socket!.onReconnect((_) {
@@ -286,13 +299,15 @@ class SocketService {
     });
 
     _socket!.on('auth_error', (data) async {
-      debugPrint('[Socket.io] Auth error: $data — refreshing token and re-authenticating');
+      debugPrint(
+          '[Socket.io] Auth error: $data — refreshing token and re-authenticating');
       // Token rejected by server — refresh and try again
       final refreshed = await ApiService.refreshAccessToken();
       if (refreshed) {
         _authenticate();
       } else {
-        debugPrint('[Socket.io] Token refresh failed — will retry on next reconnect');
+        debugPrint(
+            '[Socket.io] Token refresh failed — will retry on next reconnect');
       }
     });
 
@@ -328,7 +343,8 @@ class SocketService {
     _socket!.on('chat_message', (data) {
       final map = _toMap(data);
       _chatMessageController.add(map);
-      debugPrint('[Socket.io] Chat message from ${map['sender_role']}: ${map['message']?.toString().substring(0, math.min(30, (map['message']?.toString().length ?? 0)))}...');
+      debugPrint(
+          '[Socket.io] Chat message from ${map['sender_role']}: ${map['message']?.toString().substring(0, math.min(30, (map['message']?.toString().length ?? 0)))}...');
     });
 
     _socket!.on('account_status_changed', (data) {
@@ -340,7 +356,8 @@ class SocketService {
     _socket!.on('onboarding_item_changed', (data) {
       final map = _toMap(data);
       _onboardingItemController.add(map);
-      debugPrint('[Socket.io] Onboarding item changed: ${map['item']} → ${map['status']}');
+      debugPrint(
+          '[Socket.io] Onboarding item changed: ${map['item']} → ${map['status']}');
     });
 
     _socket!.on('app_update_gate_changed', (data) {
@@ -364,7 +381,15 @@ class SocketService {
     _socket!.on('face_check_reviewed', (data) {
       final map = _toMap(data);
       _faceCheckReviewController.add(map);
-      debugPrint('[Socket.io] Face check reviewed: approved=${map['approved']}');
+      debugPrint(
+          '[Socket.io] Face check reviewed: approved=${map['approved']}');
+    });
+
+    _socket!.on('pricing_updated', (data) {
+      final map = _toMap(data);
+      if (!_pricingUpdatedController.isClosed) {
+        _pricingUpdatedController.add(map);
+      }
     });
 
     // Listen to network recovery to proactively reconnect.
@@ -414,7 +439,10 @@ class SocketService {
 
   /// Proactively reconnect when network comes back online
   static void _onNetworkChange() {
-    if (NetworkService().isOnline && !_connected && !_connecting && _socket != null) {
+    if (NetworkService().isOnline &&
+        !_connected &&
+        !_connecting &&
+        _socket != null) {
       debugPrint('[Socket.io] 🌐 Network recovered — forcing reconnect');
       _socket!.connect();
     }
@@ -446,7 +474,8 @@ class SocketService {
     // the socket was still connecting.
     _currentTripRoom = tripId.toString();
     if (_socket == null || !_connected) {
-      debugPrint('[Socket.io] Cannot join trip — not connected (will auto-join on reconnect)');
+      debugPrint(
+          '[Socket.io] Cannot join trip — not connected (will auto-join on reconnect)');
       return;
     }
     _socket!.emit('join_trip', {'trip_id': tripId});
@@ -521,7 +550,8 @@ class SocketService {
   }
 
   /// Send trip status update to the server.
-  static void sendTripStatus({    required int tripId,
+  static void sendTripStatus({
+    required int tripId,
     required String status,
   }) {
     if (_socket == null || !_connected) return;
@@ -541,7 +571,8 @@ class SocketService {
       // Check if we haven't received a pong in 45 seconds
       if (_lastPongTime != null &&
           DateTime.now().difference(_lastPongTime!).inSeconds > 45) {
-        debugPrint('[Socket.io] 💔 Heartbeat failed — connection stale, forcing reconnect');
+        debugPrint(
+            '[Socket.io] 💔 Heartbeat failed — connection stale, forcing reconnect');
         _connected = false;
         _socket!.disconnect();
         Future.delayed(const Duration(milliseconds: 500), () {
@@ -550,7 +581,8 @@ class SocketService {
         return;
       }
       // Send ping
-      _socket!.emit('ping', {'timestamp': DateTime.now().millisecondsSinceEpoch});
+      _socket!
+          .emit('ping', {'timestamp': DateTime.now().millisecondsSinceEpoch});
     });
   }
 
@@ -562,40 +594,55 @@ class SocketService {
   /// Force a reconnection (useful when app comes to foreground)
   static void reconnect() {
     if (_disposed) {
-      debugPrint('[Socket.io] Reconnect called after dispose — re-initializing');
+      debugPrint(
+          '[Socket.io] Reconnect called after dispose — re-initializing');
       _disposed = false;
       // FIX: actually recreate stream controllers if they were closed.
       // Previously .isClosed was read but never acted upon, leaving
       // dead controllers after dispose() → reconnect().
       if (_driverLocationController.isClosed) {
-        _driverLocationController = StreamController<Map<String, dynamic>>.broadcast();
+        _driverLocationController =
+            StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_riderLocationController.isClosed) {
-        _riderLocationController = StreamController<Map<String, dynamic>>.broadcast();
+        _riderLocationController =
+            StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_tripStatusController.isClosed) {
-        _tripStatusController = StreamController<Map<String, dynamic>>.broadcast();
+        _tripStatusController =
+            StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_driverAssignedController.isClosed) {
-        _driverAssignedController = StreamController<Map<String, dynamic>>.broadcast();
+        _driverAssignedController =
+            StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_chatMessageController.isClosed) {
-        _chatMessageController = StreamController<Map<String, dynamic>>.broadcast();
+        _chatMessageController =
+            StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_accountStatusController.isClosed) {
-        _accountStatusController = StreamController<Map<String, dynamic>>.broadcast();
+        _accountStatusController =
+            StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_appUpdateGateController.isClosed) {
-        _appUpdateGateController = StreamController<Map<String, dynamic>>.broadcast();
+        _appUpdateGateController =
+            StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_zonesUpdatedController.isClosed) {
-        _zonesUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+        _zonesUpdatedController =
+            StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_goOnlineGateController.isClosed) {
-        _goOnlineGateController = StreamController<Map<String, dynamic>>.broadcast();
+        _goOnlineGateController =
+            StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_faceCheckReviewController.isClosed) {
-        _faceCheckReviewController = StreamController<Map<String, dynamic>>.broadcast();
+        _faceCheckReviewController =
+            StreamController<Map<String, dynamic>>.broadcast();
+      }
+      if (_pricingUpdatedController.isClosed) {
+        _pricingUpdatedController =
+            StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_connectionHealthController.isClosed) {
         _connectionHealthController = StreamController<bool>.broadcast();
@@ -655,6 +702,9 @@ class SocketService {
     }
     if (!_faceCheckReviewController.isClosed) {
       _faceCheckReviewController.close();
+    }
+    if (!_pricingUpdatedController.isClosed) {
+      _pricingUpdatedController.close();
     }
     if (!_connectionHealthController.isClosed) {
       _connectionHealthController.close();

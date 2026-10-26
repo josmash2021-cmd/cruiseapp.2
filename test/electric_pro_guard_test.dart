@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cruise_app/utils/vehicle_tier_style.dart';
 
 /// Guardian for the Electric Pro tier (user spec 2026-10-13):
-///   1. The rate card is the exact Standard↔Premium midpoint.
+///   1. Its fare comes from the server quote, in server-provided cents.
 ///   2. The booking sheet lists it between SUV XL and Sedan, capacity 5, ⚡.
 ///   3. Every render of car_electric.png falls back in a chain: bundled
 ///      asset → backend-hosted /static copy (OTA rule: Shorebird patches
@@ -13,8 +13,7 @@ import 'package:cruise_app/utils/vehicle_tier_style.dart';
 ///      backend) → the long-bundled side-profile render.
 ///   4. The "Meet Electric Pro" sheet has its own copy (ES/EN).
 ///   5. vehicle_tier_style knows the tier (key, photo, colour, icon).
-///   6. The request sends the option NAME ('Electric Pro'), which the
-///      backend normalises to `electric_pro`.
+///   6. The request sends the canonical quote tier `electric_pro`.
 ///   7. The scheduled-cancel fee is $20 in both mirrored sources.
 ///   8. The gold-bolt badge (bolt_badge.png, with the widget-composed OTA
 ///      fallback) marks the tier's card top-right — home fleet carousel AND
@@ -24,6 +23,7 @@ import 'package:cruise_app/utils/vehicle_tier_style.dart';
 void main() {
   final controller =
       File('lib/state/rider_trip_controller.dart').readAsStringSync();
+  final pricing = File('lib/models/ride_quote.dart').readAsStringSync();
   final widgets =
       File('lib/screens/ride_request_widgets.dart').readAsStringSync();
   final style = File('lib/utils/vehicle_tier_style.dart').readAsStringSync();
@@ -31,35 +31,34 @@ void main() {
   final home = File('lib/screens/home_screen_widgets.dart').readAsStringSync();
   final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
 
-  group('rate card', () {
-    test('anchorRates carries the exact midpoint card', () {
-      expect(controller, contains("case 'electric_pro':"));
-      expect(controller, contains('return (2.50, 1.40, 0.25, 2.60, 10.00);'),
-          reason: 'the Standard↔Premium midpoint, pinned by the spec');
-    });
-
-    test('the option prices itself off its own anchor', () {
-      expect(controller, contains("anchoredTotal('electric_pro')"));
+  group('server-quoted fare', () {
+    test('Electric Pro maps its own quote item and server cents', () {
+      expect(pricing, contains("case 'electric_pro':"));
+      expect(pricing, contains('originalTotalCents: original'));
+      expect(pricing, contains('promoTotalCents: promo'));
+      expect(pricing, contains('priceEstimate: promo / 100.0'));
+      expect(controller, isNot(contains('anchorRates')));
+      expect(controller, isNot(contains('flDiscount')));
     });
   });
 
   group('the booking option', () {
     test('exists between SUV XL and Sedan, capacity 5, bolt icon', () {
-      final optStart = controller.indexOf("id: 'electric_pro',");
+      final optStart = pricing.indexOf("id: 'electric_pro',");
       expect(optStart, greaterThan(-1));
-      final suvXl = controller.indexOf("id: 'suv_xl',");
-      final sedan = controller.indexOf("id: 'camry',");
+      final suvXl = pricing.indexOf("id: 'suv_xl',");
+      final sedan = pricing.indexOf("id: 'camry',");
       expect(suvXl, lessThan(optStart),
           reason: 'Electric Pro sorts after SUV XL (Premium)');
       expect(optStart, lessThan(sedan),
           reason: 'Electric Pro sorts before Sedan (Compact)');
-      final optBlock = controller.substring(optStart, optStart + 400);
+      final optBlock = pricing.substring(optStart, optStart + 400);
       expect(optBlock, contains("name: 'Electric Pro'"));
       expect(optBlock,
           contains("description: 'Electric • Zero emissions • Silent ride'"));
       expect(optBlock, contains("icon: '⚡'"));
       expect(optBlock, contains('capacity: 5'));
-      expect(optBlock, contains('etaMinutes: baseDuration + 2'));
+      expect(optBlock, contains('etaMinutes: duration + 2'));
     });
 
     test('the sheet keeps it between suv_xl and camry in the pinned order',
@@ -240,14 +239,14 @@ void main() {
   });
 
   group('the request sends electric_pro to the backend', () {
-    test('the option name travels as vehicleType, unmapped', () {
-      // The backend normalises "Electric Pro" -> "electric_pro" (spaces to
-      // underscores); any app-side remap would break that contract.
+    test('the canonical quote tier travels as vehicleType', () {
       expect(controller,
-          contains('vehicleType: _state.selectedOption?.name,'));
+          contains('vehicleType: _state.selectedOption!.canonicalTier,'));
       final booking =
           File('lib/screens/ride_request_controller.dart').readAsStringSync();
-      expect(booking, contains('vehicleType: state.selectedOption?.name,'));
+      expect(booking, contains('vehicleType: option.canonicalTier,'));
+      expect(pricing, contains("case 'electric_pro':"));
+      expect(pricing, contains("return 'electric_pro';"));
     });
 
     test('the home fleet card enters the flow with rideId electric_pro', () {
@@ -301,11 +300,10 @@ void main() {
       expect('ElectricBoltBadge('.allMatches(block).length, 1,
           reason: 'one badge site in the row, not one per tier');
       final i = block.indexOf('ElectricBoltBadge(');
-      expect(block.substring(i - 500, i),
-          contains("opt.id == 'electric_pro'"));
-      expect(block.substring(i - 500, i), contains('Positioned('));
-      expect(block.substring(i - 500, i), contains(RegExp(r'top: ')));
-      expect(block.substring(i - 500, i), contains(RegExp(r'right: -\d')));
+      expect(block, contains("if (opt.id == 'electric_pro')"));
+      expect(block.substring(i - 800, i), contains('Positioned('));
+      expect(block.substring(i - 800, i), contains(RegExp(r'top: ')));
+      expect(block.substring(i - 800, i), contains(RegExp(r'right: -\d')));
     });
   });
 

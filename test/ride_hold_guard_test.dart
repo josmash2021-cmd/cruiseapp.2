@@ -34,7 +34,7 @@ void main() {
     test('accepts paymentIntentId and sends stripe_payment_intent_id', () {
       final start = apiSrc.indexOf('static Future<Map<String, dynamic>> createTrip(');
       expect(start, isNonNegative, reason: 'createTrip must exist');
-      final body = apiSrc.substring(start, start + 1800);
+      final body = apiSrc.substring(start, start + 2600);
       expect(body, contains('String? paymentIntentId'),
           reason: 'createTrip must accept the optional PaymentIntent id');
       expect(body, contains("'stripe_payment_intent_id': paymentIntentId"),
@@ -63,11 +63,13 @@ void main() {
               'a scheduled booking opens no wallet sheet and places no hold');
     });
 
-    test('createTrip still carries the param for legacy held bookings', () {
+    test('createTrip carries a hold only when an amount remains', () {
       final create = scheduleSrc.indexOf('ApiService.createTrip(');
-      final block = scheduleSrc.substring(create, create + 1200);
-      expect(block, contains('paymentIntentId: _heldPaymentIntentId'),
-          reason: 'legacy builds that DID hold must keep sending it');
+      final block = scheduleSrc.substring(create, create + 1500);
+      expect(block, contains('paymentIntentId:'));
+      expect(block, contains('_holdAmountCents(option) > 0'));
+      expect(block, contains('_heldPaymentIntentId'),
+          reason: 'a real remaining balance still uses the authorized hold');
     });
   });
 
@@ -112,7 +114,7 @@ void main() {
       final i = tripSrc.indexOf('apiErr?.statusCode == 402');
       expect(i, isNonNegative,
           reason: 'requestRide must detect the 402 from trip creation');
-      final block = tripSrc.substring(i, i + 900);
+      final block = tripSrc.substring(i, i + 1900);
       expect(block, contains('RiderTripCancelCodes.clientPaymentDeclined'),
           reason: 'the rider must see a payment decline, not a network error');
     });

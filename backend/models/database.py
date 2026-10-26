@@ -444,6 +444,17 @@ class Trip(Base):
     driver_earnings = Column(Float, nullable=True)
     platform_fee = Column(Float, nullable=True)
     payout_excluded = Column(Boolean, default=False)
+    pricing_quote_id = Column(String(36), nullable=True, unique=True, index=True)
+    promotion_redemption_id = Column(Integer, nullable=True, index=True)
+    pricing_version = Column(Integer, nullable=True)
+    original_fare_cents = Column(Integer, nullable=True)
+    rider_promo_total_cents = Column(Integer, nullable=True)
+    driver_fare_cents = Column(Integer, nullable=True)
+    platform_credit_cents = Column(Integer, nullable=True)
+    platform_credit_applied_cents = Column(Integer, nullable=True)
+    cruise_cash_cents = Column(Integer, nullable=True)
+    quoted_distance_miles = Column(Float, nullable=True)
+    funding_source = Column(String(30), nullable=True)
     # New trips snapshot 90%; NULL on pre-policy rows retains their old split.
     driver_share_rate = Column(Float, nullable=True, default=0.90)
     refund_status = Column(String(20), nullable=True)
@@ -876,6 +887,79 @@ class AppConfig(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
 
+class RideQuote(Base):
+    __tablename__ = "ride_quotes"
+    id = Column(String(36), primary_key=True)
+    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    request_json = Column(Text, nullable=False)
+    quotes_json = Column(Text, nullable=False)
+    pricing_version = Column(Integer, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class RiderPromotionGrant(Base):
+    __tablename__ = "rider_promotion_grants"
+    id = Column(Integer, primary_key=True, index=True)
+    kind = Column(String(12), nullable=False, index=True)
+    percent = Column(Integer, nullable=False, default=30)
+    fallback_percent = Column(Integer, nullable=False, default=30)
+    max_miles = Column(Float, nullable=True)
+    allowed_tiers = Column(Text, nullable=False)
+    uses_per_rider = Column(Integer, nullable=False, default=1)
+    all_riders = Column(Boolean, nullable=False, default=False)
+    starts_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    reason = Column(Text, nullable=True)
+    created_by = Column(String(200), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
+class RiderPromotionGrantRider(Base):
+    __tablename__ = "rider_promotion_grant_riders"
+    id = Column(Integer, primary_key=True, index=True)
+    grant_id = Column(Integer, ForeignKey("rider_promotion_grants.id"), nullable=False, index=True)
+    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (UniqueConstraint("grant_id", "rider_id", name="uq_promotion_grant_rider"),)
+
+
+class RiderPromotionUsage(Base):
+    __tablename__ = "rider_promotion_usage"
+    id = Column(Integer, primary_key=True, index=True)
+    grant_id = Column(Integer, ForeignKey("rider_promotion_grants.id"), nullable=False, index=True)
+    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    active_count = Column(Integer, nullable=False, default=0)
+    used_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+    __table_args__ = (UniqueConstraint("grant_id", "rider_id", name="uq_promotion_usage_rider"),)
+
+
+class RiderPromotionRedemption(Base):
+    __tablename__ = "rider_promotion_redemptions"
+    id = Column(Integer, primary_key=True, index=True)
+    grant_id = Column(Integer, ForeignKey("rider_promotion_grants.id"), nullable=False, index=True)
+    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    quote_id = Column(String(36), ForeignKey("ride_quotes.id"), nullable=False, unique=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True, unique=True)
+    status = Column(String(20), nullable=False, default="reserved", index=True)
+    original_fare_cents = Column(Integer, nullable=False)
+    rider_fare_cents = Column(Integer, nullable=False)
+    driver_fare_cents = Column(Integer, nullable=False)
+    platform_credit_cents = Column(Integer, nullable=False, default=0)
+    distance_miles = Column(Float, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    released_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class FavoriteLocation(Base):
     __tablename__ = "favorite_locations"
     id = Column(Integer, primary_key=True, index=True)
@@ -1106,8 +1190,20 @@ async def column_missing(conn, table: str, column: str) -> bool:
     return column not in cols
 
 
+async def create_pricing_tables(conn) -> None:
+    for table in (
+        RideQuote.__table__,
+        RiderPromotionGrant.__table__,
+        RiderPromotionGrantRider.__table__,
+        RiderPromotionUsage.__table__,
+        RiderPromotionRedemption.__table__,
+    ):
+        await conn.run_sync(table.create, checkfirst=True)
+
+
 async def migrate_add_columns(conn):
     """Add new columns to existing tables if they don't exist (SQLite)."""
+    await create_pricing_tables(conn)
     import sqlalchemy as sa
     new_columns = [
         ("users", "id_photo_url", "TEXT"),
@@ -1246,6 +1342,17 @@ async def migrate_add_columns(conn):
         ("users", "face_review_required", "BOOLEAN DEFAULT 0"),
         ("users", "face_kick_pending", "BOOLEAN DEFAULT 0"),
         ("users", "go_online_disabled", "BOOLEAN DEFAULT 0"),
+        ("trips", "pricing_quote_id", "VARCHAR(36)"),
+        ("trips", "promotion_redemption_id", "INTEGER"),
+        ("trips", "pricing_version", "INTEGER"),
+        ("trips", "original_fare_cents", "INTEGER"),
+        ("trips", "rider_promo_total_cents", "INTEGER"),
+        ("trips", "driver_fare_cents", "INTEGER"),
+        ("trips", "platform_credit_cents", "INTEGER"),
+        ("trips", "platform_credit_applied_cents", "INTEGER"),
+        ("trips", "cruise_cash_cents", "INTEGER"),
+        ("trips", "quoted_distance_miles", "FLOAT"),
+        ("trips", "funding_source", "VARCHAR(30)"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1254,6 +1361,9 @@ async def migrate_add_columns(conn):
             ))
         except Exception:
             pass
+    await conn.execute(sa.text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_trips_pricing_quote_id ON trips (pricing_quote_id)"
+    ))
     await conn.execute(sa.text("""
         CREATE TABLE IF NOT EXISTS consent_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1323,6 +1433,7 @@ async def migrate_postgres(conn):
     Caller must hold pg_advisory_xact_lock(42424242) to serialize DDL.
     Checks column existence BEFORE ALTER TABLE to avoid AccessExclusiveLock
     on columns that already exist (prevents deadlocks with concurrent queries)."""
+    await create_pricing_tables(conn)
     migrations = [
         ("users", "id_photo_url", "TEXT"),
         ("users", "selfie_url", "TEXT"),
@@ -1509,6 +1620,17 @@ async def migrate_postgres(conn):
         ("users", "face_review_required", "BOOLEAN DEFAULT FALSE"),
         ("users", "face_kick_pending", "BOOLEAN DEFAULT FALSE"),
         ("users", "go_online_disabled", "BOOLEAN DEFAULT FALSE"),
+        ("trips", "pricing_quote_id", "VARCHAR(36)"),
+        ("trips", "promotion_redemption_id", "INTEGER"),
+        ("trips", "pricing_version", "INTEGER"),
+        ("trips", "original_fare_cents", "INTEGER"),
+        ("trips", "rider_promo_total_cents", "INTEGER"),
+        ("trips", "driver_fare_cents", "INTEGER"),
+        ("trips", "platform_credit_cents", "INTEGER"),
+        ("trips", "platform_credit_applied_cents", "INTEGER"),
+        ("trips", "cruise_cash_cents", "INTEGER"),
+        ("trips", "quoted_distance_miles", "DOUBLE PRECISION"),
+        ("trips", "funding_source", "VARCHAR(30)"),
     ]
     for table, col, col_type in migrations:
         try:
@@ -1637,6 +1759,7 @@ async def migrate_postgres(conn):
         "CREATE INDEX IF NOT EXISTS idx_dispatch_trip_status ON dispatch_offers (trip_id, status)",
         "CREATE INDEX IF NOT EXISTS idx_trips_driver_status ON trips (driver_id, status)",
         "CREATE INDEX IF NOT EXISTS idx_trips_rider_status ON trips (rider_id, status)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_trips_pricing_quote_id ON trips (pricing_quote_id)",
         # NEW: Scheduled ride dispatcher queries
         "CREATE INDEX IF NOT EXISTS idx_trips_status_created_at ON trips (status, created_at) WHERE status IN ('requested', 'scheduled', 'scheduled_accepted')",
         "CREATE INDEX IF NOT EXISTS idx_trips_scheduled_at_status ON trips (scheduled_at, status) WHERE scheduled_at IS NOT NULL",

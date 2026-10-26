@@ -1468,6 +1468,8 @@ from routers.masked_calls import router as masked_calls_router
 from routers.payments import router as payments_router
 from routers.admin import router as admin_router
 from routers.misc import router as misc_router
+from routers.rider_pricing import router as rider_pricing_router
+from routers.admin_promotions import router as admin_promotions_router
 from routers.scheduled import router as scheduled_router
 from routers.referrals import router as referrals_router
 from routers.driver_referrals import (
@@ -1494,6 +1496,8 @@ app.include_router(masked_calls_router)
 app.include_router(payments_router)
 app.include_router(admin_router)
 app.include_router(misc_router)
+app.include_router(rider_pricing_router)
+app.include_router(admin_promotions_router)
 app.include_router(scheduled_router)
 app.include_router(referrals_router)
 app.include_router(driver_referrals_router)
@@ -1659,6 +1663,7 @@ def _security_headers_for(path: str, method: str) -> list[tuple[bytes, bytes]]:
 def _is_read_poll_path(path: str) -> bool:
     return (
         path == "/trips/active"
+        or path == "/pricing/revision"
         or path == "/support/chats"
         or (path.startswith("/trips/") and (path.endswith("/poll") or path.endswith("/chat")))
         or (path.startswith("/support/chats/") and (path.endswith("/messages") or path.endswith("/typing")))
@@ -2459,6 +2464,7 @@ async def _scheduled_ride_dispatcher():
                     # --------------------------------------------------
                     if minutes_until < -5:
                         _prev = trip.status
+                        had_driver = bool(trip.driver_id or trip.driver_assigned_at)
                         trip.status = "cancelled"
                         trip.cancel_reason = "auto:scheduler_expired_no_driver"
                         trip.updated_at = datetime.now(timezone.utc)
@@ -2469,6 +2475,8 @@ async def _scheduled_ride_dispatcher():
                             trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
                         except Exception as _hold_err:
                             logging.warning("[AutoCancel/Scheduler] hold settle failed trip=%d: %s", trip.id, _hold_err)
+                        from services.promotion_redemptions import settle_promotion_on_cancel
+                        await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
                         await db.commit()
                         logging.warning(
                             "[AutoCancel/Scheduler] trip=%d prev_status=%r driver_id=%s "
@@ -2619,10 +2627,13 @@ async def _scheduled_ride_dispatcher():
                                         "[Scheduler] trip=%d hold re-auth DECLINED: %s — cancelling without fee",
                                         trip.id, _reauth_err)
                                 if not _reauthed:
+                                    had_driver = bool(trip.driver_id or trip.driver_assigned_at)
                                     trip.status = "cancelled"
                                     trip.cancel_reason = "payment_declined"
                                     trip.payment_status = "cancelled"
                                     trip.updated_at = datetime.now(timezone.utc)
+                                    from services.promotion_redemptions import settle_promotion_on_cancel
+                                    await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
                                     await db.commit()
                                     try:
                                         rider_r = await db.execute(
@@ -2894,6 +2905,7 @@ async def _scheduled_ride_reminder_loop():
                     # --------------------------------------------------
                     if minutes_until < -5 and "no_driver_cancel" not in trip_reminders:
                         _prev = trip.status
+                        had_driver = bool(trip.driver_id or trip.driver_assigned_at)
                         trip.status = "cancelled"
                         trip.cancel_reason = "auto:reminder_past_scheduled_no_pickup"
                         trip.updated_at = datetime.now(timezone.utc)
@@ -2903,6 +2915,8 @@ async def _scheduled_ride_reminder_loop():
                             trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
                         except Exception as _hold_err:
                             logging.warning("[AutoCancel/Reminder] hold settle failed trip=%d: %s", trip.id, _hold_err)
+                        from services.promotion_redemptions import settle_promotion_on_cancel
+                        await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
                         await db.commit()
                         logging.warning(
                             "[AutoCancel/Reminder] trip=%d prev_status=%r driver_id=%s "

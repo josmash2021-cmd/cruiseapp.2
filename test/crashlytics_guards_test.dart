@@ -120,4 +120,24 @@ void main() {
       });
     });
   });
+
+  group('FIX 5 — bank-link errors self-report to Crashlytics (2026-10-26)', () {
+    // Bank adds failed ONLY on Android (all successes were iOS) and the exact
+    // SDK error never left the phone: the catch blocks only debugPrint, which
+    // release builds drop. Rolando (driver 325) / Yudel (driver 255) could
+    // not be diagnosed without a screenshot. The screens must recordError so
+    // the next failure shows up in Crashlytics by itself.
+    test('add_bank_account_screen reports all three catch branches', () {
+      final src = _read('lib/screens/driver/add_bank_account_screen.dart');
+      expect(src, contains("import 'package:firebase_crashlytics"));
+      expect(src, contains("reason: 'add_bank_tokenize'"));
+      expect(src, contains("reason: 'add_bank_submit_unexpected'"));
+    });
+
+    test('payout_methods_screen reports the link-flow catch', () {
+      final src = _read('lib/screens/driver/payout_methods_screen.dart');
+      expect(src, contains("import 'package:firebase_crashlytics"));
+      expect(src, contains("reason: 'payout_bank_link_flow'"));
+    });
+  });
 }

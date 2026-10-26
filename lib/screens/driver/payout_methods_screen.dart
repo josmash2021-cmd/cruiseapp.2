@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1229,8 +1230,13 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       if (existing == null && _methodOfType('bank_account') != null) {
         _snack(S.of(context).bankAccountLinked);
       }
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('[Payout] bank link flow error: $e');
+      // Non-fatal report — see add_bank_account_screen.dart (2026-10-26).
+      FirebaseCrashlytics.instance.recordError(
+        e, st,
+        reason: 'payout_bank_link_flow',
+      );
       if (!mounted) return;
       _snack(
         e is ApiException ? e.message : S.of(context).failedToAddMethod,

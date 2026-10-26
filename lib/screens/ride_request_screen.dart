@@ -6,7 +6,8 @@ import '../map/map_surface_coordinator.dart';
 import '../map/flat_map_projection.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kDebugMode, kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import '../map/web_map_view.dart';
 import 'package:flutter/scheduler.dart';
@@ -54,6 +55,7 @@ import '../widgets/electric_bolt_badge.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/gold_pin_renderer.dart';
+import '../widgets/quoted_fare_view.dart';
 import '../widgets/map/animated_map_label.dart';
 
 import '../widgets/map/circular_pin_renderer.dart';
@@ -111,9 +113,11 @@ class RideRequestScreen extends StatefulWidget {
   final String? initialDropoffAddress;
   final PlaceDetails? initialPickupDetails;
   final PlaceDetails? initialDropoffDetails;
+
   /// The intermediate stop chosen on the addresses page ("+"). Travels in
   /// the booking notes ("Stop: …") — the create endpoint takes no stop field.
   final String? initialStopAddress;
+
   /// The stop's coordinates — the map pins it and the preview route runs
   /// pickup → stop → dropoff through them.
   final double? initialStopLat;
@@ -122,6 +126,7 @@ class RideRequestScreen extends StatefulWidget {
   final String? initialDropoffLabel;
   final RouteResult? preloadedRoute;
   final String? initialRideId;
+
   /// When the previous screen was a full-screen map, passing its final
   /// camera state lets this screen boot the map at exactly the same
   /// center/zoom/bearing/pitch so the transition reads as one smooth
@@ -131,6 +136,7 @@ class RideRequestScreen extends StatefulWidget {
   final double? handoffZoom;
   final double? handoffBearing;
   final double? handoffPitch;
+
   /// When true, boots in the in-place map picker mode (RiderPhase.pickingLocation).
   /// The same Mapbox canvas stays alive through picker → confirm → route preview
   /// so there's no visible handoff between two separate maps (matches the
@@ -166,7 +172,6 @@ class RideRequestScreen extends StatefulWidget {
   @override
   State<RideRequestScreen> createState() => _RideRequestScreenState();
 }
-
 
 const _gold = Color(0xFFE8C547);
 const _cardGold = Color(0xFFE8C547);
@@ -258,8 +263,12 @@ class _PaymentRetryDialog extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                isNetworkError ? Icons.wifi_off_rounded : Icons.credit_card_off_rounded,
-                color: isNetworkError ? const Color(0xFFF59E0B) : const Color(0xFFEF4444),
+                isNetworkError
+                    ? Icons.wifi_off_rounded
+                    : Icons.credit_card_off_rounded,
+                color: isNetworkError
+                    ? const Color(0xFFF59E0B)
+                    : const Color(0xFFEF4444),
                 size: 28,
               ),
             ),
@@ -304,7 +313,8 @@ class _PaymentRetryDialog extends StatelessWidget {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: () => Navigator.pop(context, _RetryAction.retrySame),
+                    onPressed: () =>
+                        Navigator.pop(context, _RetryAction.retrySame),
                     child: Text(
                       isNetworkError 
                           ? s.retryConnection
@@ -331,7 +341,8 @@ class _PaymentRetryDialog extends StatelessWidget {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      onPressed: () => Navigator.pop(context, _RetryAction.tryDifferentMethod),
+                      onPressed: () => Navigator.pop(
+                          context, _RetryAction.tryDifferentMethod),
                       child: Text(
                         s.tryDifferentPaymentMethod,
                         style: const TextStyle(
@@ -352,12 +363,14 @@ class _PaymentRetryDialog extends StatelessWidget {
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white.withValues(alpha: 0.8),
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                        side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.3)),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      onPressed: () => Navigator.pop(context, _RetryAction.addNewCard),
+                      onPressed: () =>
+                          Navigator.pop(context, _RetryAction.addNewCard),
                       child: Text(
                         s.addNewCard,
                         style: const TextStyle(
@@ -392,7 +405,9 @@ class _PaymentRetryDialog extends StatelessWidget {
 
 class _RideRequestScreenState extends State<RideRequestScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
-  void _setState(VoidCallback fn) { if (mounted) setState(fn); }
+  void _setState(VoidCallback fn) {
+    if (mounted) setState(fn);
+  }
 
   /// Identifies this screen to [MapSurfaceCoordinator].
   ///
@@ -415,8 +430,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// picker's acquire revokes the sheet for real, and didPopNext hands the
   /// surface back when the picker pops.
   static int _nextMapSurfaceId = 0;
-  late final String _mapSurfaceOwner =
-      'RideRequest-${++_nextMapSurfaceId}';
+  late final String _mapSurfaceOwner = 'RideRequest-${++_nextMapSurfaceId}';
   bool _mapMounted = false;
 
   /// The camera as the rider last left it, fed by onCameraChangeListener.
@@ -440,6 +454,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   mapbox.PointAnnotation? _goldDotAnnot;
   mapbox.PointAnnotation? _userDotAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
+
   /// Newest camera frame waiting for the channel, and whether one is
   /// already travelling. The animation listeners produce frames faster than
   /// the pigeon channel drains them, so frames are coalesced rather than
@@ -598,7 +613,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       }
     }
     if (!mounted) return allowed;
-    if (allowed != _testModeAllowed) _setState(() => _testModeAllowed = allowed);
+    if (allowed != _testModeAllowed)
+      _setState(() => _testModeAllowed = allowed);
     // Someone who had Test Mode selected before this gate existed would
     // keep a stored method the picker no longer offers, leaving Request
     // Ride pointed at a payment that cannot be charged.
@@ -624,8 +640,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       // "choose a method" empty state.
       if (AppPlatform.isIOS && !kIsWeb) {
         try {
-          final supported =
-              await stripe.Stripe.instance.isPlatformPaySupported(
+          final supported = await stripe.Stripe.instance.isPlatformPaySupported(
             googlePay: const stripe.IsGooglePaySupportedParams(),
           );
           if (supported && mounted) {
@@ -665,6 +680,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
 
   // ── Searching overlay: splash first, then map with address bars ──
   bool _searchingShowMap = false;
+
   /// True while SearchingDriverScreen is on the navigator stack.
   /// Blocks _onStateChange from navigating away while the screen is visible.
   bool _searchingScreenShowing = false;
@@ -830,6 +846,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Seed the last-known camera from the SAME values the MapWidget boots
     // from. _lastCam* is otherwise null until the first onCameraChange event
     // — and if that listener does not fire for user gestures on iOS, it stays
@@ -848,7 +865,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (widget.pickerMode) {
       if (widget.handoffLat != null && widget.handoffLng != null) {
         handoffCenter = LatLng(widget.handoffLat!, widget.handoffLng!);
-      } else if (!widget.pickerIsPickup && widget.initialDropoffDetails != null) {
+      } else if (!widget.pickerIsPickup &&
+          widget.initialDropoffDetails != null) {
         handoffCenter = LatLng(
           widget.initialDropoffDetails!.lat,
           widget.initialDropoffDetails!.lng,
@@ -873,7 +891,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _lastCamPitch = widget.handoffPitch ?? 45.0;
     _lastCamBearing = widget.handoffBearing ?? 0.0;
     if (widget.pickerMode) {
-      debugPrint('[PickerBoot] pickerMode handoff=${widget.handoffLat},${widget.handoffLng} '
+      debugPrint(
+          '[PickerBoot] pickerMode handoff=${widget.handoffLat},${widget.handoffLng} '
           'pickerIsPickup=${widget.pickerIsPickup} '
           'lastCam=${_lastCamCenter?.latitude},${_lastCamCenter?.longitude} '
           'center=${_center?.latitude},${_center?.longitude}');
@@ -1009,17 +1028,22 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     // coordinates were passed correctly.
     if (!widget.pickerMode) {
       if (widget.initialPickupDetails != null) {
-        _center = LatLng(widget.initialPickupDetails!.lat, widget.initialPickupDetails!.lng);
+        _center = LatLng(
+            widget.initialPickupDetails!.lat, widget.initialPickupDetails!.lng);
       } else if (widget.initialDropoffDetails != null) {
-        _center = LatLng(widget.initialDropoffDetails!.lat, widget.initialDropoffDetails!.lng);
+        _center = LatLng(widget.initialDropoffDetails!.lat,
+            widget.initialDropoffDetails!.lng);
       }
     } else if (_center == null) {
       // Absolute fallback: if the handoff seeding above somehow missed,
       // prefer the prediction we are about to pick.
       if (widget.pickerIsPickup && widget.initialPickupDetails != null) {
-        _center = LatLng(widget.initialPickupDetails!.lat, widget.initialPickupDetails!.lng);
-      } else if (!widget.pickerIsPickup && widget.initialDropoffDetails != null) {
-        _center = LatLng(widget.initialDropoffDetails!.lat, widget.initialDropoffDetails!.lng);
+        _center = LatLng(
+            widget.initialPickupDetails!.lat, widget.initialPickupDetails!.lng);
+      } else if (!widget.pickerIsPickup &&
+          widget.initialDropoffDetails != null) {
+        _center = LatLng(widget.initialDropoffDetails!.lat,
+            widget.initialDropoffDetails!.lng);
       }
       // _initLocation no longer back-fills _center in picker mode (the GPS
       // overwrite was the snap-back), so it MUST be non-null here or the
@@ -1049,16 +1073,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         widget.initialDropoffDetails != null) {
       _ctrl.setPreloadedRoute(
         pickup: widget.initialPickupDetails!,
-        pickupLabel: widget.initialPickupLabel ??
-            widget.initialPickupDetails!.address,
+        pickupLabel:
+            widget.initialPickupLabel ?? widget.initialPickupDetails!.address,
         dropoff: widget.initialDropoffDetails!,
-        dropoffLabel: widget.initialDropoffLabel ??
-            widget.initialDropoffDetails!.address,
+        dropoffLabel:
+            widget.initialDropoffLabel ?? widget.initialDropoffDetails!.address,
         route: widget.preloadedRoute!,
       );
       // Still resolve GPS for the user-dot overlay
       _locationReadyFuture = _initLocation();
-    } else if (widget.initialPickupDetails != null && widget.initialDropoffDetails != null) {
+    } else if (widget.initialPickupDetails != null &&
+        widget.initialDropoffDetails != null) {
       // Both locations already known — set immediately, don't wait for GPS
       _ctrl.setPickup(
         widget.initialPickupDetails!,
@@ -1079,8 +1104,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             widget.initialPickupDetails!,
             widget.initialPickupLabel ?? widget.initialPickupDetails!.address,
           );
-        } else if (_userLocation != null && widget.initialDropoffDetails != null) {
-          final curLabel = _currentAddress.isNotEmpty ? _currentAddress : 'current location';
+        } else if (_userLocation != null &&
+            widget.initialDropoffDetails != null) {
+          final curLabel =
+              _currentAddress.isNotEmpty ? _currentAddress : 'current location';
           _ctrl.setPickup(
             PlaceDetails(
               address: curLabel,
@@ -1134,7 +1161,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     }
   }
 
-
   /// Fetch the rider's Cruise Cash balance so the picked vehicle card
   /// can show "-$X.XX Cruise Cash" preview. Silent on failure — the
   /// backend still applies it at dispatch time regardless of the UI.
@@ -1167,6 +1193,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       _shimmerCtrl.repeat();
       _priceShimmerCtrl.repeat();
       _badgePremiumCtrl.repeat();
+      unawaited(_loadCruiseCashBalance());
     }
   }
 
@@ -1183,7 +1210,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       owner: _mapSurfaceOwner,
       onRevoke: () async {
         if (!mounted || !_mapMounted) return;
-        debugPrint('[CamSnap] SURFACE REVOKED — map will rebuild at initial camera');
+        debugPrint(
+            '[CamSnap] SURFACE REVOKED — map will rebuild at initial camera');
         // Every annotation handle belongs to the PlatformView being
         // destroyed, so they all go with it — nulling them here (mirror of
         // driver_online_controller._releaseMapSurface) is what stops later
@@ -1214,11 +1242,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _setState(() => _mapMounted = true);
   }
 
+  @override
+  void didPushNext() {
+    _ctrl.setCategorySelectionVisible(false);
+  }
+
   /// Back from the picker (or anything else that took the surface) — take
   /// it back. The camera handoff below restores the spot the rider picked,
   /// so a fresh mount lands where they left off.
   @override
   void didPopNext() {
+    _ctrl.setCategorySelectionVisible(true);
     if (!mounted || _mapMounted) return;
     unawaited(_acquireMapSurface());
   }
@@ -1322,7 +1356,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               Container(
                 color: const Color(0xFF07080D),
                 child: const Center(
-                  child: CircularProgressIndicator(color: Color(0xFFE8C547), strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                        color: Color(0xFFE8C547), strokeWidth: 2),
                 ),
               )
             // The Driver Found overlay used to bring its OWN full-screen
@@ -1403,7 +1438,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 child: mapbox.MapWidget(
                   textureView: true,
                   styleUri: MapboxConfig.styleDark,
-                  onMapLoadErrorListener: (err) => debugPrint('[RideRequest] Load error: ${err.message} (type: ${err.type})'),
+                    onMapLoadErrorListener: (err) => debugPrint(
+                        '[RideRequest] Load error: ${err.message} (type: ${err.type})'),
                   // Boot camera: the LAST place the rider left the map, not
                   // the handoff or the GPS fix. PlatformViews get destroyed
                   // and recreated (GPU pressure, the coordinator's handoff)
@@ -1429,9 +1465,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     center: mapbox.Point(
                       coordinates: mapbox.Position(
                         _lastCamCenter?.longitude ??
-                            widget.handoffLng ?? _center!.longitude,
+                              widget.handoffLng ??
+                              _center!.longitude,
                         _lastCamCenter?.latitude ??
-                            widget.handoffLat ?? _center!.latitude,
+                              widget.handoffLat ??
+                              _center!.latitude,
                       ),
                     ),
                     zoom: _lastCamZoom ?? widget.handoffZoom ?? 15.5,
@@ -1444,7 +1482,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     // which is exactly what resets the camera to the initial
                     // frame (the rider's own location, tilt gone) and reads
                     // as "the picker snapped back".
-                    debugPrint('[CamSnap] onMapCreated phase=${_ctrl.state.phase} '
+                      debugPrint(
+                          '[CamSnap] onMapCreated phase=${_ctrl.state.phase} '
                         'pickerMode=${widget.pickerMode} mountedWas=$_mapMounted');
                     _mapCtrl = ctrl;
                     // A fresh surface starts with a clean write gate. The
@@ -1457,10 +1496,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     // Cache controller for reuse across rider screens
                     MapControllerCache.instance.cache(ctrl);
                     try {
-                      ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-                      ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-                      ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-                      ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                        ctrl.scaleBar.updateSettings(
+                            mapbox.ScaleBarSettings(enabled: false));
+                        ctrl.compass.updateSettings(
+                            mapbox.CompassSettings(enabled: false));
+                        ctrl.attribution.updateSettings(
+                            mapbox.AttributionSettings(enabled: false));
+                        ctrl.logo.updateSettings(
+                            mapbox.LogoSettings(enabled: false));
                     } catch (_) {}
                     // Polyline below labels, points always on top.
                     //
@@ -1469,12 +1512,14 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     // managers land, and finishing the setup against a map
                     // that has been torn down is a native crash, not an
                     // exception.
-                    final poly = await ctrl.annotations.createPolylineAnnotationManager(
+                      final poly = await ctrl.annotations
+                          .createPolylineAnnotationManager(
                       below: "road-label",
                     );
                     if (!mounted || !identical(_mapCtrl, ctrl)) return;
                     _polylineAnnotMgr = poly;
-                    final point = await ctrl.annotations.createPointAnnotationManager();
+                      final point =
+                          await ctrl.annotations.createPointAnnotationManager();
                     if (!mounted || !identical(_mapCtrl, ctrl)) return;
                     _pointAnnotMgr = point;
                     // Retry _drawRoute now that managers are ready. If the
@@ -1516,11 +1561,16 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     }
                     try {
                       final lid = _pointAnnotMgr!.id;
-                      await ctrl.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'viewport');
-                      await ctrl.style.setStyleLayerProperty(lid, 'icon-rotation-alignment', 'viewport');
-                      await ctrl.style.setStyleLayerProperty(lid, 'icon-anchor', 'bottom');
-                      await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
-                      await ctrl.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);
+                        await ctrl.style.setStyleLayerProperty(
+                            lid, 'icon-pitch-alignment', 'viewport');
+                        await ctrl.style.setStyleLayerProperty(
+                            lid, 'icon-rotation-alignment', 'viewport');
+                        await ctrl.style.setStyleLayerProperty(
+                            lid, 'icon-anchor', 'bottom');
+                        await ctrl.style.setStyleLayerProperty(
+                            lid, 'icon-allow-overlap', true);
+                        await ctrl.style.setStyleLayerProperty(
+                            lid, 'icon-ignore-placement', true);
                     } catch (_) {}
                     if (mounted) setState(() => _mapReady = true);
                   },
@@ -1530,11 +1580,16 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       if (_pointAnnotMgr != null) {
                         try {
                           final lid = _pointAnnotMgr!.id;
-                          await _mapCtrl!.style.setStyleLayerProperty(lid, 'icon-pitch-alignment', 'viewport');
-                          await _mapCtrl!.style.setStyleLayerProperty(lid, 'icon-rotation-alignment', 'viewport');
-                          await _mapCtrl!.style.setStyleLayerProperty(lid, 'icon-anchor', 'bottom');
-                          await _mapCtrl!.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
-                          await _mapCtrl!.style.setStyleLayerProperty(lid, 'icon-ignore-placement', true);
+                            await _mapCtrl!.style.setStyleLayerProperty(
+                                lid, 'icon-pitch-alignment', 'viewport');
+                            await _mapCtrl!.style.setStyleLayerProperty(
+                                lid, 'icon-rotation-alignment', 'viewport');
+                            await _mapCtrl!.style.setStyleLayerProperty(
+                                lid, 'icon-anchor', 'bottom');
+                            await _mapCtrl!.style.setStyleLayerProperty(
+                                lid, 'icon-allow-overlap', true);
+                            await _mapCtrl!.style.setStyleLayerProperty(
+                                lid, 'icon-ignore-placement', true);
                         } catch (_) {}
                       }
                       // Gold dot puck disabled — user asked for it to
@@ -1698,7 +1753,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeOutBack,
                 child: AnimatedOpacity(
-                  opacity: (phase != RiderPhase.idle && !blockBack) ? 1.0 : 0.0,
+                    opacity:
+                        (phase != RiderPhase.idle && !blockBack) ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 200),
                   child: IgnorePointer(
                     ignoring: phase == RiderPhase.idle || blockBack,
@@ -1750,8 +1806,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 duration: const Duration(milliseconds: 380),
                 curve: Curves.easeInOutCubicEmphasized,
                 right: 12,
-                bottom:
-                    (_sheetHeightPx > 0 ? _sheetHeightPx + _sheetScreenGap : 160) +
+                  bottom: (_sheetHeightPx > 0
+                          ? _sheetHeightPx + _sheetScreenGap
+                          : 160) +
                         14,
                 child: AnimatedScale(
                   scale: 1.0,
@@ -1774,16 +1831,19 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 child: IgnorePointer(
                   child: Center(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF07080D).withValues(alpha: 0.85),
+                          color:
+                              const Color(0xFF07080D).withValues(alpha: 0.85),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           SizedBox(
-                            width: 16, height: 16,
+                              width: 16,
+                              height: 16,
                             child: CircularProgressIndicator(
                               color: Color(0xFFE8C547),
                               strokeWidth: 2,
@@ -1806,7 +1866,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               ),
 
             // ── "Where to?" pill (idle, hidden while fetching route) ──
-            _buildWhereToBar(c, topPad, phase == RiderPhase.idle && !_fetchingRoute),
+              _buildWhereToBar(
+                  c, topPad, phase == RiderPhase.idle && !_fetchingRoute),
 
             // ── Route preview sheet ──
             if (phase == RiderPhase.previewRoute ||
@@ -1829,7 +1890,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     ),
     );
   }
-
 
   // ── Searching bottom card — premium animated "Looking for ride" ──
 
@@ -1897,8 +1957,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                           s.locationCaps,
                           style: TextStyle(
                             fontFamily: 'Poppins',
-                            color: const Color(0xFFE8C547)
-                                .withValues(alpha: 0.75),
+                            color:
+                                const Color(0xFFE8C547).withValues(alpha: 0.75),
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1.4,

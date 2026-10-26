@@ -90,7 +90,8 @@ class _CircuitBreaker {
   /// [statusCode] is null when the call threw before receiving a
   /// response (timeout, socket, DNS, etc.) — counts as failure.
   void recordResult({int? statusCode, Object? error}) {
-    final isFailure = error != null || (statusCode != null && statusCode >= 500);
+    final isFailure =
+        error != null || (statusCode != null && statusCode >= 500);
     if (isFailure) {
       _consecutiveFailures++;
       if (_consecutiveFailures >= failureThreshold) {
@@ -154,7 +155,8 @@ class ApiService {
 
   /// Production Railway URL — works from any network (cellular, WiFi, etc.)
   /// Production backend URL — Railway direct (fastest path)
-  static const String _productionUrl = 'https://cruiseapp2-production.up.railway.app';
+  static const String _productionUrl =
+      'https://cruiseapp2-production.up.railway.app';
 
   static const String _serverUrlPrefKey = 'cruise_server_url';
 
@@ -188,8 +190,7 @@ class ApiService {
   /// Exception thrown when the circuit breaker is OPEN and a request
   /// is rejected without hitting the network. Callers can catch this
   /// specifically to avoid logging it as a real error.
-  static bool isCircuitOpenError(Object err) =>
-      err is _CircuitOpenException;
+  static bool isCircuitOpenError(Object err) => err is _CircuitOpenException;
 
   /// SMART CACHE for GET requests.
   /// 
@@ -247,7 +248,8 @@ class ApiService {
       // ── 4. Cache successful responses ──────────────────────────────
       if (useCache && cacheTtl > Duration.zero && response.statusCode == 200) {
         _responseCache[cacheKey] = _CacheEntry(response.body, cacheTtl);
-        debugPrint('[ApiService] CACHE SET: ${url.path} (TTL=${cacheTtl.inSeconds}s)');
+        debugPrint(
+            '[ApiService] CACHE SET: ${url.path} (TTL=${cacheTtl.inSeconds}s)');
       }
       
       return response;
@@ -256,7 +258,8 @@ class ApiService {
     }
   }
 
-  static Future<http.Response> _executeGet(Uri url, {Map<String, String>? headers}) async {
+  static Future<http.Response> _executeGet(Uri url,
+      {Map<String, String>? headers}) async {
     try {
       final response = await _client.get(url, headers: headers).timeout(
         const Duration(seconds: 4),
@@ -302,10 +305,14 @@ class ApiService {
   static Future<void> preResolveDns() async {
     if (kIsWeb) return; // dart:io InternetAddress is unsupported on web
     await Future.wait([
-      InternetAddress.lookup('cruiseapp2-production.up.railway.app').catchError((_) => <InternetAddress>[]),
-      InternetAddress.lookup('api.mapbox.com').catchError((_) => <InternetAddress>[]),
-      InternetAddress.lookup('maps.googleapis.com').catchError((_) => <InternetAddress>[]),
-      InternetAddress.lookup('router.project-osrm.org').catchError((_) => <InternetAddress>[]),
+      InternetAddress.lookup('cruiseapp2-production.up.railway.app')
+          .catchError((_) => <InternetAddress>[]),
+      InternetAddress.lookup('api.mapbox.com')
+          .catchError((_) => <InternetAddress>[]),
+      InternetAddress.lookup('maps.googleapis.com')
+          .catchError((_) => <InternetAddress>[]),
+      InternetAddress.lookup('router.project-osrm.org')
+          .catchError((_) => <InternetAddress>[]),
     ]).timeout(const Duration(seconds: 3), onTimeout: () => []);
     debugPrint('[ApiService] DNS pre-resolution complete');
   }
@@ -313,7 +320,8 @@ class ApiService {
   /// Lightweight connectivity check — pings DNS without adding dependencies.
   /// Uses dart:io InternetAddress.lookup with a 3-second timeout.
   static Future<bool> isOnline() async {
-    if (kIsWeb) return true; // no dart:io DNS lookup on web; browser handles connectivity
+    if (kIsWeb)
+      return true; // no dart:io DNS lookup on web; browser handles connectivity
     try {
       final result = await InternetAddress.lookup('google.com')
           .timeout(const Duration(seconds: 3));
@@ -400,7 +408,8 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_serverUrlPrefKey, _activeUrl);
     }
-    debugPrint('[ApiService] server URL updated → $_activeUrl (persisted: ${!_isLocalUrl(_activeUrl)})');
+    debugPrint(
+        '[ApiService] server URL updated → $_activeUrl (persisted: ${!_isLocalUrl(_activeUrl)})');
   }
 
   /// Try each candidate URL with a lightweight health-check (`GET /health`).
@@ -421,13 +430,11 @@ class ApiService {
     };
 
     // Build the full list of URLs to try — all at once, in parallel.
-    final allCandidates = candidates ?? (_dynamicTunnelUrl != null
+    final allCandidates = candidates ??
+        (_dynamicTunnelUrl != null
         ? [_dynamicTunnelUrl!]
         : [_productionUrl, _activeUrl]);
-    final urls = allCandidates
-        .where((u) => u.isNotEmpty)
-        .toSet()
-        .toList();
+    final urls = allCandidates.where((u) => u.isNotEmpty).toSet().toList();
 
     if (urls.isNotEmpty) {
       final completer = Completer<String?>();
@@ -498,6 +505,7 @@ class ApiService {
   /// Called when the backend returns 401 with detail "session_expired_new_device",
   /// meaning the driver logged in on another device and this session is invalid.
   static void Function()? onSessionExpiredNewDevice;
+
   /// Account blocked/deleted server-side while the session was alive — the
   /// app must leave immediately (main.dart wires the navigation).
   static void Function()? onAccountTerminated;
@@ -511,7 +519,8 @@ class ApiService {
 
   /// Public wrapper for saving auth tokens (used by demo account direct login).
   static Future<void> saveToken(String token) => _saveToken(token);
-  static Future<void> saveRefreshToken(String token) => _saveRefreshToken(token);
+  static Future<void> saveRefreshToken(String token) =>
+      _saveRefreshToken(token);
 
   static Future<void> _saveToken(String token) async {
     _cachedToken = token;
@@ -650,11 +659,12 @@ class ApiService {
 
   /// Public accessor so PlacesService and other standalone services can
   /// include the same auth headers (X-API-Key, HMAC signature, etc.).
-  static Map<String, String> jsonHeaders([String? token]) => _jsonHeaders(token);
+  static Map<String, String> jsonHeaders([String? token]) =>
+      _jsonHeaders(token);
 
   static Map<String, String> _jsonHeaders([String? token]) {
-    final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
-        .toString();
+    final timestamp =
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
     final nonce = _generateNonce();
     final signature = _computeSignature(timestamp, nonce);
     // Enable compression and keep-alive for all requests
@@ -712,7 +722,8 @@ class ApiService {
         return res;
       } on SocketException catch (e) {
         _consecutiveFailures++;
-        debugPrint('[ApiService] SocketException attempt $attempt/$maxAttempts: $e');
+        debugPrint(
+            '[ApiService] SocketException attempt $attempt/$maxAttempts: $e');
         if (attempt < maxAttempts) {
           if (_consecutiveFailures >= 2) {
             debugPrint('[ApiService] Probing for best URL...');
@@ -759,7 +770,9 @@ class ApiService {
       return body is Map<String, dynamic> ? body : {'data': body};
     }
     // Session replaced by login on another device — force logout with dialog
-    if (res.statusCode == 401 && body is Map && body['detail'] == 'session_expired_new_device') {
+    if (res.statusCode == 401 &&
+        body is Map &&
+        body['detail'] == 'session_expired_new_device') {
       clearToken().ignore();
       onSessionExpiredNewDevice?.call();
       throw ApiException(401, 'session_expired_new_device');
@@ -838,6 +851,7 @@ class ApiService {
   static Future<Map<String, dynamic>> sendOtp({
     String? email,
     String? phone,
+
     /// Delivery channel for phone OTPs — 'sms' (default) or 'call'.
     String channel = 'sms',
   }) async {
@@ -867,7 +881,8 @@ class ApiService {
 
   /// Verify OTP code submitted by user.
   /// Returns `{ valid: true/false }`.
-  static Future<bool> verifyOtp({String? email, String? phone, required String code}) async {
+  static Future<bool> verifyOtp(
+      {String? email, String? phone, required String code}) async {
     final body = <String, dynamic>{'code': code};
     if (email != null && email.isNotEmpty) body['email'] = email;
     if (phone != null && phone.isNotEmpty) body['phone'] = phone;
@@ -945,7 +960,13 @@ class ApiService {
         .post(
           Uri.parse('$_baseUrl/favorites'),
           headers: h,
-          body: jsonEncode({'label': label, 'address': address, 'lat': lat, 'lng': lng, 'icon': icon}),
+          body: jsonEncode({
+            'label': label,
+            'address': address,
+            'lat': lat,
+            'lng': lng,
+            'icon': icon
+          }),
         )
         .timeout(const Duration(seconds: 10));
     return _parse(res);
@@ -1039,11 +1060,13 @@ class ApiService {
     try {
       final payload = <String, dynamic>{'identifier': identifier.trim()};
       if (role != null) payload['role'] = role;
-      final res = await _client.post(
+      final res = await _client
+          .post(
         Uri.parse('$_baseUrl/auth/check-exists'),
         headers: _jsonHeaders(),
         body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 8));
+          )
+          .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
         return body['exists'] == true;
@@ -1197,7 +1220,8 @@ class ApiService {
         await _saveRefreshToken(data['refresh_token'] as String);
       }
       _cachedUser = data['user'] as Map<String, dynamic>?;
-      debugPrint('✅ phone-login ok — user ${data['user']?['id']} (new: ${data['is_new_user']})');
+      debugPrint(
+          '✅ phone-login ok — user ${data['user']?['id']} (new: ${data['is_new_user']})');
       return data;
     } finally {
       _loginInProgress = false;
@@ -1310,9 +1334,8 @@ class ApiService {
       final platform = Platform.isIOS ? 'ios' : 'android';
       var build = 0;
       try {
-        build = int.tryParse(
-                (await PackageInfo.fromPlatform()).buildNumber) ??
-            0;
+        build =
+            int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0;
       } catch (_) {}
       // Role decides WHICH switch applies (2026-10-11: dispatch gates
       // drivers and riders independently). Unknown role = server gates on
@@ -1378,7 +1401,8 @@ class ApiService {
         final newToken = await getToken();
         if (newToken == null) return false;
         final retry = await _client
-            .get(Uri.parse('$_baseUrl/auth/me'), headers: _jsonHeaders(newToken))
+            .get(Uri.parse('$_baseUrl/auth/me'),
+                headers: _jsonHeaders(newToken))
             .timeout(const Duration(seconds: 8));
         if (retry.statusCode == 200) return true;
         if (retry.statusCode == 401 || retry.statusCode == 403) return false;
@@ -1425,7 +1449,8 @@ class ApiService {
   static Future<Map<String, dynamic>?> getDashboard() async {
     // Return cache if fresh
     if (_dashboardCache != null && _dashboardCacheTime != null) {
-      if (DateTime.now().difference(_dashboardCacheTime!) < _dashboardCacheTtl) {
+      if (DateTime.now().difference(_dashboardCacheTime!) <
+          _dashboardCacheTtl) {
         return _dashboardCache;
       }
     }
@@ -1576,6 +1601,7 @@ class ApiService {
         .timeout(const Duration(seconds: 15));
     _parse(res);
   }
+
   static Future<void> deleteAccount() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
@@ -1672,7 +1698,8 @@ class ApiService {
     if (token == null) return [];
     final res = await _withRetry(
       () => _client
-          .get(Uri.parse('$_baseUrl/support/chats'), headers: _jsonHeaders(token))
+          .get(Uri.parse('$_baseUrl/support/chats'),
+              headers: _jsonHeaders(token))
           .timeout(const Duration(seconds: 10)),
       maxAttempts: 2,
     );
@@ -1912,7 +1939,8 @@ class ApiService {
     if (token == null) throw ApiException(401, 'Not logged in');
     // NEVER cache verification status — it determines if user can use the app
     final res = await _client
-        .get(Uri.parse('$_baseUrl/auth/verification-status'), headers: _jsonHeaders(token))
+        .get(Uri.parse('$_baseUrl/auth/verification-status'),
+            headers: _jsonHeaders(token))
         .timeout(const Duration(seconds: 5));
     return _parse(res);
   }
@@ -1923,7 +1951,8 @@ class ApiService {
     if (token == null) throw ApiException(401, 'Not logged in');
     // NEVER cache approval status — it determines if driver can go online
     final res = await _client
-        .get(Uri.parse('$_baseUrl/auth/driver-approval-status'), headers: _jsonHeaders(token))
+        .get(Uri.parse('$_baseUrl/auth/driver-approval-status'),
+            headers: _jsonHeaders(token))
         .timeout(const Duration(seconds: 5));
     return _parse(res);
   }
@@ -1961,11 +1990,13 @@ class ApiService {
   static Future<Map<String, dynamic>> submitOnboardingPlate({
     required String plate,
     required String state,
-  }) => _postOnboardingItem('plate', {'plate': plate, 'state': state});
+  }) =>
+      _postOnboardingItem('plate', {'plate': plate, 'state': state});
 
   static Future<Map<String, dynamic>> submitOnboardingSsn({
     required String ssn,
-  }) => _postOnboardingItem('ssn', {'ssn': ssn});
+  }) =>
+      _postOnboardingItem('ssn', {'ssn': ssn});
 
   static Future<Map<String, dynamic>> submitOnboardingVehicle({
     required int year,
@@ -1974,7 +2005,8 @@ class ApiService {
     required String color,
     required int seats,
     required int seatbelts,
-  }) => _postOnboardingItem('vehicle', {
+  }) =>
+      _postOnboardingItem('vehicle', {
     'year': year,
     'make': make,
     'model': model,
@@ -1991,7 +2023,8 @@ class ApiService {
   static Future<Map<String, dynamic>> submitOnboardingDoc({
     required String item,
     required String url,
-  }) => _postOnboardingItem('$item/doc', {'url': url});
+  }) =>
+      _postOnboardingItem('$item/doc', {'url': url});
 
   /// Mark an onboarding item for resubmission (rejected/stale data) —
   /// returns the item to `pending` so the capture flow can replace it.
@@ -2015,9 +2048,12 @@ class ApiService {
     if (token == null) return 'unknown';
     // No cache — always hit backend fresh for account status
     final res = await _client
-        .get(Uri.parse('$_baseUrl/auth/account-status'), headers: _jsonHeaders(token))
+        .get(Uri.parse('$_baseUrl/auth/account-status'),
+            headers: _jsonHeaders(token))
         .timeout(const Duration(seconds: 4));
-    if (res.statusCode == 401 || res.statusCode == 403 || res.statusCode == 404) {
+    if (res.statusCode == 401 ||
+        res.statusCode == 403 ||
+        res.statusCode == 404) {
       dynamic body;
       try {
         body = jsonDecode(res.body);
@@ -2038,7 +2074,8 @@ class ApiService {
       if (refreshed) {
         final newToken = await getToken();
         final retry = await _client
-            .get(Uri.parse('$_baseUrl/auth/account-status'), headers: _jsonHeaders(newToken))
+            .get(Uri.parse('$_baseUrl/auth/account-status'),
+                headers: _jsonHeaders(newToken))
             .timeout(const Duration(seconds: 4));
         if (retry.statusCode == 200) {
           final d = jsonDecode(retry.body);
@@ -2071,10 +2108,11 @@ class ApiService {
     try {
       final me = await getMe();
       final userId = int.tryParse(me?['id']?.toString() ?? '') ?? 0;
-      final userUid = FirebaseAuth.instance.currentUser?.uid ?? userId.toString();
+      final userUid =
+          FirebaseAuth.instance.currentUser?.uid ?? userId.toString();
       final role = (me?['role']?.toString() ?? 'rider').toLowerCase();
-      final url =
-          await FirebaseStorageService.uploadProfilePhoto(filePath, userId, role);
+      final url = await FirebaseStorageService.uploadProfilePhoto(
+          filePath, userId, role);
       
       // Update Firestore so Dispatch shows the photo immediately
       unawaited(
@@ -2094,7 +2132,8 @@ class ApiService {
         await _syncPhotoUrlToBackend(url, token);
       } catch (_) {
         debugPrint('[ApiService] photo sync to backend failed, retrying...');
-        unawaited(_syncPhotoUrlToBackend(url, token)); // one retry, fire-and-forget
+        unawaited(
+            _syncPhotoUrlToBackend(url, token)); // one retry, fire-and-forget
       }
       
       // Save to all 4 tiers: SharedPreferences, Firebase Auth, Firestore, Storage
@@ -2107,7 +2146,8 @@ class ApiService {
       
       return url;
     } catch (e) {
-      debugPrint('[ApiService] Firebase Storage upload failed, using backend: $e');
+      debugPrint(
+          '[ApiService] Firebase Storage upload failed, using backend: $e');
     }
 
     // Fallback: base64 upload to backend
@@ -2170,6 +2210,40 @@ class ApiService {
   }
 
   // ═══════════════════════════════════════════════════════
+  //  RIDER PRICING
+  // ═══════════════════════════════════════════════════════
+
+  static Future<Map<String, dynamic>> createRideQuote(
+    Map<String, dynamic> body,
+  ) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/pricing/quote'),
+          headers: h,
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 20));
+    return _parse(res);
+  }
+
+  static Future<Map<String, dynamic>> getPricingRevision() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/pricing/revision'), headers: h)
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  static Future<Map<String, dynamic>> getMyPromotions() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/promotions/me'), headers: h)
+        .timeout(const Duration(seconds: 12));
+    return _parse(res);
+  }
+
+  // ═══════════════════════════════════════════════════════
   //  TRIP  ENDPOINTS
   // ═══════════════════════════════════════════════════════
 
@@ -2192,6 +2266,8 @@ class ApiService {
     String? pickupZone,
     String? notes,
     String? paymentIntentId,
+    String? quoteId,
+    bool meetInside = false,
     // Booking-time stop ("+"): the backend folds them into trips.stops.
     double? stopLat,
     double? stopLng,
@@ -2215,6 +2291,8 @@ class ApiService {
             if (scheduledAt != null)
               'scheduled_at': scheduledAt.toUtc().toIso8601String(),
             'is_airport': isAirport,
+            'meet_inside': meetInside,
+            if (quoteId != null) 'quote_id': quoteId,
             if (airportCode != null) 'airport_code': airportCode,
             if (terminal != null) 'terminal': terminal,
             if (pickupZone != null) 'pickup_zone': pickupZone,
@@ -2679,7 +2757,8 @@ class ApiService {
     try {
       final authToken = await getToken();
       if (authToken == null) {
-        debugPrint('[LiveActivity] token save SKIPPED ($kind) — no session JWT');
+        debugPrint(
+            '[LiveActivity] token save SKIPPED ($kind) — no session JWT');
         // Retry too (2026-09-23): the token replay fires seconds after
         // process start, often before the session restore — and LA tokens
         // essentially never re-emit within a session, so dropping the only
@@ -2720,7 +2799,8 @@ class ApiService {
           .timeout(const Duration(seconds: 8)));
       final ok = res.statusCode >= 200 && res.statusCode < 300;
       if (!ok) {
-        debugPrint('[ApiService] FCM token save rejected: HTTP ${res.statusCode} ${res.body}');
+        debugPrint(
+            '[ApiService] FCM token save rejected: HTTP ${res.statusCode} ${res.body}');
       } else {
         debugPrint('[ApiService] FCM token registered ✓');
       }
@@ -2755,13 +2835,15 @@ class ApiService {
           headers: _jsonHeaders(token),
         )
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 200)
+      return jsonDecode(res.body) as Map<String, dynamic>;
     return {'connected': false};
   }
 
   /// Create a Stripe Financial Connections session for driver bank linking.
   /// Returns {url, client_secret, stripe_account_id}.
-  static Future<Map<String, dynamic>> createDriverFinancialConnectionsSession() async {
+  static Future<Map<String, dynamic>>
+      createDriverFinancialConnectionsSession() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
     final res = await _client
@@ -2866,8 +2948,7 @@ class ApiService {
       };
     }
     final res = await _client
-        .get(Uri.parse('$_baseUrl/referrals/me'),
-            headers: _jsonHeaders(token))
+        .get(Uri.parse('$_baseUrl/referrals/me'), headers: _jsonHeaders(token))
         .timeout(const Duration(seconds: 10));
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
@@ -2925,7 +3006,8 @@ class ApiService {
   /// Driver-only: apply a referrer's code at onboarding. Server ensures
   /// one-redemption-per-driver, no self-referral, and starts the 60-day
   /// expiry clock.
-  static Future<Map<String, dynamic>> redeemDriverReferralCode(String code) async {
+  static Future<Map<String, dynamic>> redeemDriverReferralCode(
+      String code) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
     final res = await _client
@@ -2945,7 +3027,8 @@ class ApiService {
   static Future<bool> validateDriverReferralCode(String code) async {
     final res = await _client
         .get(
-          Uri.parse('$_baseUrl/driver-referrals/validate?code=${Uri.encodeQueryComponent(code)}'),
+          Uri.parse(
+              '$_baseUrl/driver-referrals/validate?code=${Uri.encodeQueryComponent(code)}'),
           headers: _jsonHeaders(),
         )
         .timeout(const Duration(seconds: 10));
@@ -2998,7 +3081,8 @@ class ApiService {
   }
 
   /// Cruise Cash transactions log for the wallet detail view.
-  static Future<Map<String, dynamic>> getCruiseCashHistory({int limit = 50}) async {
+  static Future<Map<String, dynamic>> getCruiseCashHistory(
+      {int limit = 50}) async {
     final token = await getToken();
     if (token == null) {
       return {
@@ -3031,7 +3115,8 @@ class ApiService {
           headers: _jsonHeaders(token),
         )
         .timeout(const Duration(seconds: 8));
-    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 200)
+      return jsonDecode(res.body) as Map<String, dynamic>;
     return {};
   }
 
@@ -3125,7 +3210,8 @@ class ApiService {
   /// Promote one payout method to default. Backend atomically demotes
   /// every other method for this driver so there is always exactly one
   /// default for the cashout flow to pick.
-  static Future<Map<String, dynamic>> setDefaultPayoutMethod(int payoutId) async {
+  static Future<Map<String, dynamic>> setDefaultPayoutMethod(
+      int payoutId) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
     final res = await _client
@@ -3203,7 +3289,8 @@ class ApiService {
   /// us, and on our Stripe-hosted accounts the API attach is refused
   /// outright (oauth_not_supported), so mirroring is the only way the
   /// driver ever sees their bank in the app.
-  static Future<List<Map<String, dynamic>>> syncPayoutMethodsFromStripe() async {
+  static Future<List<Map<String, dynamic>>>
+      syncPayoutMethodsFromStripe() async {
     final token = await getToken();
     if (token == null) return [];
     final res = await _client
@@ -3293,6 +3380,8 @@ class ApiService {
     String? pickupZone,
     String? notes,
     String? stripePaymentIntentId,
+    String? quoteId,
+    bool meetInside = false,
     // Booking-time stop ("+"): the backend folds them into trips.stops.
     double? stopLat,
     double? stopLng,
@@ -3316,6 +3405,8 @@ class ApiService {
             if (scheduledAt != null)
               'scheduled_at': scheduledAt.toUtc().toIso8601String(),
             'is_airport': isAirport,
+            'meet_inside': meetInside,
+            if (quoteId != null) 'quote_id': quoteId,
             if (airportCode != null) 'airport_code': airportCode,
             if (terminal != null) 'terminal': terminal,
             if (pickupZone != null) 'pickup_zone': pickupZone,
@@ -3360,7 +3451,8 @@ class ApiService {
           final h = await _authHeaders();
           final request = http.Request(
             'GET',
-            Uri.parse('$_baseUrl/dispatch/driver/pending/stream?driver_id=$driverId'),
+            Uri.parse(
+                '$_baseUrl/dispatch/driver/pending/stream?driver_id=$driverId'),
           );
           request.headers.addAll(h);
           final response = await _client.send(request);
@@ -3508,11 +3600,14 @@ class ApiService {
 
               if (eventType == 'heartbeat') continue;
 
-              if ((eventType == 'trip_update' || eventType == 'dispatch_timeout') && data != null) {
+              if ((eventType == 'trip_update' ||
+                      eventType == 'dispatch_timeout') &&
+                  data != null) {
                 try {
                   final parsed = jsonDecode(data);
                   if (parsed is Map<String, dynamic> && !cancelled) {
-                    if (eventType == 'dispatch_timeout' && !parsed.containsKey('status')) {
+                    if (eventType == 'dispatch_timeout' &&
+                        !parsed.containsKey('status')) {
                       parsed['status'] = 'no_drivers';
                     }
                     controller.add(parsed);
@@ -3658,7 +3753,8 @@ class ApiService {
     String? reason,
   }) async {
     final h = await _authHeaders();
-    var uri = '$_baseUrl/dispatch/driver/reject?offer_id=$offerId&driver_id=$driverId';
+    var uri =
+        '$_baseUrl/dispatch/driver/reject?offer_id=$offerId&driver_id=$driverId';
     if (reason != null && reason.isNotEmpty) {
       uri += '&reason=${Uri.encodeComponent(reason)}';
     }
@@ -3734,7 +3830,8 @@ class ApiService {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final body = jsonDecode(res.body);
         if (body is Map<String, dynamic>) return body;
-        debugPrint('[ApiService] getDispatchStatus($tripId) — unexpected body type');
+        debugPrint(
+            '[ApiService] getDispatchStatus($tripId) — unexpected body type');
         return {'status': 'error', 'error': 'unexpected_body'};
       }
       debugPrint(
@@ -3901,7 +3998,8 @@ class ApiService {
       );
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final body = jsonDecode(res.body);
-        final list = body is List ? body : (body is Map ? body['drivers'] : null);
+        final list =
+            body is List ? body : (body is Map ? body['drivers'] : null);
         if (list is List) {
           return list
               .whereType<Map>()
@@ -3950,8 +4048,7 @@ class ApiService {
   /// landed in MANUAL dispatch review (dress-code rejection path): the
   /// driver must NOT connect until it clears.
   /// null = upload failed, retry on the next GO tap (fail-open).
-  static Future<Map<String, dynamic>?> submitFaceCheck(
-      String photoPath) async {
+  static Future<Map<String, dynamic>?> submitFaceCheck(String photoPath) async {
     try {
       final bytes = await File(photoPath).readAsBytes();
       final token = await getToken();
@@ -4092,14 +4189,14 @@ class ApiService {
 
   /// Get all driver documents. If [vehicleId] is given, only documents for
   /// that vehicle are returned (multi-vehicle 2026-08-29).
-  static Future<List<Map<String, dynamic>>> getDocuments({int? vehicleId}) async {
+  static Future<List<Map<String, dynamic>>> getDocuments(
+      {int? vehicleId}) async {
     final h = await _authHeaders();
     final uri = vehicleId != null
         ? Uri.parse('$_baseUrl/drivers/documents?vehicle_id=$vehicleId')
         : Uri.parse('$_baseUrl/drivers/documents');
-    final res = await _client
-        .get(uri, headers: h)
-        .timeout(const Duration(seconds: 8));
+    final res =
+        await _client.get(uri, headers: h).timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
       return list.cast<Map<String, dynamic>>();
@@ -4131,12 +4228,15 @@ class ApiService {
       req.fields['doc_type'] = docType;
       if (vehicleId != null) req.fields['vehicle_id'] = vehicleId.toString();
       req.files.add(await http.MultipartFile.fromPath('file', filePath));
-      debugPrint('[ApiService] uploadDocument($docType) multipart file=${filePath.split('/').last} → $uri');
+      debugPrint(
+          '[ApiService] uploadDocument($docType) multipart file=${filePath.split('/').last} → $uri');
       final streamed = await req.send().timeout(const Duration(seconds: 60));
       final res = await http.Response.fromStream(streamed);
-      debugPrint('[ApiService] uploadDocument($docType) response: ${res.statusCode}');
+      debugPrint(
+          '[ApiService] uploadDocument($docType) response: ${res.statusCode}');
       if (res.statusCode >= 300) {
-        debugPrint('[ApiService] uploadDocument ERROR: status=${res.statusCode}');
+        debugPrint(
+            '[ApiService] uploadDocument ERROR: status=${res.statusCode}');
       }
       return _parse(res);
     }
@@ -4150,7 +4250,8 @@ class ApiService {
       if (expiryDate != null) 'expiry_date': expiryDate,
       if (vehicleId != null) 'vehicle_id': vehicleId,
     });
-    debugPrint('[ApiService] uploadDocument($docType) base64 payload=${(payload.length / 1024).toStringAsFixed(0)}KB');
+    debugPrint(
+        '[ApiService] uploadDocument($docType) base64 payload=${(payload.length / 1024).toStringAsFixed(0)}KB');
     final res = await _client
         .post(
           Uri.parse('$_baseUrl/drivers/documents'),
@@ -4158,7 +4259,8 @@ class ApiService {
           body: payload,
         )
         .timeout(const Duration(seconds: 60));
-    debugPrint('[ApiService] uploadDocument($docType) response: ${res.statusCode}');
+    debugPrint(
+        '[ApiService] uploadDocument($docType) response: ${res.statusCode}');
     if (res.statusCode >= 300) {
       debugPrint('[ApiService] uploadDocument ERROR: status=${res.statusCode}');
     }
@@ -4215,7 +4317,8 @@ class ApiService {
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
         if (body is Map<String, dynamic>) return body;
-        debugPrint('[ApiService] pollTripStatus($tripId) — unexpected body type');
+        debugPrint(
+            '[ApiService] pollTripStatus($tripId) — unexpected body type');
         return null;
       }
       // H3 fix: previously all non-200 responses returned null silently,
@@ -4310,7 +4413,8 @@ class ApiService {
   /// Get user notifications.
   /// ✅ QUICK WIN #3: Added 5s cache for notification list
   /// Short TTL keeps them fresh while reducing API load
-  static Future<List<Map<String, dynamic>>> getNotifications({bool useCache = true}) async {
+  static Future<List<Map<String, dynamic>>> getNotifications(
+      {bool useCache = true}) async {
     final h = await _authHeaders();
     final res = await _cachedGet(
       Uri.parse('$_baseUrl/notifications'),
@@ -4600,7 +4704,8 @@ class ApiService {
           body: jsonEncode({
             'stripe_pm_id': stripePaymentMethodId,
             'method_type': type,
-            'display_name': '${brand[0].toUpperCase()}${brand.substring(1)} ending in $last4',
+            'display_name':
+                '${brand[0].toUpperCase()}${brand.substring(1)} ending in $last4',
             'set_default': setDefault,
           }),
         )
@@ -4694,7 +4799,8 @@ class ApiService {
   }
 
   /// Create a Stripe Financial Connections session for bank account linking.
-  static Future<Map<String, dynamic>?> createFinancialConnectionsSession() async {
+  static Future<Map<String, dynamic>?>
+      createFinancialConnectionsSession() async {
     final h = await _authHeaders();
     final res = await _client
         .post(
@@ -4708,7 +4814,8 @@ class ApiService {
   /// Convert a Financial Connections account (fca_...) into an attached
   /// us_bank_account PaymentMethod on the backend. Returns the display
   /// info (bank name / last4 / stripe_pm_id) or throws on failure.
-  static Future<Map<String, dynamic>?> attachBankAccount(String accountId) async {
+  static Future<Map<String, dynamic>?> attachBankAccount(
+      String accountId) async {
     final h = await _authHeaders();
     final res = await _client
         .post(
@@ -5233,7 +5340,8 @@ class ApiService {
     if (deviceModel != null) updates['device_model'] = deviceModel;
     if (osVersion != null) updates['os_version'] = osVersion;
     if (privacyLocation != null) updates['privacy_location'] = privacyLocation;
-    if (privacyAnalytics != null) updates['privacy_analytics'] = privacyAnalytics;
+    if (privacyAnalytics != null)
+      updates['privacy_analytics'] = privacyAnalytics;
     if (privacyAds != null) updates['privacy_ads'] = privacyAds;
     if (updates.isNotEmpty) {
       await updateMe(updates);
@@ -5265,7 +5373,8 @@ class ApiService {
     final h = await _authHeaders();
     final res = await _client
         .get(
-          Uri.parse('$_baseUrl/wallet/transactions?limit=$limit&offset=$offset'),
+          Uri.parse(
+              '$_baseUrl/wallet/transactions?limit=$limit&offset=$offset'),
           headers: h,
         )
         .timeout(const Duration(seconds: 15));

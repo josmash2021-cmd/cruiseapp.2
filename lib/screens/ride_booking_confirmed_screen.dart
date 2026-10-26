@@ -7,6 +7,7 @@ import '../config/mapbox_config.dart';
 import '../config/map_theme.dart';
 import '../map/web_map_view.dart';
 import '../models/lat_lng.dart';
+import '../l10n/app_localizations.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/neu_style.dart';
 import '../utils/mapbox_safe.dart';
@@ -21,6 +22,7 @@ class RideBookingConfirmedScreen extends StatefulWidget {
   final String dropoffAddress;
   final String vehicleType;
   final double fare;
+  final bool isFree;
   final double? pickupLat;
   final double? pickupLng;
   final double? dropoffLat;
@@ -34,6 +36,7 @@ class RideBookingConfirmedScreen extends StatefulWidget {
     required this.dropoffAddress,
     required this.vehicleType,
     required this.fare,
+    this.isFree = false,
     this.pickupLat,
     this.pickupLng,
     this.dropoffLat,
@@ -142,8 +145,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
     super.dispose();
   }
 
-  bool get _hasMapData =>
-      widget.pickupLat != null && widget.pickupLng != null;
+  bool get _hasMapData => widget.pickupLat != null && widget.pickupLng != null;
 
   @override
   Widget build(BuildContext context) {
@@ -329,7 +331,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
                                 _divider(),
                                 _row(
                                   Icons.directions_car_rounded,
-                                  '${widget.vehicleType} \u00b7 \$${widget.fare.toStringAsFixed(2)}',
+                                  '${widget.vehicleType} \u00b7 ${widget.isFree ? S.of(context).free : '\$${widget.fare.toStringAsFixed(2)}'}',
                                 ),
                               ],
                             ),
@@ -413,17 +415,18 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
     await MapTheme.applyNavyGold(ctrl);
     ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-    ctrl.attribution
-        .updateSettings(mapbox.AttributionSettings(enabled: false));
+    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
     ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
 
     // Animate tilt 0° → 20°
     if (_tiltAnim != null && _tiltCtrl != null) {
       _tiltAnim!.addListener(() {
         // Same dead-surface guard: the map may be recreated mid-tilt.
-        _mapCtrl?.setCamera(
+        _mapCtrl
+            ?.setCamera(
           mapbox.CameraOptions(pitch: _tiltAnim!.value),
-        ).catchError((Object _) {});
+            )
+            .catchError((Object _) {});
       });
       _tiltCtrl!.forward();
     }
@@ -431,8 +434,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
     // Add route polyline
     final routePts = widget.routePoints;
     if (routePts != null && routePts.length >= 2) {
-      final polyMgr =
-          await ctrl.annotations.createPolylineAnnotationManager();
+      final polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
       final coords = routePts
           .map((p) => mapbox.Position(p.longitude, p.latitude))
           .toList();
@@ -448,8 +450,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
     }
 
     // Add smart pins
-    final pointMgr =
-        await ctrl.annotations.createPointAnnotationManager();
+    final pointMgr = await ctrl.annotations.createPointAnnotationManager();
     try {
       await ctrl.style.setStyleLayerProperty(
           pointMgr.id, 'icon-pitch-alignment', 'viewport');

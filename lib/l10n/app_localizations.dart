@@ -2165,6 +2165,31 @@ class S {
   String expiresInDays(int days) => _es
       ? 'Vence en $days ${days == 1 ? 'día' : 'días'}'
       : 'Expires in $days day${days == 1 ? '' : 's'}';
+  String get free => _es ? 'Gratis' : 'Free';
+  String get promotionsAutoApplied => _es
+      ? 'Tus promociones asignadas se aplican automáticamente.'
+      : 'Your assigned promotions are applied automatically.';
+  String get promotionsLoadError => _es
+      ? 'No se pudieron cargar tus promociones.'
+      : 'Could not load your promotions.';
+  String get promotionActive => _es ? 'Activa' : 'Active';
+  String get promotionRevoked => _es ? 'Revocada' : 'Revoked';
+  String promotionUsesRemaining(int remaining, int total) => _es
+      ? '$remaining de $total usos restantes'
+      : '$remaining of $total uses left';
+  String promotionMaxMiles(String miles) =>
+      _es ? 'Hasta $miles mi' : 'Up to $miles mi';
+  String promotionFallbackPercent(int percent) =>
+      _es ? 'Luego $percent% de descuento' : 'Then $percent% off';
+  String promotionTiers(String tiers) =>
+      _es ? 'Categorías: $tiers' : 'Ride types: $tiers';
+  String promotionValidity(String dates) =>
+      _es ? 'Vigencia: $dates' : 'Valid: $dates';
+  String get promotionNoExpiry =>
+      _es ? 'Sin fecha de vencimiento' : 'No expiration date';
+  String get quoteRefreshRequired => _es
+      ? 'Los precios cambiaron o vencieron. Revisa el nuevo precio e inténtalo de nuevo.'
+      : 'Prices changed or expired. Review the refreshed price and try again.';
 
   // ── Account Deactivated Screen ─────────────────────────────────────────────
   String get accountDeactivatedMsg => _es
@@ -5927,6 +5952,8 @@ class S {
         return _es
             ? 'Tu pago fue rechazado. Revisa tu método de pago e intenta de nuevo.'
             : 'Your payment was declined. Check your payment method and try again.';
+      case 'client:quote_refresh_required':
+        return quoteRefreshRequired;
       default:
         if (rawReason != null && rawReason.isNotEmpty) return rawReason;
         return _es ? 'Tu viaje fue cancelado.' : 'Your trip was cancelled.';

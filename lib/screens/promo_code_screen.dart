@@ -1,16 +1,23 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_localizations.dart';
-
 import '../config/app_theme.dart';
 import '../services/api_service.dart';
-import '../services/analytics_service.dart';
+import '../services/socket_service.dart';
+
+typedef PromotionsLoader = Future<Map<String, dynamic>> Function();
 
 class PromoCodeScreen extends StatefulWidget {
-  const PromoCodeScreen({super.key});
+  final PromotionsLoader? promotionsLoader;
+  final Stream<Map<String, dynamic>>? pricingUpdates;
+
+  const PromoCodeScreen({
+    super.key,
+    this.promotionsLoader,
+    this.pricingUpdates,
+  });
 
   @override
   State<PromoCodeScreen> createState() => _PromoCodeScreenState();
@@ -18,139 +25,85 @@ class PromoCodeScreen extends StatefulWidget {
 
 class _PromoCodeScreenState extends State<PromoCodeScreen> {
   static const _gold = Color(0xFFE8C547);
-  static const _promoKey = 'promo_codes_v1';
 
-  final _controller = TextEditingController();
   List<_PromoItem> _promos = [];
   bool _loading = true;
+  bool _refreshing = false;
+  Object? _error;
+  int _loadSeq = 0;
+  Timer? _refreshDebounce;
+  StreamSubscription<Map<String, dynamic>>? _pricingSub;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _pricingSub = (widget.pricingUpdates ?? SocketService.pricingUpdatedStream)
+        .listen((_) {
+      _refreshDebounce?.cancel();
+      _refreshDebounce = Timer(
+        const Duration(milliseconds: 300),
+        _load,
+      );
+    });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _loadSeq++;
+    _refreshDebounce?.cancel();
+    _pricingSub?.cancel();
     super.dispose();
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_promoKey);
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        final list = jsonDecode(raw) as List;
-        _promos = list
-            .map(
-              (e) => _PromoItem.fromJson(Map<String, dynamic>.from(e as Map)),
-            )
-            .toList();
-      } catch (_) {}
-    }
-
-    // Add sample promos if none exist
-    if (_promos.isEmpty) {
-      _promos = [
-        _PromoItem(
-          code: 'WELCOME10',
-          description: '10% off your first ride',
-          discountPercent: 10,
-          isUsed: false,
-          expiresAt: DateTime.now().add(const Duration(days: 30)),
-        ),
-        _PromoItem(
-          code: 'CRUISE50',
-          description: '\$5 off CruiseX rides',
-          discountPercent: 0,
-          discountFlat: 5.0,
-          isUsed: false,
-          expiresAt: DateTime.now().add(const Duration(days: 14)),
-        ),
-      ];
-      await _save();
-    }
-
-    if (!mounted) return;
-    setState(() => _loading = false);
-  }
-
-  Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _promoKey,
-      jsonEncode(_promos.map((e) => e.toJson()).toList()),
-    );
-  }
-
-  void _applyCode() async {
-    final code = _controller.text.trim().toUpperCase();
-    if (code.isEmpty) return;
-
-    // Check if already added
-    if (_promos.any((p) => p.code == code)) {
-      _showSnack(S.of(context).promoAlreadyAdded);
-      return;
-    }
-
-    setState(() => _loading = true);
-
-    try {
-      final result = await ApiService.validatePromoCode(code);
-      final discount = (result['discount_percent'] as num?)?.toInt() ?? 15;
-      final msg = result['message'] as String? ?? 'Discount applied!';
-
-      final newPromo = _PromoItem(
-        code: code,
-        description: msg,
-        discountPercent: discount,
-        isUsed: false,
-        expiresAt: DateTime.now().add(const Duration(days: 7)),
-      );
-
+    final requestSeq = ++_loadSeq;
+    if (mounted) {
       setState(() {
-        _promos.insert(0, newPromo);
-        _controller.clear();
-        _loading = false;
+        _loading = _promos.isEmpty;
+        _refreshing = _promos.isNotEmpty;
+        _error = null;
       });
-      _save();
-      AnalyticsService.instance.logPromoApplied(code);
-      _showSnack(msg);
-    } on ApiException catch (e) {
-      setState(() => _loading = false);
-      _showSnack(e.message);
-    } catch (_) {
-      setState(() => _loading = false);
-      if (mounted) _showSnack(S.of(context).couldNotValidatePromo);
     }
-  }
-
-  void _showSnack(String msg) {
-    final c = AppColors.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        // Uses global snackBarTheme
-      ),
-    );
+    try {
+      final result =
+          await (widget.promotionsLoader ?? ApiService.getMyPromotions)();
+      final raw = result['promotions'];
+      if (raw is! List) throw const FormatException('Missing promotions');
+      final promos = raw
+          .map((item) => _PromoItem.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ))
+          .toList();
+      if (!mounted || requestSeq != _loadSeq) return;
+      setState(() {
+        _promos = promos;
+        _loading = false;
+        _refreshing = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted || requestSeq != _loadSeq) return;
+      debugPrint('[Promotions] load failed: $e');
+      setState(() {
+        _loading = false;
+        _refreshing = false;
+        _error = e;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-
+    final s = S.of(context);
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: _loading
-            ? Center(child: CircularProgressIndicator(color: _gold))
-            : Column(
+        child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 8),
-
-                  // ── Back button ──
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: GestureDetector(
@@ -164,9 +117,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                           border: c.isDark
                               ? null
                               : Border.all(
-                                  color: Colors.black.withValues(
-                                    alpha: 0.06,
-                                  ),
+                            color: Colors.black.withValues(alpha: 0.06),
                                 ),
                         ),
                         child: Icon(
@@ -178,12 +129,10 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                     ),
                   ),
                   const SizedBox(height: 28),
-
-                  // ── Title ──
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Text(
-                      S.of(context).promotions,
+                s.promotions,
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -192,166 +141,179 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
-
-                  // ── Enter code ──
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: c.isDark
-                            ? null
-                            : Border.all(
-                                color: Colors.black.withValues(alpha: 0.06),
+            if (_refreshing)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: LinearProgressIndicator(
+                  minHeight: 2,
+                  color: _gold,
                               ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            S.of(context).havePromoCode,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: c.textPrimary,
+            const SizedBox(height: 20),
+            Expanded(child: _buildBody(c)),
+          ],
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          Row(
+    );
+  }
+
+  Widget _buildBody(AppColors c) {
+    final s = S.of(context);
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: _gold));
+    }
+    if (_error != null && _promos.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _controller,
-                                  textCapitalization:
-                                      TextCapitalization.characters,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: c.textPrimary,
-                                    letterSpacing: 1.5,
-                                  ),
-                                  decoration: InputDecoration(
-                                    hintText: S.of(context).enterCode,
-                                    hintStyle: TextStyle(
-                                      color: c.textTertiary,
-                                      letterSpacing: 0.5,
+              Icon(Icons.error_outline_rounded,
+                  color: c.textTertiary, size: 36),
+              const SizedBox(height: 14),
+              Text(
+                s.promotionsLoadError,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: c.textSecondary, fontSize: 15),
                                     ),
-                                    filled: true,
-                                    fillColor: c.isDark
-                                        ? c.bg
-                                        : const Color(0xFFF5F6FA),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 14,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide.none,
-                                    ),
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: _load,
+                icon: const Icon(Icons.refresh_rounded, color: _gold),
+                label: Text(
+                  s.retry,
+                  style: const TextStyle(color: _gold),
                                   ),
                                 ),
+            ],
                               ),
-                              const SizedBox(width: 12),
-                              GestureDetector(
-                                onTap: _applyCode,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 14,
                                   ),
+      );
+    }
+    return RefreshIndicator(
+      color: _gold,
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
+              color: _gold.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _gold.withValues(alpha: 0.18)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.local_offer_rounded,
                                     color: _gold,
-                                    borderRadius: BorderRadius.circular(12),
+                  size: 21,
                                   ),
+                const SizedBox(width: 10),
+                Expanded(
                                   child: Text(
-                                    S.of(context).apply,
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.black,
-                                    ),
-                                  ),
+                    s.promotionsAutoApplied,
+                    style: TextStyle(
+                      color: c.textSecondary,
+                      fontSize: 13,
+                      height: 1.35,
                                 ),
                               ),
-                            ],
                           ),
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // ── Promo list ──
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Text(
-                      S.of(context).availablePromos,
+          const SizedBox(height: 22),
+          Text(
+            s.availablePromos,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                         color: c.textPrimary,
                       ),
                     ),
-                  ),
+          if (_error != null) ...[
                   const SizedBox(height: 12),
-
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: c.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
                   Expanded(
-                    child: _promos.isEmpty
-                        ? Center(
                             child: Text(
-                              S.of(context).noPromosAvailable,
-                              style: TextStyle(
-                                fontSize: 15,
-                                color: c.textSecondary,
+                      s.promotionsLoadError,
+                      style: TextStyle(color: c.textSecondary, fontSize: 12),
                               ),
                             ),
-                          )
-                        : ListView.separated(
-                            physics: const BouncingScrollPhysics(),
-                            cacheExtent: 300,
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
-                            itemCount: _promos.length,
-                            separatorBuilder: (context2, idx) =>
-                                const SizedBox(height: 10),
-                            itemBuilder: (context, i) =>
-                                _buildPromoCard(c, _promos[i]),
+                  TextButton(onPressed: _load, child: Text(s.retry)),
+                ],
                           ),
                   ),
                 ],
+          const SizedBox(height: 12),
+          if (_promos.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 70),
+              child: Center(
+                child: Text(
+                  s.noPromosAvailable,
+                  style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
+      ),
+            )
+          else
+            for (var i = 0; i < _promos.length; i++) ...[
+              if (i > 0) const SizedBox(height: 10),
+              _buildPromoCard(c, _promos[i]),
+            ],
+        ],
       ),
     );
   }
 
   Widget _buildPromoCard(AppColors c, _PromoItem promo) {
-    final isExpired = promo.expiresAt.isBefore(DateTime.now());
-    final isActive = !promo.isUsed && !isExpired;
-    final daysLeft = promo.expiresAt.difference(DateTime.now()).inDays;
-
+    final s = S.of(context);
+    final isActive = promo.status == 'active';
+    final title = promo.kind == 'free'
+        ? s.free
+        : promo.percent > 0
+            ? '${promo.percent}% OFF'
+            : '${promo.fallbackPercent}% OFF';
+    final status = switch (promo.status) {
+      'active' => s.promotionActive,
+      'used' => s.used,
+      'expired' => s.expired,
+      'revoked' => s.promotionRevoked,
+      _ => promo.status,
+    };
+    final tiers = promo.allowedTiers
+        .map((tier) => tier.replaceAll('_', ' ').toUpperCase())
+        .join(' · ');
+    final validity = _validityText(promo);
     return Container(
+      key: ValueKey('promotion_${promo.id}'),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(16),
-        border: c.isDark
-            ? (isActive
-                  ? Border.all(color: _gold.withValues(alpha: 0.3))
-                  : null)
-            : Border.all(
+        border: Border.all(
                 color: isActive
                     ? _gold.withValues(alpha: 0.3)
-                    : Colors.black.withValues(alpha: 0.06),
+              : Colors.black.withValues(alpha: 0.12),
               ),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Icon ──
           Container(
-            width: 48,
-            height: 48,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
               color: isActive
                   ? _gold.withValues(alpha: 0.12)
@@ -361,112 +323,160 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
             child: Icon(
               isActive ? Icons.local_offer_rounded : Icons.block_rounded,
               color: isActive ? _gold : c.textTertiary,
-              size: 24,
+              size: 23,
             ),
           ),
-          const SizedBox(width: 14),
-          // ── Details ──
+          const SizedBox(width: 13),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  promo.code,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: isActive ? _gold : c.textTertiary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        status,
+                        textAlign: TextAlign.right,
                   style: TextStyle(
-                    fontSize: 16,
+                          fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: isActive ? c.textPrimary : c.textTertiary,
-                    letterSpacing: 1,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  promo.description,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isActive ? c.textSecondary : c.textTertiary,
                   ),
+                  ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 7),
                 Text(
-                  promo.isUsed
-                      ? S.of(context).used
-                      : isExpired
-                      ? S.of(context).expired
-                      : S.of(context).expiresInDays(daysLeft),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: isActive ? _gold : c.textTertiary,
+                  s.promotionUsesRemaining(
+                    promo.remainingUses,
+                    promo.usesPerRider,
                   ),
+                  style: TextStyle(fontSize: 13, color: c.textSecondary),
+                ),
+                if (promo.maxMiles != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    s.promotionMaxMiles(_milesText(promo.maxMiles!)),
+                    style: TextStyle(fontSize: 13, color: c.textSecondary),
                 ),
               ],
+                if (promo.kind == 'free' && promo.fallbackPercent > 0) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    s.promotionFallbackPercent(promo.fallbackPercent),
+                    style: TextStyle(fontSize: 13, color: c.textSecondary),
             ),
+                ],
+                if (tiers.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    s.promotionTiers(tiers),
+                    style: TextStyle(fontSize: 12, color: c.textSecondary),
           ),
-
-          // ── Discount badge ──
-          if (isActive)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
+                ],
+                const SizedBox(height: 3),
+                Text(
+                  validity,
+                  style: TextStyle(fontSize: 12, color: c.textSecondary),
               ),
-              child: Text(
-                promo.discountFlat != null
-                    ? S
-                          .of(context)
-                          .dollarOff(promo.discountFlat!.toStringAsFixed(0))
-                    : S.of(context).percentOff(promo.discountPercent),
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: _gold,
+                if (promo.reason.isNotEmpty) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    promo.reason,
+                    style: TextStyle(fontSize: 12, color: c.textTertiary),
                 ),
+                ],
+              ],
               ),
             ),
         ],
       ),
     );
   }
+
+  String _validityText(_PromoItem promo) {
+    final s = S.of(context);
+    final start = _dateText(promo.startsAt);
+    final end = _dateText(promo.expiresAt);
+    if (start.isEmpty && end.isEmpty) return s.promotionNoExpiry;
+    if (start.isEmpty) return s.promotionValidity(end);
+    if (end.isEmpty) return s.promotionValidity('$start —');
+    return s.promotionValidity('$start — $end');
+  }
+
+  String _dateText(DateTime? value) {
+    if (value == null) return '';
+    final date = value.toLocal();
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return S.of(context).isSpanish
+        ? '$day/$month/${date.year}'
+        : '$month/$day/${date.year}';
 }
 
-// ── Promo data model ──
+  String _milesText(double value) => value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+}
 
 class _PromoItem {
-  final String code;
-  final String description;
-  final int discountPercent;
-  final double? discountFlat;
-  final bool isUsed;
-  final DateTime expiresAt;
+  final int id;
+  final String kind;
+  final int percent;
+  final int fallbackPercent;
+  final double? maxMiles;
+  final List<String> allowedTiers;
+  final int usesPerRider;
+  final int remainingUses;
+  final String status;
+  final DateTime? startsAt;
+  final DateTime? expiresAt;
+  final String reason;
 
   const _PromoItem({
-    required this.code,
-    required this.description,
-    required this.discountPercent,
-    this.discountFlat,
-    required this.isUsed,
+    required this.id,
+    required this.kind,
+    required this.percent,
+    required this.fallbackPercent,
+    required this.maxMiles,
+    required this.allowedTiers,
+    required this.usesPerRider,
+    required this.remainingUses,
+    required this.status,
+    required this.startsAt,
     required this.expiresAt,
+    required this.reason,
   });
 
-  Map<String, dynamic> toJson() => {
-    'code': code,
-    'description': description,
-    'discountPercent': discountPercent,
-    'discountFlat': discountFlat,
-    'isUsed': isUsed,
-    'expiresAt': expiresAt.toIso8601String(),
-  };
-
-  static _PromoItem fromJson(Map<String, dynamic> json) => _PromoItem(
-    code: json['code']?.toString() ?? '',
-    description: json['description']?.toString() ?? '',
-    discountPercent: (json['discountPercent'] as num?)?.toInt() ?? 0,
-    discountFlat: (json['discountFlat'] as num?)?.toDouble(),
-    isUsed: json['isUsed'] == true,
-    expiresAt:
-        DateTime.tryParse(json['expiresAt']?.toString() ?? '') ??
-        DateTime.now(),
+  factory _PromoItem.fromJson(Map<String, dynamic> json) {
+    final rawTiers = json['allowed_tiers'];
+    return _PromoItem(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      kind: json['kind']?.toString() ?? 'percent',
+      percent: (json['percent'] as num?)?.toInt() ?? 0,
+      fallbackPercent: (json['fallback_percent'] as num?)?.toInt() ?? 0,
+      maxMiles: (json['max_miles'] as num?)?.toDouble(),
+      allowedTiers: rawTiers is List
+          ? rawTiers.map((tier) => tier.toString()).toList()
+          : const [],
+      usesPerRider: (json['uses_per_rider'] as num?)?.toInt() ?? 0,
+      remainingUses: (json['remaining_uses'] as num?)?.toInt() ?? 0,
+      status: json['status']?.toString() ?? 'expired',
+      startsAt: DateTime.tryParse(json['starts_at']?.toString() ?? ''),
+      expiresAt: DateTime.tryParse(json['expires_at']?.toString() ?? ''),
+      reason: json['reason']?.toString() ?? '',
   );
+}
 }

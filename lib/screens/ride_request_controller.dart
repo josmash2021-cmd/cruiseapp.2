@@ -7,7 +7,6 @@ part of 'ride_request_screen.dart';
 final _last4Re = RegExp(r'(\d{4})$');
 
 extension _RideRequestController on _RideRequestScreenState {
-
   // `Navigator.of` ends in `return navigator!` and `ScaffoldMessenger.of` in
   // `dependOnInheritedWidgetOfExactType<_ScaffoldMessengerScope>()!`. The
   // assert that explains the mistake is compiled out of release, so a context
@@ -62,7 +61,8 @@ extension _RideRequestController on _RideRequestScreenState {
         ),
         content: Text(
           'Please add a payment method before booking a ride.',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 15),
+          style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7), fontSize: 15),
         ),
         actions: [
           TextButton(
@@ -138,9 +138,12 @@ extension _RideRequestController on _RideRequestScreenState {
     final query = '${ap.name}$terminalPart$departureSuffix';
 
     // Build human-readable label
-    final doorPart = isFrom && sel.arrivalDoor != null ? ' — ${sel.arrivalDoor}' : '';
-    final airlinePart = !isFrom && sel.airline != null ? ' — ${sel.airline}' : '';
-    final label = '${ap.code} · ${sel.terminal?.name ?? ap.name}$doorPart$airlinePart';
+    final doorPart =
+        isFrom && sel.arrivalDoor != null ? ' — ${sel.arrivalDoor}' : '';
+    final airlinePart =
+        !isFrom && sel.airline != null ? ' — ${sel.airline}' : '';
+    final label =
+        '${ap.code} · ${sel.terminal?.name ?? ap.name}$doorPart$airlinePart';
 
     PlaceDetails? details;
     try {
@@ -156,7 +159,8 @@ extension _RideRequestController on _RideRequestScreenState {
       try {
         final results = await places.autocomplete(ap.name);
         if (!mounted) return;
-        if (results.isNotEmpty) details = await places.details(results.first.placeId);
+        if (results.isNotEmpty)
+          details = await places.details(results.first.placeId);
       } catch (_) {}
     }
 
@@ -170,9 +174,13 @@ extension _RideRequestController on _RideRequestScreenState {
       _ctrl.setDropoff(details, label);
       // Auto-set current location as pickup if available
       if (_userLocation != null) {
-        final curLabel = _currentAddress.isNotEmpty ? _currentAddress : 'Current location';
+        final curLabel =
+            _currentAddress.isNotEmpty ? _currentAddress : 'Current location';
         _ctrl.setPickup(
-          PlaceDetails(address: curLabel, lat: _userLocation!.latitude, lng: _userLocation!.longitude),
+          PlaceDetails(
+              address: curLabel,
+              lat: _userLocation!.latitude,
+              lng: _userLocation!.longitude),
           curLabel,
         );
       }
@@ -193,13 +201,17 @@ extension _RideRequestController on _RideRequestScreenState {
       );
       return;
     }
-    _mapCtrl?.flyTo(
+    _mapCtrl
+        ?.flyTo(
       mapbox.CameraOptions(
-        center: mapbox.Point(coordinates: mapbox.Position(target.longitude, target.latitude)),
+            center: mapbox.Point(
+                coordinates:
+                    mapbox.Position(target.longitude, target.latitude)),
         zoom: 16.5,
       ),
       mapbox.MapAnimationOptions(duration: 800),
-    ).catchError((Object _) {});
+        )
+        .catchError((Object _) {});
   }
 
   // Keep old name as alias for backward compat with any lingering call sites.
@@ -217,7 +229,8 @@ extension _RideRequestController on _RideRequestScreenState {
 
       // Use current location as pickup if available
       if (_userLocation != null) {
-        final curLabel = _currentAddress.isNotEmpty ? _currentAddress : 'current location';
+        final curLabel =
+            _currentAddress.isNotEmpty ? _currentAddress : 'current location';
         _ctrl.setPickup(
           PlaceDetails(
             address: curLabel,
@@ -278,7 +291,8 @@ extension _RideRequestController on _RideRequestScreenState {
       }
 
       // Find the default stripe_card
-      final stripeCards = methods.where((m) => m['method_type'] == 'stripe_card').toList();
+      final stripeCards =
+          methods.where((m) => m['method_type'] == 'stripe_card').toList();
       if (stripeCards.isEmpty) return;
       final defaultCard = stripeCards.firstWhere(
         (m) => m['is_default'] == true,
@@ -437,17 +451,22 @@ extension _RideRequestController on _RideRequestScreenState {
           _webAutoCameraUntil =
               DateTime.now().add(const Duration(milliseconds: 1050));
           _webMapCtrl?.flyTo(
-              lng: center.longitude, lat: center.latitude, zoom: 15.5,
+              lng: center.longitude,
+              lat: center.latitude,
+              zoom: 15.5,
               durationMs: 800);
           // Was outside the guard entirely. Harmless only by accident —
           // _mapCtrl is null on web, so it never fired here — but it is the
           // same unconditional teleport the guard above exists to prevent.
-          _mapCtrl?.setCamera(mapbox.CameraOptions(
+          _mapCtrl
+              ?.setCamera(mapbox.CameraOptions(
             center: mapbox.Point(
-              coordinates: mapbox.Position(center.longitude, center.latitude),
+                  coordinates:
+                      mapbox.Position(center.longitude, center.latitude),
             ),
             zoom: 15.5,
-          )).catchError((Object _) {});
+              ))
+              .catchError((Object _) {});
         }
         // Reverse geocode the fix so the pickup label isn't a lie — the
         // seed path keeps the sheet's default label instead.
@@ -529,10 +548,14 @@ extension _RideRequestController on _RideRequestScreenState {
             // what stops every later write at the first failure.
             final mc = _mapCtrl;
             if (mc != null) {
-              mc.setCamera(mapbox.CameraOptions(
-                center: mapbox.Point(coordinates: mapbox.Position(lastLl.longitude, lastLl.latitude)),
+              mc
+                  .setCamera(mapbox.CameraOptions(
+                center: mapbox.Point(
+                    coordinates:
+                        mapbox.Position(lastLl.longitude, lastLl.latitude)),
                 zoom: 15.5,
-              )).catchError((Object e) {
+              ))
+                  .catchError((Object e) {
                 if (identical(_mapCtrl, mc) &&
                     e is PlatformException &&
                     e.code == 'channel-error') {
@@ -566,10 +589,15 @@ extension _RideRequestController on _RideRequestScreenState {
       // pickup" report). Same rule as above and as the web branch.
       if (_gpsMayMoveCamera) {
         debugPrint('[CamSnap] GPS fresh-fix flyTo -> user location');
-        _mapCtrl?.flyTo(
-          mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)), zoom: 15.5),
+        _mapCtrl
+            ?.flyTo(
+              mapbox.CameraOptions(
+                  center: mapbox.Point(
+                      coordinates: mapbox.Position(ll.longitude, ll.latitude)),
+                  zoom: 15.5),
           mapbox.MapAnimationOptions(duration: 800),
-        ).catchError((Object _) {});
+            )
+            .catchError((Object _) {});
       }
 
       // Reverse geocode for address
@@ -694,7 +722,8 @@ extension _RideRequestController on _RideRequestScreenState {
           // cycle with it: re-flying to the same fixed frame on every tick
           // restarted the animation all through the search and fought the
           // rider's finger whenever they panned to read the route.
-          _searchStatusTimer = Timer.periodic(const Duration(milliseconds: 3500), (_) {
+          _searchStatusTimer =
+              Timer.periodic(const Duration(milliseconds: 3500), (_) {
             if (mounted) {
               _setState(() => _searchStatusIdx++);
             }
@@ -854,8 +883,7 @@ extension _RideRequestController on _RideRequestScreenState {
                 margin: const EdgeInsets.all(16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(
-                      color: Color(0xFFE8C547), width: 1),
+                  side: const BorderSide(color: Color(0xFFE8C547), width: 1),
                 ),
               ),
             );
@@ -897,12 +925,14 @@ extension _RideRequestController on _RideRequestScreenState {
               ),
               title: Row(
                 children: [
-                  const Icon(Icons.info_outline, color: Colors.orange, size: 28),
+                  const Icon(Icons.info_outline,
+                      color: Colors.orange, size: 28),
                   const SizedBox(width: 10),
                   Text(S.of(context).tripCancelled),
                 ],
               ),
-              content: Text(displayReason, style: const TextStyle(fontSize: 15)),
+              content:
+                  Text(displayReason, style: const TextStyle(fontSize: 15)),
               actions: [
                 TextButton(
                   onPressed: () {
@@ -966,7 +996,8 @@ extension _RideRequestController on _RideRequestScreenState {
     } else if (_userLocation != null) {
       // Use current location as pickup (fallback to 'current location' so
       // the driver side can reverse-geocode when _currentAddress is still '')
-      final curLabel = _currentAddress.isNotEmpty ? _currentAddress : 'current location';
+      final curLabel =
+          _currentAddress.isNotEmpty ? _currentAddress : 'current location';
       _ctrl.setPickup(
         PlaceDetails(
           address: curLabel,
@@ -1015,9 +1046,9 @@ extension _RideRequestController on _RideRequestScreenState {
   // ── Payment sheet ──────────────────────────────────────────
 
   void _showPaymentSheet(AppColors c, RideOption? option) {
-    final price = option != null
-        ? '\$${option.priceEstimate.toStringAsFixed(2)}'
-        : '';
+    final price = option != null && option.hasServerPrice
+        ? _confirmationPriceText(option)
+        : '—';
 
     showModalBottomSheet(
       context: context,
@@ -1077,9 +1108,13 @@ extension _RideRequestController on _RideRequestScreenState {
                                 String asset = 'assets/images/car_economy.png';
                                 if (optName.contains('electric')) {
                                   asset = 'assets/images/car_electric.png';
-                                } else if (optName.contains('suburban') || optName.contains('vip') || optName.contains('suv')) {
+                                } else if (optName.contains('suburban') ||
+                                    optName.contains('vip') ||
+                                    optName.contains('suv')) {
                                   asset = 'assets/images/cruisert_compact.png';
-                                } else if (optName.contains('camry') || optName.contains('premium') || optName.contains('sedan')) {
+                                } else if (optName.contains('camry') ||
+                                    optName.contains('premium') ||
+                                    optName.contains('sedan')) {
                                   asset = 'assets/images/car_sedan.png';
                                 }
                                 return Image.asset(
@@ -1093,7 +1128,8 @@ extension _RideRequestController on _RideRequestScreenState {
                                   // car_electric.png is not in older bundles
                                   // (OTA rule) — backend-hosted copy first,
                                   // then the bundled SUV.
-                                  errorBuilder: (_, __, ___) => asset.contains('car_electric')
+                                  errorBuilder: (_, __, ___) => asset
+                                          .contains('car_electric')
                                       ? otaImageFallback(
                                           'car_electric.png',
                                           Image.asset(
@@ -1213,7 +1249,8 @@ extension _RideRequestController on _RideRequestScreenState {
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
                               color: _isProcessingPayment
-                                  ? const Color(0xFFFFD700).withValues(alpha: 0.3)
+                                  ? const Color(0xFFFFD700)
+                                      .withValues(alpha: 0.3)
                                   : const Color(0xFFFFD700),
                               width: 1.5,
                             ),
@@ -1230,7 +1267,8 @@ extension _RideRequestController on _RideRequestScreenState {
                                   ),
                                 )
                               : Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20),
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
@@ -1260,6 +1298,43 @@ extension _RideRequestController on _RideRequestScreenState {
     );
   }
 
+  int _holdAmountCents(RideOption option) => rideHoldAmountCents(
+        option: option,
+        balanceCents: _cruiseCashCents,
+      );
+
+  double _confirmationFare(RideOption? option) {
+    if (option == null || !option.hasServerPrice) return 0;
+    return _holdAmountCents(option) / 100.0;
+  }
+
+  String _confirmationPriceText(RideOption option) {
+    if (option.isFree) return S.of(context).free;
+    return '\$${_confirmationFare(option).toStringAsFixed(2)}';
+  }
+
+  Future<RideOption?> _prepareOptionForConfirmation(
+    RideOption? option,
+  ) async {
+    if (option == null) return null;
+    if (_ctrl.state.selectedOption?.id != option.id) {
+      _ctrl.selectRideOption(option);
+    }
+    final prepared = await _ctrl.prepareQuoteForConfirmation();
+    if (!mounted) return null;
+    if (!prepared || !_ctrl.hasFrozenQuoteForConfirmation) {
+      _messenger?.showSnackBar(
+        SnackBar(content: Text(S.of(context).quoteRefreshRequired)),
+      );
+      return null;
+    }
+    await _loadCruiseCashBalance();
+    if (!mounted) return null;
+    final selected = _ctrl.state.selectedOption;
+    if (selected == null || !selected.hasServerPrice) return null;
+    return selected;
+  }
+
   /// Processes payment: verifies linked method, checks Stripe PM ID for cards,
   /// charges payment. If anything fails → shows Declined dialog, stays on sheet.
   /// In DEBUG mode, payment is always simulated successfully for testing.
@@ -1277,12 +1352,6 @@ extension _RideRequestController on _RideRequestScreenState {
 
     if (_rideFlowLocked || _isProcessingPayment) return;
 
-    // Validate payment method exists before proceeding
-    if (!_hasAnyPaymentMethod && !isTestMode) {
-      _showAddPaymentMethodDialog();
-      return;
-    }
-
     _rideFlowLocked = true;
     setSheetState(() => _isProcessingPayment = true);
     _setState(() => _isProcessingPayment = true);
@@ -1292,14 +1361,25 @@ extension _RideRequestController on _RideRequestScreenState {
     _stuckPaymentFuse = Timer(const Duration(seconds: 45), () {
       if (!mounted) return;
       if (_isProcessingPayment || _rideFlowLocked) {
-        debugPrint('[RideRequest] payment fuse fired (modal) — clearing stuck state');
+        debugPrint(
+            '[RideRequest] payment fuse fired (modal) — clearing stuck state');
         _rideFlowLocked = false;
         _setState(() => _isProcessingPayment = false);
-        try { setSheetState(() => _isProcessingPayment = false); } catch (_) {}
+        try {
+          setSheetState(() => _isProcessingPayment = false);
+        } catch (_) {}
       }
     });
 
     try {
+      option = await _prepareOptionForConfirmation(option);
+      if (option == null || !mounted) return;
+      if (_holdAmountCents(option) > 0 &&
+          !_hasAnyPaymentMethod &&
+          !isTestMode) {
+        _showAddPaymentMethodDialog();
+        return;
+      }
       // Lyft model (2026-08-26, user spec): a SCHEDULED booking pays
       // nothing up front — no hold, no wallet sheet. The backend
       // authorises the fare off-session when the ride dispatches. Only
@@ -1323,7 +1403,8 @@ extension _RideRequestController on _RideRequestScreenState {
           _setState(() => _showPaymentDeclinedBanner = true);
           _showRetrySnackBar(
             S.of(context).paymentDeclinedMsg,
-            () => _processPayment(context, AppColors.of(context), option, setSheetState),
+            () => _processPayment(
+                context, AppColors.of(context), option, setSheetState),
           );
           return;
         }
@@ -1333,10 +1414,9 @@ extension _RideRequestController on _RideRequestScreenState {
       setSheetState(() => _isProcessingPayment = false);
       _setState(() => _isProcessingPayment = false);
       _nav?.pop();
-      if (widget.applyPromo) await LocalDataService.setPromoUsed();
       AnalyticsService.instance.logRideRequested(
-        option?.name ?? 'unknown',
-        option?.priceEstimate ?? 0,
+        option.name,
+        option.priceEstimate,
       );
 
       if (_ctrl.state.scheduledAt != null) {
@@ -1351,7 +1431,9 @@ extension _RideRequestController on _RideRequestScreenState {
       _rideFlowLocked = false;
       // Safety net: ensure button never stays stuck regardless of exception path.
       if (mounted) {
-        try { setSheetState(() => _isProcessingPayment = false); } catch (_) {}
+        try {
+          setSheetState(() => _isProcessingPayment = false);
+        } catch (_) {}
         _setState(() => _isProcessingPayment = false);
       }
     }
@@ -1377,7 +1459,7 @@ extension _RideRequestController on _RideRequestScreenState {
         dropoff: dropoff,
         dropoffLabel: state.dropoffLabel,
         tierName: TierInfo.displayTitle(option.name),
-        priceText: '\$${option.priceEstimate.toStringAsFixed(2)}',
+        priceText: _confirmationPriceText(option),
         paymentLabel: _paymentLabel(_selectedPaymentMethod),
         isApplePay: _selectedPaymentMethod == 'apple_pay',
         onConfirm: (picked, note) async {
@@ -1398,7 +1480,8 @@ extension _RideRequestController on _RideRequestScreenState {
   /// (searching/tracking/scheduled confirmation); false when the payment
   /// failed or was cancelled BEFORE dispatch so the pickup-confirm page
   /// (onConfirm) knows to stay open instead of popping into a dead screen.
-  Future<bool> _startRideDirectly(AppColors c, RideOption? option) async {    if (option == null) return false;
+  Future<bool> _startRideDirectly(AppColors c, RideOption? option) async {
+    if (option == null) return false;
 
     // Resolved once, and before the re-entrancy guard below — never between
     // that guard and _rideFlowLocked. An await in that gap spans event-loop
@@ -1409,12 +1492,6 @@ extension _RideRequestController on _RideRequestScreenState {
     if (!mounted) return false;
 
     if (_rideFlowLocked || _isProcessingPayment) return false;
-
-    // Validate payment method exists before proceeding
-    if (!_hasAnyPaymentMethod && !isTestMode) {
-      _showAddPaymentMethodDialog();
-      return false;
-    }
 
     _rideFlowLocked = true;
     // Show the spinner immediately so the rider sees feedback even
@@ -1437,28 +1514,20 @@ extension _RideRequestController on _RideRequestScreenState {
     try {
       final nav = _nav;
       if (nav == null) return false;
-
-      // Native pay (Apple/Google Pay/PayPal): OS sheet must appear first.
-      // Card / sandbox: payment runs inside the searching screen animation.
-      final bool isNativePay = !isTestMode && !AppConfig.sandboxPayments &&
-          (_selectedPaymentMethod == 'apple_pay' ||
-              _selectedPaymentMethod == 'google_pay' ||
-              _selectedPaymentMethod == 'paypal');
+      option = await _prepareOptionForConfirmation(option);
+      if (option == null || !mounted) return false;
+      if (_holdAmountCents(option) > 0 &&
+          !_hasAnyPaymentMethod &&
+          !isTestMode) {
+        _showAddPaymentMethodDialog();
+        return false;
+      }
 
       // Tap to Pay: open the NFC screen FIRST so the rider taps a card,
-      // then proceed to dispatch. Same UX pattern as native pay (sheet
-      // before searching). Without this branch the flow used to fall
-      // through to requestRide() with no charge actually attempted, and
-      // the searching screen's paymentCallback called _confirmNativePayment
-      // which fails for tap_to_pay → rider got bounced back to home.
+      // then proceed to dispatch. Free and fully covered rides skip it.
       final bool isTapToPay = _selectedPaymentMethod == 'tap_to_pay';
-      if (isTapToPay && !isTestMode) {
-        // Apply 10% promo when active so the charged amount matches the
-        // price the rider saw on the picked vehicle card.
-        final double effectivePrice = widget.applyPromo
-            ? option.priceEstimate * 0.9
-            : option.priceEstimate;
-        final amountCents = (effectivePrice * 100).round();
+      if (isTapToPay && !isTestMode && _holdAmountCents(option) > 0) {
+        final amountCents = _holdAmountCents(option);
         bool ok;
         try {
           ok = await _confirmTapToPay(amountCents, option);
@@ -1497,10 +1566,7 @@ extension _RideRequestController on _RideRequestScreenState {
           
           // Try smart retry with fallback options
           _setState(() => _isProcessingPayment = false);
-          final double effectivePrice = widget.applyPromo
-              ? option.priceEstimate * 0.9
-              : option.priceEstimate;
-          final amountCents = (effectivePrice * 100).round();
+          final amountCents = _holdAmountCents(option);
           final retryOk = await _handlePaymentFailure(
             error: e,
             amountCents: amountCents,
@@ -1518,8 +1584,8 @@ extension _RideRequestController on _RideRequestScreenState {
       }
 
       if (!mounted) return false;
-      if (widget.applyPromo) await LocalDataService.setPromoUsed();
-      AnalyticsService.instance.logRideRequested(option.name, option.priceEstimate);
+      AnalyticsService.instance
+          .logRideRequested(option.name, option.priceEstimate);
 
       if (_ctrl.state.scheduledAt != null) {
         // A wallet-only rider has no chargeable card on file until they pay
@@ -1529,6 +1595,7 @@ extension _RideRequestController on _RideRequestScreenState {
         // check asks the BACKEND (same predicate as its gate), not local
         // prefs — a reinstall must not reopen the sheet.
         if (!isTestMode &&
+            _holdAmountCents(option) > 0 &&
             (_selectedPaymentMethod == 'apple_pay' ||
                 _selectedPaymentMethod == 'google_pay')) {
           bool hasChargeable = false;
@@ -1572,7 +1639,8 @@ extension _RideRequestController on _RideRequestScreenState {
         cancelled = await nav.push<bool>(
               searchingDriverRoute(
                 onCancel: _cancelSearching,
-                paymentCallback: null, // Payment already confirmed before requestRide()
+                paymentCallback:
+                    null, // Payment already confirmed before requestRide()
                 initiallyDeclined: nativePayFailed,
                 onPaymentDeclined: () => paymentDeclinedFlag = true,
                 driverFound: _driverMatchedNotifier,
@@ -1634,7 +1702,8 @@ extension _RideRequestController on _RideRequestScreenState {
       //   3) THEN fire the driver-found overlay
       // so the rider always sees the map with the route + searching card
       // before the driver-found celebration.
-      if ((phase == RiderPhase.driverArriving || phase == RiderPhase.driverAssigned) &&
+      if ((phase == RiderPhase.driverArriving ||
+              phase == RiderPhase.driverAssigned) &&
           !_navigatingToTracking) {
         _searchMapTimer?.cancel();
         _setState(() {
@@ -1687,12 +1756,16 @@ extension _RideRequestController on _RideRequestScreenState {
       // cancelCode. Route it through the same client-error path below so the
       // rider gets the SnackBar and the pin page stays open for a retry.
       final rollbackCode = _ctrl.state.cancelCode;
-      final isClientRollback = _ctrl.state.phase == RiderPhase.selectingRide &&
+      final isQuoteRollback =
+          rollbackCode == RiderTripCancelCodes.clientQuoteRefreshRequired;
+      final isClientRollback =
+          (_ctrl.state.phase == RiderPhase.selectingRide || isQuoteRollback) &&
           (rollbackCode == RiderTripCancelCodes.clientNoInternet ||
               rollbackCode == RiderTripCancelCodes.clientNoSession ||
               rollbackCode == RiderTripCancelCodes.clientCreateFailed ||
               rollbackCode == RiderTripCancelCodes.clientConnectionError ||
-              rollbackCode == RiderTripCancelCodes.clientPaymentDeclined);
+                  rollbackCode == RiderTripCancelCodes.clientPaymentDeclined ||
+                  isQuoteRollback);
       if ((_ctrl.state.phase == RiderPhase.cancelled && !_cancelDialogShown) ||
           isClientRollback) {
         // Guard: if SearchingDriverScreen is still on the stack, defer the
@@ -1719,17 +1792,25 @@ extension _RideRequestController on _RideRequestScreenState {
         // ── Client-side pre-flight errors (no internet, no session, create failed)
         // These mean the trip was NEVER created.  Instead of silently dumping
         // the rider back to home, show an inline SnackBar so they can retry.
-        final isClientError = cancelCode == RiderTripCancelCodes.clientNoInternet ||
+        final isClientError =
+            cancelCode == RiderTripCancelCodes.clientNoInternet ||
             cancelCode == RiderTripCancelCodes.clientNoSession ||
             cancelCode == RiderTripCancelCodes.clientCreateFailed ||
             cancelCode == RiderTripCancelCodes.clientConnectionError ||
-            cancelCode == RiderTripCancelCodes.clientPaymentDeclined;
+                cancelCode == RiderTripCancelCodes.clientPaymentDeclined ||
+                cancelCode == RiderTripCancelCodes.clientQuoteRefreshRequired;
         if (isClientError) {
+          if (cancelCode != RiderTripCancelCodes.clientQuoteRefreshRequired) {
           _ctrl.reset();
-          // 402 declines carry the stringified backend detail as rawReason —
-          // show the localized decline message instead of the raw payload.
-          final msg = cancelCode == RiderTripCancelCodes.clientPaymentDeclined
-              ? S.of(context).cancelCodeMessage(cancelCode, rawReason: rawReason)
+          }
+          // Payment declines and quote conflicts use localized copy. A quote
+          // conflict keeps the route and the newly fetched quote for review.
+          final msg = cancelCode ==
+                      RiderTripCancelCodes.clientPaymentDeclined ||
+                  cancelCode == RiderTripCancelCodes.clientQuoteRefreshRequired
+              ? S
+                  .of(context)
+                  .cancelCodeMessage(cancelCode, rawReason: rawReason)
               : (rawReason ?? S.of(context).tripCancelled);
           _messenger?.showSnackBar(
             SnackBar(
@@ -1737,7 +1818,8 @@ extension _RideRequestController on _RideRequestScreenState {
               backgroundColor: const Color(0xFF1a1a1a),
               content: Row(
                 children: [
-                  const Icon(Icons.error_outline, color: Colors.orange, size: 22),
+                  const Icon(Icons.error_outline,
+                      color: Colors.orange, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -1798,8 +1880,7 @@ extension _RideRequestController on _RideRequestScreenState {
               margin: const EdgeInsets.all(16),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
-                side: const BorderSide(
-                    color: Color(0xFFE8C547), width: 1),
+                side: const BorderSide(color: Color(0xFFE8C547), width: 1),
               ),
             ),
           );
@@ -1826,30 +1907,42 @@ extension _RideRequestController on _RideRequestScreenState {
             context: rootNav.context,
             barrierDismissible: true,
             builder: (dialogCtx) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               title: Row(children: [
-                Icon(isNoDrivers ? Icons.search_off_rounded : Icons.info_outline,
-                    color: isNoDrivers ? const Color(0xFFE8C547) : Colors.orange, size: 28),
+                Icon(
+                    isNoDrivers ? Icons.search_off_rounded : Icons.info_outline,
+                    color:
+                        isNoDrivers ? const Color(0xFFE8C547) : Colors.orange,
+                    size: 28),
                 const SizedBox(width: 10),
-                Expanded(child: Text(isNoDrivers ? S.of(context).noDriversAvailableTitle : S.of(context).tripCancelled,
+                Expanded(
+                    child: Text(
+                        isNoDrivers
+                            ? S.of(context).noDriversAvailableTitle
+                            : S.of(context).tripCancelled,
                     style: const TextStyle(fontSize: 17))),
               ]),
-              content: Text(localizedBody, style: const TextStyle(fontSize: 15)),
+              content:
+                  Text(localizedBody, style: const TextStyle(fontSize: 15)),
               actions: [
-                TextButton(onPressed: () => Navigator.maybeOf(dialogCtx)?.pop(), child: Text(S.of(context).okBtn)),
+                TextButton(
+                    onPressed: () => Navigator.maybeOf(dialogCtx)?.pop(),
+                    child: Text(S.of(context).okBtn)),
                 if (isNoDrivers)
                   TextButton(
                     onPressed: () {
                       Navigator.maybeOf(dialogCtx)?.pop();
                       // A + agendar (owner spec 2026-10-17): sin drivers, el
                       // rider puede dejar el viaje agendado para más tarde.
-                      rootNav.push(
-                          slideFromRightRoute(const ScheduleHubScreen()));
+                      rootNav
+                          .push(slideFromRightRoute(const ScheduleHubScreen()));
                     },
                     child: Text(
                       S.of(context).scheduleForLater,
                       style: const TextStyle(
-                          color: Color(0xFFE8C547), fontWeight: FontWeight.w700),
+                          color: Color(0xFFE8C547),
+                          fontWeight: FontWeight.w700),
                     ),
                   ),
               ],
@@ -1886,13 +1979,21 @@ extension _RideRequestController on _RideRequestScreenState {
             context: navRoot.context,
             barrierDismissible: true,
             builder: (dialogCtx) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               title: Row(
                 children: [
-                  Icon(isNoDrivers ? Icons.search_off_rounded : Icons.info_outline,
-                    color: isNoDrivers ? const Color(0xFFE8C547) : Colors.orange, size: 28),
+                  Icon(
+                      isNoDrivers
+                          ? Icons.search_off_rounded
+                          : Icons.info_outline,
+                      color:
+                          isNoDrivers ? const Color(0xFFE8C547) : Colors.orange,
+                      size: 28),
                   const SizedBox(width: 10),
-                  Expanded(child: Text(displayTitle, style: const TextStyle(fontSize: 17))),
+                  Expanded(
+                      child: Text(displayTitle,
+                          style: const TextStyle(fontSize: 17))),
                 ],
               ),
               content: Text(displayMsg, style: const TextStyle(fontSize: 15)),
@@ -1906,13 +2007,14 @@ extension _RideRequestController on _RideRequestScreenState {
                     onPressed: () {
                       Navigator.maybeOf(dialogCtx)?.pop();
                       // A + agendar (owner spec 2026-10-17).
-                      navRoot.push(
-                          slideFromRightRoute(const ScheduleHubScreen()));
+                      navRoot
+                          .push(slideFromRightRoute(const ScheduleHubScreen()));
                     },
                     child: Text(
                       S.of(context).scheduleForLater,
                       style: const TextStyle(
-                          color: Color(0xFFE8C547), fontWeight: FontWeight.w700),
+                          color: Color(0xFFE8C547),
+                          fontWeight: FontWeight.w700),
                     ),
                   ),
               ],
@@ -1944,16 +2046,20 @@ extension _RideRequestController on _RideRequestScreenState {
   /// Returns true if payment was authorized, false if user cancelled.
   /// Throws on failure.
   Future<bool> _confirmNativePayment(RideOption? option) async {
+    if (option == null) return false;
+    if (!option.hasServerPrice) {
+      throw const ApiException(409, 'quote_required');
+    }
+    final amountCents = _holdAmountCents(option);
+    if (option.isFree || amountCents == 0) {
+      _heldPaymentIntentId = null;
+      return true;
+    }
     // flutter_stripe has no web implementation — reading Stripe.instance
     // throws. Report success so the browser build can walk the rest of
     // the flow; nothing is charged and no native sheet exists to open.
     if (kIsWeb) return true;
 
-    if (option == null) return false;
-    final double effectivePrice = widget.applyPromo
-        ? option.priceEstimate * 0.9
-        : option.priceEstimate;
-    final amountCents = (effectivePrice * 100).round();
     // Label del sheet de pago (Apple Pay / Google Pay / tarjeta): "CRUISE
     // IN RIDE - {TIER}" canónico en mayúsculas del tier seleccionado
     // (owner spec 2026-10-18 — Sedan→COMPACT, SUV XL→PREMIUM, Suburban→VIP).
@@ -1964,7 +2070,8 @@ extension _RideRequestController on _RideRequestScreenState {
     // with a clear error instead of letting the backend's 400 surface as a
     // bogus "Payment Declined" (App Store rejection, Jul 2026).
     if (amountCents <= 0 || amountCents > 100000) {
-      debugPrint('[Payment] invalid fare amount: $amountCents cents — aborting before backend call');
+      debugPrint(
+          '[Payment] invalid fare amount: $amountCents cents — aborting before backend call');
       throw const ApiException(400, 'invalid_fare_amount');
     }
 
@@ -1995,10 +2102,13 @@ extension _RideRequestController on _RideRequestScreenState {
         // The Request button is disabled while the balance falls short
         // (_cruiseCashShort), so false here only guards a race where the
         // balance changed under us.
-        return Future.value(_cruiseCashCents >= amountCents);
+        return Future.value(
+          _cruiseCashCents >= option.promoTotalCents!,
+        );
       default:
         // Unrecognised payment method — never allow payment to proceed silently.
-        debugPrint('[Payment] _confirmNativePayment: unknown method "$_selectedPaymentMethod"');
+        debugPrint(
+            '[Payment] _confirmNativePayment: unknown method "$_selectedPaymentMethod"');
         return false;
     }
   }
@@ -2021,7 +2131,8 @@ extension _RideRequestController on _RideRequestScreenState {
     }
 
     try {
-      final piResult = await ApiService.createPaymentIntent(amountCents: amountCents, holdOnly: true);
+      final piResult = await ApiService.createPaymentIntent(
+          amountCents: amountCents, holdOnly: true);
       final clientSecret = piResult['client_secret'] as String?;
       _heldPaymentIntentId = piResult['payment_intent_id'] as String?;
       if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
@@ -2047,17 +2158,20 @@ extension _RideRequestController on _RideRequestScreenState {
       _persistWalletMethod('apple_pay');
       return true;
     } on stripe.StripeException catch (e, stack) {
-      debugPrint('[ApplePay] StripeException: ${e.error.code} - ${e.error.message}');
+      debugPrint(
+          '[ApplePay] StripeException: ${e.error.code} - ${e.error.message}');
       if (e.error.code == stripe.FailureCode.Canceled) return false;
       // Apple Pay was declined by the bank — surface the error so the caller
       // shows the "Payment declined" banner instead of opening a card sheet.
       // Report to Crashlytics: a silent decline during App Review once cost
       // us a rejection with no diagnostics.
-      FirebaseCrashlytics.instance.recordError(e, stack, reason: 'ApplePay confirm failed: ${e.error.code}');
+      FirebaseCrashlytics.instance.recordError(e, stack,
+          reason: 'ApplePay confirm failed: ${e.error.code}');
       rethrow;
     } catch (e, stack) {
       debugPrint('[ApplePay] Error: $e');
-      FirebaseCrashlytics.instance.recordError(e, stack, reason: 'ApplePay confirm error');
+      FirebaseCrashlytics.instance
+          .recordError(e, stack, reason: 'ApplePay confirm error');
       rethrow;
     }
   }
@@ -2079,7 +2193,8 @@ extension _RideRequestController on _RideRequestScreenState {
     }
 
     try {
-      final piResult = await ApiService.createPaymentIntent(amountCents: amountCents, holdOnly: true);
+      final piResult = await ApiService.createPaymentIntent(
+          amountCents: amountCents, holdOnly: true);
       final clientSecret = piResult['client_secret'] as String?;
       _heldPaymentIntentId = piResult['payment_intent_id'] as String?;
       if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
@@ -2099,7 +2214,8 @@ extension _RideRequestController on _RideRequestScreenState {
       _persistWalletMethod('google_pay');
       return true;
     } on stripe.StripeException catch (e) {
-      debugPrint('[GooglePay] StripeException: ${e.error.code} - ${e.error.message}');
+      debugPrint(
+          '[GooglePay] StripeException: ${e.error.code} - ${e.error.message}');
       if (e.error.code == stripe.FailureCode.Canceled) return false;
       // Google Pay was declined — surface the error so the caller shows the
       // "Payment declined" banner instead of silently opening a card sheet.
@@ -2136,7 +2252,8 @@ extension _RideRequestController on _RideRequestScreenState {
     try {
       final clientSecret = await ApiService.createSetupIntent();
       if (clientSecret == null) return false;
-      if (clientSecret.startsWith('seti_mock') || clientSecret.startsWith('mock_')) {
+      if (clientSecret.startsWith('seti_mock') ||
+          clientSecret.startsWith('mock_')) {
         return true;
       }
       final isApple = _selectedPaymentMethod == 'apple_pay';
@@ -2191,7 +2308,8 @@ extension _RideRequestController on _RideRequestScreenState {
     if (kIsWeb) return true;
 
     try {
-      final piResult = await ApiService.createPaymentIntent(amountCents: amountCents, holdOnly: true);
+      final piResult = await ApiService.createPaymentIntent(
+          amountCents: amountCents, holdOnly: true);
       final clientSecret = piResult['client_secret'] as String?;
       _heldPaymentIntentId = piResult['payment_intent_id'] as String?;
       if (clientSecret == null || clientSecret.startsWith('mock_')) return true;
@@ -2214,7 +2332,8 @@ extension _RideRequestController on _RideRequestScreenState {
       await stripe.Stripe.instance.presentPaymentSheet();
       return true;
     } on stripe.StripeException catch (e) {
-      debugPrint('[CardSheet] StripeException: ${e.error.code} - ${e.error.message}');
+      debugPrint(
+          '[CardSheet] StripeException: ${e.error.code} - ${e.error.message}');
       if (e.error.code == stripe.FailureCode.Canceled) return false;
       rethrow;
     }
@@ -2248,7 +2367,8 @@ extension _RideRequestController on _RideRequestScreenState {
     // result == true  → authorised
     if (result == false) {
       debugPrint('[PayPal] checkout returned false — treating as declined');
-      throw Exception('PayPal payment was declined or failed on the PayPal screen.');
+      throw Exception(
+          'PayPal payment was declined or failed on the PayPal screen.');
     }
     return result == true;
   }
@@ -2414,12 +2534,19 @@ extension _RideRequestController on _RideRequestScreenState {
       // scheduled createTrip and immediate dispatchRideRequest agree.
       final flight = state.airportFlight?.trim();
       final noteLines = <String>[
-        if ((state.stopAddress ?? '').isNotEmpty)
-          'Stop: ${state.stopAddress}',
+        if ((state.stopAddress ?? '').isNotEmpty) 'Stop: ${state.stopAddress}',
         if (flight != null && flight.isNotEmpty) 'Flight: $flight',
         if ((state.pickupNote ?? '').isNotEmpty) state.pickupNote!,
       ];
       final notes = noteLines.isEmpty ? null : noteLines.join('\n');
+      final quote = state.quote;
+      final option = state.selectedOption;
+      if (quote == null || option == null || !option.hasServerPrice) {
+        _messenger?.showSnackBar(
+          SnackBar(content: Text(S.of(context).quoteRefreshRequired)),
+        );
+        return;
+      }
 
       await ApiService.createTrip(
         riderId: userId,
@@ -2429,10 +2556,11 @@ extension _RideRequestController on _RideRequestScreenState {
         pickupLng: state.pickup?.lng ?? 0,
         dropoffLat: state.dropoff?.lat ?? 0,
         dropoffLng: state.dropoff?.lng ?? 0,
-        fare: state.selectedOption?.priceEstimate,
-        vehicleType: state.selectedOption?.name,
+        quoteId: quote.id,
+        vehicleType: option.canonicalTier,
         scheduledAt: state.scheduledAt,
         isAirport: state.isAirportTrip,
+        meetInside: state.meetInside,
         airportCode: state.airportCode,
         terminal: state.airportTerminal,
         pickupZone: state.airportPickupZone,
@@ -2441,12 +2569,12 @@ extension _RideRequestController on _RideRequestScreenState {
         // is null on the current pipeline (only immediate rides confirm
         // payment). A legacy build that did hold still sends it and the
         // backend settles it as before.
-        paymentIntentId: _heldPaymentIntentId,
+        paymentIntentId:
+            _holdAmountCents(option) > 0 ? _heldPaymentIntentId : null,
         stopLat: state.stopLat,
         stopLng: state.stopLng,
-        stopAddress: (state.stopAddress ?? '').isNotEmpty
-            ? state.stopAddress
-            : null,
+        stopAddress:
+            (state.stopAddress ?? '').isNotEmpty ? state.stopAddress : null,
       );
 
       if (!mounted) return;
@@ -2460,8 +2588,9 @@ extension _RideRequestController on _RideRequestScreenState {
             scheduledAt: state.scheduledAt!,
             pickupAddress: state.pickupLabel,
             dropoffAddress: state.dropoffLabel,
-            vehicleType: state.selectedOption?.name ?? 'Comfort',
-            fare: state.selectedOption?.priceEstimate ?? 0,
+            vehicleType: option.name,
+            fare: _confirmationFare(option),
+            isFree: option.isFree,
             pickupLat: state.pickup?.lat,
             pickupLng: state.pickup?.lng,
             dropoffLat: state.dropoff?.lat,
@@ -2477,13 +2606,22 @@ extension _RideRequestController on _RideRequestScreenState {
       );
     } catch (e) {
       if (!mounted) return;
+      if (e is ApiException && e.statusCode == 409) {
+        _ctrl.releaseQuoteConfirmation();
+        await _ctrl.refreshQuote();
+        if (!mounted) return;
+        _messenger?.showSnackBar(
+          SnackBar(content: Text(S.of(context).quoteRefreshRequired)),
+        );
+        return;
+      }
       // Backend rejected the hold (402 missing/failed PaymentIntent) — show
       // the same payment-declined dialog as the immediate flow instead of
       // the generic schedule retry; the reservation was NOT created.
       if (e is ApiException && e.statusCode == 402) {
         final option = _ctrl.state.selectedOption;
         if (option == null) return;
-        final amountCents = (option.priceEstimate * 100).round();
+        final amountCents = _holdAmountCents(option);
         await _handlePaymentFailure(
           error: e,
           amountCents: amountCents,
@@ -2606,13 +2744,17 @@ extension _RideRequestController on _RideRequestScreenState {
       // Pickup only — nothing to fit; keep the old single-point frame.
       if (kIsWeb) {
         _webMapCtrl?.flyTo(
-            lng: pickup.lng, lat: pickup.lat, zoom: 14.5, pitch: 20, durationMs: 1000);
+            lng: pickup.lng,
+            lat: pickup.lat,
+            zoom: 14.5,
+            pitch: 20,
+            durationMs: 1000);
         return;
       }
       _safeFlyTo(
         mapbox.CameraOptions(
-          center:
-              mapbox.Point(coordinates: mapbox.Position(pickup.lng, pickup.lat)),
+          center: mapbox.Point(
+              coordinates: mapbox.Position(pickup.lng, pickup.lat)),
           zoom: 14.5,
           pitch: 20.0,
         ),
@@ -2642,8 +2784,7 @@ extension _RideRequestController on _RideRequestScreenState {
     final bottomInset = _sheetHeightPx > 0
         ? _sheetHeightPx + 24 + 16
         : (mq.size.height * 0.38).clamp(280.0, 400.0) + mq.padding.bottom;
-    mc
-        .cameraForCoordinatesPadding(
+    mc.cameraForCoordinatesPadding(
       [
         mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
         mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
@@ -2652,8 +2793,7 @@ extension _RideRequestController on _RideRequestScreenState {
       mapbox.MbxEdgeInsets(top: 90, left: 50, bottom: bottomInset, right: 50),
       null,
       null,
-    )
-        .then((cam) {
+    ).then((cam) {
       // Gated like every other fit — _safeFlyTo validates cam before the
       // channel write (see _animateSearchCameraToAngle).
       _safeFlyTo(
@@ -2676,8 +2816,9 @@ extension _RideRequestController on _RideRequestScreenState {
     // Maps between the new screen's canonical ids (`apple_pay`,
     // `google_pay`, `card`, `test_mode`) and the app's existing storage
     // id `credit_card` — they're the same thing under the hood.
-    final current =
-        _selectedPaymentMethod == 'credit_card' ? 'card' : _selectedPaymentMethod;
+    final current = _selectedPaymentMethod == 'credit_card'
+        ? 'card'
+        : _selectedPaymentMethod;
     final picked = await showRidePaymentMethodPicker(
       context,
       currentMethod: current,
@@ -2761,7 +2902,8 @@ extension _RideRequestController on _RideRequestScreenState {
     
     if (error is stripe.StripeException) {
       errorCode = error.error.code.toString();
-      final declineCode = (error.error as dynamic)?.declineCode?.toString().toLowerCase() ?? '';
+      final declineCode =
+          (error.error as dynamic)?.declineCode?.toString().toLowerCase() ?? '';
       final errCode = errorCode.toLowerCase();
       
       switch (error.error.code) {
@@ -2770,7 +2912,8 @@ extension _RideRequestController on _RideRequestScreenState {
           return false;
         default:
           // Map specific decline codes to user-friendly localized messages
-          if (declineCode == 'card_declined' || errCode.contains('card_declined')) {
+          if (declineCode == 'card_declined' ||
+              errCode.contains('card_declined')) {
             errorTitle = s.cardDeclined;
             errorMessage = s.cardDeclinedMsg;
             errorCode = 'card_declined';
@@ -2778,29 +2921,37 @@ extension _RideRequestController on _RideRequestScreenState {
             errorTitle = s.insufficientFunds;
             errorMessage = s.insufficientFundsMsg;
             errorCode = 'insufficient_funds';
-          } else if (declineCode == 'expired_card' || errCode.contains('expired_card')) {
+          } else if (declineCode == 'expired_card' ||
+              errCode.contains('expired_card')) {
             errorTitle = s.cardExpired;
             errorMessage = s.cardExpiredMsg;
             errorCode = 'expired_card';
-          } else if (declineCode == 'incorrect_number' || errCode.contains('incorrect_number')) {
+          } else if (declineCode == 'incorrect_number' ||
+              errCode.contains('incorrect_number')) {
             errorTitle = s.invalidCardNumber;
             errorMessage = s.invalidCardNumberMsg;
             errorCode = 'incorrect_number';
-          } else if (declineCode == 'incorrect_cvc' || errCode.contains('incorrect_cvc')) {
+          } else if (declineCode == 'incorrect_cvc' ||
+              errCode.contains('incorrect_cvc')) {
             errorTitle = s.cardDeclined;
-            errorMessage = 'Incorrect security code. Please check and try again.';
+            errorMessage =
+                'Incorrect security code. Please check and try again.';
             errorCode = 'incorrect_cvc';
-          } else if (declineCode == 'test_mode_live_card' || errCode.contains('test_mode_live_card')) {
+          } else if (declineCode == 'test_mode_live_card' ||
+              errCode.contains('test_mode_live_card')) {
             errorTitle = s.cardDeclined;
-            errorMessage = 'This is a test card. Please use a real card for live payments.';
+            errorMessage =
+                'This is a test card. Please use a real card for live payments.';
             errorCode = 'test_mode_live_card';
-          } else if (declineCode == 'processing_error' || errCode.contains('processing_error')) {
+          } else if (declineCode == 'processing_error' ||
+              errCode.contains('processing_error')) {
             errorTitle = s.paymentDeclined;
             errorMessage = 'Payment processing error. Please try again.';
             errorCode = 'processing_error';
           } else if (declineCode == 'fraudulent') {
             errorTitle = s.paymentDeclined;
-            errorMessage = 'This payment was flagged for security. Please contact your bank or try a different card.';
+            errorMessage =
+                'This payment was flagged for security. Please contact your bank or try a different card.';
             errorCode = 'fraudulent';
           } else {
             errorTitle = s.paymentDeclined;
@@ -2830,7 +2981,9 @@ extension _RideRequestController on _RideRequestScreenState {
       }
     } else if (error is Map<String, dynamic>) {
       // Backend may return structured error with decline_code
-      final backendDecline = (error['decline_code'] ?? error['code'])?.toString().toLowerCase() ?? '';
+      final backendDecline =
+          (error['decline_code'] ?? error['code'])?.toString().toLowerCase() ??
+              '';
       final backendMsg = error['message']?.toString() ?? '';
       if (backendDecline == 'card_declined') {
         errorTitle = s.cardDeclined;
@@ -2846,7 +2999,8 @@ extension _RideRequestController on _RideRequestScreenState {
         errorCode = 'no_payment_method';
       } else {
         errorTitle = s.paymentDeclined;
-        errorMessage = backendMsg.isNotEmpty ? backendMsg : s.genericPaymentError;
+        errorMessage =
+            backendMsg.isNotEmpty ? backendMsg : s.genericPaymentError;
       }
     } else if (error.toString().toLowerCase().contains('paypal')) {
       errorTitle = s.paypalDeclined;
@@ -2862,8 +3016,10 @@ extension _RideRequestController on _RideRequestScreenState {
 
     // Check for available fallback methods
     final availableMethods = await _getAvailablePaymentMethods();
-    final hasAlternativeMethod = availableMethods.any((m) => m != originalMethod);
-    final hasSavedCard = await LocalDataService.getStripePaymentMethodId() != null;
+    final hasAlternativeMethod =
+        availableMethods.any((m) => m != originalMethod);
+    final hasSavedCard =
+        await LocalDataService.getStripePaymentMethodId() != null;
 
     // mounted guard required: two awaits above mean the user could have
     // navigated away (back-tap, app backgrounded etc) before we get here.
@@ -2938,7 +3094,8 @@ extension _RideRequestController on _RideRequestScreenState {
   }
 
   /// Retries payment with the same method (useful for transient errors)
-  Future<bool> _retryWithSameMethod(int amountCents, String method, RideOption option) async {
+  Future<bool> _retryWithSameMethod(
+      int amountCents, String method, RideOption option) async {
     try {
       switch (method) {
         case 'apple_pay':
@@ -2963,15 +3120,16 @@ extension _RideRequestController on _RideRequestScreenState {
   }
 
   /// Processes payment with currently selected method
-  Future<bool> _processPaymentWithSelectedMethod(int amountCents, RideOption option) async {
+  Future<bool> _processPaymentWithSelectedMethod(
+      int amountCents, RideOption option) async {
     final isTestMode = await _isTestModeActive();
     if (!mounted) return false;
-    if (isTestMode) return true;
+    if (option.isFree || isTestMode || amountCents == 0) return true;
     if (_selectedPaymentMethod == 'cruise_cash') {
       // No hold/charge at request time — the backend debits the balance
       // at dispatch. Full coverage was checked at the Request button;
       // re-check defensively in case the balance moved.
-      return _cruiseCashCents >= amountCents;
+      return _cruiseCashCents >= option.promoTotalCents!;
     }
     
     final isNativePay = !AppConfig.sandboxPayments &&
@@ -3092,13 +3250,17 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
                         child: Row(
                           children: [
                             if (id == 'apple_pay')
-                              const Icon(Icons.apple, color: Colors.white, size: 24)
+                              const Icon(Icons.apple,
+                                  color: Colors.white, size: 24)
                             else if (id == 'google_pay')
-                              const Icon(Icons.g_mobiledata_rounded, color: Colors.white, size: 24)
+                              const Icon(Icons.g_mobiledata_rounded,
+                                  color: Colors.white, size: 24)
                             else if (id == 'tap_to_pay')
-                              Icon(Icons.contactless, color: Color(0xFF4A90D9), size: 24)
+                              Icon(Icons.contactless,
+                                  color: Color(0xFF4A90D9), size: 24)
                             else if (id == 'test_mode')
-                              const Icon(Icons.bug_report_rounded, color: Color(0xFFFF3B30), size: 24)
+                              const Icon(Icons.bug_report_rounded,
+                                  color: Color(0xFFFF3B30), size: 24)
                             else
                               _paymentLogoWidget(id, 36),
                             const SizedBox(width: 14),
@@ -3119,7 +3281,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
                                   vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFD4A843).withValues(alpha: 0.2),
+                                  color: const Color(0xFFD4A843)
+                                      .withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Text(
@@ -3167,7 +3330,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
                 GestureDetector(
                   onTap: () async {
                     Navigator.maybeOf(ctx)?.pop();
-                    await _nav?.push(slideFromRightRoute(const PaymentAccountsScreen()));
+                    await _nav?.push(
+                        slideFromRightRoute(const PaymentAccountsScreen()));
                     await _loadLinkedPayments();
                     if (mounted) _showPaymentSheet(c, option);
                   },
@@ -3196,7 +3360,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
   }
 
   Future<void> _openCreditCardScreen(AppColors c, RideOption? option) async {
-    final result = await _nav?.push<String>(slideFromRightRoute(const CreditCardScreen()));
+    final result =
+        await _nav?.push<String>(slideFromRightRoute(const CreditCardScreen()));
     if (result != null && result.isNotEmpty) {
       String brand = 'card';
       String last4 = result;
@@ -3409,18 +3574,24 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr != null) {
       if (_routeAnnot != null) {
-        try { await polyMgr.delete(_routeAnnot!); } catch (_) {}
+        try {
+          await polyMgr.delete(_routeAnnot!);
+        } catch (_) {}
         _routeAnnot = null;
       }
     }
     final ptMgr = _pointAnnotMgr;
     if (ptMgr != null) {
       if (_pickupAnnot != null) {
-        try { await ptMgr.delete(_pickupAnnot!); } catch (_) {}
+        try {
+          await ptMgr.delete(_pickupAnnot!);
+        } catch (_) {}
         _pickupAnnot = null;
       }
       if (_dropoffAnnot != null) {
-        try { await ptMgr.delete(_dropoffAnnot!); } catch (_) {}
+        try {
+          await ptMgr.delete(_dropoffAnnot!);
+        } catch (_) {}
         _dropoffAnnot = null;
       }
     }

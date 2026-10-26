@@ -936,17 +936,17 @@ workflows:
       - *flutter_pub_get
       - *pod_install
       - *shorebird_setup
-      - name: Publish OTA hotfix 735 (Android + iOS)
+      - name: Publish OTA hotfix 735 (Android)
         script: |
           if [ -z "${MAPBOX_ACCESS_TOKEN:-}" ]; then
             echo "MAPBOX_ACCESS_TOKEN vacío; no se publica un mapa sin token"
             exit 1
           fi
-          # Los PNG nuevos tienen fallback HTTPS: permitir el diff no los
-          # instala en 735. Android nunca permite diferencias nativas; iOS
-          # solo tolera el churn de Podfile.lock del entorno de Codemagic.
+          # Shorebird solo registra 1.1.4+735 para Android; no existe ese
+          # release en iOS. No se apunta a una versión inexistente.
+          # Los PNG nuevos tienen fallback HTTPS y NUNCA se permiten diffs
+          # nativos en Android.
           shorebird patch android --release-version 1.1.4+735 --allow-asset-diffs --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN
-          shorebird patch ios --release-version 1.1.4+735 --no-codesign --allow-asset-diffs --allow-native-diffs --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN
     publishing:
       email:
         recipients:

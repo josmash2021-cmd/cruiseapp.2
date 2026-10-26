@@ -362,11 +362,20 @@ class NotificationService {
   /// and must not reach up into it.
   static void Function(String? payload)? onOfferTapped;
 
+  /// Same wiring as [onOfferTapped], for the marketplace heads-up the
+  /// foreground handler draws on `scheduled_ride` (payload
+  /// `scheduled_ride:<trip_id>`) — main routes it to the browse map.
+  static void Function(String? payload)? onScheduledRideTapped;
+
   static void _onNotificationTapped(NotificationResponse response) {
     final payload = response.payload;
     debugPrint('[Notification] tapped: $payload');
     if (payload != null && payload.startsWith('trip_offer')) {
       onOfferTapped?.call(payload);
+      return;
+    }
+    if (payload != null && payload.startsWith('scheduled_ride')) {
+      onScheduledRideTapped?.call(payload);
     }
   }
 

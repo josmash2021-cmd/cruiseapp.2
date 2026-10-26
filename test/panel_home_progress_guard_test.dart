@@ -13,24 +13,23 @@ String _entryPath() {
 void main() {
   final bundle = File(_entryPath()).readAsStringSync();
 
-  test('home shares verification data and never waits for every source', () {
+  test('home uses the exact verification queue without blocking every source', () {
     for (final needle in [
       'guard-pin panel_home_progress_guard_test',
-      'function sharedVerificationDocs(',
-      'shared=sharedVerificationDocs()',
-      'i=Ye("rider",shared)',
-      'a=Ye("driver",shared)',
-      'useShared?null:R(k(T,"verifications")',
-      'function Ye(e,shared=null){return Js(e==="rider"?At:wt,shared)}',
-      'error:l??shared?.error??null',
-      'i.people.map(h=>({role:"rider",status:h.verificationStatus}))',
-      'a.people.map(h=>({role:"driver",status:h.verificationStatus}))',
+      'guard-pin panel_home_count_parity_guard_test',
+      's=ks(),i=Ye("rider"),a=Ye("driver"),o=nn()',
+      'function Ye(e){return Js(e==="rider"?At:wt)}',
+      'ridersPending:o.rows.filter(h=>h.role==="rider"&&h.status==="pending").length',
+      'driversPending:o.rows.filter(h=>h.role==="driver"&&h.status==="pending").length',
+      'driversWaitlist:o.rows.filter(h=>h.role==="driver"&&h.status==="waitlist").length',
+      'verifPending:o.rows.filter(h=>h.status==="pending").length',
       'homeMetric(sectionState.viajes,x.requested)',
       'homeMetric(sectionState.reservas,x.scheduledPending)',
       'homeMetric(sectionState.soporte,x.supportOpen)',
       'homeMetric(sectionState.mapa,x.driversOnline)',
       'homeLabel(N,x,sectionState[N.id])',
       'homeBadge(N,x,sectionState[N.id])',
+      'nn as aA',
     ]) {
       expect(bundle, contains(needle), reason: needle);
     }
@@ -40,11 +39,20 @@ void main() {
           'if(s.loading||i.loading||a.loading||o.loading||l.loading||p.loading||u.loading)return')),
       reason: 'a slow source must not hide the entire dashboard',
     );
+    expect(bundle, isNot(contains('function sharedVerificationDocs(')));
+    expect(bundle, isNot(contains('shared=sharedVerificationDocs()')));
+    expect(bundle, isNot(contains('useShared?null:R(k(T,"verifications")')));
     expect(
       bundle,
-      isNot(contains('s=ks(),i=Ye("rider"),a=Ye("driver"),o=nn()')),
-      reason: 'home must not mount the separate verification queue too',
+      isNot(contains(
+          'i.people.map(h=>({role:"rider",status:h.verificationStatus}))')),
+      reason: 'the badge must not replace the verification queue with people',
     );
+    final verificationPage =
+        File('backend/dispatch_panel/assets/index-jhlVlbS1.js')
+            .readAsStringSync();
+    expect(verificationPage, contains('aA as qe'));
+    expect(verificationPage, contains('=qe()'));
   });
 
   test('real helpers show progress and errors without fake zeroes', () {
@@ -88,6 +96,31 @@ console.log(JSON.stringify(actual));
     final result = Process.runSync('node', ['-e', script]);
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     expect('${result.stdout}', contains('"readyDriversBadge":3'));
+  });
+
+  test('backend status normalization preserves waitlist', () {
+    final start = bundle.indexOf('function Nt(');
+    final end = bundle.indexOf('function Vs(', start);
+    expect(start, isNonNegative);
+    expect(end, greaterThan(start));
+    final script = '''
+const c=e=>e==null?null:typeof e==='string'?(e===''?null:e):null;
+${bundle.substring(start, end)}
+const cases=[
+  [{verification_status:'waitlist',is_verified:false},'waitlist'],
+  [{verification_status:'pending',is_verified:false},'pending'],
+  [{verification_status:'approved',is_verified:false},'approved'],
+  [{verification_status:'rejected',is_verified:false},'rejected'],
+  [{verification_status:'none',is_verified:true},'approved'],
+];
+for(const [input,expected] of cases){
+  const actual=Nt(input);
+  if(actual!==expected)throw new Error(JSON.stringify({input,expected,actual}));
+}
+console.log('waitlist and the other statuses are preserved');
+''';
+    final result = Process.runSync('node', ['-e', script]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
   });
 
   test('the edited entry bundle parses', () {

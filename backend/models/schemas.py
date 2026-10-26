@@ -1,7 +1,7 @@
 """Cruise App — Pydantic request/response schemas."""
 
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _sanitize_check(value: str) -> str:
@@ -361,6 +361,53 @@ class AdminUpdateTripIn(BaseModel):
 
 class AdminCancelTripIn(BaseModel):
     reason: Optional[str] = None
+
+
+class AdminTripQuoteIn(BaseModel):
+    """Dispatch-panel ride quote (2026-10-26): prices one rider's route
+    server-side so the panel never quotes by hand. vehicle_type selects the
+    tier whose driver estimate/platform credit ride at the top level; the
+    full per-tier snapshots ride in `quotes`."""
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    rider_id: int = Field(..., gt=0)
+    pickup_address: str = Field(..., min_length=1, max_length=500)
+    pickup_lat: float = Field(..., ge=-90, le=90)
+    pickup_lng: float = Field(..., ge=-180, le=180)
+    dropoff_address: str = Field(..., min_length=1, max_length=500)
+    dropoff_lat: float = Field(..., ge=-90, le=90)
+    dropoff_lng: float = Field(..., ge=-180, le=180)
+    stop_address: Optional[str] = Field(default=None, max_length=500)
+    stop_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    stop_lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    scheduled_at: Optional[str] = Field(default=None, max_length=40)
+    vehicle_type: str = Field(default="standard", max_length=30)
+
+
+class AdminCreateTripIn(BaseModel):
+    """Dispatch-panel trip creation (2026-10-26). Pricing always comes from
+    a server quote (`quote_id`); there is deliberately no `fare` field.
+    funding_mode "platform" = courtesy: the rider pays nothing and the
+    platform credits the driver 90% of the original fare at completion."""
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    rider_id: int = Field(..., gt=0)
+    pickup_address: str = Field(..., min_length=1, max_length=500)
+    pickup_lat: float = Field(..., ge=-90, le=90)
+    pickup_lng: float = Field(..., ge=-180, le=180)
+    dropoff_address: str = Field(..., min_length=1, max_length=500)
+    dropoff_lat: float = Field(..., ge=-90, le=90)
+    dropoff_lng: float = Field(..., ge=-180, le=180)
+    stop_address: Optional[str] = Field(default=None, max_length=500)
+    stop_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    stop_lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    vehicle_type: Optional[str] = Field(default=None, max_length=30)
+    scheduled_at: Optional[str] = Field(default=None, max_length=40)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    quote_id: Optional[str] = Field(default=None, exclude=True)
+    funding_mode: Literal["rider", "platform"] = "rider"
+    allow_courtesy_when_unpaid: bool = False
+    tip_amount: float = Field(default=0.0, ge=0, le=100)
+    tip_funding: Optional[Literal["rider", "platform"]] = None
+    target_driver_id: Optional[int] = Field(default=None, gt=0)
 
 
 class AdminNotificationIn(BaseModel):

@@ -59,14 +59,30 @@ async def notify_new_scheduled_ride(trip_id: int) -> None:
                 pickup_state = await _state_for(trip.pickup_lat, trip.pickup_lng)
             request_tier = normalize_tier(trip.vehicle_type or "standard")
 
-            res = await db.execute(
-                select(User).where(
-                    User.role == "driver",
-                    User.fcm_token.isnot(None),
-                    User.status.in_(ACTIVE_ACCOUNT_STATUSES),
+            # Dispatch-aimed reservation (2026-10-26): while
+            # scheduled_target_driver_id stands, only that driver gets the
+            # push — offline is fine (FCM), the claim is theirs alone. The
+            # same approved/tier/state gates below still apply to them.
+            target_id = getattr(trip, "scheduled_target_driver_id", None)
+            if target_id:
+                res = await db.execute(
+                    select(User).where(
+                        User.id == target_id,
+                        User.role == "driver",
+                        User.fcm_token.isnot(None),
+                        User.status.in_(ACTIVE_ACCOUNT_STATUSES),
+                    )
                 )
-            )
-            drivers = res.scalars().all()
+                drivers = res.scalars().all()
+            else:
+                res = await db.execute(
+                    select(User).where(
+                        User.role == "driver",
+                        User.fcm_token.isnot(None),
+                        User.status.in_(ACTIVE_ACCOUNT_STATUSES),
+                    )
+                )
+                drivers = res.scalars().all()
 
             # Vehicle tier per driver, one batch query (same rule as the
             # browse: a Standard driver must not be pushed a VIP ride —

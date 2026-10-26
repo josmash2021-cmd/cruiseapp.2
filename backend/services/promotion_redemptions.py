@@ -159,3 +159,7 @@ async def settle_promotion_on_cancel(db, trip, *, had_driver: bool | None = None
             await _finish_reservation(db, redemption, "consumed")
     else:
         await release_promotion(db, trip.id)
+    # Dispatch pre-arranged tip (2026-10-26): every cancel route comes
+    # through here, so this is where the tip hold is released — never charged.
+    from services.dispatch_tips import release_dispatch_tip
+    await release_dispatch_tip(db, trip)

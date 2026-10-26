@@ -23,7 +23,7 @@ from models.database import (
 # Process uptime anchor — set once at module import
 _SERVER_START_TIME = datetime.now(timezone.utc)
 from models.schemas import (
-    AdminStatsResponse, CreateTripIn, AdminUpdateTripIn, AdminCancelTripIn,
+    AdminStatsResponse, AdminTripQuoteIn, AdminCreateTripIn, AdminUpdateTripIn, AdminCancelTripIn,
     AdminNotificationIn, AdminVehicleUpdateIn,
 )
 from utils.security import (
@@ -34,7 +34,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
     _user_dict, _trip_dict, _doc_dict, _vehicle_dict, _haversine, _resolve_rider_display, _safe_create_task,
-    _abs_photo_url, _gen_pickup_pin, user_lang,
+    _abs_photo_url, user_lang,
     SETTABLE_ACCOUNT_STATUSES, ACTIVE_ACCOUNT_STATUSES, normalise_account_status,
 )
 from utils.ssn_encryption import is_ssn_provided, decrypt_ssn, get_ssn_masked, format_ssn_for_display
@@ -222,7 +222,11 @@ async def admin_list_trips(
     # Batch-load rider and driver names in 2 queries instead of N+1
     rider_ids = {t.rider_id for t in trips if t.rider_id}
     driver_ids = {t.driver_id for t in trips if t.driver_id}
-    all_user_ids = rider_ids | driver_ids
+    target_ids = {
+        t.scheduled_target_driver_id for t in trips
+        if getattr(t, "scheduled_target_driver_id", None)
+    }
+    all_user_ids = rider_ids | driver_ids | target_ids
 
     users_map = {}
     users_obj_map = {}
@@ -249,30 +253,30 @@ async def admin_list_trips(
         if t.driver_id and t.driver_id in users_map:
             td["driver_name"] = users_map[t.driver_id][0]
             td["driver_phone"] = users_map[t.driver_id][1]
+        _target_id = getattr(t, "scheduled_target_driver_id", None)
+        if _target_id and _target_id in users_map:
+            td["target_driver_name"] = users_map[_target_id][0]
         out.append(td)
     return out
 
+@router.post("/admin/trips/quote", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_quote_trip(body: AdminTripQuoteIn, db: AsyncSession = Depends(get_db)):
+    """Server-side quote for the dispatch trip builder (2026-10-26)."""
+    from services.dispatch_trip_booking import create_admin_quote
+    result = await create_admin_quote(db, body)
+    _security_audit_log("ADMIN_TRIP_QUOTED", "admin", f"rider_id={body.rider_id}")
+    return result
+
 @router.post("/admin/trips", dependencies=[Depends(_require_dispatch_auth)])
-async def admin_create_trip(body: CreateTripIn, db: AsyncSession = Depends(get_db)):
-    """Create a trip from the dispatch panel (no JWT user required)."""
-    trip = Trip(
-        rider_id=body.rider_id,
-        pickup_address=body.pickup_address,
-        dropoff_address=body.dropoff_address,
-        pickup_lat=body.pickup_lat,
-        pickup_lng=body.pickup_lng,
-        dropoff_lat=body.dropoff_lat,
-        dropoff_lng=body.dropoff_lng,
-        fare=body.fare,
-        vehicle_type=body.vehicle_type,
-        status="requested",
-        scheduled_at=datetime.fromisoformat(body.scheduled_at) if body.scheduled_at else None,
-        notes=body.notes,
-        pickup_pin=_gen_pickup_pin(),
-    )
-    db.add(trip)
-    await db.commit()
-    await db.refresh(trip)
+async def admin_create_trip(body: AdminCreateTripIn, db: AsyncSession = Depends(get_db)):
+    """Create a trip from the dispatch panel (no JWT user required).
+
+    Quote-driven (2026-10-26): pricing comes from services.rider_pricing —
+    the payload carries no fare. See services/dispatch_trip_booking.py for
+    the funding/courtesy/tip/targeting rules.
+    """
+    from services.dispatch_trip_booking import create_dispatch_trip
+    trip = await create_dispatch_trip(db, body)
     # Sync to Firestore
     if _HAS_FIRESTORE:
         try:

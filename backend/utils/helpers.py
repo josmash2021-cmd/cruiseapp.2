@@ -426,6 +426,12 @@ def _trip_dict(t) -> dict:
             "cruise_cash_cents": getattr(t, "cruise_cash_cents", None),
             "quoted_distance_miles": getattr(t, "quoted_distance_miles", None),
             "funding_source": getattr(t, "funding_source", None),
+            # Dispatch-created trip internals (2026-10-26): the panel's trip
+            # detail reads these (tip breakdown + aimed reservation).
+            "dispatch_tip_amount": getattr(t, "dispatch_tip_amount", None),
+            "dispatch_tip_funding": getattr(t, "dispatch_tip_funding", None),
+            "dispatch_tip_status": getattr(t, "dispatch_tip_status", None),
+            "target_driver_id": getattr(t, "scheduled_target_driver_id", None),
             "refund_status": getattr(t, "refund_status", None),
             "refund_amount": getattr(t, "refund_amount", None) or 0.0,
             "per_mile_rate": getattr(t, "per_mile_rate", None),

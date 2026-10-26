@@ -2372,6 +2372,7 @@ async def _dispatch_reserved_scheduled_rides(db, now):
             released_driver_id = trip.driver_id
             trip.driver_id = None
             trip.rider_approach_notified_at = None
+            trip.scheduled_target_driver_id = None
             trip.status = "scheduled"
             trip.updated_at = now
             # The claim wrote an ACCEPTED DispatchOffer; leaving it would
@@ -2549,6 +2550,19 @@ async def _scheduled_ride_dispatcher():
                     if not should_dispatch:
                         continue
 
+                    # Dispatch-aimed reservation that was never claimed
+                    # (2026-10-26): the target driver had the whole lead time;
+                    # once the ride enters its dispatch window it opens to
+                    # everyone so the rider is never stranded waiting on them.
+                    if getattr(trip, "scheduled_target_driver_id", None):
+                        logging.info(
+                            "[Scheduler] trip=%d targeted to driver %s entered "
+                            "the dispatch window unclaimed — opening to all",
+                            trip.id, trip.scheduled_target_driver_id,
+                        )
+                        trip.scheduled_target_driver_id = None
+                        await db.commit()
+
                     # --------------------------------------------------
                     # Authorise the fare before dispatching.
                     # Lyft model (2026-08-26): a scheduled booking holds
@@ -2622,6 +2636,33 @@ async def _scheduled_ride_dispatcher():
                                     logging.info(
                                         "[Scheduler] trip=%d hold authorized off-session at dispatch (pi=%s)",
                                         trip.id, _new_pi.id)
+                                    # Dispatch pre-arranged rider tip (2026-10-26):
+                                    # reservations hold it HERE, in the same
+                                    # window as the fare hold — never at booking.
+                                    if (
+                                        getattr(trip, "dispatch_tip_status", None) == "pending"
+                                        and getattr(trip, "dispatch_tip_funding", None) == "rider"
+                                        and float(getattr(trip, "dispatch_tip_amount", None) or 0) > 0
+                                        and not getattr(trip, "dispatch_tip_payment_intent_id", None)
+                                    ):
+                                        try:
+                                            from services.dispatch_tips import create_dispatch_tip_hold
+                                            _tip_pi = await create_dispatch_tip_hold(
+                                                db, _rider_row,
+                                                int(round(float(trip.dispatch_tip_amount) * 100)),
+                                                trip_id=trip.id)
+                                            trip.dispatch_tip_payment_intent_id = _tip_pi
+                                            trip.dispatch_tip_status = "held"
+                                            await db.commit()
+                                            logging.info(
+                                                "[Scheduler] trip=%d dispatch tip held (pi=%s)",
+                                                trip.id, _tip_pi)
+                                        except Exception as _tip_err:
+                                            logging.warning(
+                                                "[Scheduler] trip=%d dispatch tip hold failed: %s",
+                                                trip.id, _tip_err)
+                                            trip.dispatch_tip_status = "failed"
+                                            await db.commit()
                                 except Exception as _reauth_err:
                                     logging.warning(
                                         "[Scheduler] trip=%d hold re-auth DECLINED: %s — cancelling without fee",

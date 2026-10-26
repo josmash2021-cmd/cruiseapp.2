@@ -266,6 +266,12 @@ async def get_available_scheduled_trips(
     dropped = 0
     tier_dropped = 0
     for t in trips:
+        # Dispatch-aimed reservation (2026-10-26): while
+        # scheduled_target_driver_id stands, only that driver sees the card;
+        # the scheduler clears it when the ride enters its dispatch window.
+        if t.scheduled_target_driver_id and t.scheduled_target_driver_id != user.id:
+            dropped += 1
+            continue
         if normalize_tier(t.vehicle_type) not in eligible_request_tiers:
             tier_dropped += 1
             continue
@@ -322,6 +328,13 @@ async def claim_scheduled_trip(
         raise HTTPException(404, "Trip not found")
     if trip.status != "scheduled" or trip.driver_id is not None:
         raise HTTPException(409, "This ride has already been claimed")
+    # Dispatch-aimed reservation (2026-10-26): only the driver dispatch chose
+    # may claim it while the targeting stands. Claiming consumes the target.
+    if (
+        trip.scheduled_target_driver_id
+        and trip.scheduled_target_driver_id != user.id
+    ):
+        raise HTTPException(403, "This ride is reserved for a specific driver")
 
     # Tier guard — claiming by hand must obey the same rule as every
     # dispatched offer (vehicle_tiers.eligible_tiers): a Standard car
@@ -391,6 +404,7 @@ async def claim_scheduled_trip(
     # Claim it
     trip.driver_id = user.id
     trip.status = "scheduled_accepted"
+    trip.scheduled_target_driver_id = None  # the aimed reservation is consumed
 
     # Record offer
     offer = DispatchOffer(trip_id=trip.id, driver_id=user.id, status="accepted")
@@ -783,6 +797,7 @@ async def drop_scheduled_trip(
     try:
         trip.driver_id = None
         trip.rider_approach_notified_at = None
+        trip.scheduled_target_driver_id = None  # back to the open marketplace
         trip.status = "scheduled"
         trip.updated_at = datetime.now(timezone.utc)
         # Cancel any pending DispatchOffer rows for this trip so the
@@ -872,6 +887,20 @@ async def drop_scheduled_trip(
             )
     except Exception as e:
         logging.warning("[ScheduledDrop] FCM notify rider failed: %s", e)
+
+    # The ride is back on the open marketplace — re-run the new-ride push so
+    # eligible drivers see it again. Only while it is still claimable: inside
+    # the 30-min window the browse hides it, and the scheduled dispatcher's
+    # cascade owns the trip there.
+    _sched = trip.scheduled_at
+    if _sched is not None and _sched.tzinfo is None:
+        _sched = _sched.replace(tzinfo=timezone.utc)
+    if _sched and (_sched - datetime.now(timezone.utc)).total_seconds() > MIN_ADVANCE_MINUTES * 60:
+        from services.scheduled_broadcast import notify_new_scheduled_ride
+        _safe_create_task(
+            notify_new_scheduled_ride(trip.id),
+            name=f"scheduled_drop_broadcast_{trip.id}",
+        )
 
     return {
         "ok": True,

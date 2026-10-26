@@ -457,6 +457,15 @@ class Trip(Base):
     funding_source = Column(String(30), nullable=True)
     # New trips snapshot 90%; NULL on pre-policy rows retains their old split.
     driver_share_rate = Column(Float, nullable=True, default=0.90)
+    # Dispatch-created trips (2026-10-26): a tip the operator pre-arranges on
+    # the rider's behalf and a reservation aimed at one driver. The tip never
+    # touches `tip_amount` until it is real money (captured rider hold or a
+    # platform credit at completion). Boot lists below (trampa #0).
+    dispatch_tip_amount = Column(Float, nullable=True)
+    dispatch_tip_funding = Column(String(20), nullable=True)
+    dispatch_tip_status = Column(String(20), nullable=True)
+    dispatch_tip_payment_intent_id = Column(String(100), nullable=True)
+    scheduled_target_driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     refund_status = Column(String(20), nullable=True)
     refund_amount = Column(Float, default=0.0)
     refund_reason = Column(Text, nullable=True)
@@ -1353,6 +1362,13 @@ async def migrate_add_columns(conn):
         ("trips", "cruise_cash_cents", "INTEGER"),
         ("trips", "quoted_distance_miles", "FLOAT"),
         ("trips", "funding_source", "VARCHAR(30)"),
+        # Dispatch-created trips: pre-arranged tip + targeted reservation
+        # (2026-10-26) — boot lists or prod never gets them (trampa #0).
+        ("trips", "dispatch_tip_amount", "FLOAT"),
+        ("trips", "dispatch_tip_funding", "VARCHAR(20)"),
+        ("trips", "dispatch_tip_status", "VARCHAR(20)"),
+        ("trips", "dispatch_tip_payment_intent_id", "VARCHAR(100)"),
+        ("trips", "scheduled_target_driver_id", "INTEGER"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1631,6 +1647,13 @@ async def migrate_postgres(conn):
         ("trips", "cruise_cash_cents", "INTEGER"),
         ("trips", "quoted_distance_miles", "DOUBLE PRECISION"),
         ("trips", "funding_source", "VARCHAR(30)"),
+        # Dispatch-created trips: pre-arranged tip + targeted reservation
+        # (2026-10-26) — boot list or prod never gets them (trampa #0).
+        ("trips", "dispatch_tip_amount", "DOUBLE PRECISION"),
+        ("trips", "dispatch_tip_funding", "VARCHAR(20)"),
+        ("trips", "dispatch_tip_status", "VARCHAR(20)"),
+        ("trips", "dispatch_tip_payment_intent_id", "VARCHAR(100)"),
+        ("trips", "scheduled_target_driver_id", "INTEGER"),
     ]
     for table, col, col_type in migrations:
         try:

@@ -58,6 +58,10 @@ async def credit_platform_funded_earnings(db, trip: Trip) -> bool:
         transactions = result.scalars().all()
         if not transactions or sum(-row.amount_cents for row in transactions) != int(trip.cruise_cash_cents or 0):
             return False
+    elif trip.funding_source == "dispatch_courtesy":
+        # Dispatch-created courtesy (2026-10-26): no promotion redemption
+        # exists — the platform owes the 90% by the operator's decision.
+        pass
     else:
         return False
 

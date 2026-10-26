@@ -223,3 +223,47 @@ async def test_notification_read_and_delete_are_owner_only(
     assert res.status_code == 200, res.text
     inbox = await client.get("/notifications", headers=_user_headers(rider_token))
     assert inbox.json() == []
+
+
+async def test_driver_broadcast_reaches_offline_drivers_with_token(
+    client, db, test_driver, pushes,
+):
+    """2026-10-26: fleet announcements ("actualiza la app") must reach every
+    driver with a token — online or not. The old is_online filter silently
+    dropped the 211 offline drivers (Jhon Martinez report); only ride offers
+    stay online-gated, never announcements."""
+    import asyncio
+
+    from models.database import User
+
+    online_driver, _ = test_driver
+    online_driver.is_online = True
+    online_driver.fcm_token = "driver-online-token"
+    offline_driver = User(
+        first_name="Offline", last_name="Driver", email="offline-driver@test.dev",
+        password_hash="x", role="driver", status="active",
+        is_online=False, fcm_token="driver-offline-token",
+    )
+    no_token_driver = User(
+        first_name="NoToken", last_name="Driver", email="notoken-driver@test.dev",
+        password_hash="x", role="driver", status="active",
+        is_online=False, fcm_token=None,
+    )
+    db.add_all([offline_driver, no_token_driver])
+    await db.commit()
+
+    res = await client.post(
+        "/admin/notifications/broadcast/drivers",
+        headers=_dispatch_headers(),
+        json={"title": "Actualiza", "body": "Nueva version disponible"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["queued"] == 2  # online + offline, never the tokenless
+
+    # The broadcast is fire-and-forget; let the scheduled push tasks run.
+    for _ in range(10):
+        if len(pushes) >= 2:
+            break
+        await asyncio.sleep(0)
+    tokens = {p["token"] for p in pushes}
+    assert tokens == {"driver-online-token", "driver-offline-token"}

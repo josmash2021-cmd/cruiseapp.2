@@ -2026,12 +2026,16 @@ async def admin_broadcast_drivers(
     data: Optional[dict] = Body(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Broadcast a push notification to all online drivers with an FCM token."""
+    """Broadcast a push notification to every driver with an FCM token.
+
+    Online AND offline (2026-10-26, user spec): announcements like "update
+    the app" must reach the whole fleet — FCM delivers to the offline phone
+    when it wakes. Only ride offers stay online-gated, never announcements.
+    """
     result = await db.execute(
         select(User).where(
             and_(
                 User.role == "driver",
-                User.is_online == True,
                 User.fcm_token.isnot(None),
             )
         )
@@ -2047,7 +2051,7 @@ async def admin_broadcast_drivers(
             name=f"admin_broadcast_driver_{driver.id}",
         )
         queued += 1
-    logging.info("[Admin] Broadcast queued for %d online drivers", queued)
+    logging.info("[Admin] Broadcast queued for %d drivers", queued)
     # "sent" kept for backwards compatibility with the dispatch panel.
     return {"ok": True, "sent": queued, "queued": queued, "delivery": "queued"}
 

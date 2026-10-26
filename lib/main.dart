@@ -314,6 +314,24 @@ void handleOfferNotificationPayload(String? payload) {
   );
 }
 
+/// Route a tap on the local heads-up the foreground handler draws for
+/// `scheduled_ride` broadcasts — the local-notification counterpart of
+/// [_handleScheduledRidePush] (which only sees FCM-drawn alerts). Driver-only.
+void handleScheduledRideNotificationPayload(String? payload) {
+  if (payload == null) return;
+  final parts = payload.split(':');
+  if (parts.length < 2 || parts[0] != 'scheduled_ride') return;
+  final tripId = int.tryParse(parts[1]);
+  UserSession.getMode().then((mode) {
+    if (mode != 'driver') return;
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+    nav.push(MaterialPageRoute(
+      builder: (_) => ScheduledRidesMapScreen(initialTripId: tripId),
+    ));
+  });
+}
+
 /// How long a tap waits for the offer lookup before the screen is pushed
 /// anyway. The tap is the driver's, not the network's: past this the screen
 /// goes up and its own poll finds the offer the way it always did. Five
@@ -1509,6 +1527,34 @@ Future<void> heavyInit() async {
               return;
             }
 
+            // New scheduled ride in the marketplace (2026-10-26 report: the
+            // reservation broadcast "never arrived"). On Android with the app
+            // OPEN the OS never draws the FCM copy and this type sat in
+            // neither allowlist below, so a driver watching the app got
+            // nothing — no banner, no sound, just a silent inbox row. Draw
+            // the heads-up ourselves; the tap opens the ride detail via the
+            // payload. iOS skips this: its native willPresent already shows
+            // every non-offer banner in foreground (AppDelegate), so drawing
+            // here too would put two banners on one broadcast.
+            if (type == 'scheduled_ride') {
+              LocalDataService.addNotification(
+                title: title,
+                message: body,
+                type: type,
+              );
+              if (!kIsWeb && Platform.isAndroid) {
+                NotificationService.show(
+                  id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+                  title: title,
+                  body: body,
+                  type: 'ride',
+                  payload:
+                      'scheduled_ride:${message.data['trip_id']?.toString() ?? ''}',
+                );
+              }
+              return;
+            }
+
             // Check if this notification type is allowed in-app
             final isAllowedInApp = riderInAppTypes.contains(type) ||
                 driverInAppTypes.contains(type);
@@ -1616,6 +1662,8 @@ Future<void> heavyInit() async {
         // one that was — a tap on a local notification with the app warm
         // reaches _onNotificationTapped and nowhere else.
         NotificationService.onOfferTapped = handleOfferNotificationPayload;
+        NotificationService.onScheduledRideTapped =
+            handleScheduledRideNotificationPayload;
 
         final launch = await FlutterLocalNotificationsPlugin()
             .getNotificationAppLaunchDetails();

@@ -136,4 +136,13 @@ void main() {
           reason: 'bare body — no price, no addresses');
     });
   });
+
+  group('browse error surfaces the real reason (2026-10-26)', () {
+    test('never raw ApiException; 403 reads as account under review', () {
+      expect(screen, contains('_errorAvail = e is ApiException'));
+      expect(screen, contains('S.of(context).accountPendingDesc'));
+      expect(screen, isNot(contains('_errorAvail = e.toString();')),
+          reason: 'raw wrapper made drivers think the marketplace was down');
+    });
+  });
 }

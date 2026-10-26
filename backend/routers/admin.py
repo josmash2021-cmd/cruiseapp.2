@@ -1217,7 +1217,16 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     vehicles = veh_result.scalars().all()
     ud = _user_dict(user)
     ud["documents"] = [_doc_dict(d) for d in docs]
-    ud["vehicles"] = [_vehicle_dict(v) for v in vehicles]
+    from services.vehicle_eligibility import vehicle_document_status
+    single_vehicle = len(vehicles) <= 1
+    vehicle_payload = []
+    for vehicle in vehicles:
+        data = _vehicle_dict(vehicle)
+        if getattr(vehicle, "plate_pending_review", False):
+            status = await vehicle_document_status(db, user, vehicle, single_vehicle)
+            data["plate_pending_review"] = "registration" not in status["approved_document_types"]
+        vehicle_payload.append(data)
+    ud["vehicles"] = vehicle_payload
     ud["has_password"] = user.password_hash is not None and len(user.password_hash) > 0
     ud["created_at"] = user.created_at.isoformat() if user.created_at else None
     # Password reset available but never expose plaintext (security best practice)

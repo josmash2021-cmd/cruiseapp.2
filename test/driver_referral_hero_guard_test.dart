@@ -47,7 +47,7 @@ void main() {
     final mainPage = screen
         .split('Widget _buildMainReferralPage(S s) {')
         .last
-        .split('/// OTA patches carry no new assets')
+        .split('  Widget _buildHeroArtwork(double height) {')
         .first;
     expect(mainPage, contains('LayoutBuilder('));
     expect(mainPage, contains('gapScale = (box.maxHeight / 700)'));

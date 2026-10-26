@@ -16,12 +16,17 @@ void main() {
       .readAsStringSync();
   final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
 
-  test('the transparent PNG is bundled and referenced', () {
+  test('the transparent PNG is bundled and has a real remote fallback', () {
+    final image = File('lib/widgets/onboarding_image.dart').readAsStringSync();
     expect(File('assets/images/online_intro_hero.png').existsSync(), isTrue);
     expect(overlay, contains('assets/images/online_intro_hero.png'));
-    // A Shorebird patch can exclude the new asset — the card must render
-    // anyway (2026-10-23: Patch 7 shipped the Dart but not the image).
-    expect(overlay, contains('errorBuilder'));
+    expect(overlay, contains('OnboardingImage('));
+    expect(overlay, contains("filename: 'online_intro_hero.png'"));
+    expect(File('backend/static/onboarding/online_intro_hero.png').existsSync(),
+        isTrue);
+    expect(image, contains('errorBuilder'));
+    expect(image, contains('Image.network('));
+    expect(image, isNot(contains('const SizedBox(height: 12)')));
   });
 
   test('the gold card has a cloud silhouette and an external black button', () {

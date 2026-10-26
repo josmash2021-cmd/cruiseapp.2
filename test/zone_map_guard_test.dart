@@ -8,8 +8,7 @@ import 'package:cruise_app/services/zone_service.dart';
 /// Guardian for the driver SECTORS: big regions with gold boundaries, four
 /// offline gold demand opacities, and gray for a manual Dispatch shutoff.
 void main() {
-  final sectorsJson =
-      File('backend/static/fl_sectors.json').readAsStringSync();
+  final sectorsJson = File('backend/static/fl_sectors.json').readAsStringSync();
 
   test('the state outlines resolve FL/AL points (the fit grouping)', () {
     // 2026-10-14 (user report: "estoy en alabama y la app abre mostrando las
@@ -34,8 +33,7 @@ void main() {
         ZoneService.sectorsForState('FL').length, ZoneService.sectors.length);
     expect(ZoneService.sectorsForState('AL'), isEmpty,
         reason: 'no Alabama sectors until dispatch draws them in the panel');
-    expect(ZoneService.sectorsForState(null).length,
-        ZoneService.sectors.length,
+    expect(ZoneService.sectorsForState(null).length, ZoneService.sectors.length,
         reason: 'unknown driver state → union fit fallback');
   });
 
@@ -45,13 +43,13 @@ void main() {
     // of its own (or no GPS fix) sees everything — Alabama keeps working
     // until its first sector is drawn in the panel.
     ZoneService.parseSectors(sectorsJson);
-    expect(ZoneService.visibleSectorsFor('FL').length,
-        ZoneService.sectors.length);
-    expect(ZoneService.visibleSectorsFor('AL').length,
-        ZoneService.sectors.length,
+    expect(
+        ZoneService.visibleSectorsFor('FL').length, ZoneService.sectors.length);
+    expect(
+        ZoneService.visibleSectorsFor('AL').length, ZoneService.sectors.length,
         reason: 'fail-open while Alabama has no drawn sectors');
-    expect(ZoneService.visibleSectorsFor(null).length,
-        ZoneService.sectors.length);
+    expect(
+        ZoneService.visibleSectorsFor(null).length, ZoneService.sectors.length);
 
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
@@ -67,8 +65,8 @@ void main() {
         .readAsStringSync();
     expect(off, contains('ZoneService.sectorById(_selectedZoneName!)'),
         reason: 'the GO tap clears a stale cross-state pick');
-    final scr = File('lib/screens/driver/driver_online_screen.dart')
-        .readAsStringSync();
+    final scr =
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
     expect(scr, contains('_zoneLookVisibleSig'));
   });
 
@@ -90,23 +88,18 @@ void main() {
   test('sector ray-casting matches the dissolved boundaries', () {
     ZoneService.parseSectors(sectorsJson);
     // Davie city centre sits inside the Fort Lauderdale / Davie sector.
-    final davie =
-        ZoneService.sectorContaining(const LatLng(26.076, -80.277));
+    final davie = ZoneService.sectorContaining(const LatLng(26.076, -80.277));
     expect(davie?.id, 'ftl_davie');
     // Hialeah → Miami Gardens / Hialeah sector.
-    expect(
-        ZoneService.sectorContaining(const LatLng(25.866939, -80.31336))
-            ?.id,
+    expect(ZoneService.sectorContaining(const LatLng(25.866939, -80.31336))?.id,
         'miami_gardens');
     // The Atlantic and Birmingham are outside every sector.
-    expect(ZoneService.sectorContaining(const LatLng(25.70, -79.90)),
-        isNull);
-    expect(ZoneService.sectorContaining(const LatLng(33.5186, -86.8104)),
-        isNull);
+    expect(ZoneService.sectorContaining(const LatLng(25.70, -79.90)), isNull);
+    expect(
+        ZoneService.sectorContaining(const LatLng(33.5186, -86.8104)), isNull);
   });
 
-  test('the map draws one SMALL source per sector with the demand ladder',
-      () {
+  test('the map draws one SMALL source per sector with the demand ladder', () {
     final s =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     // Per-sector sources/layers — the single 83 KB all-cities source never
@@ -130,7 +123,8 @@ void main() {
         reason: 'the base fill is brand gold');
     expect(s, contains('lineColor: 0xFFE8C547,\n        lineWidth: 3.4,'),
         reason: 'even the legacy helper outline is brand gold, never black');
-    expect(s, contains('lineTranslate'), reason: 'the helper layer stays inert');
+    expect(s, contains('lineTranslate'),
+        reason: 'the helper layer stays inert');
     expect(s.contains('_zoneLookOnline'), isTrue,
         reason: 'the look flips with the mode');
     expect(s,
@@ -142,7 +136,7 @@ void main() {
         reason: 'active sector boundaries are gold');
 
     final lookStart = s.indexOf('Future<void> _writeSectorLook(');
-    final lookEnd = s.indexOf('// ── Onda de selección', lookStart);
+    final lookEnd = s.indexOf('// Selected sector:', lookStart);
     expect(lookStart, greaterThan(0));
     expect(lookEnd, greaterThan(lookStart));
     final look = s.substring(lookStart, lookEnd);
@@ -158,40 +152,33 @@ void main() {
     expect(look, contains("'line-opacity', 0.0"),
         reason: 'no black outline may paint beside the gold border');
 
-    // Selection is a brighter traveling border, never a fill. An OFF sector
-    // may be highlighted, but its GO never ignites and deselection restores gray.
+    // Selection is a gold pulse on its own layer, never a line-gradient.
     expect(s, contains("'sec-hl-fill', 'fill-opacity', 0.0"),
         reason: 'the selection fill never paints, in any mode');
-    expect(s, contains('lineMetrics: true'),
-        reason: 'the sector sources carry lineMetrics for the border wave');
     expect(s, contains('void _syncZoneWave()'));
+    expect(s, isNot(contains("'line-gradient'")),
+        reason:
+            'the native gradient path that could paint the border black is gone');
+    expect(s, contains('sec-glow-\$sid'));
+    expect(s, contains('_zoneGlowOpacity'));
     expect(s, isNot(contains('ZoneService.demand[sel]?.off != true')),
         reason: 'selection may illuminate an OFF sector without enabling it');
     expect(s, contains('ZoneService.demand[s.id]?.off != true'),
         reason: 'an OFF selection never ignites GO');
-    expect(s, contains("const dim = '#E8C547';"),
-        reason: 'the wave runs over a gold base border');
-    expect(s,
-        contains("final gradientColor = off ? '#7F858E' : '#E8C547';"),
-        reason: 'stopping the wave restores the actual off/active color');
     expect(s, contains('_stopZoneWave'));
-    // The wave runs in BOTH modes (owner spec 2026-10-23: "cuando selecciono
-    // una zona debe brillar el borde animado… siempre dorado") — the old
-    // offline-only gate died.
     final waveFn = s.indexOf('void _syncZoneWave()');
     final waveRegion = s.substring(waveFn, waveFn + 700);
     expect(waveRegion.contains('!_driverOnline'), isFalse,
-        reason: 'the selection wave runs offline AND online — never black');
+        reason: 'the selection pulse runs offline AND online — never black');
     final baseStart = s.indexOf('Future<void> _paintZoneWaveBase');
     final baseEnd = s.indexOf('void _tickZoneWave', baseStart);
     expect(baseStart, isNonNegative);
     expect(baseEnd, greaterThan(baseStart));
     final base = s.substring(baseStart, baseEnd);
     expect(base, contains('0xFFE8C547'));
-    expect(base, contains("'line-gradient'"));
-    expect(base, contains('_zoneWaveStops(_zoneWavePhase)'),
-        reason: 'selection writes a gold gradient immediately, never a stale '
-            'black gradient while the first tick is pending');
+    expect(base, contains('0xFFFFE066'));
+    expect(base, contains('sec-glow-\$sid'));
+    expect(base, contains('line-opacity'));
     // Heat report 2026-10-23 ("los teléfonos se están recalentando mucho"):
     // the wave was a NATIVE style write at 10 Hz for the whole shift. Now
     // 5 Hz with the doubled phase step — identical visual speed, half the
@@ -223,18 +210,16 @@ void main() {
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     expect(
-      map.contains(
-          "id: 'sec-src-\$sid', data: emptyFc, lineMetrics: true"),
+      map.contains("id: 'sec-src-\$sid', data: emptyFc"),
       isTrue,
-      reason: 'each sector source is born EMPTY (inline data never drew) '
-          'and carries lineMetrics for the selection border wave',
+      reason: 'each sector source is born EMPTY, with no inline data or '
+          'line-gradient dependency',
     );
     expect(map.contains("'sec-src-\$sid'"), isTrue);
     expect(map.contains('zones_src_write_failed'), isTrue,
         reason: 'a silent catch here is what hid the divisions for a week');
     expect(map.contains('sectors_failed'), isTrue);
-    expect(map.contains('rethrow') || map.contains('throw StateError'),
-        isTrue,
+    expect(map.contains('rethrow') || map.contains('throw StateError'), isTrue,
         reason: 'the latch must stay open so the next sync retries');
   });
 
@@ -251,8 +236,7 @@ void main() {
         reason: 'style writes batch in parallel, never a serial chain');
     final w = File('lib/screens/driver/driver_online_widgets.dart')
         .readAsStringSync();
-    final idle = RegExp(r'onMapIdleListener: \(_\) \{(.*?)\},\n',
-        dotAll: true);
+    final idle = RegExp(r'onMapIdleListener: \(_\) \{(.*?)\},\n', dotAll: true);
     final block = idle.firstMatch(w)?.group(1) ?? '';
     expect(block, contains('_syncZoneLayers()'),
         reason: 'every idle beat re-triggers the deferred zone sync');
@@ -296,8 +280,7 @@ void main() {
         .readAsStringSync();
     expect(w, contains('map_veil_watchdog'));
     expect(w, contains('FeatureFlags.load()'));
-    final flags =
-        File('lib/services/feature_flags.dart').readAsStringSync();
+    final flags = File('lib/services/feature_flags.dart').readAsStringSync();
     expect(flags, contains('/feature-flags'));
     final sys = File('backend/routers/system.py').readAsStringSync();
     expect(sys, contains('zones_map_enabled'));
@@ -307,8 +290,8 @@ void main() {
     final zs = File('lib/services/zone_service.dart').readAsStringSync();
     expect(zs, contains('/zones/demand'));
     expect(zs, contains('class SectorDemand'));
-    final scr = File('lib/screens/driver/driver_online_screen.dart')
-        .readAsStringSync();
+    final scr =
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
     expect(scr, contains('_zoneDemandTimer'),
         reason: 'the 60 s poll keeps the heat fresh while the map lives');
     expect(scr, contains('_zoneDemandTimer?.cancel()'));
@@ -322,8 +305,7 @@ void main() {
   });
 
   test('user-facing strings exist in ES and EN', () {
-    final l10n =
-        File('lib/l10n/app_localizations.dart').readAsStringSync();
+    final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
     expect(l10n, contains('zoneOutsideTitle'));
     expect(l10n, contains('zoneOutsideBody'));
     expect(l10n, contains('Fuera del área de servicio'));
@@ -364,8 +346,8 @@ void main() {
         reason: 'selecting a sector ignites the GO with the elastic pop');
     expect(map, contains('Sector? get _sectorForHighlight'),
         reason: 'the picked sector wins the highlight over the physical one');
-    final scr = File('lib/screens/driver/driver_online_screen.dart')
-        .readAsStringSync();
+    final scr =
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
     expect(scr, contains('String? _selectedZoneName;'));
     expect(scr, contains('_goIgniteCtrl?.dispose()'));
     final off = File('lib/screens/driver/driver_online_offline.dart')
@@ -449,18 +431,16 @@ void main() {
         reason: 'the offline flip glides out to the driver-state zones');
     expect(ctrl, contains('_fitHomeZones(at: newLL)'),
         reason: 'the first-fix refit uses the fix itself, not a stale _pos');
-    // 2026-10-14 spec: the recenter FAB centres ON THE ARROW at the
-    // zone-view zoom — the state-centroid frame died.
     expect(map, contains('_recenterArrowZoneZoom()'),
-        reason: 'the FAB centres the arrow, not the state centroid');
-    expect(map, contains('zoom: fitCam.zoom'),
-        reason: 'the zoom is the state-fit zoom ("con ese zoom mostrando '
-            'las zonas")');
+        reason: 'the offline FAB frames all zones, never the arrow itself');
+    expect(map, contains('await _fitHomeZones();'),
+        reason: 'the offline FAB performs the state-zone fit, not a follow');
+    expect(map, contains('_pauseFollowForZoneFit();'),
+        reason: 'the chase stops before the zoom-out flight starts');
     expect(map, contains('_sectorsBBox('),
         reason: 'the bbox union math is shared with the fit');
-    expect(ctrl, contains('final zoomTarget = _offlineFollowZoom ?? 15.5;'),
-        reason: 'online keeps street zoom; offline recenter preserves the '
-            'zone-fit zoom when heading-follow resumes');
+    expect(ctrl, contains('const zoomTarget = 15.5'),
+        reason: 'street zoom is only for the active heading-follow chase');
     final sources = '$map$ctrl';
     expect(sources.contains('_reFollowTimer'), isFalse,
         reason: 'manual gestures never start a timed refollow');
@@ -470,8 +450,7 @@ void main() {
         reason: 'movement alone never recaptures the camera after a gesture');
   });
 
-  test('the camera is born at the region view offline and glides on flips',
-      () {
+  test('the camera is born at the region view offline and glides on flips', () {
     // 2026-10-11 (user report: the app opens zoomed-in instead of the
     // region view, and mode flips jump instead of gliding). The entry ease
     // only runs while the ticker ticks, and the ticker parks for a parked
@@ -479,7 +458,8 @@ void main() {
     // carry an explicit ease/flight.
     final w = File('lib/screens/driver/driver_online_widgets.dart')
         .readAsStringSync();
-    expect(w, contains('zoom: (!_driverOnline && FeatureFlags.zonesMapEnabled)'),
+    expect(
+        w, contains('zoom: (!_driverOnline && FeatureFlags.zonesMapEnabled)'),
         reason: 'offline + zones: the map is born at the region view');
     expect(w, contains('_zoomEaseDone = true;'),
         reason: 'a camera born at the target must not ease back to 16');
@@ -488,10 +468,10 @@ void main() {
     expect(ctrl, contains('_zoomEaseFrom'),
         reason: 'the entry ease origin is the live camera zoom, not a '
             'hardcoded 16 — mode flips glide instead of jumping');
-    expect(
-        ctrl, contains('zoom = _zoomEaseFrom - (_zoomEaseFrom - zoomTarget) * e;'));
-    final scr = File('lib/screens/driver/driver_online_screen.dart')
-        .readAsStringSync();
+    expect(ctrl,
+        contains('zoom = _zoomEaseFrom - (_zoomEaseFrom - zoomTarget) * e;'));
+    final scr =
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
     expect(scr, contains('double _zoomEaseFrom = 16.0;'));
   });
 
@@ -519,7 +499,8 @@ void main() {
     // sectors on every cold start. The versioned endpoint is now the only
     // refresh once a cache exists; the static file is just the first seed.
     final zs = File('lib/services/zone_service.dart').readAsStringSync();
-    final load = RegExp(r'static Future<void> loadSectors\(\) async \{(.*?)\n  \}',
+    final load = RegExp(
+        r'static Future<void> loadSectors\(\) async \{(.*?)\n  \}',
         dotAll: true);
     final body = load.firstMatch(zs)?.group(1) ?? '';
     expect(body, isNotEmpty);
@@ -530,14 +511,12 @@ void main() {
     expect(zs, contains('_sectorVersionCacheKey'));
   });
 
-  test('live boundary refresh: socket wake-up, REST truth, animated swap',
-      () {
+  test('live boundary refresh: socket wake-up, REST truth, animated swap', () {
     // 2026-10-13, user spec: "instantáneo, que se dibuje de forma animada
     // trasladándose en el mapa, sin cerrar la app". The socket event is only
     // a wake-up — the truth re-downloads by REST, exactly like the
     // app-update gate.
-    final sock =
-        File('lib/services/socket_service.dart').readAsStringSync();
+    final sock = File('lib/services/socket_service.dart').readAsStringSync();
     expect(sock, contains("_socket!.on('zones_updated'"),
         reason: 'the socket wake-up is wired');
     expect(sock, contains('zonesUpdatedStream'));
@@ -572,11 +551,14 @@ void main() {
             'animation');
     expect(map, contains('zones_swap'),
         reason: 'a failed reconciliation lands in the server log');
-    final scr = File('lib/screens/driver/driver_online_screen.dart')
-        .readAsStringSync();
-    expect(scr, contains('ZoneService.sectorsChanged.addListener(_onSectorsChanged)'));
+    final scr =
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
     expect(scr,
-        contains('ZoneService.sectorsChanged.removeListener(_onSectorsChanged)'),
+        contains('ZoneService.sectorsChanged.addListener(_onSectorsChanged)'));
+    expect(
+        scr,
+        contains(
+            'ZoneService.sectorsChanged.removeListener(_onSectorsChanged)'),
         reason: 'the listener dies with the screen');
     final w = File('lib/screens/driver/driver_online_widgets.dart')
         .readAsStringSync();
@@ -584,18 +566,21 @@ void main() {
         reason: 'a style reload wipes the tracking list with the layers');
   });
 
-  test('overlays honour the camera padding (2026-10-16: arrow + zone pills '
+  test(
+      'overlays honour the camera padding (2026-10-16: arrow + zone pills '
       'ran displaced after the offline recenter)', () {
     // The zone-zoom recenter flies WITH camera padding (sheet inset); Mapbox
     // renders the camera centre inside the PADDED frame, so the flat
     // projection must shift by half the inset imbalance or every overlay
     // (arrow, zone labels, demand pills) floats off its ground truth.
-    final map = File('lib/screens/driver/driver_online_map.dart')
-        .readAsStringSync();
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     expect(map, contains('Offset _camPadShift(mapbox.CameraState cam)'),
         reason: 'the padding-shift helper exists');
-    expect(map,
-        contains('return Offset((p.left - p.right) / 2, (p.top - p.bottom) / 2);'),
+    expect(
+        map,
+        contains(
+            'return Offset((p.left - p.right) / 2, (p.top - p.bottom) / 2);'),
         reason: 'half the inset imbalance, in the right direction');
     expect(
         map,
@@ -609,13 +594,14 @@ void main() {
         reason: 'the zone labels/pills apply the shift too');
   });
 
-  test('a stale zone fit can never clobber a newer recenter (2026-10-16 '
+  test(
+      'a stale zone fit can never clobber a newer recenter (2026-10-16 '
       'noche)', () {
     // "Cuando me pongo online y me desconecto el boton de centrar no
     // funciona despues": el glide-out del flip quedaba en vuelo y aterrizaba
     // sobre el recenter. Toda acción nueva invalida el token anterior.
-    final map = File('lib/screens/driver/driver_online_map.dart')
-        .readAsStringSync();
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     expect(map, contains('final seq = _cameraActionGate.begin();'),
         reason: 'both zone fits take the token');
     expect(map, contains('if (!_cameraActionGate.isCurrent(seq)) return;'),
@@ -625,16 +611,14 @@ void main() {
             'arrow at the zones-view zoom');
   });
 
-  test('zone labels never float over the remount veil (2026-10-16 noche)',
-      () {
+  test('zone labels never float over the remount veil (2026-10-16 noche)', () {
     // Al volver de Schedule el mapa tarda ~1-2 s en revivir — las etiquetas
     // no pintan sobre el velo/negro, solo con el mapa ya renderizando.
-    final map = File('lib/screens/driver/driver_online_map.dart')
-        .readAsStringSync();
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     final i = map.indexOf('Widget _zoneLabelOverlay()');
     final block = map.substring(i, i + 700);
-    expect(block,
-        contains('if (!_mapStyleLoaded || !_firstRenderDone)'),
+    expect(block, contains('if (!_mapStyleLoaded || !_firstRenderDone)'),
         reason: 'labels gate on the map actually rendering');
   });
 }

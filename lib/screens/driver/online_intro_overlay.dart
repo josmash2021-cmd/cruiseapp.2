@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/haptic_service.dart';
+import '../../widgets/onboarding_image.dart';
 
 /// Periodic instruction overlay: it floats OVER the online map (it is NOT a
 /// page — the map stays mounted underneath a black backdrop). Every 6 hours
@@ -196,12 +197,13 @@ class _OnlineIntroOverlayState extends State<OnlineIntroOverlay>
                                 scale: Tween<double>(begin: 0.92, end: 1.0)
                                     .animate(_window(0.18, 0.60,
                                         curve: Curves.easeOutBack)),
-                                child: Image.asset(
-                                  'assets/images/online_intro_hero.png',
+                                child: const OnboardingImage(
+                                  filename: 'online_intro_hero.png',
+                                  localPath:
+                                      'assets/images/online_intro_hero.png',
                                   height: 150,
                                   fit: BoxFit.contain,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const SizedBox(height: 12),
+                                  fallbackIcon: Icons.directions_car_rounded,
                                 ),
                               ),
                             ),

@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/onboarding_image.dart';
 
 const _contractsGold = Color(0xFFE8C547);
 
@@ -217,11 +218,15 @@ class _DriverContractsScreenState extends State<DriverContractsScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(22),
-                    child: Image.asset(
-                      'assets/images/contracts_hero.jpg',
+                    child: OnboardingImage(
+                      filename: 'contracts_hero.jpg',
+                      localPath: 'assets/images/contracts_hero.jpg',
+                      remoteUrl:
+                          '${ApiService.publicBaseUrl}/static/media/contracts_hero.jpg',
                       width: double.infinity,
                       height: 190,
                       fit: BoxFit.cover,
+                      fallbackIcon: Icons.description_outlined,
                     ),
                   ),
                 ),

@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 
-/// Onboarding photo (dress code + selfie verification): the bundled asset is
-/// immediate and needs no network. Older releases without that asset fall
-/// back to the backend copy; a gold icon is the last resort.
+/// The bundled asset is immediate and needs no network. Older releases
+/// without that asset fall back to the backend copy; a gold icon is the last
+/// resort. [localPath] and [remoteUrl] also cover artwork outside onboarding.
 class OnboardingImage extends StatelessWidget {
   const OnboardingImage({
     super.key,
     required this.filename,
     this.fit = BoxFit.cover,
     this.height,
+    this.width,
+    this.localPath,
+    this.remoteUrl,
     this.fallbackIcon = Icons.person_outline_rounded,
   });
 
@@ -18,6 +21,9 @@ class OnboardingImage extends StatelessWidget {
   final String filename;
   final BoxFit fit;
   final double? height;
+  final double? width;
+  final String? localPath;
+  final String? remoteUrl;
   final IconData fallbackIcon;
 
   static String assetPath(String filename) =>
@@ -26,8 +32,13 @@ class OnboardingImage extends StatelessWidget {
   static String networkUrl(String filename) =>
       '${ApiService.publicBaseUrl}/static/onboarding/$filename';
 
-  static Future<void> preload(BuildContext context, String filename) async {
-    final path = assetPath(filename);
+  static Future<void> preload(
+    BuildContext context,
+    String filename, {
+    String? localPath,
+    String? remoteUrl,
+  }) async {
+    final path = localPath ?? assetPath(filename);
     try {
       await precacheImage(AssetImage(path), context);
       return;
@@ -35,7 +46,7 @@ class OnboardingImage extends StatelessWidget {
       debugPrint('[OnboardingImage] asset preload FAILED $path -> $error');
     }
     if (!context.mounted) return;
-    final url = networkUrl(filename);
+    final url = remoteUrl ?? networkUrl(filename);
     try {
       await precacheImage(NetworkImage(url), context);
     } catch (error) {
@@ -45,19 +56,21 @@ class OnboardingImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final path = assetPath(filename);
+    final path = localPath ?? assetPath(filename);
     return Image.asset(
       path,
       fit: fit,
       height: height,
+      width: width,
       gaplessPlayback: true,
       errorBuilder: (context, error, stackTrace) {
-        final url = networkUrl(filename);
+        final url = remoteUrl ?? networkUrl(filename);
         debugPrint('[OnboardingImage] asset FAILED $path -> $error');
         return Image.network(
           url,
           fit: fit,
           height: height,
+          width: width,
           gaplessPlayback: true,
           errorBuilder: (context, error, stackTrace) {
             debugPrint('[OnboardingImage] network FAILED $url -> $error');

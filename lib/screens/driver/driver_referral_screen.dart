@@ -5,6 +5,7 @@ import '../../services/haptic_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/onboarding_image.dart';
 import '../../utils/share_helper.dart';
 
 /// Refer Friends — DRIVER program.
@@ -226,7 +227,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
                 ],
               ),
               SizedBox(height: gap(14)),
-              if (heroHeight > 0 && !_heroArtMissing) ...[
+              if (heroHeight > 0) ...[
                 _buildHeroArtwork(heroHeight),
                 Transform.translate(
                   offset: const Offset(0, -16),
@@ -269,11 +270,6 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     );
   }
 
-  /// OTA patches carry no new assets (device-proven 2026-10-23): on a store
-  /// build that predates this PNG the artwork collapses cleanly instead of
-  /// leaving a blank band.
-  bool _heroArtMissing = false;
-
   Widget _buildHeroArtwork(double height) {
     return Container(
       height: height,
@@ -289,21 +285,15 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
-        child: Image.asset(
-          'assets/images/referral_hero.png',
+        child: OnboardingImage(
+          filename: 'referral_hero.png',
+          localPath: 'assets/images/referral_hero.png',
+          remoteUrl:
+              '${ApiService.publicBaseUrl}/static/media/referral_hero.png',
           width: double.infinity,
           height: height,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            if (!_heroArtMissing) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted && !_heroArtMissing) {
-                  setState(() => _heroArtMissing = true);
-                }
-              });
-            }
-            return const SizedBox.shrink();
-          },
+          fallbackIcon: Icons.card_giftcard_rounded,
         ),
       ),
     );

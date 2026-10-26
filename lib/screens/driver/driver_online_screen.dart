@@ -58,6 +58,7 @@ import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
 import '../../map/flat_map_projection.dart';
 import '../../map/camera_action_gate.dart';
+import '../../map/recenter_landing_guard.dart';
 import '../../map/driver_road_lock.dart';
 import '../../map/map_gesture_guard.dart';
 import '../../map/map_surface_coordinator.dart';
@@ -875,7 +876,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // -- Camera follow mode --
   bool _cameraFollowing = true;
-  double? _offlineFollowZoom;
+  RecenterLandingGuard? _recenterLanding;
 
   // â”€â”€ Draggable panel â”€â”€
   bool _panelOpen = false;

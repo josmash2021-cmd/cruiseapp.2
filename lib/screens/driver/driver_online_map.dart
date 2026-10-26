@@ -132,6 +132,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             // driver — same _heading the nav car uses, already smoothed by
             // _motion (shortest-arc, low-passed).
             iconRotate: _heading,
+            isDraggable: false,
             // Born hidden if the Flutter overlay is already drawing the
             // marker. Creation set no opacity, so a fresh annotation arrived
             // fully visible under an overlay painting the same arrow — two
@@ -167,6 +168,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _goldDotAnnot!.iconOpacity = overlayWanted ? 0.0 : 1.0;
         _goldDotAnnot!.iconSize = _dotAnnotIconSize;
         _goldDotAnnot!.iconRotate = _heading;
+        _goldDotAnnot!.isDraggable = false;
       } catch (_) {
         // Annotation became invalid (rare). Null it so next tick recreates.
         _goldDotAnnot = null;
@@ -242,6 +244,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             image: navCarBytes,
             iconSize: 1.2,
             iconRotate: _heading,
+            isDraggable: false,
             iconAnchor: mapbox.IconAnchor.CENTER,
             iconOffset: [0, 0],
           ));
@@ -263,6 +266,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _carAnnot!.geometry = mapbox.Point(
             coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
         _carAnnot!.iconRotate = _heading;
+        _carAnnot!.isDraggable = false;
       } catch (_) {
         _carAnnot = null;
         _carAnnotGen = 0;
@@ -2014,6 +2018,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
     _cameraActionGate.begin();
+    _recenterLanding = null;
     // ONE arrow, always (user report 2026-10-10: "que la flecha sea la misma
     // cuando hace zoom o mueve el mapa que cuando está normal" — size jump,
     // wrong heading and a double-arrow flicker on every gesture). The overlay
@@ -2042,6 +2047,24 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// flag until the camera has arrived keeps the arrow on the ground the
   /// whole way: the map slides under it and it ends up centred because it
   /// really is, not because it was told to be.
+  void _maybeCompleteRecenter(mapbox.CameraState cam) {
+    final guard = _recenterLanding;
+    if (guard == null) return;
+    if (!_cameraActionGate.isCurrent(guard.sequence)) {
+      _recenterLanding = null;
+      return;
+    }
+    final center = cam.center.coordinates;
+    final cameraPoint = LatLng(center.lat.toDouble(), center.lng.toDouble());
+    if (!guard.isLanding(_cameraActionGate, cameraPoint)) return;
+    _recenterLanding = null;
+    if (!mounted) return;
+    _setState(() => _cameraFollowing = true);
+    _updateDriverAnnotation();
+    ApiService.logClientEvent(
+        'recenter_settle', 'landed=true phantoms=$_phantomGestureEvents');
+  }
+
   Future<void> _recenterWithFollow({
     required double zoom,
     required double bearing,
@@ -2054,16 +2077,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       if (mounted) _setState(() => _cameraFollowing = true);
       return;
     }
+    if (_cameraFollowing) _setState(() => _cameraFollowing = false);
+    _recenterLanding = RecenterLandingGuard(seq, pos);
     _pendingCamWrite = null;
     _zoomEaseDone = true;
-    final zoneFollow = _phase == _Phase.searching &&
-        !_driverOnline &&
-        FeatureFlags.zonesMapEnabled;
-    _offlineFollowZoom = zoneFollow ? zoom : null;
-    final padding = zoneFollow
-        ? mapbox.MbxEdgeInsets(
-            top: 120, left: 0, bottom: _visibleSheetPx, right: 0)
-        : _kZeroCamPadding;
     _cameraBearing = bearing;
     final options = mapbox.CameraOptions(
       center: mapbox.Point(
@@ -2071,7 +2088,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       zoom: zoom,
       bearing: bearing,
       pitch: tilt,
-      padding: padding,
+      padding: _kZeroCamPadding,
     );
     _camFlightUntil = DateTime.now()
         .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
@@ -2099,8 +2116,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           await map
               .flyTo(options,
                   mapbox.MapAnimationOptions(duration: _kRecenterFlightMs))
-              .timeout(
-                  const Duration(milliseconds: _kRecenterFlightMs + 2000));
+              .timeout(const Duration(milliseconds: _kRecenterFlightMs + 2000));
           landed = true;
         } catch (e) {
           debugPrint('[DriverOnline] recenter flyTo failed: $e');
@@ -2108,9 +2124,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
         if (!landed && _mapMounted && identical(map, _map)) {
           try {
-            await map
-                .setCamera(options)
-                .timeout(const Duration(seconds: 2));
+            await map.setCamera(options).timeout(const Duration(seconds: 2));
             landed = true;
           } catch (e) {
             debugPrint('[DriverOnline] recenter fallback failed: $e');
@@ -2121,10 +2135,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
     if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
     ApiService.logClientEvent('recenter_fired', '$issued');
-    ApiService.logClientEvent(
-        'recenter_settle', 'landed=$landed phantoms=$_phantomGestureEvents');
-    _setState(() => _cameraFollowing = true);
-    _updateDriverAnnotation();
+    if (kIsWeb && landed) {
+      _recenterLanding = null;
+      _setState(() => _cameraFollowing = true);
+      _updateDriverAnnotation();
+      return;
+    }
+    final cam = _onlineCamState;
+    if (cam != null) _maybeCompleteRecenter(cam);
+    if (!issued) {
+      _recenterLanding = null;
+      _setState(() => _cameraFollowing = true);
+      _updateDriverAnnotation();
+    }
   }
 
   void _recenterCamera() {
@@ -2473,10 +2496,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _addSectorSource(
       mapbox.MapboxMap map, Sector s, String emptyFc) {
     final sid = s.id;
-    // lineMetrics: true — habilita line-progress para la onda de selección
-    // (el gradiente viajero del borde, spec 2026-10-16).
-    return _guardedStyleWrite(map.style.addSource(mapbox.GeoJsonSource(
-        id: 'sec-src-$sid', data: emptyFc, lineMetrics: true)));
+    return _guardedStyleWrite(map.style
+        .addSource(mapbox.GeoJsonSource(id: 'sec-src-$sid', data: emptyFc)));
   }
 
   /// Offline every sector paints one of four gold demand opacities; online
@@ -2511,6 +2532,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         lineColor: 0xFFE8C547,
         lineWidth: 2.4,
         lineOpacity: 0.0,
+      ))),
+      _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
+        id: 'sec-glow-$sid',
+        sourceId: 'sec-src-$sid',
+        lineColor: 0xFFFFE066,
+        lineWidth: 3.4,
+        lineOpacity: 0.0,
+        lineJoin: mapbox.LineJoin.ROUND,
       ))),
     ];
   }
@@ -2691,26 +2720,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         map.style.setStyleLayerProperty(
             'sec-line-$sid', 'line-opacity', visible ? 0.85 : 0.0),
         map.style.setStyleLayerProperty('sec-shadow-$sid', 'line-opacity', 0.0),
+        map.style.setStyleLayerProperty('sec-glow-$sid', 'line-opacity', 0.0),
       ]);
     } catch (_) {}
   }
 
-  // ── Onda de selección en el BORDE (user spec 2026-10-16: "si el driver
-  // selecciona una zona no se prendera en amarillo si no el borde se
-  // iluminara en tendra animacion de onda smooth y fluida") — el fill gold
-  // de selección murió; el borde del sector elegido se enciende y una banda
-  // brillante lo recorre en loop (lineGradient sobre line-progress; el
-  // source nace con lineMetrics: true). Offline Y online (owner spec
-  // 2026-10-23: "siempre dorado con el brillo animado") — el borde NUNCA es
-  // negro. Los campos
-  // (`_zoneWaveTimer`/`_zoneWaveSectorId`/`_zoneWavePhase`) viven en la clase
-  // State — una extension no declara campos.
+  // Selected sector: a bright gold pulse on its own layer, never a gradient.
+  // This keeps polygon borders gold on native Mapbox builds where the old
+  // line-gradient path could render the selected sector black.
   void _syncZoneWave() {
     final sel = _selectedZoneName;
-    // Offline Y online (owner spec 2026-10-23: "cuando selecciono una zona
-    // debe brillar el borde animado… siempre dorado") — la onda corre en
-    // ambos modos mientras se busca; online el spotlight dim convive (el
-    // borde brilla dentro del hueco).
     final active = _map != null &&
         !kIsWeb &&
         _mapMounted &&
@@ -2722,7 +2741,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
     if (_zoneWaveSectorId != sel) {
-      _stopZoneWave(); // restaura el borde anterior
+      _stopZoneWave();
       _zoneWaveSectorId = sel;
       _zoneWavePhase = 0;
       _paintZoneWaveBase(sel);
@@ -2732,8 +2751,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     });
   }
 
-  /// El borde seleccionado se enciende: color y gradiente dorados juntos
-  /// para que ningún gradiente anterior pueda dejarlo negro.
+  double get _zoneGlowOpacity =>
+      0.60 + 0.40 * (0.5 + 0.5 * math.sin(_zoneWavePhase * 2 * math.pi));
+
   Future<void> _paintZoneWaveBase(String sid) async {
     final map = _map;
     if (map == null || kIsWeb) return;
@@ -2741,11 +2761,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await Future.wait([
         map.style
             .setStyleLayerProperty('sec-line-$sid', 'line-color', 0xFFE8C547),
-        map.style.setStyleLayerProperty(
-            'sec-line-$sid', 'line-gradient', _zoneWaveStops(_zoneWavePhase)),
         map.style.setStyleLayerProperty('sec-line-$sid', 'line-width', 3.0),
+        map.style
+            .setStyleLayerProperty('sec-glow-$sid', 'line-color', 0xFFFFE066),
+        map.style.setStyleLayerProperty('sec-glow-$sid', 'line-width', 3.4),
+        map.style.setStyleLayerProperty('sec-glow-$sid', 'line-opacity', 0.90),
       ]);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Zones] selection paint failed: $e');
+    }
   }
 
   void _tickZoneWave() {
@@ -2756,14 +2780,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _zoneWaveTimer = null;
       return;
     }
-    // En background no escribe nada (el timer queda vivo y retoma solo al
-    // volver — una escritura nativa por tick con la app tapada es gasto
-    // puro).
     if (!_appInForeground) return;
-    // Una vuelta en ~5 s a 200 ms por tick (era 100 ms — heat report
-    // 2026-10-23: diez escrituras de estilo nativas por segundo recalentaban
-    // los teléfonos en turnos largos; 5/s con el paso doblado conserva la
-    // misma velocidad visual con la mitad de trabajo nativo).
     _zoneWavePhase = (_zoneWavePhase + 0.04) % 1.0;
     if (_zoneWaveWriteBusy) {
       _zoneWavePendingPhase = _zoneWavePhase;
@@ -2772,7 +2789,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _zoneWaveWriteBusy = true;
     map.style
         .setStyleLayerProperty(
-            'sec-line-$sid', 'line-gradient', _zoneWaveStops(_zoneWavePhase))
+            'sec-glow-$sid', 'line-opacity', _zoneGlowOpacity)
         .then((_) {
       _zoneWaveWriteBusy = false;
       if (!mounted || !identical(map, _map)) return;
@@ -2782,32 +2799,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _zoneWavePhase = pending;
         _tickZoneWave();
       }
-    }).catchError((Object _) {
+    }).catchError((Object e) {
       _zoneWaveWriteBusy = false;
+      debugPrint('[Zones] selection pulse failed: $e');
     });
-  }
-
-  /// Banda dorada viajera sobre el anillo dorado. Tres copias de la banda
-  /// (fase−1, fase, fase+1) para que al cruzar el cierre del anillo salga
-  /// por un lado y entre por el otro sin salto — el anillo es cerrado.
-  List<dynamic> _zoneWaveStops(double phase) {
-    const half = 0.09; // media anchura de la banda
-    const dim = '#E8C547';
-    const lit = '#FFE066';
-    final stops = <double, String>{0.0: dim, 1.0: dim};
-    for (final c in [phase - 1.0, phase, phase + 1.0]) {
-      for (final p in [c - half, c, c + half]) {
-        if (p > 0.0001 && p < 0.9999) stops[p] = p == c ? lit : dim;
-      }
-    }
-    final entries = stops.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-    return [
-      'interpolate',
-      ['linear'],
-      ['line-progress'],
-      for (final e in entries) ...[e.key, e.value],
-    ];
   }
 
   void _stopZoneWave() {
@@ -2821,19 +2816,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (map == null || kIsWeb || prev == null) return;
     final off = ZoneService.demand[prev]?.off ?? false;
     final color = off ? 0xFF7F858E : 0xFFE8C547;
-    final gradientColor = off ? '#7F858E' : '#E8C547';
-    // El plugin no acepta un gradiente null: se restaura uno plano del
-    // color actual, gris si Dispatch apagó la zona y dorado si está activa.
     _guardedStyleWrite(
-        map.style.setStyleLayerProperty('sec-line-$prev', 'line-gradient', [
-      'interpolate',
-      ['linear'],
-      ['line-progress'],
-      0.0,
-      gradientColor,
-      1.0,
-      gradientColor
-    ]));
+        map.style.setStyleLayerProperty('sec-glow-$prev', 'line-opacity', 0.0));
     _guardedStyleWrite(
         map.style.setStyleLayerProperty('sec-line-$prev', 'line-color', color));
     _guardedStyleWrite(
@@ -2869,6 +2853,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
               .setStyleLayerProperty('sec-line-$id', 'line-opacity', 0.0)),
           _guardedStyleWrite(map.style
               .setStyleLayerProperty('sec-shadow-$id', 'line-opacity', 0.0)),
+          _guardedStyleWrite(map.style
+              .setStyleLayerProperty('sec-glow-$id', 'line-opacity', 0.0)),
         ],
         _guardedStyleWrite(map.style
             .setStyleLayerProperty('sec-hl-fill', 'fill-opacity', 0.0)),
@@ -2893,6 +2879,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         } catch (_) {}
         try {
           await map.style.removeStyleLayer('sec-shadow-$id');
+        } catch (_) {}
+        try {
+          await map.style.removeStyleLayer('sec-glow-$id');
         } catch (_) {}
         try {
           await map.style.removeStyleSource('sec-src-$id');
@@ -3013,12 +3002,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return true;
   }
 
-  /// The offline zone-view recenter (2026-10-14 user spec: "el botón de
-  /// centrar solo va a centrar donde esté la flecha, pero con ese zoom
-  /// mostrando las zonas, pero centrando en la flecha"): the camera centres
-  /// ON THE ARROW at the zoom the home-state zone fit would use — the zones
-  /// of the driver's state stay in frame, the driver is the centre. No fix
-  /// (or no sectors) → the state-fit fallback of old.
+  /// Offline recentre frames every sector in the driver's state, north-up,
+  /// without re-engaging arrow follow. With no position it falls back to the
+  /// union of all sectors. The visible sheet inset belongs to the fit.
   /// El sheet abierto cubre la mitad baja de la pantalla (user spec
   /// 2026-10-15: "debe centrar en lo visible") — las cámaras offline centran
   /// en el área VISIBLE sobre el sheet, no en el centro de la pantalla.
@@ -3028,48 +3014,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _recenterArrowZoneZoom() async {
-    final map = _map;
-    if (map == null || kIsWeb) return;
-    final seq = _cameraActionGate.begin();
-    final pos = _pos;
-    if (pos == null) {
-      await _fitHomeZones();
-      return;
-    }
-    if (!ZoneService.sectorsReady) {
-      await _recenterWithFollow(
-          zoom: 10.8, bearing: _smoothedBearing, tilt: 0);
-      return;
-    }
-    final secs = ZoneService.sectorsForState(ZoneService.stateOfPoint(pos));
-    final bbox = _sectorsBBox(secs);
-    if (bbox == null) {
-      await _recenterWithFollow(
-          zoom: 10.8, bearing: _smoothedBearing, tilt: 0);
-      return;
-    }
     try {
-      final fitCam = await map.cameraForCoordinatesPadding(
-        [
-          mapbox.Point(coordinates: mapbox.Position(bbox[0], bbox[1])),
-          mapbox.Point(coordinates: mapbox.Position(bbox[2], bbox[3])),
-        ],
-        mapbox.CameraOptions(pitch: 0, bearing: 0),
-        mapbox.MbxEdgeInsets(
-            top: 130, left: 30, bottom: _visibleSheetPx, right: 30),
-        null,
-        null,
-      );
-      if (!_cameraActionGate.isCurrent(seq)) return;
-      await _recenterWithFollow(
-          zoom: fitCam.zoom ?? 10.8, bearing: _smoothedBearing, tilt: 0);
+      await _fitHomeZones();
     } catch (e) {
-      debugPrint('[Zones] arrow zone-zoom recenter failed: $e');
+      debugPrint('[Zones] home-state fit failed: $e');
       ApiService.logClientEvent(
           'recenter_fit', 'scope=arrow_zone_zoom_fallback');
-      if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
-      await _recenterWithFollow(
-          zoom: 10.8, bearing: _smoothedBearing, tilt: 0);
+      await _fitAllZones();
     }
   }
 
@@ -3086,9 +3037,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return w > e || s > n ? null : [w, s, e, n];
   }
 
+  void _pauseFollowForZoneFit() {
+    _recenterLanding = null;
+    _pendingCamWrite = null;
+    if (_cameraFollowing) _setState(() => _cameraFollowing = false);
+  }
+
   Future<void> _fitSectors(List<Sector> sectors, {bool animated = true}) async {
     final map = _map;
     if (map == null || kIsWeb || !ZoneService.sectorsReady) return;
+    _pauseFollowForZoneFit();
     final bbox = _sectorsBBox(sectors);
     if (bbox == null) return;
     final w = bbox[0], s = bbox[1], e = bbox[2], n = bbox[3];
@@ -3137,6 +3095,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _fitZone(Sector sec) async {
     final map = _map;
     if (map == null || kIsWeb) return;
+    _pauseFollowForZoneFit();
     final b = sec.bbox;
     // Mismo token anti-stale que los otros fits (2026-10-16-noche): un fit
     // de zona viejo jamás aterriza sobre una cámara más nueva.

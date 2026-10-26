@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -9,7 +10,8 @@ import 'package:cruise_app/widgets/onboarding_image.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('all eight dress and selfie variants decode from local assets', () async {
+  test('all eight dress and selfie variants decode from local assets',
+      () async {
     for (final kind in ['guide_dress', 'guide_selfie']) {
       for (final tier in ['vip', 'std']) {
         for (final gender in ['m', 'f']) {
@@ -27,6 +29,23 @@ void main() {
           codec.dispose();
         }
       }
+    }
+  });
+
+  test('every OTA-replacement illustration has an identical public copy',
+      () async {
+    const copies = {
+      'assets/images/online_intro_hero.png':
+          'backend/static/onboarding/online_intro_hero.png',
+      'assets/images/contracts_hero.jpg':
+          'backend/static/media/contracts_hero.jpg',
+      'assets/images/referral_hero.png':
+          'backend/static/media/referral_hero.png',
+    };
+    for (final entry in copies.entries) {
+      final bundled = await rootBundle.load(entry.key);
+      final publicCopy = await File(entry.value).readAsBytes();
+      expect(publicCopy, bundled.buffer.asUint8List(), reason: entry.value);
     }
   });
 

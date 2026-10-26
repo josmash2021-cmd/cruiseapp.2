@@ -46,7 +46,7 @@ void main() {
           reason: 'the manual-rotate detector needs the last written value');
     });
 
-    test('online clears padding; offline keeps the visible sheet inset', () {
+    test('online clears padding; offline zone fit pauses the chase', () {
       expect(ctrl, contains('_kZeroCamPadding'));
       final scr = File('lib/screens/driver/driver_online_screen.dart')
           .readAsStringSync();
@@ -54,14 +54,14 @@ void main() {
       expect(ctrl, contains('padding: followPadding,'),
           reason: 'the chase writes the mode-appropriate padding every frame');
       expect(ctrl, contains('lastPadding.bottom == followPadding.bottom'),
-          reason: 'opening or closing the offline sheet must refresh the inset');
+          reason:
+              'opening or closing the offline sheet must refresh the inset');
       final map =
           File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
-      expect(map, contains('padding: padding,'));
-      expect(map, contains(': _kZeroCamPadding'),
-          reason: 'online recenter still clears stale zone padding');
-      expect(map, contains('_offlineFollowZoom = zoneFollow ? zoom : null;'),
-          reason: 'offline keeps its zone-fit zoom and visible sheet inset');
+      expect(map, contains('padding: _kZeroCamPadding'),
+          reason: 'online recenter clears stale zone padding');
+      expect(map, contains('_pauseFollowForZoneFit();'),
+          reason: 'offline frames all zones without a competing chase');
     });
 
     test(
@@ -219,9 +219,11 @@ void main() {
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
 
-    test('one guarded recenter completion resumes follow and flushes the marker',
+    test(
+        'one guarded recenter completion resumes follow and flushes the marker',
         () {
-      final body = bodyOf(map, 'Future<void> _recenterWithFollow(', maxLen: 5000);
+      final body =
+          bodyOf(map, 'Future<void> _recenterWithFollow(', maxLen: 5000);
       expect(body.contains('_cameraFollowing = true'), isTrue);
       expect(body.contains('_updateDriverAnnotation();'), isTrue,
           reason: 'a parked driver needs an explicit marker flush on landing');
@@ -229,6 +231,16 @@ void main() {
           reason: 'a stale flight cannot complete over a newer camera action');
       expect(map.contains('_followResumeTimer'), isFalse,
           reason: 'there is no second timer that can recenter twice');
+      expect(map, contains('void _maybeCompleteRecenter'));
+      expect(map, contains('_recenterLanding = RecenterLandingGuard(seq, pos)'),
+          reason: 'follow resumes only when the actual camera arrives');
+    });
+
+    test('the native arrow never accepts a drag gesture', () {
+      expect('isDraggable: false'.allMatches(map).length, 2,
+          reason: 'both native annotations are born non-draggable');
+      expect('isDraggable = false'.allMatches(map).length, 2,
+          reason: 'both existing annotations stay non-draggable on update');
     });
 
     test(
@@ -624,7 +636,8 @@ void main() {
     });
 
     test('a failed flight never leaves the recenter dead', () {
-      final body = bodyOf(map, 'Future<void> _recenterWithFollow(', maxLen: 5000);
+      final body =
+          bodyOf(map, 'Future<void> _recenterWithFollow(', maxLen: 5000);
       expect(body.contains('var issued = false'), isTrue);
       expect(body.contains('if (!landed &&'), isTrue,
           reason: 'a failed native flight gets one direct-write fallback');
@@ -640,16 +653,18 @@ void main() {
       final around =
           widgets.substring(flatten - 800 > 0 ? flatten - 800 : 0, flatten);
       expect(around.contains('_camFlightUntil = DateTime.now()'), isTrue);
-      expect(around.contains('_lastCamWriteBearing = _smoothedBearing'), isTrue);
+      expect(
+          around.contains('_lastCamWriteBearing = _smoothedBearing'), isTrue);
       expect(map.contains('_cameraBearing = bearing;'), isTrue);
       expect(map.contains('.setCamera(options)'), isTrue);
-      final fallbackStart = map.indexOf('if (!landed &&');
-      final settle = map.indexOf("recenter_settle', 'landed=", fallbackStart);
-      expect(fallbackStart, isNonNegative);
-      expect(settle, greaterThan(fallbackStart));
-      final guardedFallback = map.substring(fallbackStart, settle);
-      expect(guardedFallback.contains('_cameraActionGate.isCurrent(seq)'), isTrue,
+      expect(map.contains('if (!landed &&'), isTrue);
+      expect(
+          map,
+          contains(
+              'if (!mounted || !_cameraActionGate.isCurrent(seq)) return;'),
           reason: 'a stale fallback cannot overwrite a newer camera action');
+      expect(map, contains('guard.isLanding(_cameraActionGate, cameraPoint)'),
+          reason: 'the handoff checks the actual camera, not a timer');
     });
 
     test('gesture listeners ignore phantom scrolls during programmatic flights',
@@ -671,7 +686,8 @@ void main() {
           isTrue,
           reason: 'pointer-level drag/pinch releases follow before the chase');
       expect(widgets.contains('onPointerMove: (event) {'), isTrue,
-          reason: 'the map observes actual finger movement, not only callbacks');
+          reason:
+              'the map observes actual finger movement, not only callbacks');
       final handler = bodyOf(map, 'void _onCameraMoveStarted()', maxLen: 900);
       expect(handler.contains('_mapPointers == 0'), isTrue);
       expect(handler.contains('isBefore(_camFlightUntil)'), isTrue,

@@ -403,6 +403,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         },
         onCameraChangeListener: (data) {
           _onlineCamState = data.cameraState;
+          _maybeCompleteRecenter(data.cameraState);
           // See the same listener on the home screen: the overlay's pixel
           // comes from this camera, and the motion ticker parks when the
           // driver stops, so without this the arrow would stick to a stale

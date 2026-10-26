@@ -1285,7 +1285,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _syncDriverSonar();
   }
 
-
   /// The server-side half of the 12 h cap landing while the app is OPEN
   /// (user spec 2026-09-27): the ghost agent flipped the shift off and
   /// pushed — close the local turn the same way a manual offline would.
@@ -2261,12 +2260,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // ignore it, so a driver dragging the map while online was overruled
     // sixty times a second and the view snapped back under their finger.
     if (_phase == _Phase.searching && !offerActive && _cameraFollowing) {
-      final zoneFollow = !_driverOnline && _offlineFollowZoom != null;
-      final zoomTarget = _offlineFollowZoom ?? 15.5;
-      final followPadding = zoneFollow
-          ? mapbox.MbxEdgeInsets(
-              top: 120, left: 0, bottom: _visibleSheetPx, right: 0)
-          : _kZeroCamPadding;
+      const zoomTarget = 15.5;
+      final followPadding = _kZeroCamPadding;
       // Entry zoom ease: the map opens at zoom 16 (same as home) and
       // glides to the working zoom over ~750ms (easeOutCubic) so there
       // is no zoom "pop" when arriving from the home screen.

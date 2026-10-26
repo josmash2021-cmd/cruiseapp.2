@@ -421,6 +421,11 @@ async def recompute_driver_approval(
             setattr(veh, attr, value)
             changed = True
 
+    if (getattr(veh, "plate_pending_review", False)
+            and "registration" in status["approved_document_types"]):
+        veh.plate_pending_review = False
+        changed = True
+
     if (status["documents_approved"]
             and (veh.approval_status or "").lower() != "approved"):
         veh.approval_status = "approved"

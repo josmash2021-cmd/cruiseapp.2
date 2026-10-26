@@ -39,6 +39,7 @@ async def vehicle_document_status(
     unapproved = []
     pending = []
     approved_types = []
+    approved_document_types = []
     has_expired = False
 
     def covers(document: Document) -> bool:
@@ -46,21 +47,27 @@ async def vehicle_document_status(
             single_vehicle and document.vehicle_id is None
         )
 
+    def is_current(document: Document) -> bool:
+        expiry = document.expiry_date
+        if expiry is None:
+            return True
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        return expiry >= now
+
     for doc_type in required:
         rows = [d for d in documents if d.doc_type == doc_type and covers(d)]
         live = [
             d for d in rows
-            if (d.status or "").lower() != "rejected"
-            and (d.expiry_date is None or d.expiry_date >= now)
+            if (d.status or "").lower() != "rejected" and is_current(d)
         ]
         approved = any(
-            (d.status or "").lower() == "approved"
-            and (d.expiry_date is None or d.expiry_date >= now)
+            (d.status or "").lower() == "approved" and is_current(d)
             for d in rows
         )
         legacy = single_vehicle and bool(legacy_urls[doc_type])
         if any(
-            d.expiry_date is not None and d.expiry_date < now
+            d.expiry_date is not None and not is_current(d)
             and (d.status or "").lower() == "approved"
             for d in rows
         ):
@@ -71,6 +78,8 @@ async def vehicle_document_status(
             unapproved.append(doc_type)
         else:
             approved_types.append(doc_type)
+        if approved:
+            approved_document_types.append(doc_type)
         if not approved and not legacy and any(
             (d.status or "").lower() == "pending" for d in live
         ):
@@ -81,6 +90,7 @@ async def vehicle_document_status(
         "unapproved_vehicle_docs": unapproved,
         "pending_vehicle_docs": pending,
         "approved_vehicle_docs": approved_types,
+        "approved_document_types": approved_document_types,
         "documents_approved": not unapproved,
         "has_expired": has_expired,
     }

@@ -3084,6 +3084,7 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     all_docs_approved = False
     has_expired = False
     missing_docs: List[str] = []
+    approved_registration = False
     if vehicle:
         from services.vehicle_eligibility import vehicle_document_status
         doc_status = await vehicle_document_status(
@@ -3091,13 +3092,17 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         missing_docs = doc_status["unapproved_vehicle_docs"]
         has_expired = doc_status["has_expired"]
         all_docs_approved = doc_status["documents_approved"]
+        approved_registration = "registration" in doc_status["approved_document_types"]
         if missing_docs:
             reasons.append("vehicle_docs_missing")
 
     # 4. A plate change that dispatch has not signed off yet overrides an
     # approved account on purpose: the registration on file names a
     # different car until the new one is uploaded and reviewed.
-    plate_pending = bool(vehicle and getattr(vehicle, "plate_pending_review", False))
+    plate_pending = bool(
+        vehicle and getattr(vehicle, "plate_pending_review", False)
+        and not approved_registration
+    )
     if plate_pending:
         reasons.append("plate_change_pending")
 
@@ -3414,6 +3419,10 @@ async def list_vehicles(user: User = Depends(_get_current_user), db: AsyncSessio
         data["missing_vehicle_docs"] = status["missing_vehicle_docs"]
         data["pending_vehicle_docs"] = status["pending_vehicle_docs"]
         data["documents_approved"] = status["documents_approved"]
+        data["plate_pending_review"] = bool(
+            vehicle.plate_pending_review
+            and "registration" not in status["approved_document_types"]
+        )
         payload.append(data)
     return {"vehicles": payload}
 

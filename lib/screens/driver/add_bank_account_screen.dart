@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -253,23 +254,42 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
-    } on stripe.StripeException catch (e) {
+    } on stripe.StripeException catch (e, st) {
       debugPrint('[AddBank] StripeException code=${e.error.code} '
           'localized=${e.error.localizedMessage} message=${e.error.message} '
           'stripeCode=${e.error.stripeErrorCode}');
+      // Non-fatal report (2026-10-26): bank adds fail ONLY on Android and the
+      // exact SDK error never left the phone — debugPrint is invisible in
+      // release builds. Crashlytics carries code/message/stripeErrorCode so
+      // the next failure self-reports instead of needing a screenshot.
+      FirebaseCrashlytics.instance.recordError(
+        'AddBank StripeException code=${e.error.code} '
+        'stripeCode=${e.error.stripeErrorCode} msg=${e.error.message} '
+        'localized=${e.error.localizedMessage}',
+        st,
+        reason: 'add_bank_tokenize',
+      );
       if (!mounted) return;
       setState(() => _error = e.error.localizedMessage ??
           e.error.message ??
           s.failedToAddMethod);
-    } on stripe.StripeError catch (e) {
+    } on stripe.StripeError catch (e, st) {
       // El SDK 11.x relanza los errores de createToken como StripeError
       // (clase distinta de StripeException) — sin este catch el mensaje
       // real se tragaba y el driver solo veía el genérico.
       debugPrint('[AddBank] StripeError: ${e.message}');
+      FirebaseCrashlytics.instance.recordError(
+        'AddBank StripeError: ${e.message}', st,
+        reason: 'add_bank_tokenize',
+      );
       if (!mounted) return;
       setState(() => _error = e.message);
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('[AddBank] unexpected ${e.runtimeType}: $e');
+      FirebaseCrashlytics.instance.recordError(
+        e, st,
+        reason: 'add_bank_submit_unexpected',
+      );
       if (!mounted) return;
       setState(() =>
           _error = e is ApiException ? e.message : s.failedToAddMethod);

@@ -15,9 +15,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// AppDelegate willPresent — drawing there too would double the banner), and
 /// the tap routes `scheduled_ride:<trip_id>` to the browse map.
 void main() {
-  final main = File('lib/main.dart').readAsStringSync();
+  // CRLF-agnostic: fresh worktree checkouts on Windows carry \r\n and
+  // multi-line needles must still match (AGENTS.md pattern).
+  final main = File('lib/main.dart').readAsStringSync().replaceAll('\r\n', '\n');
   final notifService =
-      File('lib/services/notification_service.dart').readAsStringSync();
+      File('lib/services/notification_service.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
   test('foreground handler draws a heads-up for scheduled_ride on Android', () {
     expect(main.contains("if (type == 'scheduled_ride')"), isTrue,

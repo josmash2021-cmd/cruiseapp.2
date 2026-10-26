@@ -24,14 +24,25 @@ void main() {
     expect(size.height, GoldLocationDot.driverOverlaySize);
   });
 
-  testWidgets('both techniques scale from the same constant', (t) async {
-    // If these ever drift apart the arrow changes size at the moment the
-    // driver drags the map and the overlay hands over to the annotation.
-    expect(
-      GoldLocationDot.driverOverlaySize,
-      44.0 * GoldLocationDot.driverScale,
-    );
-    expect(GoldLocationDot.driverIconSize, GoldLocationDot.driverScale);
+  testWidgets('both techniques land at the same size at every density',
+      (t) async {
+    for (final dpr in [2.0, 3.0, 4.0]) {
+      for (final highRes in [false, true]) {
+        final pixels = GoldLocationDot.canvasSize *
+            (highRes ? GoldLocationDot.rasterScale : 1.0);
+        final iconSize = GoldLocationDot.driverAnnotationIconSize(
+          devicePixelRatio: dpr,
+          highRes: highRes,
+          scale: GoldLocationDot.driverScale,
+        );
+        final logicalWidth = pixels / dpr * iconSize;
+        expect(
+          logicalWidth,
+          closeTo(GoldLocationDot.driverOverlaySize, 1e-9),
+          reason: 'density=$dpr highRes=$highRes must not change the marker',
+        );
+      }
+    }
   });
 
   testWidgets('a notifier tick repaints it — the bug that shipped twice',

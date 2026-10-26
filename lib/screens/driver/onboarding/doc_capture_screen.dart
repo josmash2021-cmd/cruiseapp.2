@@ -8,6 +8,7 @@ import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
 import '../../../services/firebase_storage_service.dart';
+import '../../../widgets/capture_camera_view.dart';
 import '../../../widgets/doc_guidelines_view.dart';
 import 'onboarding_items.dart';
 import 'onboarding_widgets.dart';
@@ -87,6 +88,28 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
     }
   }
 
+  /// "Take photo" opens the SHARED in-app camera (owner spec 2026-10-23:
+  /// every document camera wears the license-capture design — rounded
+  /// preview card, X inside, shutter + flash). Gallery stays native.
+  Future<void> _openInAppCamera() async {
+    final s = S.of(context);
+    final path = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        fullscreenDialog: true,
+        builder: (routeCtx) => Scaffold(
+          backgroundColor: const Color(0xFF14141A),
+          body: CaptureCameraView(
+            title: _title(s),
+            hint: s.captureDocHint,
+            onPhoto: (p) => Navigator.of(routeCtx).pop(p),
+            onCancel: () => Navigator.of(routeCtx).pop(),
+          ),
+        ),
+      ),
+    );
+    if (path != null && mounted) setState(() => _photoPath = path);
+  }
+
   void _showPickOptions() {
     final s = S.of(context);
     showModalBottomSheet<void>(
@@ -110,7 +133,7 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
               ),
               onTap: () {
                 Navigator.of(ctx).pop();
-                _pick(ImageSource.camera);
+                _openInAppCamera();
               },
             ),
             ListTile(

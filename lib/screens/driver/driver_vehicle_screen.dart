@@ -237,24 +237,17 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     final vehicleType = (vehicle['vehicle_type'] ?? 'comfort') as String;
     final isActive = vehicle['is_active'] == true;
     final approvalStatus = (vehicle['approval_status'] ?? 'pending') as String;
-    final insuranceStatus = (vehicle['insurance_status'] ?? '') as String;
-    final registrationStatus = (vehicle['registration_status'] ?? '') as String;
-    final insuranceValid = vehicle['insurance_valid'] == true;
-    final registrationValid = vehicle['registration_valid'] == true;
+    final documentsApproved = vehicle['documents_approved'] == true;
+    final missingDocs =
+        (vehicle['missing_vehicle_docs'] as List?)?.length ?? 0;
 
     final title = '$make $model'.trim();
     final tier = _tierInfoFor(vehicleType);
     final carImage = _carImageFor(vehicleType);
 
-    final missingDocs = (insuranceValid || insuranceStatus == 'pending' ? 0 : 1) +
-        (registrationValid || registrationStatus == 'pending' ? 0 : 1);
     final isApproved = approvalStatus == 'approved';
-    // Missing paperwork is "Requires attention", never "Pending approval" —
-    // the car is waiting on the driver, not on dispatch (user spec
-    // 2026-08-29). "Pending approval" is only for a car with everything
-    // uploaded that dispatch has not reviewed yet, and it never shows on
-    // the car in use: an active car is, by definition, one dispatch lets
-    // work, whatever the legacy approval flag says.
+    // Real per-car document state: pending uploads await dispatch, while
+    // missing/rejected/expired paperwork requires the driver's attention.
     final needsAttention = missingDocs > 0;
     final awaitingReview = !isApproved && !needsAttention && !isActive;
 
@@ -413,6 +406,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                     vehicleId: vehicle['id'] as int?,
                     isActive: isActive,
                     approvalStatus: approvalStatus,
+                    missingDocsCount: missingDocs,
+                    documentsApproved: documentsApproved,
                   ),
                 ),
               ).then((_) => _fetchVehicles());

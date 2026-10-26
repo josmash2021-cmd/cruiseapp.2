@@ -28,3 +28,12 @@ def test_boot_runs_postgres_column_migrations():
 def test_manual_endpoint_stays_as_backstop():
     src = open("main.py", encoding="utf-8").read()
     assert '@app.post("/admin/run-migrations")' in src
+
+
+def test_payout_exclusion_has_migrations_and_reconcile_guard():
+    src = open("models/database.py", encoding="utf-8").read()
+    assert "payout_excluded = Column(Boolean, default=False)" in src
+    assert '("trips", "payout_excluded", "BOOLEAN DEFAULT 0")' in src
+    assert '("trips", "payout_excluded", "BOOLEAN DEFAULT FALSE")' in src
+    main = open("main.py", encoding="utf-8").read()
+    assert "payout_excluded IS NOT TRUE" in main

@@ -58,6 +58,8 @@ class ResilientPositionStream {
   /// these streams use a distance filter, so a car at a light legitimately
   /// emits nothing at all. 25 s is long enough for a red light and short
   /// enough that a passenger watching a frozen car does not give up first.
+  /// A stream whose last valid speed was moving gets one shorter 8 s window;
+  /// the next stalled window returns to this base value.
   final Duration staleAfter;
 
   final Duration retryBase;
@@ -79,12 +81,26 @@ class ResilientPositionStream {
   bool get isRunning => _sub != null;
   DateTime? get lastFixAt => _lastFixAt;
 
+  static Duration staleAfterForSpeed(Duration base, double speedMps) {
+    if (speedMps >= 1.2 && base.inSeconds > 8) {
+      return const Duration(seconds: 8);
+    }
+    return base;
+  }
+
+  double _lastSpeedMps = 0;
+  int _restartCount = 0;
+
+  int get restartCount => _restartCount;
+  Duration get _effectiveStaleAfter =>
+      staleAfterForSpeed(staleAfter, _lastSpeedMps);
+
   /// True when the stream is subscribed but has not delivered inside
   /// [staleAfter]. Exposed so a UI can say "locating…" honestly.
   bool get isStale {
     final last = _lastFixAt;
     if (last == null) return _started;
-    return DateTime.now().difference(last) > staleAfter;
+    return DateTime.now().difference(last) > _effectiveStaleAfter;
   }
 
   void start() {
@@ -100,6 +116,7 @@ class ResilientPositionStream {
       debugPrint('[$label] resumed onto a dead or stale stream — restarting');
       _recovering = true;
       _retryDelay = Duration.zero;
+      _restartCount++;
       _subscribe();
     }
   }
@@ -129,6 +146,7 @@ class ResilientPositionStream {
       _sub = Geolocator.getPositionStream(locationSettings: settings).listen(
         (pos) {
           _lastFixAt = DateTime.now();
+          _lastSpeedMps = pos.speed.isFinite && pos.speed >= 0 ? pos.speed : 0;
           _retryDelay = Duration.zero; // a real fix means the stream works
           if (_recovering) {
             _recovering = false;
@@ -168,11 +186,16 @@ class ResilientPositionStream {
       if (!_started) return;
       final last = _lastFixAt;
       if (last == null) return; // no fix yet — the retry path owns this
-      if (DateTime.now().difference(last) <= staleAfter) return;
+      final window = _effectiveStaleAfter;
+      if (DateTime.now().difference(last) <= window) return;
       debugPrint(
         '[$label] no fix in ${DateTime.now().difference(last).inSeconds}s '
         '— rebuilding a stream that never said it stopped',
       );
+      if (window.inMilliseconds < staleAfter.inMilliseconds) {
+        _lastSpeedMps = 0;
+      }
+      _restartCount++;
       _recovering = true;
       _subscribe();
     });
@@ -181,6 +204,7 @@ class ResilientPositionStream {
   void _scheduleRestart() {
     if (!_started) return;
     if (_retryTimer != null) return; // one restart in flight is enough
+    _restartCount++;
     _recovering = true;
     _retryDelay = _retryDelay == Duration.zero
         ? retryBase

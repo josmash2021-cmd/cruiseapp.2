@@ -16,6 +16,8 @@ enum OnboardingItem {
   registration('registration', 'assets/images/onboarding/documents.jpg'),
   insurance('insurance', 'assets/images/onboarding/documents.jpg'),
   inspection('inspection', 'assets/images/onboarding/documents.jpg');
+  // Nota: el item backend `contracts` NO se muestra en este hub (user spec
+  // 2026-10-21: "no en el to-do") — la firma vive en el gate antes del GO.
 
   const OnboardingItem(this.key, this.asset);
 

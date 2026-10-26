@@ -22,6 +22,12 @@ from utils.security import (
 from utils.helpers import _safe_create_task, _haversine, _abs_photo_url, _user_dict, _resolve_rider_display, _gen_pickup_pin, user_lang
 from services.fcm_service import _send_fcm_push
 from services import vehicle_tiers, web_pricing
+from services.payment_security import (
+    claim_stripe_event,
+    execute_trip_refund,
+    mark_stripe_event_processed,
+    release_stripe_event,
+)
 from services.sms_service import notify_guest_welcome
 from services.email_service import email_guest_welcome, email_vip_drink_menu
 from services.email_sms_service import _send_email, _send_sms
@@ -180,18 +186,26 @@ async def create_setup_intent(
 @router.post("/payments/create-intent", dependencies=[Depends(_verify_api_key)])
 async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Create a Stripe PaymentIntent for a ride payment."""
-    # SECURITY: Validate payment amount against trip fare if trip_id provided
+    if body.currency.lower() != "usd":
+        raise HTTPException(400, "Ride payments must be in USD")
     if body.trip_id:
         trip_r = await db.execute(select(Trip).where(Trip.id == body.trip_id))
         trip = trip_r.scalar_one_or_none()
-        if trip and trip.fare:
-            expected_cents = int(trip.fare * 100)
-            max_allowed = int(trip.fare * 1.20 * 100)  # Max 20% over fare (tip tolerance)
-            if body.amount < expected_cents:
-                raise HTTPException(400, f"Payment amount cannot be less than the trip fare (${trip.fare:.2f})")
-            if body.amount > max_allowed:
-                raise HTTPException(400, f"Payment amount exceeds maximum allowed (${trip.fare * 1.20:.2f})")
-    if body.amount <= 0 or body.amount > 100000:  # Max $1000
+        if not trip:
+            raise HTTPException(404, "Trip not found")
+        if user.role != "rider" or trip.rider_id != user.id:
+            raise HTTPException(403, "Not your trip")
+        if trip.stripe_payment_intent_id:
+            raise HTTPException(409, "This trip already has a PaymentIntent")
+        if not trip.fare or trip.fare <= 0:
+            raise HTTPException(400, "Trip has no payable fare")
+        expected_cents = int(round(trip.fare * 100))
+        if body.amount < expected_cents:
+            raise HTTPException(400, f"Payment amount cannot be less than the trip fare (${trip.fare:.2f})")
+        max_allowed = int(trip.fare * 1.20 * 100) if body.hold_only else expected_cents
+        if body.amount > max_allowed:
+            raise HTTPException(400, "Payment amount does not match the trip fare")
+    if body.amount <= 0 or body.amount > 100000:
         raise HTTPException(400, "Invalid payment amount")
     if not _HAS_STRIPE:
         # Return mock data when Stripe is not configured
@@ -205,15 +219,16 @@ async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get
     try:
         intent_params = {
             "amount": body.amount,
-            "currency": body.currency,
-            "metadata": {"rider_id": str(user.id)},
+            "currency": "usd",
+            "metadata": {"rider_id": str(user.id), "kind": "fare"},
         }
         # Always pass customer when we have one — required by Stripe to
         # use a saved PaymentMethod (off_session charges) and lets the
         # rider's saved cards / bank accounts surface in payment sheets.
         customer_id = await _get_or_create_stripe_customer(user, db)
-        if customer_id:
-            intent_params["customer"] = customer_id
+        if not customer_id:
+            raise HTTPException(500, "Could not initialise payment customer")
+        intent_params["customer"] = customer_id
         off_session = bool(body.payment_method_id)
         if off_session:
             intent_params["payment_method"] = body.payment_method_id
@@ -346,44 +361,33 @@ async def cancel_payment_intent(intent_id: str, user: User = Depends(_get_curren
 
 @router.post("/payments/capture/{intent_id}", dependencies=[Depends(_verify_api_key)])
 async def capture_payment_intent(intent_id: str, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Capture a previously authorized (held) PaymentIntent.
-    Called when a trip is completed to finalize the charge."""
-    # SECURITY: verify the caller owns this PaymentIntent (or is admin/dispatch)
-    if user.role not in ("admin", "dispatch"):
-        trip_r = await db.execute(
-            select(Trip).where(Trip.stripe_payment_intent_id == intent_id)
-        )
-        trip = trip_r.scalar_one_or_none()
-        if not trip:
-            raise HTTPException(404, "No trip found for this payment intent")
-        if trip.rider_id != user.id:
-            logging.warning("[Payment] Unauthorized capture attempt on %s by user %s", intent_id, user.id)
-            raise HTTPException(403, "You are not authorized to capture this payment")
-        # A hold tied to an ACTIVE trip is not capturable here — capture
-        # happens through the trip-completion flow (_charge_trip), which
-        # computes the final amount including wait fees and shortfall.
-        if trip.status not in ("cancelled", "completed"):
-            raise HTTPException(409, "Cannot capture the hold while the trip is still active")
-    if not _HAS_STRIPE:
-        return {"payment_intent_id": intent_id, "status": "succeeded", "captured": True}
-    try:
-        intent = _stripe_mod.PaymentIntent.capture(intent_id)
-        return {
-            "payment_intent_id": intent.id,
-            "status": intent.status,
-            "amount": intent.amount,
-            "captured": intent.status == "succeeded",
-        }
-    except _stripe_mod.error.StripeError as e:
-        # Forward structured error data so the Flutter client can map decline codes
-        # to localized user-friendly messages.
-        detail = {
-            "message": str(getattr(e, "user_message", None) or e),
-            "code": getattr(e, "code", None),
-            "decline_code": getattr(e, "decline_code", None),
-            "type": getattr(e, "type", None),
-        }
-        raise HTTPException(400, detail=detail)
+    trip_r = await db.execute(
+        select(Trip).where(Trip.stripe_payment_intent_id == intent_id)
+    )
+    trip = trip_r.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "No trip found for this payment intent")
+    is_owner = user.role == "rider" and trip.rider_id == user.id
+    is_driver = user.role == "driver" and trip.driver_id == user.id
+    if not (is_owner or is_driver or user.role in ("admin", "dispatch")):
+        raise HTTPException(403, "You are not authorized to capture this payment")
+    if trip.status != "completed":
+        raise HTTPException(409, "Only a completed trip can be captured here")
+
+    from routers.trips import _charge_trip, _credit_driver_earnings
+    result = await _charge_trip(trip, db)
+    if trip.payment_status in ("paid", "partial"):
+        collected = result.get("collected_cents")
+        amount = collected / 100.0 if collected is not None else None
+        if await _credit_driver_earnings(db, trip, collected_amount=amount):
+            await db.commit()
+    return {
+        "payment_intent_id": intent_id,
+        "status": result.get("status"),
+        "payment_status": trip.payment_status,
+        "amount": result.get("amount", 0),
+        "captured": trip.payment_status in ("paid", "partial"),
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -804,9 +808,14 @@ async def create_link_session(
 
 # -- PayPal token exchange (proxied through backend -- never expose secret to client) --
 
+PAYPAL_RAIL_ENABLED = False
+
+
 @router.post("/payments/paypal/create-order", dependencies=[Depends(_verify_api_key)])
 async def paypal_create_order(body: PayPalOrderIn, user: User = Depends(_get_current_user)):
     """Create a PayPal order � client secret stays on the server."""
+    if not PAYPAL_RAIL_ENABLED:
+        raise HTTPException(410, "PayPal is temporarily paused")
     if not PAYPAL_CLIENT_ID or not PAYPAL_SECRET:
         return {"order_id": f"mock_paypal_{int(time.time())}", "approval_url": "", "status": "mock"}
 
@@ -1293,6 +1302,8 @@ async def _paypal_token() -> str:
 @router.post("/payments/web/paypal/create-order")
 async def create_web_paypal_order(request: Request):
     """Create a PayPal order for a Shopify checkout (Authorize, capture later)."""
+    if not PAYPAL_RAIL_ENABLED:
+        raise HTTPException(410, "PayPal is temporarily paused")
     _verify_web_key(request)
     client_ip = request.client.host if request.client else "unknown"
     if _check_web_rate_limit(client_ip):
@@ -1529,232 +1540,40 @@ async def web_book_redirect(
 #  STRIPE WEBHOOK
 # -------------------------------------------------------
 
-# Idempotency: track processed Stripe event IDs to prevent double-processing
-_processed_stripe_events: collections.OrderedDict = collections.OrderedDict()
-_MAX_PROCESSED_EVENTS = 5000
-
-
 @router.post("/payments/stripe/webhook")
-@router.post("/payments/webhook")  # legacy alias
+@router.post("/payments/webhook")
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    """Handle Stripe webhook events (payment confirmations, refunds, etc.).
-    No auth required -- Stripe calls this directly; signature verification is the auth."""
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
-
-    # SECURITY: Always verify Stripe webhook signature. Never process unsigned webhooks.
     if not sig_header:
-        logging.warning("[Stripe Webhook] Missing stripe-signature header")
         raise HTTPException(400, "Missing stripe-signature")
-
     if not STRIPE_WEBHOOK_SECRET:
-        logging.error("[Stripe Webhook] STRIPE_WEBHOOK_SECRET not configured — rejecting webhook")
         raise HTTPException(500, "Webhook secret not configured")
-
     if not _HAS_STRIPE or _stripe_mod is None:
-        logging.error("[Stripe Webhook] Stripe SDK not available")
         raise HTTPException(500, "Stripe not available")
-
     try:
         event = _stripe_mod.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
     except ValueError:
-        logging.warning("[Stripe Webhook] Invalid payload")
         raise HTTPException(400, "Invalid payload")
     except _stripe_mod.error.SignatureVerificationError:
-        logging.warning("[Stripe Webhook] Invalid signature")
         raise HTTPException(400, "Invalid signature")
 
     event_type = event.get("type", "")
     event_id = event.get("id", "")
-    logging.info("[Stripe Webhook] Received event: %s (id=%s)", event_type, event_id)
-
-    # Idempotency: skip already-processed events (Stripe retries on timeout)
-    if event_id and event_id in _processed_stripe_events:
-        logging.info("[Stripe Webhook] Skipping duplicate event: %s", event_id)
+    if not event_id:
+        raise HTTPException(400, "Stripe event id is required")
+    if not await claim_stripe_event(db, event_id):
         return {"status": "duplicate_skipped"}
-    if event_id:
-        _processed_stripe_events[event_id] = time.time()
-        # Cap size to prevent memory leak
-        while len(_processed_stripe_events) > _MAX_PROCESSED_EVENTS:
-            _processed_stripe_events.popitem(last=False)
-
-    if event_type == "payment_intent.succeeded":
-        intent = event["data"]["object"]
-        trip_id = intent.get("metadata", {}).get("trip_id")
-        payment_intent_id = intent.get("id", "")
-        if trip_id:
-            try:
-                trip_r = await db.execute(select(Trip).where(Trip.id == int(trip_id)))
-                trip = trip_r.scalar_one_or_none()
-                if trip and trip.payment_status != "paid":
-                    trip.payment_status = "paid"
-                    if payment_intent_id:
-                        trip.stripe_payment_intent_id = payment_intent_id
-                    # Real-money rule (2026-08-17): a completed trip credited
-                    # no driver split at completion time because the money
-                    # had not landed yet (e.g. ACH "processing") — pay it now.
-                    if trip.status == "completed":
-                        try:
-                            from routers.trips import _credit_driver_earnings
-                            await _credit_driver_earnings(db, trip)
-                        except Exception as e:
-                            logging.error("[Stripe Webhook] driver split failed for trip %s: %s", trip_id, e)
-                    await db.commit()
-                    logging.info(
-                        "[Stripe Webhook] Trip %s payment confirmed via webhook (pi=%s)",
-                        trip_id, payment_intent_id,
-                    )
-                elif trip:
-                    logging.info("[Stripe Webhook] Trip %s already marked as paid, skipping", trip_id)
-            except Exception as e:
-                logging.error("[Stripe Webhook] Failed to update trip %s on payment_intent.succeeded: %s", trip_id, e)
-
-    elif event_type == "payment_intent.payment_failed":
-        intent = event["data"]["object"]
-        trip_id = intent.get("metadata", {}).get("trip_id")
-        error_msg = (intent.get("last_payment_error") or {}).get("message", "Payment failed")
-        logging.warning("[Stripe Webhook] Payment failed for trip %s: %s", trip_id, error_msg)
-        if trip_id:
-            try:
-                trip_r = await db.execute(select(Trip).where(Trip.id == int(trip_id)))
-                trip = trip_r.scalar_one_or_none()
-                if trip and trip.payment_status == "paid":
-                    # A LATER failure must not un-pay a trip (2026-08-09): the
-                    # fare-shortfall off-session retry (kind=fare_shortfall)
-                    # fires payment_failed AFTER the fare itself was captured —
-                    # this used to flip the trip to "failed" and push the rider
-                    # a "Payment Failed" banner for a ride they had paid for.
-                    logging.info(
-                        "[Stripe Webhook] Trip %s already paid — ignoring payment_failed (pi=%s)",
-                        trip_id, intent.get("id", ""),
-                    )
-                elif trip:
-                    trip.payment_status = "failed"
-                    await db.commit()
-                    logging.info("[Stripe Webhook] Trip %s marked as payment failed", trip_id)
-                    # Notify rider via FCM if token available
-                    try:
-                        from models.database import User
-                        rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
-                        rider = rider_r.scalar_one_or_none()
-                        if rider and rider.fcm_token:
-                            from services.fcm_service import _send_fcm_push
-                            _send_fcm_push(
-                                rider.fcm_token,
-                                "Pago rechazado",
-                                f"Tu pago del viaje #{trip_id} falló. Actualiza tu método de pago.",
-                                {"type": "payment_failed", "trip_id": str(trip_id)},
-                                title_en="Payment Failed",
-                                body_en=f"Your payment for trip #{trip_id} failed. Please update your payment method.",
-                                locale=user_lang(rider),
-                            )
-                    except Exception as fcm_err:
-                        logging.warning("[Stripe Webhook] FCM notify failed for trip %s: %s", trip_id, fcm_err)
-            except Exception as e:
-                logging.error("[Stripe Webhook] Failed to update trip %s on payment_failed: %s", trip_id, e)
-
-    elif event_type == "charge.refunded":
-        charge = event["data"]["object"]
-        pi_id = charge.get("payment_intent")
-        if pi_id:
-            try:
-                trip_r = await db.execute(select(Trip).where(Trip.stripe_payment_intent_id == pi_id))
-                trip = trip_r.scalar_one_or_none()
-                if trip:
-                    refunded_cents = charge.get("amount_refunded", 0)
-                    total_cents = charge.get("amount", 0)
-                    refund_amount = round(refunded_cents / 100, 2)
-                    # Clawback BEFORE updating payment_status so the
-                    # idempotency guard inside the helper still works.
-                    await _apply_refund_clawback(db, trip, refund_amount)
-                    trip.refund_amount = refund_amount
-                    trip.refund_status = "full" if refunded_cents >= total_cents else "partial"
-                    trip.payment_status = "refunded"
-                    await db.commit()
-                    logging.info(
-                        "[Stripe Webhook] Refund recorded for trip %s: $%.2f (%s)",
-                        trip.id, trip.refund_amount, trip.refund_status,
-                    )
-            except Exception as e:
-                logging.error("[Stripe Webhook] Failed to process refund for pi=%s: %s", pi_id, e)
-
+    try:
+        from routers.webhooks import process_stripe_event
+        client_ip = request.client.host if request.client else "unknown"
+        await process_stripe_event(event_type, event.get("data", {}).get("object", {}), client_ip)
+        await mark_stripe_event_processed(db, event_id)
+    except Exception as exc:
+        await release_stripe_event(db, event_id)
+        logging.error("[Stripe Webhook] Event %s failed and was released for retry: %s", event_id, exc)
+        raise HTTPException(500, "Stripe event processing failed") from None
     return {"status": "ok"}
-
-
-async def _apply_refund_clawback(db: AsyncSession, trip: Trip, refund_amount: float) -> None:
-    """Decrement the driver's pending / total balances proportional to the
-    refund.  Idempotent — if the trip was already marked as refunded, the
-    clawback is skipped so the Stripe webhook and the admin refund endpoint
-    can never double-decrement when both run for the same trip.
-
-    Clawback strategy:
-      • Compute the driver's share of the refund as:
-            clawback = driver_earnings * (refund_amount / fare)
-      • Clamp pending_balance at zero — if the driver already cashed out,
-        we log a warning with the unrecovered debt so an operator can do
-        a manual adjustment.
-      • Always decrement total_earnings by the full clawback so lifetime
-        stats reflect reality.
-    """
-    if (trip.payment_status or "").lower() == "refunded":
-        logging.info(
-            "[Refund] Trip %d already marked refunded — clawback skipped (idempotent)",
-            trip.id,
-        )
-        return
-    if not trip.driver_id:
-        return
-    fare = float(trip.fare or 0)
-    driver_earnings = float(trip.driver_earnings or 0)
-    if fare <= 0 or driver_earnings <= 0:
-        logging.info(
-            "[Refund] Trip %d has no driver earnings to claw back (fare=%.2f, earnings=%.2f)",
-            trip.id, fare, driver_earnings,
-        )
-        return
-
-    ratio = min(1.0, max(0.0, refund_amount / fare))
-    clawback = round(driver_earnings * ratio, 2)
-    if clawback <= 0:
-        return
-
-    drv_r = await db.execute(select(User).where(User.id == trip.driver_id))
-    drv = drv_r.scalar_one_or_none()
-    if not drv:
-        logging.warning(
-            "[Refund] Trip %d — driver %d not found for clawback of $%.2f",
-            trip.id, trip.driver_id, clawback,
-        )
-        return
-
-    pending_before = float(drv.pending_balance or 0)
-    pending_after = max(0.0, round(pending_before - clawback, 2))
-    actual_clawback = round(pending_before - pending_after, 2)
-    drv.pending_balance = pending_after
-    # Decrement total_earnings by the full clawback even if pending can't
-    # cover it — lifetime stats should reflect the real payment outcome.
-    drv.total_earnings = max(
-        0.0, round(float(drv.total_earnings or 0) - clawback, 2)
-    )
-
-    # Also reduce the trip's driver_earnings so the cashout endpoint in
-    # drivers.py (which recomputes available_balance from trip rows) sees
-    # the refund. Without this, pending_balance and the cashout calculation
-    # would diverge and a clawed-back driver could still cash out the old
-    # amount.
-    trip.driver_earnings = max(0.0, round(driver_earnings - clawback, 2))
-
-    if actual_clawback < clawback:
-        debt = round(clawback - actual_clawback, 2)
-        logging.warning(
-            "[Refund] PARTIAL clawback on trip %d — driver %d only had "
-            "$%.2f pending, $%.2f debt remains (manual adjustment needed)",
-            trip.id, trip.driver_id, pending_before, debt,
-        )
-    logging.info(
-        "[Refund] Clawed back $%.2f from driver %d on trip %d (pending %.2f -> %.2f, refund_amount=$%.2f)",
-        actual_clawback, trip.driver_id, trip.id, pending_before, pending_after, refund_amount,
-    )
 
 
 # ═══════════════════════════════════════════════════════
@@ -1763,40 +1582,36 @@ async def _apply_refund_clawback(db: AsyncSession, trip: Trip, refund_amount: fl
 
 @router.post("/payments/refund", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_refund_trip(request: Request, db: AsyncSession = Depends(get_db)):
-    """Process a trip refund from the dispatch admin app.
-    Body: {"trip_id": int, "amount": float (optional, defaults to full fare), "reason": str}
-    """
     body = await request.json()
     trip_id = body.get("trip_id")
-    reason = body.get("reason", "")
+    reason = str(body.get("reason") or "requested_by_customer")[:255]
     if not trip_id:
         raise HTTPException(400, "trip_id is required")
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
-
-    # Determine refund amount — default to full fare
-    amount = body.get("amount")
-    if amount is None:
-        amount = float(trip.fare or 0.0)
-    amount = round(float(amount), 2)
-    if amount <= 0:
-        raise HTTPException(400, "Refund amount must be positive")
-    if trip.fare and amount > float(trip.fare):
-        raise HTTPException(400, "Refund amount cannot exceed trip fare")
-
-    # Clawback driver earnings BEFORE marking payment_status=refunded so
-    # the idempotency guard inside _apply_refund_clawback still works.
-    await _apply_refund_clawback(db, trip, amount)
-    trip.refund_status = "full" if (trip.fare and amount >= float(trip.fare)) else "partial"
-    trip.refund_amount = amount
-    trip.refund_reason = reason
-    trip.payment_status = "refunded"
-    await db.commit()
-    await db.refresh(trip)
-    logging.info("[Refund] trip_id=%s amount=%.2f reason=%s", trip_id, amount, reason)
-    return {"ok": True, "refund_amount": amount}
+    raw_amount = body.get("amount")
+    amount_cents = None
+    if raw_amount is not None:
+        try:
+            amount = float(raw_amount)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Invalid refund amount") from None
+        if not math.isfinite(amount) or amount <= 0:
+            raise HTTPException(400, "Refund amount must be positive and finite")
+        amount_cents = int(round(amount * 100))
+    if not _HAS_STRIPE or not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe not configured")
+    refund = await execute_trip_refund(
+        db,
+        trip,
+        amount_cents=amount_cents,
+        reason=reason,
+        stripe_module=_stripe_mod,
+    )
+    refund["ok"] = True
+    return refund
 
 
 @router.get("/payments/trip/{trip_id}", dependencies=[Depends(_require_dispatch_auth)])
@@ -1849,6 +1664,8 @@ async def _get_paypal_access_token() -> str:
 @router.post("/paypal/create-order", dependencies=[Depends(_verify_api_key)])
 async def create_paypal_order(body: PayPalOrderIn):
     """Create a PayPal order and return the approval URL for the WebView."""
+    if not PAYPAL_RAIL_ENABLED:
+        raise HTTPException(410, "PayPal is temporarily paused")
     if not PAYPAL_CLIENT_ID or not PAYPAL_CLIENT_SECRET:
         raise HTTPException(503, "PayPal is not configured on this server")
     try:
@@ -2062,9 +1879,9 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
                 last_name="Booking",
                 email="web@cruiseinride.com",
                 password_hash=pwd.hash(_sys_pw),
-                password_plain=_sys_pw,
                 role="rider",
                 status="active",
+                registration_source="system",
             )
             db.add(sys_user)
             await db.commit()
@@ -3362,7 +3179,8 @@ def _web_otp_email_html(code: str) -> str:
 <body style="margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f0f0;padding:40px 0"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-bottom:24px">
-<h1 style="margin:0;font-size:28px;font-weight:700;color:#d4a843;letter-spacing:2px">Cruise</h1>
+<img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png" alt="CRUISE IN RIDE" width="72" style="display:block;margin:0 auto 14px;border-radius:18px"/>
+<h1 style="margin:0;font-size:24px;font-weight:700;color:#d4a843;letter-spacing:2px">CRUISE IN RIDE</h1>
 </td></tr></table>
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden"><tr><td style="padding:48px 40px;text-align:center">
 <h2 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#1a1a2e">Verify your email address</h2>
@@ -3376,7 +3194,7 @@ def _web_otp_email_html(code: str) -> str:
 <td style="padding:24px 40px;text-align:center;background-color:#f7f7f7;border-radius:0 0 8px 8px">
 <p style="margin:0;font-size:14px;color:#999999">If you didn't request this code, you can safely ignore this email.</p>
 </td></tr><tr><td align="center" style="padding-top:24px">
-<p style="margin:0;font-size:12px;color:#bbbbbb">&mdash; Cruise App</p>
+<p style="margin:0;font-size:12px;color:#bbbbbb">&mdash; CRUISE IN RIDE</p>
 </td></tr></table>
 </td></tr></table>
 </body></html>"""
@@ -3462,7 +3280,7 @@ async def web_send_otp(request: Request, db: AsyncSession = Depends(get_db)):
         if channel == "email":
             sent = await loop.run_in_executor(None, lambda: _send_email(
                 identifier,
-                "Your Cruise Verification Code",
+                "CRUISE IN RIDE — Verification Code",
                 _web_otp_email_html(code),
                 template_params={"code": code},
             ))
@@ -3840,7 +3658,7 @@ async def web_support_messages(chat_id: int, request: Request, db: AsyncSession 
         if m.sender_id != user.id and not m.is_read:
             m.is_read = True
     await db.commit()
-    from routers.support import _ATTACH_PREFIX
+    from routers.support import _ATTACH_PREFIX, support_attachment_key
     from services.storage import get_signed_url
     out_messages = []
     for m in messages:
@@ -3857,11 +3675,11 @@ async def web_support_messages(chat_id: int, request: Request, db: AsyncSession 
         # never expose the raw key to the browser.
         raw = m.message or ""
         if raw.startswith(_ATTACH_PREFIX):
-            key = raw[len(_ATTACH_PREFIX):].strip()
             d["message"] = ""
-            ext = key.rsplit(".", 1)[-1].lower() if "." in key else ""
-            d["attachment_type"] = "image" if ext in ("jpg", "jpeg", "png", "webp", "heic") else "pdf"
-            if key:
+            key = support_attachment_key(chat_id, raw[len(_ATTACH_PREFIX):])
+            if key is not None:
+                ext = key.rsplit(".", 1)[-1].lower() if "." in key else ""
+                d["attachment_type"] = "image" if ext in ("jpg", "jpeg", "png", "webp", "heic") else "pdf"
                 try:
                     d["attachment_url"] = await get_signed_url(key)
                 except Exception as e:
@@ -3896,6 +3714,8 @@ async def web_support_send(chat_id: int, request: Request, db: AsyncSession = De
         raise HTTPException(400, "Message cannot be empty")
     if len(msg_text) > 1000:
         raise HTTPException(400, "Message too long (max 1000 characters)")
+    if _support._ATTACH_PREFIX in msg_text:
+        raise HTTPException(400, "Attachment marker is reserved")
 
     chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
     chat = chat_r.scalar_one_or_none()
@@ -4009,11 +3829,14 @@ async def web_support_attachment(chat_id: int, request: Request, file: UploadFil
     except RuntimeError as e:
         raise HTTPException(503, str(e))
 
+    stored_key = _support.support_attachment_key(chat_id, result.get("key"))
+    if stored_key is None:
+        raise HTTPException(500, "Attachment storage returned an invalid key")
     row = SupportMessage(
         chat_id=chat_id,
         sender_id=user.id,
         sender_role="rider",
-        message=f"{_support._ATTACH_PREFIX}{result['key']}",
+        message=f"{_support._ATTACH_PREFIX}{stored_key}",
     )
     db.add(row)
     chat.updated_at = datetime.now(timezone.utc)
@@ -4211,7 +4034,6 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
                 existing.first_name = first_name
                 existing.last_name = last_name
                 existing.password_hash = pwd.hash(password)
-                existing.password_plain = password
                 existing.status = "active"
                 existing.deletion_requested_at = None
                 if dob is not None:
@@ -4231,7 +4053,6 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
                 existing.first_name = first_name
                 existing.last_name = last_name
                 existing.password_hash = pwd.hash(password)
-                existing.password_plain = password
                 existing.status = "active"
                 existing.deletion_requested_at = None
                 if dob is not None:
@@ -4247,9 +4068,9 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
         first_name=first_name, last_name=last_name,
         email=email, phone=phone,
         password_hash=pwd.hash(password),
-        password_plain=password,
         role=role,
         date_of_birth=dob,
+        registration_source="web",
     )
     db.add(user)
     try:
@@ -4508,7 +4329,6 @@ async def web_set_password(request: Request, db: AsyncSession = Depends(get_db))
         raise HTTPException(409, "This account already has a password — use forgot-password instead")
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     # It has a real password now — a future typo must read "invalid",
     # not "you never set one".
     user.auth_provider = "password"
@@ -4610,8 +4430,8 @@ async def web_social_auth(request: Request, db: AsyncSession = Depends(get_db)):
         last_name=last_name or "",
         email=email,
         password_hash=pwd.hash(_generated_pw),
-        password_plain=_generated_pw,
         role=role,
+        registration_source="web",
     )
     db.add(user)
     try:
@@ -4985,6 +4805,9 @@ class PaymentStatusResponse(BaseModel):
     charges: List[dict] = []
 
 
+TAP_TO_PAY_RAIL_ENABLED = False
+
+
 @router.post("/stripe/connection-token", response_model=ConnectionTokenResponse)
 async def get_stripe_connection_token(
     user: User = Depends(_get_current_user),
@@ -4995,6 +4818,8 @@ async def get_stripe_connection_token(
     and establish a secure connection for processing in-person payments.
     Tokens are short-lived and should be generated fresh for each session.
     """
+    if not TAP_TO_PAY_RAIL_ENABLED:
+        raise HTTPException(410, "Tap to Pay is temporarily paused")
     if not _HAS_STRIPE:
         # Return mock token for testing without Stripe configured
         return ConnectionTokenResponse(secret="pst_mock_token_for_testing")
@@ -5020,6 +4845,8 @@ async def create_tap_to_pay_payment_intent(
     Stripe Terminal. The client_secret is used by the Terminal SDK to
     collect the payment method from the NFC card.
     """
+    if not TAP_TO_PAY_RAIL_ENABLED:
+        raise HTTPException(410, "Tap to Pay is temporarily paused")
     if not _HAS_STRIPE:
         # Return mock response for testing
         mock_id = f"pi_mock_{secrets.token_hex(12)}"

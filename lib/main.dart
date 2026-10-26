@@ -32,8 +32,9 @@ import 'screens/splash_screen.dart';
 import 'screens/maintenance_screen.dart';
 import 'screens/update_required_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
-import 'screens/driver/driver_online_screen.dart';
+import 'screens/driver/driver_inbox_screen.dart';
 import 'screens/driver/driver_waitlist_screen.dart';
+import 'screens/inbox_screen.dart';
 import 'screens/driver/onboarding/driver_approved_celebration_screen.dart';
 import 'screens/driver/driver_trip_accept_screen.dart';
 import 'screens/driver/scheduled_rides_map_screen.dart';
@@ -42,6 +43,7 @@ import 'services/account_session_guard.dart';
 import 'services/map_controller_cache.dart';
 import 'services/notification_service.dart';
 import 'services/live_activity_service.dart';
+import 'services/referral_link_service.dart';
 import 'services/security_service.dart';
 import 'services/user_session.dart';
 import 'services/local_data_service.dart';
@@ -56,6 +58,7 @@ import 'services/firebase_auth_recovery.dart';
 import 'services/prefs_cache.dart';
 import 'services/socket_service.dart';
 import 'screens/chat_screen.dart';
+import 'screens/help_screen.dart';
 import 'screens/ride_request_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/rider_tracking_screen.dart';
@@ -116,7 +119,7 @@ String _riderNotifBody(String type) {
   return switch (type) {
     // ── Rider notifications ──
     'driver_assigned'    => isEs ? 'Se ha asignado un conductor a tu viaje.' : 'A driver has been assigned to your ride.',
-    'driver_arriving'    => isEs ? 'Tu conductor está casi en el punto de recogida.' : 'Your driver is almost at the pickup location.',
+    'driver_arriving'    => isEs ? 'Tu driver llega en 2 minutos o menos.' : 'Your driver arrives in 2 minutes or less.',
     'driver_arrived'     => isEs ? 'Tu conductor está en el punto de recogida.' : 'Your driver is at the pickup location.',
     'driver_found'       => isEs ? '¡Encontramos un conductor para tu viaje!' : 'We found a driver for your ride!',
     'arrived_dropoff'    => isEs ? 'Has llegado a tu destino. ¡Gracias por viajar con Cruise!' : 'You have arrived at your destination. Thanks for riding with Cruise!',
@@ -546,6 +549,19 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  if (type == 'dispatch_notification') {
+    UserSession.getMode().then((mode) {
+      final nav = _navigatorKey.currentState;
+      if (nav == null) return;
+      if (mode == 'driver') {
+        nav.push(slideFromRightRoute(const DriverInboxScreen()));
+      } else if (mode == 'rider') {
+        nav.push(slideFromRightRoute(const InboxScreen()));
+      }
+    });
+    return;
+  }
+
   // Driver: reserved scheduled ride assigned directly by the backend — no
   // offer to accept, the trip is already theirs.
   if (type == 'driver_assigned') {
@@ -560,10 +576,29 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // Demand waitlist (2026-10-17): the rider asked with no drivers online
+  // and one just went online in their area — tap drops them on the
+  // booking home.
+  if (type == 'drivers_available') {
+    _handleDriversAvailablePush();
+    return;
+  }
+
   // Driver: the 12 h shift cap fired server-side (user spec 2026-09-27) —
   // flip the live UI to offline too.
   if (type == 'driver_shift_ended') {
     DriverOnlineScreen.shiftEndedNotifier.value++;
+    return;
+  }
+
+  // Driver: dispatch rejected the dress-code selfie / approved the pending
+  // one (2026-10-23) — dialog + the live screen re-reads the GO gate.
+  if (type == 'face_check_rejected') {
+    _handleFaceCheckResult(approved: false);
+    return;
+  }
+  if (type == 'face_check_approved') {
+    _handleFaceCheckResult(approved: true);
     return;
   }
 
@@ -589,12 +624,32 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // Rider: the <=2 min and actual-arrival pushes open the current trip leg.
+  if (type == 'driver_arriving' || type == 'driver_arrived') {
+    final tripId = int.tryParse(message.data['trip_id'] ?? '');
+    if (tripId != null) {
+      UserSession.getMode().then((mode) {
+        if (mode != 'rider') return;
+        _navigateToScheduledTracking(tripId);
+      });
+    }
+    return;
+  }
+
   // ── Chat message tap ──
   if (type == 'chat_message') {
     final tripId = int.tryParse(message.data['trip_id'] ?? '');
     if (tripId != null) {
       _navigateToChat(tripId);
     }
+    return;
+  }
+
+  // ── Support chat tap (2026-10-20, user spec: "cuando le dan abre el chat
+  // ya listo") — a bot/dispatch message lands here; the screen resumes the
+  // user's open chat with its full transcript.
+  if (type == 'support_message' || type == 'support_followup') {
+    _navigateToSupportChat();
     return;
   }
 
@@ -632,6 +687,57 @@ void _handleScheduledRidePush(RemoteMessage message) {
     nav.push(MaterialPageRoute(
       builder: (_) => ScheduledRidesMapScreen(initialTripId: tripId),
     ));
+  });
+}
+
+/// Rider tapped a "drivers_available" push (demand waitlist, 2026-10-17):
+/// they asked with no drivers online and a driver just went online in
+/// their area — drop them on the booking home. Rider-only.
+void _handleDriversAvailablePush() {
+  UserSession.getMode().then((mode) {
+    if (mode == 'driver') return;
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+    nav.pushAndRemoveUntil(
+      smoothFadeRoute(const HomeScreen()),
+      (_) => false,
+    );
+  });
+}
+
+/// Driver pushed a face-check decision (dress-code review, 2026-10-23):
+/// rejected = the selfie failed the dress code (the backend already flips
+/// them offline); approved = the pending selfie passed and GO works again.
+/// Role-gated driver like every driver push; the notifier refreshes the
+/// live DriverOnlineScreen gate state.
+void _handleFaceCheckResult({required bool approved}) {
+  UserSession.getMode().then((mode) {
+    if (mode != 'driver') return;
+    DriverOnlineScreen.faceReviewNotifier.value++;
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+    showDialog(
+      context: nav.context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A22),
+        title: Text(
+          approved
+              ? S.of(ctx).faceApprovedTitle
+              : S.of(ctx).faceRejectedTitle,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          approved ? S.of(ctx).faceApprovedBody : S.of(ctx).faceRejectedBody,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(S.of(ctx).gotIt),
+          ),
+        ],
+      ),
+    );
   });
 }
 
@@ -798,6 +904,17 @@ void _navigateToScheduledTracking(int tripId) {
   }).catchError((e) {
     debugPrint('[FCM] Failed to fetch scheduled trip $tripId: $e');
   });
+}
+
+/// Navigate to the support chat from an FCM tap (bot or dispatch wrote).
+/// CruiseSupportChatScreen resumes the user's open chat with its transcript.
+void _navigateToSupportChat() {
+  final nav = _navigatorKey.currentState;
+  if (nav == null) return;
+  nav.push(MaterialPageRoute(
+    builder: (_) => const CruiseSupportChatScreen(),
+  ));
+  debugPrint('[FCM] Navigated to CruiseSupportChatScreen');
 }
 
 /// Navigate to ChatScreen from FCM tap.
@@ -1236,6 +1353,10 @@ Future<void> heavyInit() async {
     // Initialize profile photo notifier
     UserSession.initPhotoNotifier(),
 
+    // Absorb any driver-referral code that arrived via the /drive/{code}
+    // link or the Play install referrer (native cached it before Dart ran).
+    ReferralLinkService.init(),
+
     // ── Stripe ──
     () async {
       if (!kIsWeb && ApiKeys.stripePublishableKey.isNotEmpty && !ApiKeys.stripePublishableKey.contains('REPLACE')) {
@@ -1355,6 +1476,19 @@ Future<void> heavyInit() async {
               // FIX: dispatch cancellation uses 'trip_canceled' (1 l)
               'trip_canceled', 'trip_cancelled',
             };
+
+            if (type == 'dispatch_notification') {
+              final notificationId = message.data['notification_id']?.toString();
+              LocalDataService.addNotification(
+                title: title,
+                message: body,
+                type: type,
+                id: notificationId == null || notificationId.isEmpty
+                    ? null
+                    : 'server_$notificationId',
+              );
+              return;
+            }
 
             // Chat messages: suppress in-app notification — the OS already shows
             // the FCM push when the app is backgrounded. When foreground, the user

@@ -155,21 +155,6 @@ const double _kCarAnnotScale = 0.55;  // PointAnnotation icon scale (smaller for
 /// of queueing writes the SDK would drop (project rule 25).
 const int _kRouteEraseIntervalMs = 66;
 
-/// How long after the rider's last map gesture the framer takes the camera
-/// back. Without a resume the camera stays parked wherever they left it and
-/// the car drives off screen; too short and a deliberate zoom gets undone
-/// while they are still reading it. 15 s is long enough to look around, and
-/// the recenter pill is there for anyone who wants the route back sooner.
-/// How long the rider keeps the camera after panning before the framer takes
-/// it back.
-///
-/// Was 15s. A car at 50 km/h covers about 200 m in that time, so one pan —
-/// or one stray gesture — left the rider looking at a frame the car had
-/// already driven out of, with the route running off the edge and no vehicle
-/// anywhere on screen. Five seconds is long enough to read a street name and
-/// short enough that the ride cannot disappear while you do it.
-const int _kResumeFollowAfterPanMs = 5000;
-
 /// Perpendicular distance from the active route polyline beyond which the
 /// driver counts as off-route (meters).
 const double _kOffRouteMeters = 45;
@@ -801,26 +786,20 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // who is reading rather than steering, asked to see the whole route.
 
   /// Frame KIND the route framer is currently seeded for: 0 = approach
-  /// (driver→pickup), 1 = trip (full-route fit), 2 = near-destination
-  /// close-up (user spec 2026-09-19 — the street-level frame of the final
-  /// stretch). A change means the frame is about to become a different one,
-  /// so the smoothing is dropped and re-seeded.
+  /// (driver→pickup), 1 = trip (full-route fit). No near-destination close-up.
   int? _framedPhaseKind;
-
-  /// The car position the near-destination close-up was last fit to — the
-  /// frame re-fits only when the car advanced meaningfully past it (~40 m),
-  /// never per-frame.
-  LatLng? _nearFitAnchor;
 
   /// Content signature the trip frame was last fit to (see
   /// [_tripFitSignature]). 0 = never fit. The trip camera fits ONCE per
-  /// content change and then holds — user spec 2026-08-09, no auto-recenter.
+  /// content change and then holds.
   int _lastTripFitSig = 0;
 
-  /// Forces the next onTrip fit even when the route content didn't change
-  /// (user spec 2026-09-13 — the whole route and the dropoff pin must NEVER
-  /// stay off-screen): set when the rider's manual pan auto-resume fires,
-  /// and when a real off-route reroute replaces the drawn leg.
+  /// Content signature the approach frame was last fit to, with the same
+  /// no-auto-recenter rule for the driver → pickup leg.
+  int _lastApproachFitSig = 0;
+
+  /// Forces the next fit when the route content changes or a real off-route
+  /// reroute replaces the drawn leg — never because the rider panned.
   bool _needsTripReframe = false;
 
   // No camera Ticker of its own: the chase camera runs on _interpTicker,
@@ -828,7 +807,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // channel with different backpressure made the marker oscillate around
   // its anchor on slow devices — see _onAnimationFrame.
   bool _userControllingCamera = false;
-  DateTime? _lastUserCameraInteraction;
 
   // Safety net: detect stale driver location (trip may have ended)
   Timer? _staleDriverTimer;
@@ -980,12 +958,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                         ),
                 ),
               ),
-              // Recenter — rides just above the bottom card, and only while
-              // the rider holds the camera. _buildResumeButton had been
-              // written but never mounted: once they panned or pinched, the
-              // only way back to the full route was to wait out the
-              // auto-resume, which is the "I can't get the whole route back"
-              // half of the camera report.
+              // Recenter — only after a real pan/pinch, and it stays visible
+              // until the rider uses it. There is no timed auto-resume.
               Positioned(
                 left: 0,
                 right: 0,

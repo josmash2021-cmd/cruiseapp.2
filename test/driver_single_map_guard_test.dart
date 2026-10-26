@@ -1,6 +1,9 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:cruise_app/config/page_transitions.dart';
 
 /// Guardian for the single-map merge (user spec 2026-09-26: "quiero que sea
 /// uno, como Lyft"): ONE permanent map for the driver; online/offline are
@@ -276,7 +279,12 @@ void main() {
       // botón GO (foto 1).
       expect(off, contains('Positioned.fill('),
           reason: 'the hero gets the full body height');
-      expect(off, isNot(contains('MainAxisAlignment.spaceEvenly')),
+      // Acotado a la región del hero: el menú clásico tiene su propio
+      // ListView; esta regla de acomodo es exclusiva del hero.
+      final heroIdx = off.indexOf('Widget _buildOfflineHero(');
+      expect(heroIdx, isNonNegative);
+      final heroRegion = off.substring(heroIdx, heroIdx + 2200);
+      expect(heroRegion, isNot(contains('MainAxisAlignment.spaceEvenly')),
           reason: 'spaceEvenly spread the hero wrong — compact top-down now');
       // 2026-10-17 (foto 2 bis, "un poquito mas cerrado"): el reposo del
       // sheet abraza el contenido — 0.42, no 0.5 con banda muerta debajo de
@@ -287,98 +295,153 @@ void main() {
           reason: 'the hero clears the floating GO pill + calendar row');
     });
 
-    test('the hero demand card reads the live sector demand', () {
-      expect(off, contains('ZoneService.sectorContaining('),
-          reason: 'the driver position resolves its sector');
+    test('the hero demand card follows the selected zone and first load', () {
+      expect(off, contains('final selectedId = _selectedZoneName;'));
+      final selectedIdx = off.indexOf('ZoneService.sectorById(selectedId)');
+      final gpsIdx = off.indexOf('ZoneService.sectorContaining(', selectedIdx);
+      expect(selectedIdx, isNonNegative);
+      expect(gpsIdx, greaterThan(selectedIdx),
+          reason: 'the selected zone wins; GPS is only the fallback');
       expect(off, contains('ZoneService.demand['),
           reason: 'the card shows that sector demand level/bonus');
+      final widgets = File('lib/screens/driver/driver_online_widgets.dart')
+          .readAsStringSync();
+      expect(widgets, contains('ZoneService.loadDemand(force: true)'));
+      expect(widgets, contains('if (!_driverOnline) _setState(() {});'),
+          reason: 'the first demand response refreshes the hero immediately');
       expect(l10n, contains('Demanda en tu zona'));
       expect(l10n, contains('Demand in your area'));
       expect(l10n, contains('Tu zona está pidiendo drivers'));
       expect(l10n, contains('Ver viajes agendados'));
     });
 
-    test('the menu opens as a transparent drawer route (Dash style)', () {
+    test('the menu opens the classic full screen with a smooth left route',
+        () {
       final scr = File('lib/screens/driver/driver_online_screen.dart')
           .readAsStringSync();
       final ctrl = File('lib/screens/driver/driver_online_controller.dart')
           .readAsStringSync();
-      // 2026-10-17 (prod: el tap llegaba al servidor pero el overlay
-      // in-screen jamás se pintó en el device del usuario — ni con
-      // AnimationController ni con TweenAnimationBuilder): el drawer es una
-      // RUTA transparente del Navigator, que lo dibuja por encima de todo
-      // como hacía el menú viejo.
-      expect(off, contains('PageRouteBuilder<void>('),
-          reason: 'the drawer is a route the Navigator paints above '
-              'everything');
-      expect(off, contains('opaque: false'),
-          reason: 'transparent — the map keeps rendering underneath');
-      expect(off, contains('barrierDismissible: true'),
-          reason: 'tap on the dimmed barrier closes the drawer');
-      expect(off, contains('SlideTransition('),
-          reason: 'the panel slides in from the left');
-      expect(off, contains('Widget _buildMenuDrawerContent()'),
-          reason: 'the drawer panel builder exists');
-      expect(off, isNot(contains('const DriverMenuScreen()')),
-          reason: 'the hamburger no longer pushes the full-screen menu — the '
-              'drawer slides over the map (the page survives for the trip '
-              'screen)');
-      expect(scr, isNot(contains('_menuOpen')),
-          reason: 'the in-screen overlay state died with the overlay');
-      expect(ctrl, isNot(contains('_menuOpen')),
-          reason: 'back pops the drawer route by itself — no interception');
+      final transitions = File('lib/config/page_transitions.dart')
+          .readAsStringSync();
+      final openStart = off.indexOf('Future<void> _openDriverMenu()');
+      final openEnd = off.indexOf("/// The offline chrome's menu button.", openStart);
+      expect(openStart, isNonNegative);
+      expect(openEnd, greaterThan(openStart));
+      final open = off.substring(openStart, openEnd);
+      expect(open, contains('slideFromLeftRoute(const DriverMenuScreen())'),
+          reason: 'the hamburger opens the classic full-screen menu');
+      expect(open, contains('if (_menuRouteOpen) return;'),
+          reason: 'a double tap cannot push two menu routes');
+      expect(open, contains('finally {'),
+          reason: 'the guard always resets, even if navigation fails');
+      expect(open, contains('_remountMapSurface()'),
+          reason: 'returning from a nested map reclaims the driver surface');
+      expect(scr, contains("import 'driver_menu_screen.dart';"));
+      expect(scr, isNot(contains('_menuOpen')));
+      expect(ctrl, isNot(contains('_menuOpen')));
+      for (final deadDrawer in [
+        '_driverMenuRoute',
+        '_buildMenuDrawerContent',
+        '_loadMenuIdentity',
+        '_menuSectionGroup',
+        '_menuSignOut',
+      ]) {
+        expect(off, isNot(contains(deadDrawer)),
+            reason: 'the parallel drawer implementation must stay removed');
+      }
+
+      final routeStart = transitions.indexOf('Route<T> slideFromLeftRoute');
+      expect(routeStart, isNonNegative);
+      final route = transitions.substring(routeStart, routeStart + 1200);
+      expect(route, contains('PageRouteBuilder<T>('));
+      expect(route, contains('opaque: true'),
+          reason: 'this is a full page, not a transparent drawer');
+      expect(route, contains('begin: const Offset(-1, 0)'),
+          reason: 'the page enters from the left edge');
+      expect(route, contains('Curves.easeOutCubic'));
+      expect(route, contains('reverseCurve: Curves.easeInCubic'));
+      expect(route, contains('SlideTransition'));
     });
 
-    test('the drawer carries the profile bubble and the existing options',
-        () {
-      expect(off, contains('_menuPhotoImage()'),
-          reason: 'the photo bubble resolves url/local/server paths');
-      expect(off, contains('_loadMenuIdentity'),
-          reason: 'name + photo load cache-first from the session');
+    test('the classic menu keeps its profile, options and sign out', () {
+      final menu = File('lib/screens/driver/driver_menu_screen.dart')
+          .readAsStringSync();
+      expect(menu, contains('Scaffold('));
+      expect(menu, contains('_profileCard(context)'));
+      expect(menu, contains('_quickActionsRow(context)'));
       for (final label in [
-        's.earningsTitle',
-        's.helpAndSafety',
-        's.settingsTitle',
-        's.cruiseLevelLabel',
-        's.workHub',
-        's.referFriends',
-        's.scheduledTripsMenu',
-        's.vehiclesLabel',
-        's.documentsLabel',
-        's.taxInfo',
-        's.payoutMethodsLabel',
-        's.learningCenter',
-        's.bugReporter',
-        's.aboutLabel',
-        's.signOut',
+        'earningsTitle',
+        'helpAndSafety',
+        'settingsTitle',
+        'cruiseLevelLabel',
+        'workHub',
+        'referFriends',
+        'scheduledTripsMenu',
+        'vehiclesLabel',
+        'documentsLabel',
+        'taxInfo',
+        'payoutMethodsLabel',
+        'learningCenter',
+        'bugReporter',
+        'aboutLabel',
+        'signOut',
       ]) {
-        expect(off, contains(label), reason: 'menu option $label missing');
+        expect(menu, contains(label), reason: 'menu option $label missing');
       }
-      expect(off, contains('_menuScheduled'),
-          reason: 'scheduled rides reuse the surface-reclaiming opener');
-      expect(off, contains('UserSession.logout()'),
+      expect(menu, contains('UserSession.logout()'),
           reason: 'sign out keeps the offline-then-logout flow');
-      // 2026-10-17 (foto del usuario): categorías con título, sin las
-      // líneas amarillas (falta de Material ancestor en la ruta) y todo
-      // cabe sin scroll.
-      expect(off, contains('return Material('),
-          reason: 'the drawer content is wrapped in Material — without it '
-              'every label inherits the yellow-underline fallback style');
-      expect(off, contains('_menuSection('),
-          reason: 'every division carries its category title');
-      expect(off, isNot(contains('_menuDivider')),
-          reason: 'the hairline dividers died — the titles separate now');
-      for (final key in [
-        'menuSectionAccount',
-        'menuSectionGrowth',
-        'menuSectionWork',
-        'moneySectionLabel',
-        'resourcesSectionLabel',
-      ]) {
-        expect(off, contains('s.$key'), reason: 'section title $key missing');
-        expect(l10n, contains('String get $key'),
-            reason: 'i18n getter $key missing (ES/EN)');
-      }
+      expect(menu, contains('ListView('),
+          reason: 'the classic page keeps its normal content scroll');
     });
+  });
+
+  testWidgets('the left route pushes and pops a full-size page', (tester) async {
+    const menuKey = Key('classic-menu-page');
+    late PageRouteBuilder<void> menuRoute;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () {
+                  menuRoute = slideFromLeftRoute<void>(
+                    const Scaffold(
+                      key: menuKey,
+                      body: SizedBox.expand(),
+                    ),
+                  ) as PageRouteBuilder<void>;
+                  Navigator.of(context).push(menuRoute);
+                },
+                child: const Text('Open menu'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open menu'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(menuRoute.animation!.value, greaterThan(0));
+    expect(menuRoute.animation!.value, lessThan(1));
+    final startDx = tester.getTopLeft(find.byKey(menuKey, skipOffstage: false)).dx;
+    expect(startDx, lessThan(0));
+
+    await tester.pump(const Duration(milliseconds: 160));
+    final middleDx = tester.getTopLeft(find.byKey(menuKey, skipOffstage: false)).dx;
+    expect(middleDx, greaterThan(startDx));
+
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.byKey(menuKey, skipOffstage: false)).dx, 0);
+    final logicalSize =
+        tester.view.physicalSize / tester.view.devicePixelRatio;
+    expect(tester.getSize(find.byKey(menuKey, skipOffstage: false)), logicalSize);
+
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(find.byKey(menuKey, skipOffstage: false), findsNothing);
+    expect(find.text('Open menu'), findsOneWidget);
   });
 }

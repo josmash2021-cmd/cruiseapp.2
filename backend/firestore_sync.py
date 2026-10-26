@@ -437,11 +437,50 @@ def sync_user_status(user_id: int, status: str, collection: str = "clients"):
 #  SUPPORT CHAT sync
 # ═══════════════════════════════════════════════════════════
 
+def _offload(fn, *args, **kwargs):
+    """Run a Firestore mirror on a worker thread (2026-10-20, user report:
+    "cuando las personas abren el chat con soporte por primera vez se tarda
+    unos 10 segundos en cargar" — every mirror call is a blocking round-trip
+    to Google that used to run INLINE inside the create/send requests).
+    Callers with no running loop (scripts) stay synchronous. Errors are
+    logged, never raised — mirrors were always best-effort."""
+    try:
+        import asyncio as _a
+        loop = _a.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop is None:
+        try:
+            fn(*args, **kwargs)
+        except Exception as e:
+            log.warning("⚠️ mirror failed (sync path): %s", e)
+        return
+    def _wrap():
+        try:
+            fn(*args, **kwargs)
+        except Exception as e:
+            log.warning("⚠️ mirror failed: %s", e)
+    loop.run_in_executor(None, _wrap)
+
+
 def sync_support_chat(chat_id: int, user_id: int, first_name: str, last_name: str,
                        photo_url: str = None, role: str = "rider",
                        subject: str = "", status: str = "open",
                        needs_escalation: bool = False, bot_phase: str = "welcome"):
-    """Upsert a support chat into the Firestore `support_chats` collection."""
+    """Upsert a support chat into the Firestore `support_chats` collection —
+    off the calling thread (see _offload)."""
+    _ensure_init()
+    if _db is None:
+        return
+    _offload(_sync_support_chat_now, chat_id, user_id, first_name, last_name,
+             photo_url=photo_url, role=role, subject=subject, status=status,
+             needs_escalation=needs_escalation, bot_phase=bot_phase)
+
+
+def _sync_support_chat_now(chat_id: int, user_id: int, first_name: str, last_name: str,
+                       photo_url: str = None, role: str = "rider",
+                       subject: str = "", status: str = "open",
+                       needs_escalation: bool = False, bot_phase: str = "welcome"):
     _ensure_init()
     if _db is None:
         return
@@ -529,7 +568,18 @@ def delete_support_chat(chat_id: int):
 
 def sync_support_message(chat_id: int, msg_id: int, sender_id: int,
                           sender_name: str, sender_role: str, message: str):
-    """Add a support message to Firestore."""
+    """Add a support message to Firestore — off the calling thread
+    (see _offload; the chat-create and message-send requests were eating
+    these Google round-trips inline, ~10 s to open the chat)."""
+    _ensure_init()
+    if _db is None:
+        return
+    _offload(_sync_support_message_now, chat_id, msg_id, sender_id,
+             sender_name, sender_role, message)
+
+
+def _sync_support_message_now(chat_id: int, msg_id: int, sender_id: int,
+                          sender_name: str, sender_role: str, message: str):
     _ensure_init()
     if _db is None:
         return
@@ -566,8 +616,17 @@ def mark_support_messages_read(chat_id: int, msg_ids: list[int]) -> None:
     the panel's ✓✓ turn blue off this field; SQL flips it on the GET polls
     and the mirror must follow or the panel never sees it).
 
+    Off the calling thread (2026-10-20, see _offload — the chat poll ran
+    this batch commit INLINE, adding a Google round-trip to every load).
     Batched, fail-soft: receipts are cosmetic and must never break a poll.
     """
+    _ensure_init()
+    if _db is None or not msg_ids:
+        return
+    _offload(_mark_support_messages_read_now, chat_id, msg_ids)
+
+
+def _mark_support_messages_read_now(chat_id: int, msg_ids: list[int]) -> None:
     _ensure_init()
     if _db is None or not msg_ids:
         return

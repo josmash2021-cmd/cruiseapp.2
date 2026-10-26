@@ -41,6 +41,8 @@ async def _get_items(client, token):
 async def test_get_derives_statuses_from_existing_fields(client, db, test_driver):
     """A legacy driver with data on file comes out submitted/approved with
     no overrides at all."""
+    from services.legal_documents import seed_legal_documents
+    await seed_legal_documents(db)  # an empty catalog = nothing to accept
     driver, token = test_driver
     driver.license_front_url = "https://example.com/front.jpg"
     driver.license_back_url = "https://example.com/back.jpg"
@@ -58,9 +60,15 @@ async def test_get_derives_statuses_from_existing_fields(client, db, test_driver
     items = await _get_items(client, token)
     # No AL drive_state → inspection is not part of the contract at all.
     assert set(items.keys()) == {"plate", "ssn", "license", "photo", "background",
-                                 "vehicle", "registration", "insurance"}
+                                 "vehicle", "registration", "insurance",
+                                 "contracts"}
     for key in items:
-        assert items[key]["status"] == "approved", key
+        if key == "contracts":
+            # E-acceptance is self-serve: dispatch approval never signs the
+            # contracts for the driver — pending until they accept all five.
+            assert items[key]["status"] == "pending", key
+        else:
+            assert items[key]["status"] == "approved", key
         assert items[key]["reason"] is None
 
 
@@ -198,6 +206,8 @@ async def test_post_vehicle_creates_row_and_marks_submitted(client, db, test_dri
     assert veh.year == 2021 and veh.make == "Toyota" and veh.model == "Camry"
     assert veh.plate == "ABC123"  # plate step carried into the Vehicle row
     assert veh.seatbelts == 5
+    assert veh.is_active is False
+    assert veh.approval_status == "pending"
     # The tier is classified on submit — never left at the "comfort"
     # default. A 2021 sedan is Standard (2026-10-15 rule: Premium is the
     # three-row SUV tier; four-seat cars never leave Standard).

@@ -70,7 +70,7 @@ def _shell(title: str, preheader: str, body_html: str) -> str:
 <!-- Header -->
 <tr><td align="center" bgcolor="#ffffff" style="padding:36px 30px 22px;">
 <img src="{LOGO_URL}" alt="Cruise" width="56" height="56" style="display:block;width:56px;height:56px;border:0;outline:none;border-radius:12px;">
-<div style="margin-top:14px;font-size:24px;font-weight:800;letter-spacing:3px;color:#1a1a1a !important;font-family:Georgia,'Times New Roman',serif;">CRUISE</div>
+<div style="margin-top:14px;font-size:22px;font-weight:800;letter-spacing:2px;color:#1a1a1a !important;font-family:Georgia,'Times New Roman',serif;">CRUISE IN RIDE</div>
 <div style="margin-top:4px;font-size:10px;font-weight:600;letter-spacing:2.5px;color:#a08b3f !important;text-transform:uppercase;">Premium Ride Service</div>
 </td></tr>
 
@@ -99,7 +99,7 @@ def _shell(title: str, preheader: str, body_html: str) -> str:
 <!-- Outer footer -->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
 <tr><td align="center" style="padding:18px 30px 4px;font-size:11px;color:#999 !important;text-align:center;line-height:1.6;">
-© Cruise · <a href="https://cruiseinride.com" style="color:#999 !important;text-decoration:none;">cruiseinride.com</a>
+© CRUISE IN RIDE · <a href="https://cruiseinride.com" style="color:#999 !important;text-decoration:none;">cruiseinride.com</a>
 </td></tr>
 </table>
 
@@ -271,7 +271,7 @@ def _build_welcome(first_name: str, trip, lang: str) -> tuple[str, str, str]:
         next_body = ("En unos minutos recibirás otro email con los detalles de tu conductor: "
                      "nombre, foto, placa del vehículo, color y modelo. Luego te avisaremos cuando "
                      "esté en camino y cuando llegue.")
-        thanks = "Gracias por elegir Cruise — viajar con estilo es nuestra prioridad."
+        thanks = "Gracias por elegir CRUISE IN RIDE — viajar con estilo es nuestra prioridad."
     else:
         subject = f"✓ Booking confirmed — {tid}"
         preheader = f"Hi {first_name}, your ride is booked. Finding a driver now."
@@ -287,7 +287,7 @@ def _build_welcome(first_name: str, trip, lang: str) -> tuple[str, str, str]:
         next_body = ("In a few minutes you'll receive another email with your driver's details: "
                      "name, photo, license plate, color and model. Then we'll notify you when "
                      "they're on the way and when they arrive.")
-        thanks = "Thank you for choosing Cruise — riding in style is our priority."
+        thanks = "Thank you for choosing CRUISE IN RIDE — riding in style is our priority."
 
     info_rows = _row(lbl_trip, tid) + _row(lbl_vehicle, vehicle)
     if fare != "—":
@@ -472,7 +472,7 @@ def _build_trip_completed(trip, lang: str) -> tuple[str, str, str]:
 
     if lang == "es":
         subject = f"✓ Viaje completado — {tid}"
-        preheader = "Gracias por viajar con Cruise. Déjanos tu opinión."
+        preheader = "Gracias por viajar con CRUISE IN RIDE. Déjanos tu opinión."
         heading = "¡Viaje completado!"
         intro = "Esperamos que hayas tenido una experiencia cómoda y segura."
         status_badge = _badge("Completado", "#6ee589")
@@ -482,10 +482,10 @@ def _build_trip_completed(trip, lang: str) -> tuple[str, str, str]:
         rate_hdr = "¿Cómo estuvo tu viaje?"
         rate_body = ("Tu opinión nos ayuda a mejorar. Toma un momento para calificar a tu "
                      "conductor en la app o responde a este email.")
-        thanks = "Gracias por elegir Cruise. ¡Esperamos verte pronto!"
+        thanks = "Gracias por elegir CRUISE IN RIDE. ¡Esperamos verte pronto!"
     else:
         subject = f"✓ Trip completed — {tid}"
-        preheader = "Thanks for riding with Cruise. We'd love your feedback."
+        preheader = "Thanks for riding with CRUISE IN RIDE. We'd love your feedback."
         heading = "Trip completed!"
         intro = "We hope you had a comfortable and safe experience."
         status_badge = _badge("Completed", "#6ee589")
@@ -495,7 +495,7 @@ def _build_trip_completed(trip, lang: str) -> tuple[str, str, str]:
         rate_hdr = "How was your ride?"
         rate_body = ("Your feedback helps us improve. Take a moment to rate your driver in the "
                      "app or reply to this email with comments.")
-        thanks = "Thank you for choosing Cruise. We hope to see you again soon!"
+        thanks = "Thank you for choosing CRUISE IN RIDE. We hope to see you again soon!"
 
     info_rows = _row(lbl_trip, tid)
     if fare != "—":

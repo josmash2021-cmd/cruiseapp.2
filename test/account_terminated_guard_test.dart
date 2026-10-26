@@ -88,7 +88,7 @@ void main() {
       'lib/screens/driver/driver_trip_accept_screen.dart',
     ]) {
       final s = File(f).readAsStringSync();
-      final i = s.indexOf('_enforceDriverRole()');
+      final i = s.indexOf('void _enforceDriverRole()');
       expect(i, isNonNegative, reason: '$f: the role guard exists');
       final block = s.substring(i, i + 600);
       expect(block, contains('fadeThroughRoute(const WelcomeScreen())'),

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform, File;
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -10,6 +10,8 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+// ignore: depend_on_referenced_packages
+import 'package:clock/clock.dart';
 import '../../services/haptic_service.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../models/lat_lng.dart';
@@ -48,20 +50,25 @@ import '../../services/analytics_service.dart';
 import '../../services/chat_service.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/gold_location_dot.dart';
+import '../../widgets/driver_sonar_marker.dart';
 import '../../widgets/static_map_snapshot.dart';
 import '../../utils/smooth_motion.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
 import '../../map/flat_map_projection.dart';
+import '../../map/camera_action_gate.dart';
+import '../../map/recenter_landing_guard.dart';
+import '../../map/driver_road_lock.dart';
+import '../../map/map_gesture_guard.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../services/places_service.dart';
 import '../../utils/driver_location_settings.dart';
+import '../../utils/gps_fix_policy.dart';
 import '../chat_screen.dart';
 import '../safety_screen.dart';
 import '../../navigation/car_icon_loader.dart';
-import 'driver_info_pages.dart';
 import 'driver_earnings_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
@@ -90,15 +97,11 @@ import '../welcome_screen.dart';
 import '../account_deactivated_screen.dart';
 import 'cruise_level_screen.dart';
 import 'driver_documents_screen.dart';
-// Drawer del menú (2026-10-16): destinos que antes vivían en DriverMenuScreen.
-import '../about_screen.dart';
-import '../help_screen.dart';
-import '../splash_screen.dart'; // logout del drawer → Splash (como el menú)
-import 'driver_referral_screen.dart';
-import 'driver_settings_screen.dart';
-import 'driver_vehicle_screen.dart';
-import 'payout_methods_screen.dart';
-import 'driver_agreement_screen.dart';
+import 'driver_menu_screen.dart';
+import 'driver_contracts_screen.dart';
+import '../../data/us_airports_geo.dart';
+import 'online_intro_overlay.dart';
+import 'selfie_check_screen.dart';
 import 'onboarding/driver_notifications_screen.dart';
 import 'onboarding/driver_todo_screen.dart'; // gate de aprobación en el destino
 import 'driver_waitlist_screen.dart'; // gate de aprobación en el destino
@@ -183,6 +186,11 @@ class DriverOnlineScreen extends StatefulWidget {
   /// is how the LIVE screen learns it — the app may have been open on the
   /// searching map when the push landed.
   static final ValueNotifier<int> shiftEndedNotifier = ValueNotifier(0);
+
+  /// Dispatch decided the pending dress-code selfie (pushes
+  /// `face_check_rejected` / `face_check_approved`, 2026-10-23): the live
+  /// screen re-reads can_go_online so the GO state flips without a restart.
+  static final ValueNotifier<int> faceReviewNotifier = ValueNotifier(0);
 
   const DriverOnlineScreen({
     super.key,
@@ -300,6 +308,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   mapbox.PolylineAnnotation? _previewDropoffAnnot;
   LatLng? _pos;
   ResilientPositionStream? _posStream;
+  final GpsFixPolicy _gpsFixPolicy = GpsFixPolicy();
   final _gpsService = GpsService();
   DateTime _lastNavSetState = DateTime(0);
   DateTime _lastBackendLocSend = DateTime(0);
@@ -328,6 +337,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // Fingers currently on the driver map (Listener around MapWidget) + the
   // phantom-gesture counter — see _onCameraMoveStarted (2026-10-12).
   int _mapPointers = 0;
+  final MapGestureGuard _mapGestureGuard = MapGestureGuard();
   int _phantomGestureEvents = 0;
   // Monotonically incremented every time onMapCreated fires. Guards against
   // stale annotation refs surviving a PlatformView recreation.
@@ -350,6 +360,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     double bearing = 0,
     double tilt = 0,
   }) {
+    _cameraActionGate.begin();
     // Every programmatic flight suppresses the manual-rotate unlatch for
     // its duration — the flight's intermediate bearings are not a finger.
     _camFlightUntil = DateTime.now()
@@ -714,7 +725,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   LatLng? _lastCamWriteCenter;
   double? _lastCamWriteZoom;
 
-
   /// Suppresses the manual-rotate unlatch while a programmatic flyTo runs:
   /// its intermediate bearings legitimately differ from the follow write.
   DateTime _camFlightUntil = DateTime(2000);
@@ -730,11 +740,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Uint8List? _goldPinBytes;
   bool _dotPopDone = false; // true after first-appearance pop completes
   double _dotPopScale = 0.0; // 0→1.15→1.0 during pop, then 1.0
-  // Route-snap state (see _snapToRoute in driver_online_map.dart): hysteresis
-  // on the snap boundary and continuity on the polyline segment, so the
-  // marker never flickers between the lane and raw GPS.
-  bool _routeSnapActive = false;
-  int _snapSegIdx = -1;
   // Road-snap while searching (user report 2026-09-27: arrow off the road
   // lines at high zoom with no route to project onto). The service keeps a
   // matched polyline of the streets actually driven; _snapToRoute projects
@@ -744,6 +749,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _snapOnRouteSrc = true;
   late final RoadSnapService _roadSnap = RoadSnapService()
     ..onLine = _onRoadSnapLine;
+  final DriverRoadLock _roadLock = DriverRoadLock();
+  double? _roadLockBearing;
   // Re-asserts the dot annotation while the smooth ticker is parked (driver
   // stationary). Without it a dot that failed to appear — or whose final
   // pop-scale flush was dropped mid-IPC — stays wrong until the driver moves.
@@ -776,6 +783,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// instance fields (web build caught it).
   mapbox.CameraOptions? _pendingCamWrite;
 
+  /// Last chase pose actually pushed to native, for the coalescing gate
+  /// (2026-10-23): nearly-identical frames are skipped. Also lives here and
+  /// not in the controller extension (same instance-field rule).
+  mapbox.CameraOptions? _lastCamWriteOpts;
+  DateTime? _lastCamWriteAt;
+
   /// The camera as Mapbox last reported it, pushed to us by
   /// onCameraChangeListener so the projection never has to ask for it.
   mapbox.CameraState? _onlineCamState;
@@ -788,6 +801,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// panels responsive — right for panels, far too slow for an arrow
   /// turning through a bend. This repaints only the marker.
   final ValueNotifier<int> _markerFrame = ValueNotifier<int>(0);
+  AnimationController? _driverSonarCtrl;
 
   // ── Diagnóstico de movimiento (panel oculto; long-press en la zona del
   // chip de earnings). Los 4 eslabones de la cadena por segundo: fixes
@@ -795,6 +809,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // número lento señala el eslabón roto: GPS ~1 = feed del teléfono; tick
   // bajo = ticker muerto; cam/anot bajas con tick alto = canal nativo.
   int _diagFixes = 0, _diagTicks = 0, _diagCamWrites = 0, _diagAnnotUpdates = 0;
+  int _diagRejectedFixes = 0;
+  double _diagLastAccuracyM = 0;
   final ValueNotifier<String> motionDiag = ValueNotifier<String>('');
   bool motionDiagVisible = false;
   Timer? _diagTimer;
@@ -860,17 +876,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // -- Camera follow mode --
   bool _cameraFollowing = true;
-
-  /// Hands the overlay back to centred mode once a recentre has landed.
-  /// See _recenterCamera — set while the camera is in flight, cancelled if
-  /// the driver takes hold of the map again.
-  Timer? _followResumeTimer;
-
-  /// When the driver last dragged the map. The auto-recentre is scheduled
-  /// from this, so it lands ten seconds after they stop, not ten seconds
-  /// after they start.
-  DateTime? _lastMapPanAt;
-  Timer? _reFollowTimer;
+  RecenterLandingGuard? _recenterLanding;
 
   // â”€â”€ Draggable panel â”€â”€
   bool _panelOpen = false;
@@ -954,20 +960,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// cambio"): the splash trusts the local cache to land here, and a stale
   /// 'approved' cache after ANY rollback (waitlist/pending/rejected — or a
   /// status that does not exist yet) used to keep the driver in the full
-  /// app forever. The home now ejects itself: a cached non-approved status
-  /// bounces at mount, a live re-check refreshes the truth (fail-open — a
-  /// dead network never ejects; the backend can_go_online blocks work
-  /// anyway), and the account_status_changed socket ejects live.
+  /// app forever. The home ejects itself — but ONLY on live truth: the
+  /// cached status NEVER bounces by itself (a stale 'pending' cache on a
+  /// JUST-approved driver would otherwise bounce him out of the home —
+  /// prod 2026-10-17). The live re-check always runs and refreshes the
+  /// cache (fail-open — a dead network never ejects; the backend
+  /// can_go_online blocks work anyway), and the account_status_changed
+  /// socket ejects live.
   void _enforceAccountApproval() {
     if (kIsWeb) return;
     unawaited(() async {
-      final cached = (await LocalDataService.getDriverApprovalStatus())
-          .toLowerCase()
-          .trim();
-      if (_approvalGatesOut(cached)) {
-        _bounceToApprovalScreen(cached);
-        return;
-      }
       try {
         final res = await ApiService.getDriverApprovalStatus()
             .timeout(const Duration(seconds: 4));
@@ -976,9 +978,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 '')
             .toLowerCase()
             .trim();
-        if (live.isNotEmpty && live != cached) {
-          await LocalDataService.setDriverApprovalStatus(live);
-        }
+        if (live.isEmpty) return;
+        await LocalDataService.setDriverApprovalStatus(live);
         if (mounted && _approvalGatesOut(live)) {
           _bounceToApprovalScreen(live);
         }
@@ -986,14 +987,38 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         // Network down → stay (fail-open): the backend gate blocks work.
       }
     }());
-    _approvalStatusSub =
-        SocketService.accountStatusStream.listen((data) {
+    _approvalStatusSub = SocketService.accountStatusStream.listen((data) {
       final s = (data['status'] as String? ?? '').toLowerCase().trim();
       if (_approvalGatesOut(s)) {
         unawaited(LocalDataService.setDriverApprovalStatus(s));
         _bounceToApprovalScreen(s);
       }
     });
+    // Dispatch pause/resume of THIS driver's GO — instant, no boot wait
+    // (2026-10-23, owner spec "que funcione instantáneo"). The REST payload
+    // (can_go_online) stays the truth on boot and on every GO tap.
+    _goOnlineGateSub = SocketService.goOnlineGateStream.listen((data) {
+      final disabled = data['disabled'] == true;
+      if (!mounted) return;
+      _setState(() => _goOnlineDisabled = disabled);
+      if (disabled) {
+        // Paused while ONLINE: the shift ends now, same dialog as the tap.
+        if (_driverOnline) unawaited(_exitOnlineMode());
+        _showGoOnlineDisabledDialog();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(S.of(context).goOnlineEnabledBody),
+          duration: const Duration(seconds: 3),
+        ));
+      }
+    });
+    // Dispatch selfie review — instant (2026-10-23 owner report: "le doy
+    // rechazar y no desconecta al driver si esta conectado"): before this
+    // channel the live app only learned by TAPPING the push banner, so a
+    // connected driver stayed "searching" and their 5 s location PATCHes
+    // re-onlined them against the DB kick.
+    _faceCheckReviewSub =
+        SocketService.faceCheckReviewStream.listen(_onFaceCheckReviewed);
   }
 
   bool _approvalGatesOut(String status) =>
@@ -1022,6 +1047,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     DriverOnlineScreen.mountedCount++;
     _enforceDriverRole();
     _enforceAccountApproval();
+    unawaited(_ensureAirportState());
     WidgetsBinding.instance.addObserver(this);
     _startMotionDiag();
     // The trip screen handed us a cancelled trip: show the notice as soon
@@ -1081,6 +1107,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     DriverOnlineScreen.removeOfferNotifier
         .addListener(_applyRemoveInjectedOffer);
     DriverOnlineScreen.shiftEndedNotifier.addListener(_onShiftEndedPush);
+    DriverOnlineScreen.faceReviewNotifier.addListener(_onFaceReviewPush);
     // A chained ride handed over by a cancelled trip: already locked on the
     // backend, so it runs the accept flow without re-locking — the same
     // route _handoffChainedOffer takes. Consumed once, never replayed.
@@ -1274,8 +1301,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         vsync: this,
         duration: const Duration(milliseconds: 1200),
       );
-      _goBtnColorAnim = CurvedAnimation(
-          parent: _goBtnColorCtrl!, curve: Curves.easeInOut);
+      _goBtnColorAnim =
+          CurvedAnimation(parent: _goBtnColorCtrl!, curve: Curves.easeInOut);
       _goFabCtrl = AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 600),
@@ -1293,12 +1320,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           CurvedAnimation(parent: _goIgniteCtrl!, curve: Curves.elasticOut));
 
       // Guards de boot portados del home (antes vivían en
-      // driver_home_screen.dart): cuenta, acuerdo, permisos, docs, viaje
+      // driver_home_screen.dart): cuenta, contratos, permisos, docs, viaje
       // activo. Corren en cualquier modo — el driver puede estar offline.
       unawaited(_checkAccountStatus());
       _accountStatusTimer ??= Timer.periodic(
           const Duration(seconds: 300), (_) => _checkAccountStatus());
-      unawaited(_checkDriverAgreementConsent());
+      unawaited(_checkContractsGate());
       unawaited(_runDriverPermissionFlow());
       unawaited(_startDocApprovalListener());
       unawaited(_checkVehicleDocStatus());
@@ -1391,6 +1418,35 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // El flip es in-place — sin push, sin handoff de superficie, sin snapshot.
   bool _driverOnline = false;
   bool _enteringOnline = false;
+  // "You're now online!" instruction: every 6 hours for every driver,
+  // rendered as an overlay over the online map — see _maybeShowOnlineIntro.
+  bool _showOnlineIntro = false;
+  // Working state for the airport pills ('AL'/'FL', from the profile's
+  // drive_state — GPS state is the fallback when the profile hasn't landed).
+  String? _driveStateCode;
+  // Daily face check (2026-10-23, owner spec "selfie cada 24h" — REAL): the
+  // fresh can_go_online payload drives it; at the GO tap the liveness
+  // screen runs before connecting.
+  bool _faceCheckDue = false;
+  // Dress-code rejection path (2026-10-23, owner spec): the next selfie
+  // needs MANUAL dispatch review (required) or is already sitting in review
+  // (pending). The GO button reads both — verify → red "Verificar" pill,
+  // pending → disabled grey "Selfie en revisión" with a 30 s canGoOnline
+  // poll until dispatch approves.
+  bool _faceReviewRequired = false;
+  bool _faceCheckPending = false;
+  Timer? _faceReviewTimer;
+  // Dispatch GO switch (2026-10-23, owner spec — instant): True = the panel
+  // paused THIS driver's GO. The button paints grey, the tap only explains,
+  // and the socket event lands it live (even kicking an online driver off).
+  bool _goOnlineDisabled = false;
+  // The "You're now online!" intro fires ~10 s after the shift is truly
+  // live (owner spec 2026-10-23) — armed at the end of _enterOnlineMode,
+  // no longer keyed off the GO tap.
+  Timer? _introTimer;
+  bool _introBusy = false;
+  int _introEpoch = 0;
+  DateTime? _introRetryAfter;
   // El stream GPS se recrea en cada flip (iOS solo aplica el flag de
   // background en un request nuevo) — este latch evita recrearlo en vano.
   bool _posStreamIsBackground = false;
@@ -1402,6 +1458,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _vehicleDocsApproved = false;
   bool _hasExpiredDocs = false;
   bool _plateChangePending = false;
+
+  /// Slugs of required contracts still unsigned (from can_go_online) — the
+  /// GO tap opens the e-sign hub before flipping online.
+  List<String> _contractsPending = const [];
   bool _docStatusLoaded = false;
   StreamSubscription? _docApprovalSub;
   Timer? _accountStatusTimer;
@@ -1432,6 +1492,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // botón de go se encenderá de forma animada fluida smooth").
   AnimationController? _goIgniteCtrl;
   Animation<double>? _goIgniteAnim;
+
   /// La zona que el driver DECLARÓ con un tap en el mapa (offline only).
   String? _selectedZoneName;
   AnimationController? _goFabCtrl;
@@ -1457,8 +1518,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _offlineZonesRefitPending = false;
   bool? _zoneLayersVisible;
   bool? _zoneLookOnline;
-  // The state-visibility set the look was painted with (2026-10-14 spec: a
-  // driver only sees their own state's sectors) — a border crossing repaints.
+  // The state-visibility set and offer-preview state the look was painted
+  // with — a border crossing or an offer opening/closing repaints.
   String? _zoneLookVisibleSig;
   // The mode the zone fills are STACKED for (true = under the roads): the
   // flips move them, not recreate them (moveStyleLayer).
@@ -1472,21 +1533,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // Token anti-stale de los fits de zonas (2026-10-16): un fit que quedó en
   // vuelo muere si otro fit/recenter arrancó después (nunca pisa un recenter
   // más nuevo — el "recenter no funciona después del flip").
-  int _zoneFitSeq = 0;
+  final CameraActionGate _cameraActionGate = CameraActionGate();
   // Onda de selección en el borde del sector (2026-10-16) — los campos viven
   // en la clase (las extensiones no declaran campos); la lógica está en
   // driver_online_map.dart.
   Timer? _zoneWaveTimer;
   String? _zoneWaveSectorId;
   double _zoneWavePhase = 0;
-  // Drawer lateral del menú (2026-10-16, estilo Dash; 2026-10-17 = RUTA
-  // transparente del Navigator — el overlay in-screen nunca se pintó en el
-  // device del usuario). La página completa DriverMenuScreen sigue viva
-  // para la pantalla de viaje.
-  String _menuDriverName = '';
-  String? _menuPhotoUrl;
-  bool _menuIdentityLoaded = false;
-  // Guard anti doble-tap: la ruta del drawer solo se empuja una vez.
+  bool _zoneWaveWriteBusy = false;
+  double? _zoneWavePendingPhase;
+  // Guard anti doble-tap: la ruta del menú clásico solo se empuja una vez.
   bool _menuRouteOpen = false;
   // Gate de aprobación EN EL DESTINO (2026-10-17, spec "eso nunca puede
   // pasar si trabajamos en la app o el dispatch"): el splash confía en el
@@ -1496,6 +1552,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // caliente).
   bool _approvalBounced = false;
   StreamSubscription<Map<String, dynamic>>? _approvalStatusSub;
+  StreamSubscription<Map<String, dynamic>>? _goOnlineGateSub;
+  StreamSubscription<Map<String, dynamic>>? _faceCheckReviewSub;
+
   /// Foto real del mapa capturada al entregar la superficie (2026-10-17,
   /// cero negro al volver de otra página). El velo del remount la prefiere
   /// sobre el snapshot estático de red; se limpia cuando el remount
@@ -1607,8 +1666,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // resurrect a card the server just told us is gone.
     _rejectedOfferIds.add(oid);
     _setState(() {
-      _pendingOffers.removeWhere(
-          (o) => (o['offer_id'] as num?)?.toInt() == oid);
+      _pendingOffers
+          .removeWhere((o) => (o['offer_id'] as num?)?.toInt() == oid);
       if (_pendingOffers.isEmpty) _hideFindingBar = false;
     });
     final previewing = _previewingOffer;
@@ -1715,6 +1774,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         });
       });
     }
+    _syncDriverSonar();
   }
 
   /// Route safety net (user report 2026-10-12: "después de ir a otra página
@@ -1748,21 +1808,29 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     mapRouteObserver.unsubscribe(this);
     _zoneDemandTimer?.cancel();
     _approvalStatusSub?.cancel();
+    _goOnlineGateSub?.cancel();
+    _faceCheckReviewSub?.cancel();
     ZoneService.sectorsChanged.removeListener(_onSectorsChanged);
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
     _diagTimer?.cancel();
     motionDiag.dispose();
-    DriverOnlineScreen.deepLinkOfferNotifier.removeListener(_applyInjectedOffer);
+    DriverOnlineScreen.deepLinkOfferNotifier
+        .removeListener(_applyInjectedOffer);
     DriverOnlineScreen.removeOfferNotifier
         .removeListener(_applyRemoveInjectedOffer);
     DriverOnlineScreen.shiftEndedNotifier.removeListener(_onShiftEndedPush);
+    DriverOnlineScreen.faceReviewNotifier.removeListener(_onFaceReviewPush);
+    _faceReviewTimer?.cancel();
+    _introTimer?.cancel();
+    _shiftCapTimer?.cancel();
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;
     }
     _smoothTicker?.stop();
     _smoothTicker?.dispose();
+    _driverSonarCtrl?.dispose();
     _enterCtrl.dispose();
     _driverAnim.dispose();
     _reqCtrl?.dispose();
@@ -1783,6 +1851,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _dotWatchdog?.cancel();
     _goldDot.dispose();
     _roadSnap.reset(); // in-flight matching answers die with the screen
+    _roadLock.reset();
     _headingSub?.cancel();
     _headingSource.dispose();
     EarningsPrivacy.hidden.removeListener(_onEarningsPrivacyChanged);
@@ -1801,8 +1870,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // the ghost agent would have forced them offline for going quiet. Going
     // to look at your home screen is not going off shift.
     if (_leavingOffline) _gpsService.stopTracking();
-    _reFollowTimer?.cancel();
-    _followResumeTimer?.cancel();
     _earningsRefreshTimer?.cancel();
     _bgHeartbeatTimer?.cancel();
     _panelAnimCtrl?.dispose();
@@ -2010,7 +2077,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       final r = await _fetchRouteWithMetricsOnce(o, d, waypoints: waypoints);
       if (r.pts.length >= 2) return r;
     }
-    debugPrint('[Route] _fetchRouteWithMetrics: all providers failed — no line');
+    debugPrint(
+        '[Route] _fetchRouteWithMetrics: all providers failed — no line');
     return (pts: const <LatLng>[], durSec: null, distM: null);
   }
 
@@ -2392,8 +2460,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       _setState(() => _showScheduledToast = false);
                       Navigator.push(
                         context,
-                        slideFromRightRoute(
-                            const ScheduledRidesMapScreen()),
+                        slideFromRightRoute(const ScheduledRidesMapScreen()),
                       ).then((_) {
                         _fetchScheduledCount();
                         // The scheduled map took the one native surface —
@@ -2685,15 +2752,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             // box covers the FAB's spot exactly (both bottoms align at the
             // collapsed sheet's top + lift) and its transparent body was
             // swallowing the FAB's taps. On top of it, every tap lands.
-            if (!_driverOnline &&
-                !isNav &&
-                _acceptedOverlay == null)
+            if (!_driverOnline && !isNav && _acceptedOverlay == null)
               Positioned(
                 // Above the sheet's CURRENT top — it now rests half-open
                 // (2026-10-13 spec), not always collapsed.
                 bottom: (78 + bot) +
-                    ((MediaQuery.of(context).size.height * 0.82 -
-                            (78 + bot)) *
+                    ((MediaQuery.of(context).size.height * 0.82 - (78 + bot)) *
                         _panelFrac.clamp(0.0, 1.0)) +
                     14,
                 right: 16,
@@ -2772,8 +2836,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                                 S.of(context).driverTripCancelledReturning,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color:
-                                      Colors.white.withValues(alpha: 0.55),
+                                  color: Colors.white.withValues(alpha: 0.55),
                                   fontSize: 13,
                                 ),
                               ),
@@ -2806,6 +2869,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     etaMinutes: _acceptedOverlay!.etaMinutes,
                     duration: _acceptedOverlayDuration,
                   ),
+                ),
+              ),
+
+            if (_showOnlineIntro)
+              Positioned.fill(
+                child: OnlineIntroOverlay(
+                  onUnderstood: _dismissOnlineIntro,
                 ),
               ),
           ],

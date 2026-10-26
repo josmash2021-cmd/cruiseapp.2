@@ -10,20 +10,23 @@ import 'local_cache.dart';
 import 'socket_service.dart';
 import 'state_outlines.dart';
 
-/// One demand-heat entry set by dispatch (2026-10-12 spec): level 1 = gold
-/// semi-transparent, 2 = more solid + "Ocupado" pill, 3 = fully solid +
-/// "Muy ocupado" pill. [bonus] rides the pill as "+$X.XX" (display only in
-/// phase 1 — the charge/pay pipeline is phase 2).
+/// One demand-heat entry set by dispatch: level 0 = "Sin viajes", 1 =
+/// "Lento", 2 = "Ocupado", 3 = "Muy ocupado". Higher levels use stronger
+/// semi-transparent gold, never a solid fill. [bonus] rides the pill as
+/// "+$X.XX" (display only in phase 1 — the charge/pay pipeline is phase 2).
 class SectorDemand {
   final int level;
   final double bonus;
-  const SectorDemand(this.level, this.bonus);
+  // 2026-10-17 (owner spec): dispatch can switch a sector OFF — its drivers
+  // cannot connect while it is off.
+  final bool off;
+  const SectorDemand(this.level, this.bonus, {this.off = false});
 }
 
 /// One large driver SECTOR (2026-10-12 spec: "no de mini ciudad en mini
 /// ciudad si no por sectores") — the dissolve of several Census cities into
-/// a big region, painted always in gray with its boundary; dispatch turns
-/// it gold by demand level.
+/// a big region with a gold boundary and demand-controlled gold opacity.
+/// A sector Dispatch switches off is gray instead.
 class Sector {
   final String id;
   final String name;
@@ -80,7 +83,7 @@ class ZoneService {
   static bool _watching = false;
 
   /// Sector demand heat set by dispatch: sector_id → level/bonus. Polled
-  /// every minute by the driver screen; missing = all gray.
+  /// every minute by the driver screen; missing = Sin viajes (faintest gold).
   static final Map<String, SectorDemand> demand = {};
   static DateTime? _demandFetchedAt;
 
@@ -304,12 +307,22 @@ class ZoneService {
     return own;
   }
 
+  /// Whether the point's sector is switched OFF by dispatch (2026-10-17,
+  /// owner spec: a zone turned off in the panel blocks its drivers from
+  /// connecting). Fail-open like every zone gate: no sector under the point
+  /// → false.
+  static bool sectorOff(LatLng p) {
+    if (!sectorsReady) return false;
+    final s = sectorContaining(p);
+    if (s == null) return false;
+    return demand[s.id]?.off ?? false;
+  }
+
   /// Whether the point falls inside the coverage region of the SECTOR map
   /// (union of sector bboxes). The connect gate applies inside it — with
   /// sectors drawn in both states (panel-edited), Florida AND Alabama
   /// drivers are gated by the same single dataset.
-  static bool insideSectorCoverage(LatLng p) {
-    if (!sectorsReady) return false;
+  static bool insideSectorCoverage(LatLng p) {    if (!sectorsReady) return false;
     for (final s in sectors) {
       if (p.longitude >= s.bbox[0] &&
           p.longitude <= s.bbox[2] &&
@@ -364,6 +377,12 @@ class ZoneService {
       final parsed = <String, SectorDemand>{};
       for (final e in raw.entries) {
         final cfg = (e.value as Map?) ?? {};
+        // The OFF switch survives level 0 (2026-10-17): a switched-off
+        // sector reaches the connect gate.
+        if (cfg['off'] == true) {
+          parsed[e.key.toString()] = const SectorDemand(0, 0, off: true);
+          continue;
+        }
         final level = (cfg['level'] as num?)?.toInt() ?? 0;
         final bonus = (cfg['bonus'] as num?)?.toDouble() ?? 0;
         if (level >= 1 && level <= 3) {

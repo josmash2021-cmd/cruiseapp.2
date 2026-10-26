@@ -4,14 +4,14 @@ import 'dart:convert';
 
 import 'api_service.dart';
 
-/// Tiny remote kill switches (2026-10-11, born for the zone layers): the
-/// driver map's zone drawing can be switched off from the server while a
-/// live issue is diagnosed — no build, no patch. Missing key = OFF (safe
-/// side: a flag that never shipped reads as off).
+/// Feature and kill switches for the zone layers and paused payment rails.
+/// Missing remote keys = OFF (safe side).
 class FeatureFlags {
   FeatureFlags._();
 
   static bool zonesMapEnabled = false;
+  static bool paypalEnabled = false;
+  static bool tapToPayEnabled = false;
   static bool _loaded = false;
 
   static Future<void> load() async {

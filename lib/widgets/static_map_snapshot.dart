@@ -59,7 +59,7 @@ class StaticMapSnapshot extends StatelessWidget {
         final h = box.maxHeight.isFinite
             ? box.maxHeight.round().clamp(64, 1280)
             : 960;
-        const dark = ColoredBox(color: Color(0xFF07080D));
+        const dark = ColoredBox(color: Color(0xFF0A1128));
         final token = MapboxConfig.accessToken;
         if (token.isEmpty) return dark;
         final url = imageUrl(center, zoom, w, h);

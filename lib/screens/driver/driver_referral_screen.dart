@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../services/haptic_service.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/onboarding_image.dart';
 import '../../utils/share_helper.dart';
 
 /// Refer Friends — DRIVER program.
@@ -29,17 +27,20 @@ class DriverReferralScreen extends StatefulWidget {
 
 class _DriverReferralScreenState extends State<DriverReferralScreen> {
   static const _gold = Color(0xFFE8C547);
+  static const _green = Color(0xFF22C55E);
   static const _surface = Color(0xFF1A1A1F);
-  static const _surfaceLight = Color(0xFF222226);
 
   bool _loading = true;
   String _code = '';
   int _amountCents = 20000;
-  int _ridesRequired = 50;
-  int _expiryDays = 60;
   int _totalEarnedCents = 0;
   int _pendingCents = 0;
   List<Map<String, dynamic>> _referees = const [];
+
+  // Two-page layout: page 0 is the invite/how-it-works pitch, page 1 is
+  // "My Referrals" with per-driver progress. Swipe sideways to switch.
+  final PageController _pageCtrl = PageController();
+  int _pageIndex = 0;
 
   /// Milestone schedule from the backend (falls back to the flat totals).
   int _m1Rides = 50;
@@ -49,12 +50,6 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
   int _refereeBonusCents = 2500;
   int _refereeBonusRides = 2;
 
-  // Redeem-someone-else's-code mini form (driver who skipped it at signup)
-  final _redeemCtl = TextEditingController();
-  bool _redeeming = false;
-  String? _redeemError;
-  String? _redeemSuccess;
-
   @override
   void initState() {
     super.initState();
@@ -63,38 +58,8 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
 
   @override
   void dispose() {
-    _redeemCtl.dispose();
+    _pageCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _redeem() async {
-    final s = S.of(context);
-    final code = _redeemCtl.text.trim().toUpperCase();
-    if (code.isEmpty) return;
-    setState(() {
-      _redeeming = true;
-      _redeemError = null;
-      _redeemSuccess = null;
-    });
-    try {
-      final res = await ApiService.redeemDriverReferralCode(code);
-      if (!mounted) return;
-      _redeemCtl.clear();
-      setState(() {
-        _redeeming = false;
-        _redeemSuccess = (res['referrer_name'] as String?) != null
-            ? s.linkedToName(res['referrer_name'] as String)
-            : s.codeRedeemed;
-      });
-      HapticService.mediumImpact();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _redeeming = false;
-        _redeemError = e.toString().replaceFirst('ApiException: ', '');
-      });
-      HapticService.heavyImpact();
-    }
   }
 
   Future<void> _load() async {
@@ -107,8 +72,6 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
       setState(() {
         _code = (data['code'] as String?) ?? '';
         _amountCents = (settings['amount_cents'] as int?) ?? 20000;
-        _ridesRequired = (settings['rides_required'] as int?) ?? 200;
-        _expiryDays = (settings['expiry_days'] as int?) ?? 180;
         if (milestones.length >= 2) {
           final m1 = (milestones[0] as Map).cast<String, dynamic>();
           final m2 = (milestones[1] as Map).cast<String, dynamic>();
@@ -135,31 +98,27 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
 
   String _dollars(int cents) => '\$${(cents / 100).toStringAsFixed(0)}';
 
-  void _copyCode() {
-    if (_code.isEmpty) return;
-    HapticService.lightImpact();
-    Clipboard.setData(ClipboardData(text: _code));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(S.of(context).codeCopied),
-        backgroundColor: _gold,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
   void _shareInvite() {
     if (_code.isEmpty) return;
     HapticService.mediumImpact();
     final s = S.of(context);
-    // The deal, milestone-shaped: the new driver's $25 welcome hook first
-    // (that's what makes them use the code), then what the referrer earns.
+    // Invitee-centered: the message sells ONLY what the invited driver gets
+    // ($25 after 2 rides). What the referrer earns is never the invitee's
+    // business — the old "I earn $50 when you…" line died 2026-10-22.
+    //
+    // HOST: the brand domain (owner spec 2026-10-23). Its hosting (GitHub
+    // Pages, repo cruisewebsite branch gh-pages) serves
+    // /.well-known/apple-app-site-association + assetlinks.json (the OS
+    // opens an installed app directly) and its 404.html handles /drive/*:
+    // Android without the app bounces to the backend (which 302s to Play
+    // with the code in the install referrer), iOS/desktop see the branded
+    // invite card with the copyable code without leaving the domain.
+    const shareHost = 'https://cruiseinride.com';
+    final link = '$shareHost/drive/$_code';
     final text =
         '${s.driverShareWelcome(_dollars(_refereeBonusCents), _refereeBonusRides)}\n\n'
-        '${s.driverShareMilestones(_dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides)}\n\n'
-        'Code: $_code\n'
-        'https://cruiseinride.com/drive/$_code';
+        '${s.driverShareCodeLine(_code)}\n'
+        '$link';
     unawaited(shareText(context, text, subject: s.driverShareSubject));
   }
 
@@ -173,382 +132,429 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
             ? const Center(
                 child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
               )
-            : RefreshIndicator(
-                color: _gold,
-                onRefresh: _load,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics(),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-                  children: [
-                    // ── Top bar ──
-                    Row(
+            : Column(
+                children: [
+                  Expanded(
+                    child: PageView(
+                      controller: _pageCtrl,
+                      onPageChanged: (i) => setState(() => _pageIndex = i),
                       children: [
-                        GestureDetector(
-                          onTap: () => Navigator.of(context).pop(),
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: _surface,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.arrow_back_ios_new_rounded,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Text(
-                          s.referFriends,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.4,
-                          ),
-                        ),
+                        _buildMainReferralPage(s),
+                        _buildMyReferralsPage(s),
                       ],
                     ),
-                    const SizedBox(height: 24),
+                  ),
+                  _buildPageDots(),
+                ],
+              ),
+      ),
+    );
+  }
 
-                    // ── Hero card: amount + share ──
-                    _buildHeroCard(s),
-                    const SizedBox(height: 14),
+  Widget _buildPageDots() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (var i = 0; i < 2; i++)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              width: _pageIndex == i ? 18 : 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: _pageIndex == i
+                    ? _gold
+                    : Colors.white.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
-                    // ── Code chip ──
-                    _buildCodeCard(s),
-                    const SizedBox(height: 14),
-
-                    // ── Redeem someone else's code (skipped at signup) ──
-                    _buildRedeemBlock(s),
-                    const SizedBox(height: 14),
-
-                    // ── Aggregate stats (earned / pending / referrals) ──
-                    _buildStats(s),
-                    const SizedBox(height: 14),
-
-                    // ── How it works ──
-                    _buildInfoCard(
-                      title: s.howItWorksTitle,
-                      icon: Icons.info_outline_rounded,
-                      iconColor: _gold,
-                      lines: [
-                        s.driverHowStep1,
-                        s.driverHowStep2Milestones(
-                            _dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides),
-                        s.driverHowStep3(_dollars(_amountCents)),
-                        s.driverHowWelcomeBonus(
-                            _dollars(_refereeBonusCents), _refereeBonusRides),
-                      ],
+  /// Page 1 — NO scrollable of any kind (owner spec 2026-10-23: "la primera
+  /// pagina completa, sin scroll"). Same LayoutBuilder gapScale idiom as the
+  /// rider referral screen: gaps and the hero scale down on short phones,
+  /// fonts never do. On VERY short screens the hero artwork bows out — the
+  /// rewards numbers matter, the artwork is decoration. The Share button
+  /// lives IN the column (a Spacer pins it to the bottom) — the old floating
+  /// overlay + 110 bottom padding died with the scroll.
+  Widget _buildMainReferralPage(S s) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        final gapScale = (box.maxHeight / 700).clamp(0.55, 1.0);
+        double gap(double v) => v * gapScale;
+        final heroHeight = box.maxHeight < 600 ? 0.0 : 150.0 * gapScale;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+          child: Column(
+            children: [
+              // ── Top bar ──
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _surface,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                     ),
-                    const SizedBox(height: 12),
-
-                    _buildInfoCard(
-                      title: s.noLimitTitle,
-                      icon: Icons.all_inclusive_rounded,
-                      iconColor: _gold,
-                      lines: [s.noLimitDesc],
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      s.referFriends,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.4,
+                      ),
                     ),
+                  ),
+                ],
+              ),
+              SizedBox(height: gap(14)),
+              if (heroHeight > 0) ...[
+                _buildHeroArtwork(heroHeight),
+                Transform.translate(
+                  offset: const Offset(0, -16),
+                  child: _buildRewardsCard(s),
+                ),
+              ] else
+                _buildRewardsCard(s),
+              SizedBox(height: gap(12)),
+              _buildHowItWorksTimeline(s, gapScale),
 
-                    // ── Referees list ──
-                    if (_referees.isNotEmpty) ...[
-                      const SizedBox(height: 24),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 4, bottom: 10),
-                        child: Text(
-                          s.yourReferrals,
-                          style: const TextStyle(
-                            color: Color(0xFFB0B0B6),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                          ),
+              // Hint toward page 2 — the referrals tracker lives one swipe
+              // away.
+              if (_referees.isNotEmpty) ...[
+                SizedBox(height: gap(10)),
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        s.swipeToSeeReferrals,
+                        style: const TextStyle(
+                          color: Color(0xFFB0B0B6),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      ..._referees.map((r) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _buildRefereeRow(r, s),
-                          )),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.arrow_forward_rounded,
+                          color: _gold, size: 16),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-      ),
+              ],
+              const Spacer(),
+              _buildBottomShareButton(s),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildHeroCard(S s) {
+  Widget _buildHeroArtwork(double height) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      height: height,
       decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _gold.withValues(alpha: 0.18)),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: _gold.withValues(alpha: 0.06),
-            blurRadius: 22,
-            spreadRadius: 1,
+            color: _gold.withValues(alpha: 0.18),
+            blurRadius: 26,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: Column(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Image.asset(
-              'assets/images/referral_hero.png',
-              width: double.infinity,
-              height: 150,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-            ),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            s.driverEarnHero(_dollars(_amountCents)),
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _gold,
-              fontSize: 36,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            s.driverEarnSubMilestones(
-                _dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides),
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.65),
-              fontSize: 13.5,
-              height: 1.45,
-            ),
-          ),
-          const SizedBox(height: 22),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton.icon(
-              onPressed: _code.isEmpty ? null : _shareInvite,
-              icon: const Icon(Icons.share_rounded, size: 18),
-              label: Text(
-                s.shareInviteLinkBtn,
-                style: const TextStyle(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: Colors.black,
-                disabledBackgroundColor:
-                    _gold.withValues(alpha: 0.35),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                elevation: 0,
-              ),
-            ),
-          ),
-        ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: OnboardingImage(
+          filename: 'referral_hero.png',
+          localPath: 'assets/images/referral_hero.png',
+          remoteUrl:
+              '${ApiService.publicBaseUrl}/static/media/referral_hero.png',
+          width: double.infinity,
+          height: height,
+          fit: BoxFit.cover,
+          fallbackIcon: Icons.card_giftcard_rounded,
+        ),
       ),
     );
   }
 
-  Widget _buildCodeCard(S s) {
-    return GestureDetector(
-      onTap: _copyCode,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        decoration: BoxDecoration(
-          color: _surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-        ),
+  Widget _buildRewardsCard(S s) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _gold.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: _gold.withValues(alpha: 0.22),
+            blurRadius: 26,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: IntrinsicHeight(
         child: Row(
           children: [
-            const Icon(Icons.qr_code_rounded, color: _gold, size: 22),
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: const Color(0xFF14141A),
+                shape: BoxShape.circle,
+                border: Border.all(color: _gold, width: 1.5),
+              ),
+              child: const Icon(Icons.card_giftcard_rounded,
+                  color: _gold, size: 28),
+            ),
             const SizedBox(width: 14),
             Expanded(
+              flex: 47,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    s.yourCode,
+                    s.driverReferralWinsTitle,
                     style: const TextStyle(
-                      color: Color(0xFFB0B0B6),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
+                      color: Colors.black,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _code.isEmpty ? '— — —' : _code,
+                    _dollars(_refereeBonusCents),
                     style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.4,
+                      color: _gold,
+                      fontSize: 33,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
+                  Text(
+                    s.driverAfterFirstRides(_refereeBonusRides),
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      fontSize: 13,
+                      height: 1.25,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.copy_rounded,
-                color: Color(0xFFB0B0B6), size: 18),
+            Container(
+              width: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 12),
+              color: Colors.black.withValues(alpha: 0.10),
+            ),
+            Expanded(
+              flex: 53,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.driverYouEarnTitle,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _rewardMilestone(
+                      _dollars(_m1Cents), s.driverAtRides(_m1Rides)),
+                  const SizedBox(height: 2),
+                  _rewardMilestone(
+                      _dollars(_m2Cents), s.driverAtRides(_m2Rides)),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  /// For the driver who signed up WITHOUT a code: one redemption is still
-  /// allowed here (backend enforces one-per-driver). Same pattern as the
-  /// rider screen's redeem block.
-  Widget _buildRedeemBlock(S s) {
-    final showSuccess = _redeemSuccess != null;
+  Widget _rewardMilestone(String amount, String when) {
+    return Row(
+      children: [
+        Text(
+          amount,
+          style: const TextStyle(
+            color: _gold,
+            fontSize: 29,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.7,
+          ),
+        ),
+        const SizedBox(width: 5),
+        Flexible(
+          child: Text(
+            when,
+            style: TextStyle(
+              color: Colors.black.withValues(alpha: 0.78),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHowItWorksTimeline(S s, double gapScale) {
+    final steps = <({IconData icon, String title, String body})>[
+      (
+        // Icon glyphs must ALSO exist as plain const references elsewhere in
+        // the app: the release build's icon tree-shaker misses glyphs that
+        // appear ONLY inside this record literal and the circle then renders
+        // a "?" box (prod screenshots, 2026-10-22).
+        icon: Icons.share_rounded,
+        title: s.driverHowShareTitle,
+        body: s.driverHowStep1,
+      ),
+      (
+        icon: Icons.person_add_rounded,
+        title: s.driverHowSignupTitle,
+        body: s.driverHowSignupDesc,
+      ),
+      (
+        icon: Icons.directions_car_rounded,
+        title: s.driverHowRidesTitle,
+        body: s.driverHowStep2Milestones(
+            _dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides),
+      ),
+      (
+        icon: Icons.emoji_events_rounded,
+        title: s.driverHowPaidTitle,
+        body:
+            '${s.driverHowStep3(_dollars(_amountCents))}\n${s.driverHowWelcomeBonus(_dollars(_refereeBonusCents), _refereeBonusRides)}',
+      ),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: _surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _redeemCtl,
-                  textCapitalization: TextCapitalization.characters,
-                  enabled: !_redeeming && !showSuccess,
-                  cursorColor: _gold,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.0,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: s.gotInviteCode,
-                    hintStyle: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.35),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    border: InputBorder.none,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: (_redeeming || showSuccess) ? null : _redeem,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: showSuccess ? const Color(0xFF22C55E) : _gold,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: _redeeming
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.2, color: Colors.black),
-                        )
-                      : Text(
-                          showSuccess ? '✓' : s.redeemLabel,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
-                ),
-              ),
-            ],
+        Text(
+          s.howItWorksTitle,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.5,
           ),
         ),
-        if (_redeemError != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, left: 4),
-            child: Text(
-              _redeemError!,
-              style: const TextStyle(
-                color: Color(0xFFEF9A9A),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        if (_redeemSuccess != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, left: 4),
-            child: Text(
-              _redeemSuccess!,
-              style: const TextStyle(
-                color: Color(0xFF22C55E),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+        SizedBox(height: 12 * gapScale),
+        for (var i = 0; i < steps.length; i++)
+          _buildTimelineRow(
+            number: i + 1,
+            icon: steps[i].icon,
+            title: steps[i].title,
+            body: steps[i].body,
+            isLast: i == steps.length - 1,
+            gapScale: gapScale,
           ),
       ],
     );
   }
 
-  Widget _buildStats(S s) {
-    return Row(
-      children: [
-        Expanded(child: _statCard(s.earnedLabel, _dollars(_totalEarnedCents))),
-        const SizedBox(width: 10),
-        Expanded(child: _statCard(s.pendingLabel, _dollars(_pendingCents))),
-        const SizedBox(width: 10),
-        Expanded(
-            child:
-                _statCard(s.referralsLabel, _referees.length.toString())),
-      ],
-    );
-  }
-
-  Widget _statCard(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Column(
+  Widget _buildTimelineRow({
+    required int number,
+    required IconData icon,
+    required String title,
+    required String body,
+    required bool isLast,
+    required double gapScale,
+  }) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: _gold,
-              fontSize: 19,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.3,
+          SizedBox(
+            width: 30,
+            child: Column(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: const BoxDecoration(
+                    color: _gold,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$number',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+                if (!isLast) Expanded(child: _timelineDashedLine()),
+              ],
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFFB0B0B6),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+          const SizedBox(width: 10),
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C24),
+              shape: BoxShape.circle,
+              border:
+                  Border.all(color: _gold.withValues(alpha: 0.62), width: 1.3),
+            ),
+            child: Icon(icon, color: _gold, size: 21),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 12 * gapScale),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    body,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      fontSize: 13,
+                      height: 1.32,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -556,179 +562,491 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     );
   }
 
-  Widget _buildInfoCard({
-    required String title,
-    required IconData icon,
-    required Color iconColor,
-    required List<String> lines,
-  }) {
+  Widget _timelineDashedLine() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final count = (constraints.maxHeight / 9).floor().clamp(0, 20).toInt();
+        return Column(
+          children: [
+            const SizedBox(height: 6),
+            for (var i = 0; i < count; i++)
+              Container(
+                width: 2,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 5),
+                color: _gold.withValues(alpha: 0.65),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildBottomShareButton(S s) {
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: _gold.withValues(alpha: 0.32),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        height: 56,
+        child: ElevatedButton.icon(
+          onPressed: _code.isEmpty ? null : _shareInvite,
+          icon: const Icon(Icons.share_rounded, size: 20),
+          label: Text(
+            s.shareReferralLinkBtn,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.2,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _gold,
+            foregroundColor: Colors.black,
+            disabledBackgroundColor: _gold.withValues(alpha: 0.35),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            elevation: 0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Page 2: My Referrals ──────────────────────────────────────────────────
+
+  Widget _buildMyReferralsPage(S s) {
+    return RefreshIndicator(
+      color: _gold,
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        children: [
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  s.referFriends,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          _buildEarnedCard(s),
+          const SizedBox(height: 26),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  s.myReferralsTitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ),
+              Text(
+                s.driversJoinedCount(_referees.length),
+                style: const TextStyle(
+                  color: Color(0xFFB0B0B6),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (_referees.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 36),
+              child: Center(
+                child: Text(
+                  s.noReferralsYet,
+                  style: const TextStyle(
+                    color: Color(0xFFB0B0B6),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            )
+          else
+            ..._referees.map((r) => _buildReferralTrackRow(r, s)),
+        ],
+      ),
+    );
+  }
+
+  /// Gold summary card: steering-wheel badge, animated Earned total, and a
+  /// Pending/Paid chip — pending while any bonus is still on its way, paid
+  /// (green) once everything earned has been credited.
+  Widget _buildEarnedCard(S s) {
+    final fullyPaid = _pendingCents <= 0 && _totalEarnedCents > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFF2D267), Color(0xFFD4AF37)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: _gold.withValues(alpha: 0.35),
+            blurRadius: 26,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: iconColor, size: 20),
-          const SizedBox(width: 12),
+          Container(
+            width: 62,
+            height: 62,
+            decoration: const BoxDecoration(
+              color: Color(0xFF14141A),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: CustomPaint(
+                size: const Size(34, 34),
+                painter: _SteeringWheelPainter(color: _gold),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Container(
+            width: 1.5,
+            height: 56,
+            color: Colors.black.withValues(alpha: 0.22),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
+                  s.earnedLabel,
+                  style: TextStyle(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 6),
-                ...lines.map((line) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        line,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.65),
-                          fontSize: 13,
-                          height: 1.45,
-                        ),
-                      ),
-                    )),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: _totalEarnedCents / 100),
+                  duration: const Duration(milliseconds: 900),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, _) => Text(
+                    '\$${value.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 44,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -1.2,
+                      height: 1.05,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
+          if (_totalEarnedCents > 0 || _pendingCents > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                fullyPaid ? s.paidLabel : s.pendingLabel,
+                style: TextStyle(
+                  color: fullyPaid ? _green : _gold,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildRefereeRow(Map<String, dynamic> r, S s) {
-    final name = (r['name'] as String?)?.trim().isNotEmpty == true
-        ? r['name'] as String
+  /// One referred driver: name + joined/expiry dates, an animated progress
+  /// bar toward the next milestone, and what their rides have earned the
+  /// referrer ($50 after 50 rides, $200 once they reach 200 — the amount
+  /// turns green when the goal is fully paid).
+  Widget _buildReferralTrackRow(Map<String, dynamic> r, S s) {
+    final name = (r['display_name'] as String?)?.trim().isNotEmpty == true
+        ? (r['display_name'] as String).trim()
         : 'Driver';
-    final photoUrl = r['photo_url'] as String?;
+    final ridesDone = (r['rides_completed'] as num?)?.toInt() ?? 0;
+    final nextRides = (r['next_milestone_rides'] as num?)?.toInt() ?? _m1Rides;
+    final earned = (r['earned_cents'] as num?)?.toInt() ?? 0;
+    final nextAmount = (r['next_milestone_amount_cents'] as num?)?.toInt() ?? 0;
     final status = (r['status'] as String?) ?? 'pending';
-    final ridesDone = (r['rides_completed'] as int?) ?? 0;
-    // Progress toward the NEXT unpaid milestone, not the far one: a bar
-    // crawling toward 200 looks dead for weeks, a bar filling toward 50
-    // keeps both sides checking it.
-    final int ridesNeeded;
-    if (status == 'pending') {
-      ridesNeeded = _m1Rides;
-    } else {
-      ridesNeeded = (r['rides_required'] as int?) ?? _m2Rides;
-    }
-    final progress = ridesNeeded > 0
-        ? (ridesDone / ridesNeeded).clamp(0.0, 1.0)
-        : 0.0;
+    // The backend's payment_status is the authority: expired / paid / pending.
+    final paymentStatus = (r['payment_status'] as String?) ?? 'pending';
+    final expired = paymentStatus == 'expired';
+    final fullyPaid = paymentStatus == 'paid' &&
+        (r['paid_at'] != null || status == 'qualified');
+    final m1Paid = paymentStatus == 'paid' && !fullyPaid;
+    final progress =
+        nextRides > 0 ? (ridesDone / nextRides).clamp(0.0, 1.0) : 0.0;
+    final pct = (progress * 100).round();
 
-    final Color statusColor;
-    final String statusLabel;
-    switch (status) {
-      case 'qualified':
-        statusColor = const Color(0xFF22C55E);
-        statusLabel = s.statusPaid;
-        break;
-      case 'milestone1':
-        statusColor = const Color(0xFF22C55E);
-        statusLabel = s.statusMilestone1;
-        break;
-      case 'expired':
-        statusColor = const Color(0xFFEF4444);
-        statusLabel = s.statusExpired;
-        break;
-      default:
-        statusColor = _gold;
-        statusLabel = s.statusInProgress;
-    }
+    final amountCents = (fullyPaid || m1Paid) ? earned : nextAmount;
+    final barColor = expired
+        ? Colors.white.withValues(alpha: 0.25)
+        : (fullyPaid ? _green : _gold);
+    final statusLabel = expired
+        ? s.statusExpired
+        : (fullyPaid || m1Paid ? s.paidLabel : s.pendingLabel);
+    final statusColor = expired
+        ? const Color(0xFFEF4444)
+        : (fullyPaid || m1Paid ? _green : _gold);
+    final amountColor = expired ? Colors.white38 : (fullyPaid ? _green : _gold);
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Column(
-        children: [
-          Row(
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: _surfaceLight,
-                backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
-                    ? CachedNetworkImageProvider(photoUrl)
-                    : null,
-                child: (photoUrl == null || photoUrl.isEmpty)
-                    ? Text(
-                        name.isNotEmpty ? name[0].toUpperCase() : 'D',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        const SizedBox(height: 3),
+                        Text(
+                          '${s.referralJoined(_fmtDate(r['joined_at'] as String?, s.isSpanish))}'
+                          ' · '
+                          '${s.referralExpires(_fmtDate(r['expires_at'] as String?, s.isSpanish))}',
+                          style: const TextStyle(
+                            color: Color(0xFFB0B0B6),
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  CustomPaint(
+                    size: const Size(20, 20),
+                    painter: _SteeringWheelPainter(
+                        color: expired ? Colors.white38 : _gold),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _dollars(amountCents),
+                    style: TextStyle(
+                      color: amountColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                      border:
+                          Border.all(color: statusColor.withValues(alpha: 0.4)),
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.3,
                       ),
                     ),
-                    Text(
-                      '$ridesDone / $ridesNeeded ${s.ridesLabel}',
-                      style: const TextStyle(
-                        color: Color(0xFFB0B0B6),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                  border:
-                      Border.all(color: statusColor.withValues(alpha: 0.4)),
-                ),
-                child: Text(
-                  statusLabel,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.3,
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Text(
+                    '$ridesDone / $nextRides ${s.ridesLabel}',
+                    style: const TextStyle(
+                      color: Color(0xFFB0B0B6),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$pct%',
+                    style: const TextStyle(
+                      color: Color(0xFFB0B0B6),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: progress),
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, _) => ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: value,
+                    minHeight: 6,
+                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                    valueColor: AlwaysStoppedAnimation<Color>(barColor),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 5,
-              backgroundColor: Colors.white.withValues(alpha: 0.08),
-              valueColor: AlwaysStoppedAnimation<Color>(statusColor),
-            ),
-          ),
-        ],
-      ),
+        ),
+        Divider(
+          height: 1,
+          thickness: 1,
+          color: Colors.white.withValues(alpha: 0.07),
+        ),
+      ],
     );
   }
+
+  /// "Oct 10, 2026" / "10 oct 2026" — formatted by hand because intl's
+  /// DateFormat with an 'es' locale throws unless initializeDateFormatting
+  /// ran, and nothing in the app initializes it.
+  String _fmtDate(String? iso, bool es) {
+    final dt = DateTime.tryParse(iso ?? '')?.toLocal();
+    if (dt == null) return '—';
+    const monthsEn = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    const monthsEs = [
+      'ene',
+      'feb',
+      'mar',
+      'abr',
+      'may',
+      'jun',
+      'jul',
+      'ago',
+      'sep',
+      'oct',
+      'nov',
+      'dic',
+    ];
+    final month = (es ? monthsEs : monthsEn)[dt.month - 1];
+    return es ? '${dt.day} $month ${dt.year}' : '$month ${dt.day}, ${dt.year}';
+  }
+}
+
+/// Minimal steering-wheel glyph for the referral earnings card and rows —
+/// Material has no steering-wheel icon, and this avoids shipping an asset.
+class _SteeringWheelPainter extends CustomPainter {
+  const _SteeringWheelPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = size.width * 0.10;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+    final center = size.center(Offset.zero);
+    final rimRadius = size.width * 0.42;
+    canvas.drawCircle(center, rimRadius, paint);
+    canvas.drawCircle(center, size.width * 0.13, paint);
+    final spoke = Paint()
+      ..color = color
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(center.dx - rimRadius * 0.9, center.dy - rimRadius * 0.12),
+      Offset(center.dx - size.width * 0.13, center.dy),
+      spoke,
+    );
+    canvas.drawLine(
+      Offset(center.dx + rimRadius * 0.9, center.dy - rimRadius * 0.12),
+      Offset(center.dx + size.width * 0.13, center.dy),
+      spoke,
+    );
+    canvas.drawLine(
+      Offset(center.dx, center.dy + size.width * 0.13),
+      Offset(center.dx, center.dy + rimRadius * 0.92),
+      spoke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SteeringWheelPainter oldDelegate) =>
+      oldDelegate.color != color;
 }

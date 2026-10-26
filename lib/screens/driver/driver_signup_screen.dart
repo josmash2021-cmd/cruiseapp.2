@@ -16,12 +16,15 @@ import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/meta_app_events_service.dart';
+import '../../services/referral_link_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/capture_camera_view.dart';
 import '../face_liveness_screen.dart';
 import '../biometric_consent_screen.dart';
 import '../privacy_policy_screen.dart';
 import 'driver_agreement_screen.dart';
+import 'driver_contracts_screen.dart';
 import 'onboarding/driver_todo_screen.dart';
 import '../../utils/ssn_validator.dart';
 import 'license_guidelines_screen.dart';
@@ -294,9 +297,17 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   // earns $25 after their first 2 rides (redeemed right after register).
   final _refCodeCtrl = TextEditingController();
 
+  /// A code that arrived through a /drive/{code} invite link and validated
+  /// server-side — shows the "invitation applied" line under the DOB tile.
+  bool _linkReferralApplied = false;
+
   // Date of birth — drivers must be at least 25 (server re-validates).
   DateTime? _dob;
   static const int _minDriverAge = 25;
+
+  // Gender — required for drivers; the first-trip guide picks the dress
+  // photo by tier×gender (server default: men's variant).
+  String? _gender;
 
   // ── Inline duplicate-check state ───────────────────────────────────────────
   String? _emailError;
@@ -339,6 +350,34 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     _emailCtrl.addListener(_onEmailChanged);
     _phoneCtrl.addListener(_onPhoneChanged);
     _passwordCtrl.addListener(_onPasswordChanged);
+    _absorbLinkReferralCode();
+  }
+
+  /// A driver who installed the app from someone's /drive/{code} invite
+  /// carries a pending code (ReferralLinkService). Pre-fill the referral
+  /// field with it and confirm against the server so the DOB tile can say
+  /// the invitation was applied. A stale/unknown code is dropped so it
+  /// never blocks the form.
+  Future<void> _absorbLinkReferralCode() async {
+    final code = await ReferralLinkService.pendingDriverCode();
+    if (code == null || !mounted) return;
+    var valid = false;
+    try {
+      valid = await ApiService.validateDriverReferralCode(code);
+    } catch (_) {
+      // Offline or server hiccup — keep the code stored; the redeem at
+      // submit time is the authority anyway.
+      return;
+    }
+    if (!mounted) return;
+    if (valid) {
+      setState(() {
+        _refCodeCtrl.text = code;
+        _linkReferralApplied = true;
+      });
+    } else {
+      await ReferralLinkService.clearPendingDriverCode();
+    }
   }
 
   void _onPasswordChanged() => setState(() {});
@@ -427,6 +466,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         return _firstNameCtrl.text.trim().length >= 2 &&
             _lastNameCtrl.text.trim().length >= 2 &&
             _dob != null &&
+            _gender != null &&
             (_driverAge ?? 0) >= _minDriverAge &&
             _emailRe.hasMatch(_emailCtrl.text.trim()) &&
             _phoneCtrl.text.replaceAll(_nonDigitRe, '').length >= 10 &&
@@ -669,23 +709,33 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
   // ── Image helpers ──────────────────────────────────────────────────────────
 
-  Future<String?> _pickCamera() async {
-    final picker = ImagePicker();
-    final xFile = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1920,
-      imageQuality: 92,
-      preferredCameraDevice: CameraDevice.rear,
+  Future<String?> _pickCamera(String title) async {
+    // The SHARED in-app camera (owner spec 2026-10-23: every document camera
+    // wears the license-capture design) — the native camera app is gone from
+    // the driver docs flow. The quality gate below is unchanged.
+    final path = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        fullscreenDialog: true,
+        builder: (routeCtx) => Scaffold(
+          backgroundColor: neuBase,
+          body: CaptureCameraView(
+            title: title,
+            hint: S.of(context).captureDocHint,
+            onPhoto: (p) => Navigator.of(routeCtx).pop(p),
+            onCancel: () => Navigator.of(routeCtx).pop(),
+          ),
+        ),
+      ),
     );
-    if (xFile == null) return null;
-    final file = File(xFile.path);
+    if (path == null) return null;
+    final file = File(path);
     final bytes = await file.length();
     final decoded = await decodeImageFromList(await file.readAsBytes());
     if (decoded.width < 640 || decoded.height < 400 || bytes < 40000) {
       if (mounted) _showQualityDialog();
       return null;
     }
-    return xFile.path;
+    return path;
   }
 
   Future<String?> _pickGallery() async {
@@ -790,7 +840,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 label: S.of(context).useCamera,
                 onTap: () async {
                   Navigator.pop(ctx);
-                  final path = await _pickCamera();
+                  final path = await _pickCamera(title);
                   if (path != null) onPicked(path);
                 },
               ),
@@ -885,6 +935,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         password: _passwordCtrl.text,
         role: 'driver',
         dateOfBirth: _dobIso,
+        gender: _gender,
       );
 
       final user = result['user'] as Map<String, dynamic>;
@@ -955,6 +1006,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         try {
           await ApiService.redeemDriverReferralCode(refCode);
           debugPrint('✅ Driver referral code redeemed at signup');
+          // The link-delivered code did its job — stop carrying it, or the
+          // next account created on this phone would inherit the invite.
+          await ReferralLinkService.clearPendingDriverCode();
         } catch (e) {
           debugPrint('⚠️ Referral code redeem failed (non-blocking): $e');
         }
@@ -1290,6 +1344,43 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               ),
             ),
           _buildDobPicker(),
+          // The driver arrived through someone's invite link and the code
+          // already validated — say so right under the date of birth.
+          if (_linkReferralApplied)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded,
+                      color: Color(0xFF22C55E), size: 16),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      S.of(context).referralInvitationApplied,
+                      style: const TextStyle(
+                        color: Color(0xFF22C55E),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          // Gender — required, right next to the DOB (same spec batch).
+          if (_gender == null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 6),
+              child: Text(
+                S.of(context).fieldHintGender,
+                style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          _buildGenderPicker(),
           const SizedBox(height: 16),
           _field(
             ctrl: _emailCtrl,
@@ -1518,6 +1609,47 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  /// Gender selector — two neu chips next to the DOB tile; required before
+  /// step 0 can continue.
+  Widget _buildGenderPicker() {
+    final c = AppColors.of(context);
+    Widget chip(String value, String label) {
+      final selected = _gender == value;
+      return Expanded(
+        child: InkWell(
+          onTap: () => setState(() => _gender = value),
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+            decoration: neuBox(
+              radius: 16,
+              pressed: true,
+              borderColor: selected ? _gold : null,
+            ),
+            child: Center(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: selected ? c.textPrimary : c.textTertiary,
+                  fontSize: 15,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        chip('male', S.of(context).genderMale),
+        const SizedBox(width: 12),
+        chip('female', S.of(context).genderFemale),
       ],
     );
   }
@@ -2109,6 +2241,12 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         S.of(context).docLinkPrivacyPolicy,
         () => Navigator.of(context).push(
               scaleExpandRoute(const PrivacyPolicyScreen(), durationMs: 420),
+            ),
+      ),
+      (
+        S.of(context).docLinkContracts,
+        () => Navigator.of(context).push(
+              scaleExpandRoute(const DriverContractsScreen(), durationMs: 420),
             ),
       ),
     ];

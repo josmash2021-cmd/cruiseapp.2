@@ -68,16 +68,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // pump frames between them — eliminates the 1s freeze on entry.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      // Siempre, en cualquier modo: el mapa necesita el dot del driver y el
-      // panel necesita los earnings — igual en offline que en online.
-      await Future.microtask(() => _startPosStream());
-      if (!mounted) return;
-      await Future.microtask(() => _loadAllEarnings());
-      if (!mounted) return;
-      await Future.microtask(() => _startEarningsRefresh());
-      if (!mounted) return;
-      // Fire-and-forget: these must not block the UI thread
-      unawaited(_locate());
       // ¿Entrar online de una? SOLO por una entrada de trabajo real (user
       // report 2026-09-27: "cuando el driver inicia sesion automaticamente
       // aparece online"): resume de viaje, tap de oferta push, handoff
@@ -110,6 +100,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           DriverOnlineScreen.chainedHandoffOffer != null) {
         unawaited(_enterOnlineMode(resuming: true));
       }
+      // Siempre, en cualquier modo: el mapa necesita el dot del driver y el
+      // panel necesita los earnings — igual en offline que en online.
+      await Future.microtask(() => _startPosStream());
+      if (!mounted) return;
+      await Future.microtask(() => _loadAllEarnings());
+      if (!mounted) return;
+      await Future.microtask(() => _startEarningsRefresh());
+      if (!mounted) return;
+      // Fire-and-forget: these must not block the UI thread
+      unawaited(_locate());
     });
 
     // Listen for network recovery — proactively reconnect SSE + re-register
@@ -485,8 +485,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // a cold fix with a worse-than-65 m radius must not plant the arrow
       // somewhere wrong — the stream delivers a trustworthy one shortly.
       if (pos.accuracy > 65) {
-        debugPrint(
-            '[DriverOnline] seed rejected: accuracy ${pos.accuracy} m');
+        debugPrint('[DriverOnline] seed rejected: accuracy ${pos.accuracy} m');
         return;
       }
       final ll = LatLng(pos.latitude, pos.longitude);
@@ -1046,6 +1045,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // seleccionó, en online solo aparece marcada esa zona") — the
         // selection highlight reads it; it is no longer consumed on connect.
       });
+      _cameraActionGate.begin();
+      _syncDriverSonar();
       // Mode flip rewrites the zone look NOW (the GPS-fix sync can be
       // minutes away for a parked driver): online, every heated sector paints
       // its gold UNDER the roads (2026-10-14 spec) and the transition
@@ -1130,9 +1131,85 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _startPolling();
       _startScheduledPoll();
       _startMarketplacePoll();
+      _introEpoch++;
+      _introRetryAfter = null;
+      _introTimer?.cancel();
+      _introTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (timer.tick < 10 || _introBusy) return;
+        final retryAfter = _introRetryAfter;
+        if (retryAfter != null && clock.now().isBefore(retryAfter)) return;
+        unawaited(_maybeShowOnlineIntro());
+      });
     } finally {
       _enteringOnline = false;
     }
+  }
+
+  /// Working state for the airport pills: the profile's drive_state once
+  /// (fail-open — the overlay falls back to the GPS state until it lands).
+  Future<void> _ensureAirportState() async {
+    try {
+      final me = await ApiService.getMe();
+      final st = (me?['drive_state'] ?? '').toString().trim().toUpperCase();
+      if (mounted && st.isNotEmpty) {
+        _setState(() => _driveStateCode = st);
+      }
+    } catch (_) {
+      // Sin perfil: el overlay resuelve el estado por GPS (stateOfPoint).
+    }
+  }
+
+  Future<void> _maybeShowOnlineIntro() async {
+    if (_introBusy || !mounted || !_driverOnline || _showOnlineIntro) return;
+    final epoch = _introEpoch;
+    _introBusy = true;
+    try {
+      final p = await PrefsCache.instance;
+      final lastSeenMs = p.getInt('online_intro_last_seen_at');
+      final nowMs = clock.now().millisecondsSinceEpoch;
+      if (epoch != _introEpoch ||
+          !mounted ||
+          !_driverOnline ||
+          _showOnlineIntro) {
+        return;
+      }
+      if (!onlineIntroDueNow(lastSeenMs, nowMs)) {
+        if (lastSeenMs != null) {
+          _introRetryAfter = DateTime.fromMillisecondsSinceEpoch(lastSeenMs)
+              .add(onlineIntroRepeatInterval);
+        }
+        return;
+      }
+      debugPrint('[OnlineIntro] daily due online=$_driverOnline '
+          'lastSeenMs=$lastSeenMs');
+      _presentOnlineIntro();
+    } catch (e) {
+      if (epoch == _introEpoch && mounted && _driverOnline) {
+        _introRetryAfter = clock.now().add(const Duration(seconds: 5));
+      }
+      debugPrint('[OnlineIntro] show attempt failed: $e');
+    } finally {
+      _introBusy = false;
+    }
+  }
+
+  void _presentOnlineIntro() {
+    if (!mounted || !_driverOnline || _showOnlineIntro) return;
+    _setState(() => _showOnlineIntro = true);
+  }
+
+  Future<void> _dismissOnlineIntro() async {
+    final p = await PrefsCache.instance;
+    await p.setBool('online_intro_seen_v1', true);
+    await p.setInt(
+      'online_intro_last_seen_at',
+      clock.now().millisecondsSinceEpoch,
+    );
+    if (!mounted) return;
+    _setState(() {
+      _showOnlineIntro = false;
+      _introRetryAfter = clock.now().add(onlineIntroRepeatInterval);
+    });
   }
 
   /// Salir offline (el _goOffline de hoy, sin el pop): se apagan los
@@ -1142,6 +1219,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Silence every isOnline:true writer BEFORE the offline write leaves —
     // the other order let a queued heartbeat flip the driver back online.
     _wentOffline = true;
+    // A pending intro timer dies with the shift — it must never fire over
+    // the offline map.
+    _introEpoch++;
+    _introTimer?.cancel();
+    _introTimer = null;
     // El turno se cerró de verdad (user report 2026-09-27, "el botón de GO
     // se queda en RESUME"): el pref ya queda apagado abajo, pero el snapshot
     // del boot sobrevivía y el GO seguía leyendo RESUME para siempre.
@@ -1194,23 +1276,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // mostrando todas las zonas" — the zones of the DRIVER'S state, Florida
     // or Alabama) — the camera frames them, then stays FREE: no follow, no
     // auto-recenter.
-    _reFollowTimer?.cancel();
     if (FeatureFlags.zonesMapEnabled) {
       unawaited(_fitHomeZones());
     }
     // Offline the sheet rests half-open with the pill "Go online" at its
     // floor (2026-10-13 spec); the swipe down collapses it to the circle.
     _animatePanelTo(_kSheetRestFrac);
+    _syncDriverSonar();
   }
-
-  /// The 10 s auto-refollow exists ONLINE (and with the zone layer off) —
-  /// offline with the zone layer the driver EXPLORES the zones and the
-  /// camera stays where they left it (user spec 2026-10-13: "elimina el
-  /// recentrar automático de esta parte"); only the manual FAB recentres.
-  /// Kept out of `_onCameraMoveStarted` so the gesture path stays
-  /// mode-gate-free (single-map parity).
-  bool get _autoRecenterEnabled =>
-      _driverOnline || !FeatureFlags.zonesMapEnabled;
 
   /// The server-side half of the 12 h cap landing while the app is OPEN
   /// (user spec 2026-09-27): the ghost agent flipped the shift off and
@@ -1222,13 +1295,28 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           S.of(context).shiftEnded12h,
-          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
+          style:
+              const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
         ),
         backgroundColor: const Color(0xFFE8C547),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
     }));
+  }
+
+  /// The face-check 403 (2026-10-23, owner report: "rechazar no desconecta
+  /// si está conectado"): the server refuses is_online:true while
+  /// face_review_required — without this, the 5 s location stream UNDID the
+  /// dispatch kick within seconds. Terminal, same no-retry class as
+  /// go_online_disabled: roll back offline and re-read the gate flags (the
+  /// red "Verificar" GO paints from them). Silent on purpose — the socket
+  /// path (face_check_reviewed) already shows the dialog; when that channel
+  /// died, the red GO state is the message.
+  void _onFaceReviewKick() {
+    if (!mounted || !_driverOnline) return;
+    unawaited(_exitOnlineMode());
+    unawaited(_checkVehicleDocStatus());
   }
 
   /// El flag de background del GPS va atado al modo (regla 2026-08-22):
@@ -1363,6 +1451,56 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }).catchError((e) {
       _isGoingOnline = false;
       debugPrint('âŒ Failed to go online: $e');
+      // Zone gates are terminal answers, never retried (2026-10-17, owner
+      // spec "todo se controla desde dispatch"): a sector switched OFF
+      // (zone_disabled) or a driver outside the coverage must NOT loop a
+      // 403 every 5 s forever — the dialog explains and they stay offline.
+      if (e is ApiException &&
+          (e.message == 'zone_disabled' ||
+              e.message == 'outside_service_area')) {
+        // A refused flip rolls the UI back OFFLINE (2026-10-23, owner
+        // report): _driverOnline was set optimistically at flip start —
+        // without the rollback the screen claimed "searching" while the
+        // backend had the driver OFFLINE (a ghost in reverse).
+        unawaited(_exitOnlineMode());
+        if (mounted) {
+          if (e.message == 'zone_disabled') {
+            _showZoneDisabledDialog();
+          } else {
+            _showZoneOutsideDialog();
+          }
+        }
+        return;
+      }
+      // account_not_approved is terminal too (2026-10-23, owner report:
+      // "firmé todo y el GO no me dejaba sin cerrar la app"): the old code
+      // retried the 403 every 5 s FOREVER in silence — the driver stared at
+      // a dead GO with no clue why. Roll back offline, refresh the gates
+      // with fresh data, and bounce to the correct status screen instead of
+      // looping.
+      if (e is ApiException && e.message == 'account_not_approved') {
+        unawaited(_exitOnlineMode());
+        unawaited(_checkVehicleDocStatus());
+        _bounceToApprovalScreen('pending');
+        return;
+      }
+      // go_online_disabled is terminal as well (2026-10-23, owner spec —
+      // the dispatch GO switch): the panel paused this driver mid-flip.
+      // Roll back, mark the gate, explain — never retry-loop the 403.
+      if (e is ApiException && e.message == 'go_online_disabled') {
+        unawaited(_exitOnlineMode());
+        _setState(() => _goOnlineDisabled = true);
+        if (mounted) _showGoOnlineDisabledDialog();
+        return;
+      }
+      // face_review_required is terminal too (2026-10-23, owner report):
+      // dispatch rejected the dress-code selfie mid-flip — roll back and
+      // let the fresh gate read paint the red "Verificar" GO.
+      if (e is ApiException && e.message == 'face_review_required') {
+        unawaited(_exitOnlineMode());
+        unawaited(_checkVehicleDocStatus());
+        return;
+      }
       // Retry after 5s so driver doesn't stay silently offline
       Future.delayed(const Duration(seconds: 5), () {
         if (mounted && _phase == _Phase.searching) {
@@ -1379,12 +1517,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // driver online — FCM offers nobody answers, riders waiting on a ghost.
     // Last-known coords are fine; what matters is is_online: false.
     if (_driverId == null) return;
-    final offLat = _pos?.latitude ??
-        LocalCache.get<double>('last_driver_lat') ??
-        0.0;
-    final offLng = _pos?.longitude ??
-        LocalCache.get<double>('last_driver_lng') ??
-        0.0;
+    final offLat =
+        _pos?.latitude ?? LocalCache.get<double>('last_driver_lat') ?? 0.0;
+    final offLng =
+        _pos?.longitude ?? LocalCache.get<double>('last_driver_lng') ?? 0.0;
     AnalyticsService.instance.logDriverOffline();
     // iOS: dismiss the Dynamic Island activity (no-op elsewhere)
     LiveActivityService.stop();
@@ -1434,6 +1570,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         debugPrint('[DriverOnline] Background heartbeat sent');
       } catch (e) {
         debugPrint('[DriverOnline] Background heartbeat failed: $e');
+        // The face-check 403 means dispatch kicked this driver — the
+        // heartbeat must not re-online them (owner report 2026-10-23).
+        if (e is ApiException && e.message == 'face_review_required') {
+          _onFaceReviewKick();
+        }
       }
     });
   }
@@ -1474,9 +1615,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _posStream = ResilientPositionStream(
       label: 'DriverOnlineGps',
       settings: driverLocationSettings(
-        // distanceFilter: 2 -> fixes every 2 meters.
-        // SmoothMotion still glides smoothly. Balance accuracy/battery.
-        distanceFilter: 2,
+        // Continuous feed: SmoothMotion owns the smoothing, not metres.
+        distanceFilter: 0,
         background: _driverOnline,
         notificationTitle: s.driverLocationNotifTitle,
         notificationText: s.driverLocationNotifOnline,
@@ -1490,7 +1630,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       },
       onPosition: (pos) {
         if (!mounted) return;
+        if (!_gpsFixPolicy.accept(pos)) {
+          _diagRejectedFixes++;
+          return;
+        }
         _diagFixes++;
+        _diagLastAccuracyM = pos.accuracy;
         // Municipal zone highlight + visibility follow the driver's zone
         // and the phase (deduped inside; no-op until zones are loaded).
         _syncZoneLayers();
@@ -1510,8 +1655,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _diagLastFixDistM = _hav(prevFix, newLL) * 1000;
           final prevAt = _diagLastFixAt;
           if (prevAt != null) {
-            _diagLastFixDtMs =
-                DateTime.now().difference(prevAt).inMilliseconds;
+            _diagLastFixDtMs = DateTime.now().difference(prevAt).inMilliseconds;
           }
         }
         _diagLastFixLL = newLL;
@@ -1544,6 +1688,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // presence and RTDB keep flowing either way — the ghost agent
         // needs them; only the display target is gated.
         final fixUsable = pos.accuracy <= 25;
+        if (!fixUsable) _diagRejectedFixes++;
         if (fixUsable) {
           // Searching has no route to snap to — feed the road-matching
           // trace (user report 2026-09-27: arrow off the road lines at
@@ -1555,7 +1700,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           }
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
-          _smoothMoveTo(snappedLL, _smoothedBearing,
+          _smoothMoveTo(snappedLL, _roadLockBearing ?? _smoothedBearing,
               accuracyM: pos.accuracy,
               timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
               speedMps:
@@ -1631,7 +1776,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             driverId: _driverId!,
             lat: pos.latitude,
             lng: pos.longitude,
-          ).catchError((_) => <String, dynamic>{});
+            etaSeconds: _navEta > 0 ? _navEta * 60 : null,
+          ).catchError((e) {
+            // face_review_required 403 (2026-10-23, owner report): this 5 s
+            // stream used to UNDO the dispatch selfie-reject kick — it is
+            // terminal now, never swallowed back online.
+            if (e is ApiException && e.message == 'face_review_required') {
+              _onFaceReviewKick();
+            }
+            return <String, dynamic>{};
+          });
         }
         // Sync driver GPS to Firestore so rider tracking gets real position
         if (_tripId != null) {
@@ -1692,6 +1846,30 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
     final map = _map;
     if (map == null) return;
+    // Translation and zoom coalesce for heat; rotation keeps a much finer
+    // threshold so a slow phone turn never becomes a staircase.
+    final center = options.center?.coordinates;
+    if (center != null) {
+      final last = _lastCamWriteOpts;
+      final lastC = last?.center?.coordinates;
+      final dtMs = _lastCamWriteAt == null
+          ? 1000
+          : DateTime.now().difference(_lastCamWriteAt!).inMilliseconds;
+      if (lastC != null && dtMs < 100) {
+        final dLatM = (center.lat - lastC.lat).abs() * 110540.0;
+        final dLngM = (center.lng - lastC.lng).abs() * 111320.0;
+        final dBrg = (options.bearing ?? 0) - (last?.bearing ?? 0);
+        final dZoom = (options.zoom ?? 0) - (last?.zoom ?? 0);
+        if (dLatM < 0.3 &&
+            dLngM < 0.3 &&
+            dBrg.abs() < 0.01 &&
+            dZoom.abs() < 0.02) {
+          return;
+        }
+      }
+    }
+    _lastCamWriteOpts = options;
+    _lastCamWriteAt = DateTime.now();
     _pendingCamWrite = options;
     if (_camWriteBusy) return; // the in-flight write flushes the newest
     _flushCameraWrite(map);
@@ -1700,6 +1878,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _flushCameraWrite(mapbox.MapboxMap map) {
     final opts = _pendingCamWrite;
     if (opts == null) return;
+    if (!mounted || !identical(map, _map)) {
+      _pendingCamWrite = null;
+      return;
+    }
     _pendingCamWrite = null;
     _camWriteBusy = true;
     _diagCamWrites++;
@@ -1708,10 +1890,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // frees it, and the pending flush still carries the freshest frame.
       map.setCamera(opts).timeout(const Duration(seconds: 2)).then((_) {
         _camWriteBusy = false;
-        _flushCameraWrite(map);
+        if (mounted && identical(map, _map)) _flushCameraWrite(map);
       }).catchError((Object _) {
         _camWriteBusy = false;
-        _flushCameraWrite(map);
+        if (mounted && identical(map, _map)) _flushCameraWrite(map);
       });
     } catch (_) {
       _camWriteBusy = false;
@@ -1758,8 +1940,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // rewrites _routePts[0] to the driver's own position on every fix, so
     // that line runs through them by construction and would report ~0 m
     // however far off the road they actually are.
-    final against =
-        _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts;
+    final against = _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts;
     final offM = RouteSplice.distanceToPolylineM(against, probe);
     final now = DateTime.now();
     if (offM > _kOffRouteMeters) {
@@ -1979,8 +2160,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           ? ' · fix ${_diagLastFixDistM.toStringAsFixed(0)}m/${(_diagLastFixDtMs / 1000).toStringAsFixed(1)}s'
           : '';
       motionDiag.value =
-          'GPS $_diagFixes/s · tick $_diagTicks/s · cam $_diagCamWrites/s · anot $_diagAnnotUpdates/s · v $vMph mph$fixInfo';
+          'GPS $_diagFixes/s · bad $_diagRejectedFixes/s · acc ${_diagLastAccuracyM.toStringAsFixed(0)}m · rs ${_posStream?.restartCount ?? 0}\n'
+          'tick $_diagTicks/s · cam $_diagCamWrites/s · anot $_diagAnnotUpdates/s · v $vMph mph$fixInfo';
       _diagFixes = _diagTicks = _diagCamWrites = _diagAnnotUpdates = 0;
+      _diagRejectedFixes = 0;
     });
   }
 
@@ -1989,11 +2172,39 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _setState(() {});
   }
 
+  bool get _driverSonarActive =>
+      _phase == _Phase.searching &&
+      _mapMounted &&
+      _mapStyleLoaded &&
+      _firstRenderDone &&
+      _appInForeground;
+
+  void _syncDriverSonar() {
+    if (!_driverSonarActive) {
+      if (_driverSonarCtrl?.isAnimating ?? false) {
+        _driverSonarCtrl!.stop();
+        if (mounted) _setState(() {});
+      }
+      return;
+    }
+    if (_driverSonarCtrl == null) {
+      _driverSonarCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 2600),
+      );
+      _driverSonarCtrl!.repeat();
+      if (mounted) _setState(() {});
+    } else if (!_driverSonarCtrl!.isAnimating) {
+      _driverSonarCtrl!.repeat();
+    }
+  }
+
   /// Continuous 60fps ticker — Google-Maps-style constant-velocity advance
   /// via [SmoothMotion]. Never resets, never stutters, keeps gliding at the
   /// measured speed between GPS fixes instead of decelerating into a stall.
   void _onSmoothTick(Duration elapsed) {
     if (!mounted || _pos == null) return;
+    _syncDriverSonar();
     _diagTicks++;
     // Self-correcting stop. _releaseMapSurface already stops the ticker, and
     // both start paths now check the map first — this is the backstop for
@@ -2015,12 +2226,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     // tick() devuelve si posición O rumbo cambiaron este frame.
     final frameMoved = _motion.tick(dtSec);
-    // Rolling re-engages the chase by itself (2026-10-13 spec): the zone
-    // recenter views are for a parked driver looking at zones — once the
-    // car moves, follow comes back without any button.
-    if (!_cameraFollowing && _driverOnline && _motion.speedMps > 2.2) {
-      _setState(() => _cameraFollowing = true);
-    }
     // Re-project the engine's output onto the active line (route or matched
     // road line) — the fix-level snap alone left the extrapolated lead
     // running off the road between fixes (see _snapRenderedToLine).
@@ -2055,10 +2260,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // ignore it, so a driver dragging the map while online was overruled
     // sixty times a second and the view snapped back under their finger.
     if (_phase == _Phase.searching && !offerActive && _cameraFollowing) {
-      // Resting zoom: street level everywhere (2026-10-13 spec — the
-      // offline resting view is the fit-all-zones frame with follow OFF, so
-      // the chase only ever runs in FAB/online mode = street zoom parity).
-      final zoomTarget = 15.5;
+      const zoomTarget = 15.5;
+      final followPadding = _kZeroCamPadding;
       // Entry zoom ease: the map opens at zoom 16 (same as home) and
       // glides to the working zoom over ~750ms (easeOutCubic) so there
       // is no zoom "pop" when arriving from the home screen.
@@ -2093,10 +2296,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // 60 channel calls a second for a no-op. The zoom ease changes zoom
       // per frame, so it always gets through.
       final lastC = _lastCamWriteCenter;
+      final lastPadding = _lastCamWriteOpts?.padding;
+      final samePadding = lastPadding != null &&
+          lastPadding.top == followPadding.top &&
+          lastPadding.bottom == followPadding.bottom &&
+          lastPadding.left == followPadding.left &&
+          lastPadding.right == followPadding.right;
       final unchanged = lastC != null &&
+          samePadding &&
           (_pos!.latitude - lastC.latitude).abs() < 1e-7 &&
           (_pos!.longitude - lastC.longitude).abs() < 1e-7 &&
-          (camBearing - (lastWrittenB ?? camBearing)).abs() < 0.05 &&
+          (camBearing - (lastWrittenB ?? camBearing)).abs() < 0.01 &&
           (zoom - (_lastCamWriteZoom ?? -1)).abs() < 1e-4;
       if (!unchanged) {
         _cameraBearing = camBearing;
@@ -2110,7 +2320,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             zoom: zoom,
             bearing: camBearing,
             pitch: 0,
-            padding: _kZeroCamPadding,
+            padding: followPadding,
           ),
         );
       }
@@ -2538,8 +2748,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      color: Colors.white
-                                          .withValues(alpha: 0.4),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.4),
                                       fontSize: 12.5,
                                     ),
                                   )
@@ -2862,9 +3072,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // left staring at the expired offer's frame until the next fix.
         if (_pos != null && mounted) {
           try {
-            _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
+            _animateToPosition(_pos!,
+                zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
           } catch (e) {
-            debugPrint('[DriverOnline] _animateToPosition failed on expire: $e');
+            debugPrint(
+                '[DriverOnline] _animateToPosition failed on expire: $e');
           }
         }
       }
@@ -2961,7 +3173,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         driverId: _driverId!,
         lat: _pos!.latitude,
         lng: _pos!.longitude,
-      ).catchError((_) => <String, dynamic>{});
+      ).catchError((e) {
+        // Same terminal face-check 403 as the 5 s GPS stream (2026-10-23).
+        if (e is ApiException && e.message == 'face_review_required') {
+          _onFaceReviewKick();
+        }
+        return <String, dynamic>{};
+      });
     }
     try {
       final offers = await ApiService.getDriverPendingOffers(_driverId!);
@@ -3012,8 +3230,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (_phase != _Phase.searching || _isPaused || _tripId != null) return;
       final status = (trip['status'] ?? '').toString().toLowerCase();
       const liveStatuses = {
-        'accepted', 'driver_en_route', 'driver_arriving', 'arrived',
-        'driver_arrived', 'in_trip', 'in_progress',
+        'accepted',
+        'driver_en_route',
+        'driver_arriving',
+        'arrived',
+        'driver_arrived',
+        'in_trip',
+        'in_progress',
       };
       if (!liveStatuses.contains(status)) return;
       final tripId = int.tryParse('${trip['id'] ?? trip['trip_id'] ?? ''}');
@@ -3480,7 +3703,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
       if (_pos != null) {
         try {
-          _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
+          _animateToPosition(_pos!,
+              zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
         } catch (e) {
           debugPrint(
               '[DriverOnline] _animateToPosition failed during accept: $e');
@@ -4050,6 +4274,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _zoneWaveTimer?.cancel();
     _zoneWaveTimer = null;
     _zoneWaveSectorId = null;
+    _zoneWaveWriteBusy = false;
+    _zoneWavePendingPhase = null;
     // Bump the generation so any in-flight annotation work recognises its
     // handles as dead instead of poking a destroyed native object.
     _mapGeneration++;
@@ -4080,6 +4306,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // remount whose style never loaded had no watchdog left and the driver
     // stared at a dead map until process death.
     _mapStyleWatchdogRetried = false;
+    _cameraActionGate.begin();
+    _pendingCamWrite = null;
     _map = null;
     // _mapStyleLoaded resets with the surface too: on remount the overlay
     // still has to cover the fresh PlatformView's first frames until the
@@ -4089,6 +4317,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _mapStyleLoaded = false;
       _firstRenderDone = false;
     });
+    _syncDriverSonar();
   }
 
   /// Bring the canvas back after the screen above us is gone.
@@ -4288,7 +4517,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
       if (_pos != null && mounted) {
         try {
-          _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
+          _animateToPosition(_pos!,
+              zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
         } catch (e) {
           debugPrint('[DriverOnline] _animateToPosition failed on reject: $e');
         }
@@ -4897,7 +5127,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             // else. The already-driven head keeps being trimmed by
             // _trimRouteBehindDriver exactly as before.
             final spliced = RouteSplice.splice(
-              oldRoute: _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts,
+              oldRoute:
+                  _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts,
               newRoute: pts,
               driverPos: o,
             );
@@ -5053,7 +5284,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             return true;
           }
           final splicedOsrm = RouteSplice.splice(
-            oldRoute: _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts,
+            oldRoute:
+                _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts,
             newRoute: pts,
             driverPos: o,
           );
@@ -5130,7 +5362,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     } catch (_) {}
     if (fresh == null) return; // old line stays; _routePts already swapped
     if (!mounted) {
-      try { await polyMgr.delete(fresh); } catch (_) {}
+      try {
+        await polyMgr.delete(fresh);
+      } catch (_) {}
       return;
     }
     // The per-fix trim (_trimRouteBehindDriver) writes _routeAnnot — point

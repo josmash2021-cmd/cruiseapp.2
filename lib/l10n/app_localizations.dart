@@ -54,19 +54,18 @@ class S {
   String get navIntroTitle => _es
       ? 'Navega a donde quieras con Cruise'
       : 'Navigate anywhere with Cruise';
-  String get navIntroDirectionsTitle => _es
-      ? 'Direcciones dentro de la app'
-      : 'Get directions right in the app';
+  String get navIntroDirectionsTitle =>
+      _es ? 'Direcciones dentro de la app' : 'Get directions right in the app';
   String get navIntroDirectionsBody => _es
       ? 'Sigue cada giro paso a paso sin salir de Cruise.'
       : 'Follow turn-by-turn guidance without leaving Cruise.';
-  String get navIntroRideTitle => _es ? 'No pierdas ningún viaje' : 'Never miss a ride';
+  String get navIntroRideTitle =>
+      _es ? 'No pierdas ningún viaje' : 'Never miss a ride';
   String get navIntroRideBody => _es
       ? 'Actualizaciones y avisos en tiempo real para llegar siempre a tiempo.'
       : 'Real-time updates and notifications to keep you on track.';
-  String get navIntroInsightsTitle => _es
-      ? 'Datos en vivo para el driver'
-      : 'See live driver insights';
+  String get navIntroInsightsTitle =>
+      _es ? 'Datos en vivo para el driver' : 'See live driver insights';
   String get navIntroInsightsBody => _es
       ? 'Tráfico, cambios de ruta y condiciones en tiempo real.'
       : 'Traffic, route changes, and conditions in real time.';
@@ -83,6 +82,13 @@ class S {
   // ── Municipal zone gate (driver connect) ──
   String get zoneOutsideTitle =>
       _es ? 'Fuera del área de servicio' : 'Outside the service area';
+  // Zona apagada por dispatch (2026-10-17 owner spec: una zona apagada en
+  // el panel no deja conectarse a sus drivers).
+  String get zoneDisabledTitle =>
+      _es ? 'Zona desactivada por ahora' : 'Zone paused for now';
+  String get zoneDisabledBody => _es
+      ? 'Tu zona está desactivada temporalmente. Te avisaremos cuando se reactive — no puedes conectarte mientras tanto.'
+      : 'Your zone is temporarily paused. We will let you know when it is back — you cannot go online meanwhile.';
   // State-aware (2026-10-14 user report: an Alabama driver read "South
   // Florida" — the zones now live in more than one state). [state] is the
   // ZoneService.stateOfPoint code ('FL'/'AL'/null).
@@ -101,6 +107,7 @@ class S {
         ? 'Por ahora Cruise conecta dentro de las zonas habilitadas de tu estado.'
         : 'Cruise currently connects inside the enabled zones of your state.';
   }
+
   String get zoneSelectHint => _es
       ? 'Selecciona tu zona en el mapa para conectarte'
       : 'Select your zone on the map to go online';
@@ -159,20 +166,19 @@ class S {
   String get verify => _es ? 'Verificar' : 'Verify';
   String get invalidCode => _es ? 'Código inválido' : 'Invalid code';
   // ── "Problems receiving the code?" sheet (verify code screen) ──
-  String get problemsReceivingCode =>
-      _es ? '¿Problemas para recibir el código?' : 'Problems receiving the code?';
+  String get problemsReceivingCode => _es
+      ? '¿Problemas para recibir el código?'
+      : 'Problems receiving the code?';
   String get resendVerificationCode =>
       _es ? 'Reenviar código de verificación' : 'Resend verification code';
   String resendCodeTo(String target) => _es ? 'al $target' : 'to $target';
   String get bulletPhoneCorrect => _es
       ? 'Asegúrate de que tu número de teléfono sea correcto'
       : 'Make sure your phone number is correct';
-  String get bulletCheckInternet => _es
-      ? 'Revisa tu conexión a internet'
-      : 'Check your internet connection';
-  String get bulletRecentCode => _es
-      ? 'Ingresa el código más reciente'
-      : 'Enter the most recent code';
+  String get bulletCheckInternet =>
+      _es ? 'Revisa tu conexión a internet' : 'Check your internet connection';
+  String get bulletRecentCode =>
+      _es ? 'Ingresa el código más reciente' : 'Enter the most recent code';
   String get textMe => _es ? 'Envíame un texto' : 'Text me';
   String get callMe => _es ? 'Llámame' : 'Call me';
   String get codeSentByText =>
@@ -254,6 +260,8 @@ class S {
       : 'Your onboarding will be based on the requirements of where you plan to drive.';
   String get yourCity => _es ? 'Tu ciudad' : 'Your city';
   String get selectYourCity => _es ? 'Elige tu ciudad' : 'Select your city';
+  String get searchCityHint => _es ? 'Busca tu ciudad' : 'Search your city';
+  String get noCitiesFound => _es ? 'Sin resultados' : 'No results';
   String get tellUsAboutYourself =>
       _es ? 'Cuéntanos sobre ti' : 'Tell us about yourself';
   String get whyDriveWithCruise => _es
@@ -275,9 +283,8 @@ class S {
   String get reasonCantPhysicalWork => _es
       ? 'No puedo hacer físicamente la mayoría de los otros trabajos'
       : "I can't physically do most other work";
-  String get reasonNoOtherJob => _es
-      ? 'No he encontrado otro trabajo'
-      : 'I have not found another job';
+  String get reasonNoOtherJob =>
+      _es ? 'No he encontrado otro trabajo' : 'I have not found another job';
   String get hoursPerWeekQuestion => _es
       ? '¿Cuántas horas a la semana quieres conducir?'
       : 'How many hours are you looking to drive each week?';
@@ -963,6 +970,8 @@ class S {
       _es ? 'Coloca tu apellido' : 'Enter your last name';
   String get fieldHintDob =>
       _es ? 'Coloca tu fecha de nacimiento' : 'Enter your date of birth';
+  String get fieldHintGender =>
+      _es ? 'Selecciona tu género' : 'Select your gender';
   String get fieldHintEmail =>
       _es ? 'Coloca tu correo electrónico' : 'Enter your email address';
   String get fieldHintPhone =>
@@ -1038,21 +1047,21 @@ class S {
       _es ? 'Conéctate para empezar a ganar' : 'Go online to start earning';
   // Hero del sheet offline a medio abrir (user spec 2026-10-16, estilo Dash):
   // headline grande por nivel de demanda + tarjeta con la demanda del sector.
-  String get offlineHeroHeadlineHigh => _es
-      ? 'Tu zona está pidiendo drivers'
-      : 'Your area is asking for drivers';
+  String get offlineHeroHeadlineHigh =>
+      _es ? 'Tu zona está pidiendo drivers' : 'Your area is asking for drivers';
   String get offlineHeroHeadlineMedium =>
       _es ? 'Hay demanda cerca de ti' : "There's demand near you";
   String get offlineHeroHeadlineIdle =>
-      _es ? 'Conéctate y empieza a ganar' : 'Go online and start earning';
+      _es ? 'Conéctate y comienza a ganar' : 'Go online and start earning';
   String get offlineDemandTitle =>
       _es ? 'Demanda en tu zona' : 'Demand in your area';
-  // Escala 2026-10-16 (user spec): apagada en el dispatcher = "Very slow";
-  // nivel 1 (dorado) = "Normal"; 2 = "Ocupado"; 3 = "Muy ocupado".
-  String get offlineDemandVerySlow => _es ? 'Muy lenta' : 'Very slow';
-  String get offlineDemandNormal => _es ? 'Normal' : 'Normal';
+  // Sin viajes y Lento conservan calor dorado tenue; el apagado manual es
+  // un estado distinto y se muestra en gris.
+  String get offlineDemandNoRides => _es ? 'Sin viajes' : 'No rides';
+  String get offlineDemandSlow => _es ? 'Lento' : 'Slow';
   String get offlineDemandBusy => _es ? 'Ocupado' : 'Busy';
   String get offlineDemandVeryBusy => _es ? 'Muy ocupado' : 'Very busy';
+  String get offlineDemandZoneOff => _es ? 'Zona apagada' : 'Zone off';
   String get offlineDemandYourArea => _es ? 'tu zona' : 'your area';
   String get offlineSchedulesTooltip =>
       _es ? 'Ver viajes agendados' : 'See scheduled rides';
@@ -1173,12 +1182,12 @@ class S {
       _es ? '¿Hacia dónde vas?' : 'Where are you heading?';
   String get destinationSearchHint =>
       _es ? 'Buscar destino' : 'Search destination';
-  String get destinationResolveFailed =>
-      _es ? 'No pudimos ubicar esa dirección' : "We couldn't locate that address";
+  String get destinationResolveFailed => _es
+      ? 'No pudimos ubicar esa dirección'
+      : "We couldn't locate that address";
   String get destinationSetFailed =>
       _es ? 'No se pudo guardar el destino' : "Couldn't save the destination";
-  String get clearDestination =>
-      _es ? 'Quitar destino' : 'Clear destination';
+  String get clearDestination => _es ? 'Quitar destino' : 'Clear destination';
   String get offersLifetime =>
       _es ? 'Ofertas (histórico)' : 'Offers (lifetime)';
   String get cancellationRate =>
@@ -1346,11 +1355,14 @@ class S {
   String get arrivingAtDestination =>
       _es ? 'Llegando a tu destino' : 'Arriving at your destination';
   String get driverOnTheWayCard =>
-      _es ? 'Conductor en camino' : 'Driver on the way';
+      _es ? 'Tu conductor ya va en camino' : 'Your driver is on the way';
+  String driverArrivesInEstimate(int minutes) => _es
+      ? 'Tu conductor llega en un estimado de $minutes min'
+      : 'Your driver arrives in about $minutes min';
   String get driverAlmostHereCard =>
       _es ? 'Tu conductor está casi aquí' : 'Your driver is almost here';
   String get driverArrivingCard =>
-      _es ? '¡Tu conductor está llegando!' : 'Your driver is arriving!';
+      _es ? 'El driver está por llegar' : 'Your driver is almost here';
   String get driverAtPickupSpot => _es
       ? 'Tu conductor está en el punto de recogida 📍'
       : 'Your driver is at the pickup spot 📍';
@@ -1430,9 +1442,8 @@ class S {
       : 'Your driver is already on the way. You can cancel instantly: it is free within the first 2 minutes after driver assignment; after that, a \$5.00 cancellation fee applies.';
   String get sendCancellationRequest =>
       _es ? 'Cancelar viaje ahora' : 'Cancel trip now';
-  String get cancelRequestSentToSupport => _es
-      ? 'Viaje cancelado.'
-      : 'Trip cancelled.';
+  String get cancelRequestSentToSupport =>
+      _es ? 'Viaje cancelado.' : 'Trip cancelled.';
   // ── Chat ──────────────────────────────────────────────────────────────────
   String get connectionIssueRetrying => _es
       ? 'Problema de conexión - reintentando...'
@@ -1502,9 +1513,6 @@ class S {
   String get manageSectionLabel => _es ? 'Administrar' : 'Manage';
   String get moneySectionLabel => _es ? 'Dinero' : 'Money';
   String get resourcesSectionLabel => _es ? 'Recursos' : 'Resources';
-  String get menuSectionAccount => _es ? 'Cuenta' : 'Account';
-  String get menuSectionGrowth => _es ? 'Crecimiento' : 'Growth';
-  String get menuSectionWork => _es ? 'Tu trabajo' : 'Your work';
   String get helpLabel => _es ? 'Ayuda' : 'Help';
   String get safetyLabel => _es ? 'Seguridad' : 'Safety';
   String get aboutLabel => _es ? 'Acerca de' : 'About';
@@ -1695,9 +1703,8 @@ class S {
   // questions in the same order: what it costs, when it lands, and where.
   String get payoutAvailableSection => _es ? 'Disponibles' : 'Available';
   String get payoutFeeFree => _es ? 'Sin comisión' : 'Free';
-  String payoutFeePercent(String rate, String min) => _es
-      ? '$rate de comisión (mín. $min)'
-      : '$rate fee (min $min)';
+  String payoutFeePercent(String rate, String min) =>
+      _es ? '$rate de comisión (mín. $min)' : '$rate fee (min $min)';
   String get payoutWhenWeekly => _es
       ? 'Cada lunes · llega en 1–2 días hábiles'
       : 'Every Monday · arrives in 1–2 business days';
@@ -1716,8 +1723,7 @@ class S {
   String get payoutChangeCard => _es ? 'Cambiar tarjeta' : 'Change card';
   String payoutInstantMinimum(String amount) =>
       _es ? 'Mínimo $amount por retiro' : 'Minimum $amount per cashout';
-  String get payoutHelpTitle =>
-      _es ? '¿Cómo te pagamos?' : 'How you get paid';
+  String get payoutHelpTitle => _es ? '¿Cómo te pagamos?' : 'How you get paid';
   String get payoutHelpWeekly => _es
       ? 'Cada lunes enviamos tus ganancias a tu cuenta bancaria, sin '
           'comisión. Suelen llegar en uno o dos días hábiles.'
@@ -1734,9 +1740,8 @@ class S {
       : 'Weekly auto-transfer will initiate on $date';
   String get cashoutInstantButton =>
       _es ? 'Retiro instantáneo' : 'Instant Cash out';
-  String cashoutFeeLine(String fee, String net) => _es
-      ? 'Comisión $fee · recibes $net'
-      : 'Fee $fee · you receive $net';
+  String cashoutFeeLine(String fee, String net) =>
+      _es ? 'Comisión $fee · recibes $net' : 'Fee $fee · you receive $net';
   String get cashoutProcessing =>
       _es ? 'Procesando tu retiro…' : 'Processing your cash out…';
   String get cashoutProcessingHint => _es
@@ -1748,8 +1753,7 @@ class S {
   String get cashoutNeedCard => _es
       ? 'Agrega una tarjeta de débito para retirar al instante'
       : 'Add a debit card to cash out instantly';
-  String get cashoutAddCardAction =>
-      _es ? 'Agregar tarjeta' : 'Add a card';
+  String get cashoutAddCardAction => _es ? 'Agregar tarjeta' : 'Add a card';
   // Seven days is Stripe's verification window on a newly attached card,
   // not a waiting period we invented — say so, or it reads as us holding
   // the driver's money back.
@@ -1829,8 +1833,7 @@ class S {
           'cashouts reach your card in minutes.';
   String get cashoutRowInstant =>
       _es ? 'Retiro instantáneo' : 'Instant cashout';
-  String get cashoutRowWeekly =>
-      _es ? 'Depósito semanal' : 'Weekly deposit';
+  String get cashoutRowWeekly => _es ? 'Depósito semanal' : 'Weekly deposit';
   String get cashoutHistoryEmpty => _es
       ? 'Todavía no has recibido ningún pago.'
       : 'You have not been paid yet.';
@@ -1847,8 +1850,7 @@ class S {
   // "Enviado", for the same reason the section is: Stripe accepting the
   // transfer is not the money being in a bank account.
   String get cashoutStatusCompleted => _es ? 'Enviado' : 'Sent';
-  String get cashoutStatusProcessing =>
-      _es ? 'En camino' : 'On its way';
+  String get cashoutStatusProcessing => _es ? 'En camino' : 'On its way';
 
   String get payoutHelpInstant => _es
       ? 'Si no quieres esperar al lunes, retira cuando quieras a tu tarjeta '
@@ -1942,16 +1944,47 @@ class S {
       _es ? 'Aprobación de despacho pendiente' : 'Dispatch approval pending';
   String get checkingForUpdates =>
       _es ? 'Verificando actualizaciones...' : 'Checking for updates...';
-  String get youreApproved => _es ? '¡Estás Aprobado!' : "You're Approved!";
+  String welcomeCruiseInRideTitle(String firstName) => _es
+      ? '¡Bienvenido a Cruise in Ride, $firstName!'
+      : 'Welcome to Cruise in Ride, $firstName!';
   String get welcomeDriverTeam => _es
       ? 'Bienvenido al equipo de conductores de Cruise. Ya puedes conectarte y empezar a aceptar viajes.'
       : 'Welcome to the Cruise driver team. You can now go online and start accepting rides.';
 
   // ── Driver post-approval (celebration + first-trip guide) ─────────────────
-  String approvedWelcomeBody(String firstName) => _es
-      ? 'Bienvenido a Cruise, $firstName. Tus documentos están verificados y tu verificación de antecedentes está limpia. Ya puedes empezar a ganar.'
-      : "Welcome to Cruise, $firstName. Your documents are verified and your background check is clear. You're ready to start earning.";
+  String get approvedWelcomeBody => _es
+      ? 'Tu cuenta está aprobada: documentos verificados y antecedentes limpios. Ya puedes empezar a ganar.'
+      : "Your account is approved: documents verified and background check clear. You're ready to start earning.";
   String get startDriving => _es ? 'Empezar a conducir' : 'Start driving';
+
+  // ── First-GO "You're now online!" intro overlay (2026-10-22) ────────────────
+  String get onlineIntroTitle =>
+      _es ? '¡Ya estás en línea!' : "You're now online!";
+  String onlineIntroSub(int n) => _es
+      ? 'Gracias por ser uno de los primeros $n conductores seleccionados para ser parte del comienzo de Cruise in Ride.'
+      : 'Thank you for being one of the first $n drivers selected to be part of the beginning of Cruise in Ride.';
+  String get onlineIntroB1Title =>
+      _es ? 'Estamos comenzando' : 'We Are Getting Started';
+  String get onlineIntroB1Body => _es
+      ? 'Actualmente estamos en la fase inicial de lanzamiento y nuestro equipo está trabajando para reclutar pasajeros en tu área.'
+      : 'We are currently in the initial launch phase and our team is working to recruit passengers in your area.';
+  String get onlineIntroB2Title => _es
+      ? 'Puede haber pocos o ningún viaje al principio'
+      : 'There May Be Few or No Rides at the Beginning';
+  String get onlineIntroB2Body => _es
+      ? 'Es normal que no haya viajes o muy pocos al inicio. A medida que crezca nuestra comunidad de pasajeros, comenzarás a recibir viajes agendados e inmediatos.'
+      : "It's normal that there are no rides or very few rides at the start. As our passenger community grows, you will begin to receive scheduled and instant rides.";
+  String get onlineIntroB3Title =>
+      _es ? 'Tu paciencia importa' : 'Your Patience Matters';
+  String get onlineIntroB3Body => _es
+      ? 'Apreciamos de verdad tu paciencia durante esta etapa inicial. Cada conductor es una parte clave de este proyecto.'
+      : 'We truly appreciate your patience during this initial stage. Each driver is a key part of this project.';
+  String get onlineIntroB4Title =>
+      _es ? 'Beneficios exclusivos' : 'Exclusive Benefits';
+  String onlineIntroB4Body(int n) => _es
+      ? 'Como uno de los primeros $n conductores, tendrás beneficios exclusivos que no estarán disponibles para otros conductores en el futuro.'
+      : "As one of the first $n drivers, you will have exclusive benefits that won't be available to other drivers in the future.";
+  String get onlineIntroUnderstood => _es ? 'Entendido' : 'I understand';
   String get driverFallback => _es ? 'Conductor' : 'Driver';
   String get addPayoutLaterSnack => _es
       ? 'Puedes agregar tu método de pago más tarde desde el menú'
@@ -1961,7 +1994,8 @@ class S {
   String get guideGoOnlineBody => _es
       ? 'Toca Conectarse en el mapa de tu inicio. Cuando un rider pida un viaje, esta tarjeta aparece con la tarifa, la distancia y el destino — el anillo te da 20 segundos para aceptarla.'
       : 'Tap Go Online on your home map. When a rider requests a trip, this card pops up with the fare, distance and destination — the ring gives you 20 seconds to accept it.';
-  String get guideNavigateTitle => _es ? 'Navega a tu manera' : 'Navigate your way';
+  String get guideNavigateTitle =>
+      _es ? 'Navega a tu manera' : 'Navigate your way';
   String get guideNavigateBody => _es
       ? 'Al tocar Start Trip se abre tu app de mapas preferida con la navegación turno a turno. El mini mapa del viaje sigue tu progreso mientras tanto.'
       : 'Tapping Start Trip opens your preferred maps app with turn-by-turn navigation. The trip mini map keeps tracking your progress in the meantime.';
@@ -1973,6 +2007,48 @@ class S {
   String get guideFinishBody => _es
       ? 'Desliza para terminar el viaje al llegar al destino. Tus ganancias se depositan cada lunes, o al instante a tu tarjeta de débito.'
       : 'Slide to finish the trip at the destination. Your earnings pay out every Monday, or instantly to your debit card.';
+
+  // ── First-trip guide: dress code + selfie verification (2026-10-23) ───────
+  String get dressVipTitle =>
+      _es ? 'Vestimenta VIP requerida' : 'VIP Dress Code Required';
+  String get dressStdTitle =>
+      _es ? 'Vestimenta requerida' : 'Dress Code Required';
+  String get dressBodyVipM => _es
+      ? 'Para la categoría VIP, es obligatorio mantener una imagen más elegante y profesional. Usa blazer o saco negro, camisa negra formal, pantalón de vestir negro, cinturón negro y zapatos formales negros. Mantén excelente higiene personal, cabello bien arreglado y una apariencia impecable en todo momento.'
+      : 'For the VIP category, maintaining a more elegant, professional image is required. Wear a black blazer or suit jacket, a formal black shirt, black dress pants, a black belt, and formal black shoes. Maintain excellent personal hygiene, well-groomed hair, and an impeccable appearance at all times.';
+  String get dressBodyVipF => _es
+      ? 'Para la categoría VIP, es obligatorio mantener una imagen más elegante y profesional. Usa blazer o saco negro, blusa elegante negra, pantalón de vestir negro y zapatos formales negros. Mantén excelente higiene personal, cabello bien arreglado y una apariencia impecable en todo momento.'
+      : 'For the VIP category, maintaining a more elegant, professional image is required. Wear a black blazer or suit jacket, an elegant black blouse, black dress pants, and formal black shoes. Maintain excellent personal hygiene, well-groomed hair, and an impeccable appearance at all times.';
+  String get dressBodyStdM => _es
+      ? 'Tu imagen es parte del servicio y de la calificación que recibes de cada pasajero. En cada viaje debes vestir: polo o camisa negra, pantalón de vestir oscuro, cinturón y zapatos limpios. Antes de conectarte, una selfie diaria confirma tu vestimenta — sin ella no puedes recibir viajes.'
+      : 'Your image is part of the service and of the rating each passenger gives you. On every trip you must wear: a black polo or shirt, dark dress pants, a belt, and clean shoes. Before going online, a daily selfie confirms your attire — without it you cannot receive rides.';
+  String get dressBodyStdF => _es
+      ? 'Tu imagen es parte del servicio y de la calificación que recibes de cada pasajera y pasajero. En cada viaje debes vestir: blusa o top negro profesional, pantalón oscuro y calzado cómodo y limpio. Antes de conectarte, una selfie diaria confirma tu vestimenta — sin ella no puedes recibir viajes.'
+      : 'Your image is part of the service and of the rating each passenger gives you. On every trip you must wear: a professional black blouse or top, dark pants, and comfortable, clean footwear. Before going online, a daily selfie confirms your attire — without it you cannot receive rides.';
+  String get dressChipElegant => _es ? 'Elegante' : 'Elegant';
+  String get dressChipProfessional => _es ? 'Profesional' : 'Professional';
+  String get dressChipPremium => _es ? 'Premium' : 'Premium';
+  String get dressChipCleanM => _es ? 'Limpio' : 'Clean';
+  String get dressChipCleanF => _es ? 'Limpia' : 'Clean';
+  String get dressChipPresentable => _es ? 'Presentable' : 'Presentable';
+  String get dressChipComfortable => _es ? 'Cómoda' : 'Comfortable';
+  String get selfieVerifyTitle =>
+      _es ? 'Verificación facial' : 'Facial Verification';
+  String get selfieBodyStd => _es
+      ? 'Para mantener tu cuenta activa, debes tomar una selfie clara de tu rostro y verificar que tengas la vestimenta adecuada y profesional requerida para seguir con las reglas de la app.'
+      : "To keep your account active, you must take a clear selfie of your face and verify that you are wearing the proper, professional attire required to keep following the app's rules.";
+  String get selfieBodyVip => _es
+      ? 'Para mantener tu cuenta activa en la categoría Chofer Profesional VIP, debes tomar una selfie clara de tu rostro y verificar que tengas la vestimenta elegante, adecuada y profesional requerida para seguir con las reglas de la app.'
+      : "To keep your account active in the VIP Professional Driver category, you must take a clear selfie of your face and verify that you are wearing the elegant, proper, professional attire required to keep following the app's rules.";
+  String get selfieChipFaceVisible =>
+      _es ? 'Rostro visible y claro' : 'Face visible and clear';
+  String get selfieChipDressStd =>
+      _es ? 'Vestimenta profesional adecuada' : 'Proper professional attire';
+  String get selfieChipDressVip =>
+      _es ? 'Vestimenta VIP profesional' : 'Professional VIP attire';
+  String get selfieChipLighting => _es ? 'Buena iluminación' : 'Good lighting';
+  String get selfieChipNoGlasses =>
+      _es ? 'Sin gafas ni filtros' : 'No glasses or filters';
 
   // ── Notifications Screen ───────────────────────────────────────────────────
   String get helpUsKeepInformed =>
@@ -2143,9 +2219,8 @@ class S {
       : 'Changing your plate means uploading your registration again and '
           'waiting for approval. You will not be able to go online until then.';
   String get plateSaved => _es ? 'Placa actualizada' : 'License plate updated';
-  String get plateChangePendingTitle => _es
-      ? 'Esperando aprobación de la placa'
-      : 'Plate change under review';
+  String get plateChangePendingTitle =>
+      _es ? 'Esperando aprobación de la placa' : 'Plate change under review';
   String get plateChangePendingBody => _es
       ? 'Cambiaste la placa. Sube la registración nueva y espera a que la '
           'aprueben para volver a estar en línea.'
@@ -2153,8 +2228,9 @@ class S {
           'to be approved before going online again.';
   String get docsActionNeeded => _es ? 'Falta por hacer' : 'Action needed';
   String get docsSubmitted => _es ? 'Entregados' : 'Completed';
-  String docsItemCount(int n) =>
-      _es ? (n == 1 ? '1 punto' : '$n puntos') : (n == 1 ? '1 item' : '$n items');
+  String docsItemCount(int n) => _es
+      ? (n == 1 ? '1 punto' : '$n puntos')
+      : (n == 1 ? '1 item' : '$n items');
   String get approved => _es ? 'Aprobado' : 'Approved';
   String get pending => _es ? 'Pendiente' : 'Pending';
   String get uploadBtn => _es ? 'Subir' : 'Upload';
@@ -2455,42 +2531,46 @@ class S {
   // the wait as "in 5 min", and the expanded card falls back to these when
   // a tier carries no description of its own.
   String inMinEta(int min) => _es ? 'en $min min' : 'in $min min';
-  String get tierDescCompact =>
-      _es ? 'El viaje accesible de todos los días' : 'The affordable everyday ride';
+  String get tierDescCompact => _es
+      ? 'El viaje accesible de todos los días'
+      : 'The affordable everyday ride';
   String get tierDescStandard =>
       _es ? 'Más espacio, mismo buen precio' : 'Extra room, same fair price';
   String get tierDescPremium =>
       _es ? 'Un mejor viaje, garantizado' : 'A nicer ride, guaranteed';
-  String get tierDescBlack =>
-      _es ? 'Lujo total, chofer profesional' : 'Full luxury, professional driver';
-  String get tierDescElectricPro =>
-      _es ? 'Eléctrico • Cero emisiones • Viaje silencioso' : 'Electric • Zero emissions • Silent ride';
+  String get tierDescBlack => _es
+      ? 'Lujo total, chofer profesional'
+      : 'Full luxury, professional driver';
+  String get tierDescElectricPro => _es
+      ? 'Eléctrico • Cero emisiones • Viaje silencioso'
+      : 'Electric • Zero emissions • Silent ride';
 
   // "Meet {tier}" detail sheet (2026-08-25, Lyft-style): tagline + three
   // benefit bullets per tier. The tier NAME itself is a brand word and
   // stays as-is in both languages.
-  String tierMeetTitle(String tier) =>
-      _es ? 'Conoce $tier' : 'Meet $tier';
-  String get tierTaglineCompact =>
-      _es ? 'El viaje accesible de todos los días' : 'The affordable everyday ride';
+  String tierMeetTitle(String tier) => _es ? 'Conoce $tier' : 'Meet $tier';
+  String get tierTaglineCompact => _es
+      ? 'El viaje accesible de todos los días'
+      : 'The affordable everyday ride';
   String get tierTaglineStandard =>
       _es ? 'Más espacio, mismo buen precio' : 'Extra room, same fair price';
   String get tierTaglinePremium =>
       _es ? 'Un viaje más nuevo y espacioso' : 'A newer, roomier ride';
-  String get tierTaglineBlack =>
-      _es ? 'Lujo total, chofer profesional' : 'Full luxury, professional driver';
+  String get tierTaglineBlack => _es
+      ? 'Lujo total, chofer profesional'
+      : 'Full luxury, professional driver';
   String get tierBulletCompact1 => _es
       ? 'Carros de todos los días como Toyota Camry o Honda Accord'
       : 'Everyday cars like Toyota Camry or Honda Accord';
   String get tierBulletCompact2 =>
       _es ? 'Nuestra tarifa más accesible' : 'Our most affordable fare';
-  String get tierBulletCompact3 =>
-      _es ? 'Hasta 4 pasajeros' : 'Up to 4 riders';
+  String get tierBulletCompact3 => _es ? 'Hasta 4 pasajeros' : 'Up to 4 riders';
   String get tierBulletStandard1 => _es
       ? 'Carros medianos con más espacio como Ford Fusion'
       : 'Midsize cars with extra room like Ford Fusion';
-  String get tierBulletStandard2 =>
-      _es ? 'Más espacio para estirar las piernas' : 'More legroom to stretch out';
+  String get tierBulletStandard2 => _es
+      ? 'Más espacio para estirar las piernas'
+      : 'More legroom to stretch out';
   String get tierBulletStandard3 =>
       _es ? 'Conductores mejor calificados' : 'Top-rated drivers';
   String get tierBulletPremium1 => _es
@@ -2505,8 +2585,9 @@ class S {
   String get tierBulletBlack1 => _es
       ? 'SUVs de lujo como Chevy Suburban o Cadillac Escalade'
       : 'Luxury SUVs like Chevy Suburban or Cadillac Escalade';
-  String get tierBulletBlack2 =>
-      _es ? 'Experiencia premium de principio a fin' : 'A premium experience end to end';
+  String get tierBulletBlack2 => _es
+      ? 'Experiencia premium de principio a fin'
+      : 'A premium experience end to end';
   String get tierBulletBlack3 => _es
       ? 'Choferes profesionales mejor calificados'
       : 'Professional, top-rated drivers';
@@ -2518,8 +2599,9 @@ class S {
       : 'Electric cars like Tesla Model Y or Mustang Mach-E';
   String get tierBulletElectricPro2 =>
       _es ? 'Viaje silencioso y suave' : 'A silent, smooth ride';
-  String get tierBulletElectricPro3 =>
-      _es ? 'Cero emisiones, hasta 5 pasajeros' : 'Zero emissions, up to 5 riders';
+  String get tierBulletElectricPro3 => _es
+      ? 'Cero emisiones, hasta 5 pasajeros'
+      : 'Zero emissions, up to 5 riders';
   String get bestBadge => _es ? 'MEJOR' : 'BEST';
   String get premiumBadge => 'PREMIUM';
   String get economyBadge => _es ? 'CONFORT' : 'COMFORT';
@@ -2596,8 +2678,9 @@ class S {
   String get headToDestination => _es ? 'Hacia destino' : 'To destination';
   String get tripNoLongerAvailable =>
       _es ? 'Viaje ya no disponible' : 'Trip no longer available';
-  String get acceptFailedTryAgain =>
-      _es ? 'No se pudo aceptar — inténtalo de nuevo' : 'Could not accept — try again';
+  String get acceptFailedTryAgain => _es
+      ? 'No se pudo aceptar — inténtalo de nuevo'
+      : 'Could not accept — try again';
   String availableTrips(int n) => _es
       ? (n == 1 ? '1 viaje disponible' : '$n viajes disponibles')
       : (n == 1 ? '1 trip available' : '$n trips available');
@@ -2676,8 +2759,10 @@ class S {
   String get noDriversAvailableTitle =>
       _es ? 'Sin conductores disponibles' : 'No drivers available';
   String get noDriversAvailableMsg => _es
-      ? 'No hay conductores disponibles cerca de tu zona en estos momentos. Por favor intenta de nuevo en unos minutos.'
-      : 'There are no drivers available near your area right now. Please try again in a few minutes.';
+      ? 'No hay conductores disponibles cerca de tu zona en este momento. Te avisaremos en cuanto haya conductores activos cerca de ti.'
+      : 'There are no drivers available near your area right now. We will let you know as soon as drivers are active near you.';
+  String get scheduleForLater =>
+      _es ? 'Agendar para más tarde' : 'Schedule for later';
   String get okBtn => _es ? 'Aceptar' : 'OK';
   String get fastRideLabel => _es ? 'Prioritario' : 'Priority';
   String requestRideWithPrice(String price) =>
@@ -3379,9 +3464,8 @@ class S {
   String get tooManyAttempts => _es
       ? 'Demasiados intentos. Espera un momento e inténtalo de nuevo.'
       : 'Too many attempts. Please wait and try again.';
-  String get nameAsRidersSeeIt => _es
-      ? 'Así te verán los pasajeros.'
-      : 'This is how riders will see you.';
+  String get nameAsRidersSeeIt =>
+      _es ? 'Así te verán los pasajeros.' : 'This is how riders will see you.';
   String get nameAsDriversSeeIt => _es
       ? 'Así te verán los conductores.'
       : 'This is how drivers will see you.';
@@ -3418,8 +3502,7 @@ class S {
       _es ? 'Requiere atención' : 'Requires attention';
   String get pendingApproval =>
       _es ? 'Pendiente de aprobación' : 'Pending approval';
-  String get vehicleNowInUse =>
-      _es ? 'Vehículo en uso' : 'Vehicle now in use';
+  String get vehicleNowInUse => _es ? 'Vehículo en uso' : 'Vehicle now in use';
   String get licensePlateLabel =>
       _es ? 'Número de placa' : 'License plate number';
   String get vehicleRequirements => _es
@@ -3449,6 +3532,46 @@ class S {
   String get licenseBackLabel => _es ? 'Licencia Reverso' : 'License Back';
   String get ssnShortLabel => _es ? 'SSN' : 'SSN';
   String get faceCheckLabel => _es ? 'Verificación Facial' : 'Face Check';
+  String get faceCheckTakeSelfie => _es ? 'Tomar selfie' : 'Take a selfie';
+  // The shared capture camera (2026-10-23, owner spec: every camera wears
+  // the license-capture design) — doc hint + profile photo title.
+  String get captureDocHint => _es
+      ? 'Asegúrate de que el documento se vea completo, claro y con buena iluminación'
+      : 'Make sure the whole document is clear, well-lit, and easy to read';
+  String get captureProfilePhotoTitle =>
+      _es ? 'Toma tu foto de perfil' : 'Take your profile photo';
+  String get faceCheckFrameHint => _es
+      ? 'Asegúrate de que tu rostro se vea claro, centrado y con buena iluminación'
+      : 'Make sure your face is clear, centered, and well-lit';
+  // GO button face-review states + pushes (2026-10-23, owner spec)
+  String get goVerify => _es ? 'Verificar' : 'Verify';
+  // Dispatch GO switch (2026-10-23, owner spec — instant per-driver pause).
+  String get goOnlineDisabledTitle =>
+      _es ? 'No puedes conectarte' : 'You can\'t go online';
+  String get goOnlineDisabledBody => _es
+      ? 'No puedes conectarte en este momento. Contacta soporte si crees que es un error.'
+      : 'You can\'t go online right now. Contact support if you think this is a mistake.';
+  String get goOnlineEnabledBody =>
+      _es ? 'Ya puedes conectarte de nuevo' : 'You can go online again';
+  String get faceReviewPending =>
+      _es ? 'Selfie en revisión' : 'Selfie under review';
+  // The verifying wait inside the selfie screen (2026-10-23, owner spec):
+  // after the retaken photo the page does NOT close — it holds this loading
+  // until dispatch's decision lands, then closes already-connecting.
+  String get faceCheckVerifyingTitle =>
+      _es ? 'Verificando tu selfie' : 'Verifying your selfie';
+  String get faceCheckVerifyingBody => _es
+      ? 'Estamos revisando que cumplas con la vestimenta correcta y profesional. Esto toma unos segundos.'
+      : 'We are reviewing that you meet the correct, professional attire rules. This takes a few seconds.';
+  String get faceRejectedTitle => _es ? 'Selfie rechazada' : 'Selfie rejected';
+  String get faceRejectedBody => _es
+      ? 'No cumple con las normas de vestimenta. Tómate otra foto con la vestimenta requerida.'
+      : 'Does not meet the dress code rules. Take a new photo with the required attire.';
+  String get faceApprovedTitle =>
+      _es ? '✅ Selfie aprobada' : '✅ Selfie approved';
+  String get faceApprovedBody => _es
+      ? 'Ya puedes conectarte y recibir viajes'
+      : 'You can go online and receive rides now';
   String get uploadedStatus => _es ? 'Subido ✓' : 'Uploaded ✓';
   String get missingStatus => _es ? 'Faltante' : 'Missing';
   String get providedStatus => _es ? 'Proporcionado ✓' : 'Provided ✓';
@@ -3878,8 +4001,7 @@ class S {
       _es ? 'Verifica tu identidad' : 'Verify your identity';
 
   // ── Driver: add bank account for weekly payouts ──
-  String get addBankAccountTitle =>
-      _es ? 'Agrega tu banco' : 'Add your bank';
+  String get addBankAccountTitle => _es ? 'Agrega tu banco' : 'Add your bank';
   String get editBankAccountTitle =>
       _es ? 'Edita tu banco' : 'Edit bank account';
   String get editBankAccountSubtitle => _es
@@ -3933,13 +4055,11 @@ class S {
   String get faceFeedbackNoFace => _es
       ? 'No se detecta tu rostro — revisa la iluminación'
       : 'No face detected — check the lighting';
-  String get faceFeedbackMoveCloser =>
-      _es ? 'Acércate un poco' : 'Move closer';
+  String get faceFeedbackMoveCloser => _es ? 'Acércate un poco' : 'Move closer';
   String get faceFeedbackMoveAway =>
       _es ? 'Aléjate un poco' : 'Move a little farther';
-  String get faceFeedbackCenter => _es
-      ? 'Centra tu rostro en el óvalo'
-      : 'Center your face in the oval';
+  String get faceFeedbackCenter =>
+      _es ? 'Centra tu rostro en el óvalo' : 'Center your face in the oval';
   String get faceDetectionError => _es
       ? 'La detección de rostro no funciona en este dispositivo — '
           'reinicia e inténtalo de nuevo'
@@ -4110,8 +4230,9 @@ class S {
   String linkedToName(String name) =>
       _es ? '¡Ahora estás vinculado a $name!' : "You're now linked to $name!";
   String get codeRedeemed => _es ? '¡Código aplicado!' : 'Code redeemed!';
-  String qualifiedOfTotal(int qualified, int total) =>
-      _es ? '$qualified de $total calificados' : '$qualified of $total qualified';
+  String qualifiedOfTotal(int qualified, int total) => _es
+      ? '$qualified de $total calificados'
+      : '$qualified of $total qualified';
   String get noReferralsYet =>
       _es ? 'Aún no tienes referidos' : 'No referrals yet';
   String get earnedBadge => _es ? 'GANADO' : 'EARNED';
@@ -4147,14 +4268,46 @@ class S {
       ? 'Tu referido también gana: $amount al completar sus primeros $rides viajes.'
       : 'Your referral wins too: $amount after their first $rides rides.';
   String driverShareWelcome(String amount, int rides) => _es
-      ? '¡Conduce con Cruise! Regístrate con mi código y gana $amount al completar tus primeros $rides viajes.'
-      : 'Drive with Cruise! Sign up with my code and earn $amount after your first $rides rides.';
-  String driverShareMilestones(
-          String m1Amount, int m1Rides, String m2Amount, int m2Rides) =>
-      _es
-          ? 'Yo gano $m1Amount cuando completes $m1Rides viajes, ¡y $m2Amount más cuando llegues a $m2Rides!'
-          : 'I earn $m1Amount when you complete $m1Rides rides, and $m2Amount more when you reach $m2Rides!';
+      ? '🚗 ¡Conduce con Cruise! Regístrate con mi código y gana $amount tras tus primeros $rides viajes.'
+      : '🚗 Drive with Cruise! Sign up with my code and earn $amount after your first $rides rides!';
+  // The shared message is invitee-centered: what the REFERRER earns is
+  // never in it (the old "I earn $50 when you…" line died 2026-10-22).
+  String driverShareCodeLine(String code) =>
+      _es ? 'Código: $code' : 'Code: $code';
   String get statusMilestone1 => _es ? 'HITO 1 PAGADO' : 'MILESTONE 1 PAID';
+  String get driverReferralWinsTitle =>
+      _es ? 'TU REFERIDO GANA' : 'YOUR REFERRAL WINS';
+  String get driverYouEarnTitle => _es ? 'TÚ GANAS' : 'YOU EARN';
+  String driverAfterFirstRides(int rides) => _es
+      ? 'tras sus primeros $rides viajes'
+      : 'after their first $rides rides';
+  String driverAtRides(int rides) =>
+      _es ? 'a los $rides viajes' : 'at $rides rides';
+  String get shareReferralLinkBtn =>
+      _es ? 'Compartir enlace de referido' : 'Share Referral Link';
+
+  // ── Driver referrals: invite link + My Referrals page (2026-10-22) ───────────
+  String get referralInvitationApplied => _es
+      ? '¡Invitación de referido aplicada exitosamente!'
+      : 'Referral invitation applied successfully!';
+  String get myReferralsTitle => _es ? 'Mis Referidos' : 'My Referrals';
+  String driversJoinedCount(int n) => _es ? '$n conductores' : '$n Drivers';
+  String referralJoined(String date) =>
+      _es ? 'Se unió el $date' : 'Joined $date';
+  String referralExpires(String date) =>
+      _es ? 'Expira el $date' : 'Expires $date';
+  String get paidLabel => _es ? 'Pagado' : 'Paid';
+  String get swipeToSeeReferrals =>
+      _es ? 'Desliza para ver tus referidos' : 'Swipe to see your referrals';
+  String get driverHowShareTitle =>
+      _es ? 'Comparte tu código' : 'Share Your Code';
+  String get driverHowSignupTitle => _es ? 'Se registran' : 'They Sign Up';
+  String get driverHowRidesTitle =>
+      _es ? 'Completan viajes' : 'They Complete Rides';
+  String get driverHowPaidTitle => _es ? 'Recibes el pago' : 'You Get Paid';
+  String get driverHowSignupDesc => _es
+      ? 'Se registran como conductor usando tu código.'
+      : 'They register as a driver using your code.';
 
   // ── Driver Insurance Screen ────────────────────────────────────────────────
   String get cruiseDriverProtectionTitle =>
@@ -4903,8 +5056,7 @@ class S {
       : 'The ride will return to the marketplace and another driver can take it.';
 
   // ── Scheduled rides map screen ──
-  String get schedMapTitle =>
-      _es ? 'Viajes programados' : 'Scheduled rides';
+  String get schedMapTitle => _es ? 'Viajes programados' : 'Scheduled rides';
   String schedMapYourRides(int count) =>
       _es ? 'Tus viajes ($count)' : 'Your rides ($count)';
   String get schedMapAirport => _es ? 'Aeropuerto' : 'Airport';
@@ -4919,9 +5071,8 @@ class S {
       _es ? 'Viajes disponibles' : 'Available rides';
   String schedMapRidesAvailable(int count) =>
       _es ? '$count viajes disponibles' : '$count rides available';
-  String get schedMapMoveToSearch => _es
-      ? 'Mueve el mapa para buscar viajes'
-      : 'Move map to search for rides';
+  String get schedMapMoveToSearch =>
+      _es ? 'Mueve el mapa para buscar viajes' : 'Move map to search for rides';
   String get schedMapSearchArea =>
       _es ? 'Buscar en esta zona' : 'Search this area';
   String get schedMapDismiss => _es ? 'Descartar' : 'Dismiss';
@@ -4967,17 +5118,15 @@ class S {
       : 'No events in the next 7 days.';
   String get calendarUntitledEvent =>
       _es ? 'Evento sin título' : 'Untitled event';
-  String get calendarScheduleRide =>
-      _es ? 'Programar viaje' : 'Schedule ride';
+  String get calendarScheduleRide => _es ? 'Programar viaje' : 'Schedule ride';
 
   // ── "Your rides" — the rider's active reservations in the hub ──
   String get yourRidesTitle =>
       _es ? 'Tus viajes agendados' : 'Your Scheduled rides';
   String get findingDriverLabel =>
       _es ? 'Buscando conductor' : 'Finding driver';
-  String get rideCancelFreeNote => _es
-      ? 'Esta cancelación es gratis.'
-      : 'This cancellation is free.';
+  String get rideCancelFreeNote =>
+      _es ? 'Esta cancelación es gratis.' : 'This cancellation is free.';
   String rideCancelFeeNote(String fee) => _es
       ? 'Se cobrará una tarifa de cancelación de \$$fee.'
       : "You'll be charged a \$$fee cancellation fee.";
@@ -5017,10 +5166,8 @@ class S {
   String get airlineSkip => _es ? 'Omitir' : 'Skip';
   String airlinePopularAt(String code) =>
       _es ? 'Aerolíneas populares en $code' : 'Popular airlines at $code';
-  String get airlineSeeMore =>
-      _es ? 'Ver más aerolíneas' : 'See more airlines';
-  String get airlineSearchHint =>
-      _es ? 'Buscar aerolínea' : 'Search airlines';
+  String get airlineSeeMore => _es ? 'Ver más aerolíneas' : 'See more airlines';
+  String get airlineSearchHint => _es ? 'Buscar aerolínea' : 'Search airlines';
   String get airlineNoResults => _es ? 'Sin resultados' : 'No results';
 
   // ── Rider booking flow rebuild (2026-08-22): addresses page, Select
@@ -5033,9 +5180,8 @@ class S {
   String selectTierLabel(String tier) =>
       _es ? 'Seleccionar $tier' : 'Select $tier';
 
-  String get setPickupTitle => _es
-      ? 'Ajusta tu punto de recogida'
-      : 'Set your pickup location';
+  String get setPickupTitle =>
+      _es ? 'Ajusta tu punto de recogida' : 'Set your pickup location';
   String get setPickupSub => _es
       ? 'Arrastra el mapa o edita la dirección para fijar tu recogida'
       : 'Drag map or edit address to set your pickup';
@@ -5057,12 +5203,9 @@ class S {
   String get noteChipWearing => _es ? 'Llevo puesto' : "I'm wearing";
   String get noteChipCorner =>
       _es ? 'Estoy en la esquina de' : "I'm at the corner of";
-  String get noteChipInFront =>
-      _es ? 'Estoy frente a' : "I'm in front of";
-  String get noteChipDoorNumber =>
-      _es ? 'Número de puerta' : 'Door number';
-  String get noteChipPickingUp =>
-      _es ? 'Recogerás a' : "You'll be picking up";
+  String get noteChipInFront => _es ? 'Estoy frente a' : "I'm in front of";
+  String get noteChipDoorNumber => _es ? 'Número de puerta' : 'Door number';
+  String get noteChipPickingUp => _es ? 'Recogerás a' : "You'll be picking up";
 
   // ── Home fleet carousel ("More ways to ride", 2026-08-22) ──
   // Approved one-liners per tier — not the picker copy, do not merge them.
@@ -5072,9 +5215,8 @@ class S {
   String get fleetPremiumDesc => _es
       ? 'Cómodo y amplio, hasta 6 personas'
       : 'Comfortable, roomier rides for up to 6';
-  String get fleetCompactDesc => _es
-      ? 'SUV compacta o sedán cómodo'
-      : 'A compact SUV or a comfy sedan';
+  String get fleetCompactDesc =>
+      _es ? 'SUV compacta o sedán cómodo' : 'A compact SUV or a comfy sedan';
   String get fleetStandardDesc => _es
       ? 'Sedán de todos los días, al mejor precio'
       : 'Everyday sedan rides at our lowest price';
@@ -5101,8 +5243,7 @@ class S {
       _es ? 'Desliza para recoger' : 'Slide to pick up';
   String get navSlideToFinish =>
       _es ? 'Desliza para terminar' : 'Slide to finish ride';
-  String navWaitFor(String time) =>
-      _es ? 'Espera $time' : 'Wait for $time';
+  String navWaitFor(String time) => _es ? 'Espera $time' : 'Wait for $time';
   String get navOverview => _es ? 'Vista general' : 'Overview';
   String get navRecenter => _es ? 'Recentrar' : 'Recenter';
   String get navReportProblem =>
@@ -5117,8 +5258,7 @@ class S {
       ? 'Sin conexión — siguiendo la última ruta'
       : 'Offline — keeping the last route';
   String get navRetry => _es ? 'Reintentar' : 'Retry';
-  String get navGpsUnavailableTitle =>
-      _es ? 'Sin señal GPS' : 'No GPS signal';
+  String get navGpsUnavailableTitle => _es ? 'Sin señal GPS' : 'No GPS signal';
   String get navGpsUnavailableBody => _es
       ? 'Revisa el GPS o los permisos de ubicación para seguir navegando.'
       : 'Check GPS or location permissions to keep navigating.';
@@ -5810,8 +5950,7 @@ class S {
       _es ? 'Licencia de conducir' : "Driver's License";
   String get obItemLicenseSub =>
       _es ? 'Confirma tu identidad' : 'Confirm your identity';
-  String get obItemPhotoTitle =>
-      _es ? 'Foto de perfil' : 'Profile photo';
+  String get obItemPhotoTitle => _es ? 'Foto de perfil' : 'Profile photo';
   String get obItemPhotoSub => _es
       ? 'Facilita que los pasajeros te encuentren'
       : 'Make it easy for riders to find you';
@@ -5832,8 +5971,7 @@ class S {
       : 'Review usually takes 24 to 72 hours';
   // All onboarding items submitted (2026-08-25): the hub swaps the featured
   // "up next" card for the car hero + this copy while dispatch reviews.
-  String get obAllInReviewTitle =>
-      _es ? '¡Todo listo!' : 'All set!';
+  String get obAllInReviewTitle => _es ? '¡Todo listo!' : 'All set!';
   String get obAllInReviewSub => _es
       ? 'Estamos revisando tus documentos. Esta pantalla se actualiza sola en cuanto seas aprobado.'
       : "We're reviewing your documents. This screen updates on its own the moment you're approved.";
@@ -5870,6 +6008,42 @@ class S {
   String get obItemInspectionSub => _es
       ? 'Requerida para conductores de Alabama'
       : 'Required for Alabama drivers';
+
+  // ── Digital contracts (e-acceptance, 2026-10-21) ──
+  String get obItemContractsTitle =>
+      _es ? 'Contratos legales' : 'Legal contracts';
+  String get obItemContractsSub => _es
+      ? 'Lee y firma los acuerdos del conductor'
+      : 'Read and sign the driver agreements';
+  String get contractsTitle => _es ? 'Contratos legales' : 'Legal contracts';
+  String get contractsSubtitle => _es
+      ? 'Lee y firma cada documento para poder conducir'
+      : 'Read and sign each document to start driving';
+  String get contractVersion => _es ? 'Versión' : 'Version';
+  String get contractSignedChip => _es ? 'Firmado' : 'Signed';
+  String get contractPendingChip => _es ? 'Pendiente' : 'Pending';
+  String get contractReadAndAccept => _es
+      ? 'He leído y acepto este documento'
+      : 'I have read and accept this document';
+  String get contractAcceptSign => _es
+      ? 'Aceptar y firmar electrónicamente'
+      : 'Accept and sign electronically';
+  String get contractDownloadPdf =>
+      _es ? 'Descargar comprobante (PDF)' : 'Download receipt (PDF)';
+  String get contractSignedOn => _es ? 'Firmado el' : 'Signed on';
+  String get contractAllSigned =>
+      _es ? 'Todos los contratos están firmados' : 'All contracts are signed';
+  String get contractAcceptError => _es
+      ? 'No se pudo registrar la firma. Inténtalo de nuevo.'
+      : 'Could not record the signature. Please try again.';
+  String get contractStaleVersion => _es
+      ? 'Este documento se actualizó. Revisa y firma la nueva versión.'
+      : 'This document was updated. Please review and sign the new version.';
+  String get docLinkContracts => _es ? 'Contratos' : 'Contracts';
+  String get contractEsignNote => _es
+      ? 'Al firmar, aceptas celebrar este contrato por medios electrónicos (E-SIGN / UETA).'
+      : 'By signing, you agree to enter into this contract electronically (E-SIGN / UETA).';
+
   String obDocSavedMsg(String doc) => _es
       ? '¡Tu $doc se guardó con éxito! Actualízalo subiendo una nueva imagen.'
       : 'Your $doc was successfully saved! Update it by uploading a new image.';
@@ -5879,21 +6053,18 @@ class S {
   String get obDocBulletValid => _es
       ? 'El documento debe ser válido y estar vigente'
       : 'The document must be valid and current';
-  String get obDocBulletMatch => _es
-      ? 'Debe coincidir con tu vehículo'
-      : 'It must match your vehicle';
+  String get obDocBulletMatch =>
+      _es ? 'Debe coincidir con tu vehículo' : 'It must match your vehicle';
   String get obDocBulletNameOnPolicy => _es
       ? 'Tu nombre debe aparecer en la póliza'
       : 'Your name must be listed on the policy';
-  String get obDocBulletNotBlurry => _es
-      ? 'La foto no debe estar borrosa'
-      : 'The photo must not be blurry';
+  String get obDocBulletNotBlurry =>
+      _es ? 'La foto no debe estar borrosa' : 'The photo must not be blurry';
   String get obDocBulletCorners => _es
       ? 'Las 4 esquinas del documento deben ser visibles'
       : 'All 4 corners of the document must be visible';
-  String get obSignInWithEmail => _es
-      ? 'Inicia sesión con correo'
-      : 'Sign in with email';
+  String get obSignInWithEmail =>
+      _es ? 'Inicia sesión con correo' : 'Sign in with email';
 
   // ── Onboarding intros (textos exactos estilo Lyft) ───────────────
   String get obIntroVehicleTitle =>
@@ -5908,9 +6079,8 @@ class S {
   String get obIntroPlateSub => _es
       ? 'Esto ayudará a los pasajeros a confirmar el viaje correcto'
       : 'This will help passengers confirm the right ride';
-  String get obIntroSsnTitle => _es
-      ? 'Agrega tu número de Seguro Social'
-      : 'Add Social Security number';
+  String get obIntroSsnTitle =>
+      _es ? 'Agrega tu número de Seguro Social' : 'Add Social Security number';
   String get obIntroSsnSub => _es
       ? 'Lo necesitamos para tu verificación de antecedentes'
       : 'We need it to run your background check';
@@ -5931,8 +6101,8 @@ class S {
       ? 'Tómate una foto de perfil para ayudar a los conductores a encontrarte.'
       : 'Take a profile photo to help drivers find you.';
   String get genderSectionLabel => _es ? 'Género' : 'Gender';
-  String get genderMale => _es ? 'Masculino' : 'Male';
-  String get genderFemale => _es ? 'Femenino' : 'Female';
+  String get genderMale => _es ? 'Hombre' : 'Male';
+  String get genderFemale => _es ? 'Mujer' : 'Female';
   String get genderOther => _es ? 'Otro' : 'Other';
   String get instructionsTitle => _es ? 'Instrucciones' : 'Instructions';
   String get takePhotoButton => _es ? 'Tomar foto' : 'Take a photo';
@@ -5982,22 +6152,24 @@ class S {
   String get obVehicleColor => _es ? 'Color' : 'Color';
   // Total seating capacity, driver included — the number the tier
   // classifier reads (a 7-seat SUV is Premium/Black territory).
-  String get obVehicleSeats => _es ? 'Asientos (incluido el tuyo)' : 'Seats (including yours)';
-  String get obVehicleSeatbelts => _es ? 'Cinturones de seguridad' : 'Seatbelts';
+  String get obVehicleSeats =>
+      _es ? 'Asientos (incluido el tuyo)' : 'Seats (including yours)';
+  String get obVehicleSeatbelts =>
+      _es ? 'Cinturones de seguridad' : 'Seatbelts';
 
   // ── Captura: licencia (cámara in-app) ────────────────────────────
   String get obLicenseFrontTitle =>
       _es ? 'Frente de la licencia' : "Front of driver's license";
-  String get obLicenseFrontText =>
-      _es ? 'Toma una foto del frente de tu licencia de conducir'
+  String get obLicenseFrontText => _es
+      ? 'Toma una foto del frente de tu licencia de conducir'
       : "Take photo of driver's license front";
   String get obLicenseFrontHint => _es
       ? 'Asegúrate de que sea clara y legible, sobre una superficie plana y bien iluminada.'
       : "Make sure it's clear and easy to read on a flat, well-lit surface.";
   String get obLicenseBackTitle =>
       _es ? 'Reverso de la licencia' : "Backside of driver's license";
-  String get obLicenseBackText =>
-      _es ? 'Toma una foto del reverso de tu licencia de conducir'
+  String get obLicenseBackText => _es
+      ? 'Toma una foto del reverso de tu licencia de conducir'
       : "Take photo of driver's license back";
   String get obCameraDeniedTitle =>
       _es ? 'Se necesita la cámara' : 'Camera access needed';
@@ -6007,11 +6179,9 @@ class S {
   String get obSubmitButton => _es ? 'Enviar' : 'Submit';
 
   // ── Captura: foto de perfil ──────────────────────────────────────
-  String get obPhotoGuide => _es
-      ? 'Centra tu rostro con buena luz'
-      : 'Center your face in good light';
-  String get obUseThisPhoto =>
-      _es ? 'Usar esta foto' : 'Use this photo';
+  String get obPhotoGuide =>
+      _es ? 'Centra tu rostro con buena luz' : 'Center your face in good light';
+  String get obUseThisPhoto => _es ? 'Usar esta foto' : 'Use this photo';
 
   // ── Consentimiento background check (FCRA) ───────────────────────
   String get obBackgroundTitle =>

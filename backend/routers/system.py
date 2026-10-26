@@ -746,7 +746,7 @@ async def client_event(req: ClientEventIn, request: Request):
 
 _SECTOR_DEMAND_KEY = "sector_demand"
 # Live-editable sector map (panel → apps over socket): the GeoJSON rides in
-# app_config, the baked static file is only the seed/fallback until the
+# app_config, the baked FL+AL data is only the seed/fallback until the
 # first PUT. The version is the change signal for the apps.
 _SECTORS_GEOJSON_KEY = "fl_sectors_geojson"
 _SECTORS_VERSION_KEY = "fl_sectors_version"
@@ -762,18 +762,13 @@ def _sectors_version_from(raw: Optional[str]) -> int:
 
 
 def _load_sector_ids() -> frozenset:
-    """Sector ids from the baked static file (validated once per process —
-    the file ships with the deploy)."""
+    """Sector ids from the combined baked seed, validated once per process."""
     global _SECTOR_IDS
     if _SECTOR_IDS:
         return _SECTOR_IDS
     try:
-        import json as _json
-        import os as _os
-        path = _os.path.join(_os.path.dirname(__file__), "..", "static",
-                             "fl_sectors.json")
-        with open(path, encoding="utf-8") as fh:
-            data = _json.load(fh)
+        from services.sector_defaults import load_baked_sector_collection
+        data = load_baked_sector_collection()
         _SECTOR_IDS = frozenset(
             f["properties"]["id"] for f in data.get("features", []))
     except Exception as e:  # fail-open: empty set rejects nothing below
@@ -830,6 +825,13 @@ def _parse_sector_demand(raw: str) -> dict:
             continue
         if level < 0 or level > 3 or bonus < 0 or bonus > 50:
             continue
+        # A switched-OFF sector survives the parse even at level 0
+        # (2026-10-17, owner spec: dispatch can turn a zone OFF and its
+        # drivers cannot connect) — without this, level 0 is dropped as
+        # noise and the off flag would never reach the gate.
+        if cfg.get("off"):
+            out[sid] = {"level": 0, "bonus": 0, "off": True}
+            continue
         if level == 0:
             continue  # level 0 is the gray base — storing it is noise
         out[sid] = {"level": level, "bonus": round(bonus, 2)}
@@ -865,6 +867,9 @@ class ZoneDemandIn(BaseModel):
     sector_id: str = Field(min_length=1, max_length=40)
     level: int = Field(ge=0, le=3)
     bonus: float = Field(0, ge=0, le=50)
+    # 2026-10-17 (owner spec): dispatch can switch a sector OFF — its
+    # drivers cannot connect while it is off.
+    off: bool = False
 
 
 @router.get("/admin/zone-demand", dependencies=[Depends(_require_dispatch_auth)])
@@ -894,7 +899,10 @@ async def set_zone_demand(req: ZoneDemandIn, request: Request,
         select(AppConfig).where(AppConfig.key == _SECTOR_DEMAND_KEY))
     row = r.scalar_one_or_none()
     current = _parse_sector_demand(row.value if row else "")
-    if req.level == 0:
+    if req.off:
+        # The OFF flag survives level 0 in the parse (see _parse_sector_demand).
+        current[req.sector_id] = {"level": 0, "bonus": 0, "off": True}
+    elif req.level == 0:
         current.pop(req.sector_id, None)
     else:
         current[req.sector_id] = {"level": req.level,
@@ -912,47 +920,58 @@ async def set_zone_demand(req: ZoneDemandIn, request: Request,
     _security_audit_log(
         "zone_demand",
         request.client.host if request.client else "unknown",
-        f"{req.sector_id}=lvl{req.level}/${req.bonus}",
+        f"{req.sector_id}={'OFF' if req.off else f'lvl{req.level}/${req.bonus}'}",
     )
-    logger.warning("[Zones] demand %s -> lvl %d, $%.2f", req.sector_id,
-                   req.level, req.bonus)
+    logger.warning("[Zones] demand %s -> %s", req.sector_id,
+                   "OFF" if req.off else f"lvl {req.level}, ${req.bonus:.2f}")
     return {"sector_id": req.sector_id, "level": req.level,
             "bonus": round(req.bonus, 2)}
+
+
+async def sector_is_off(db, lat: float, lng: float) -> bool:
+    """True when the point falls in a sector dispatch switched OFF
+    (2026-10-17, owner spec: a switched-off zone blocks its drivers from
+    connecting). Fail-open like every zone gate: no sector under the point
+    or unreadable data → False, never a lockout."""
+    from services.zone_polygons import sector_id_at
+    sid = await sector_id_at(db, lat, lng)
+    if not sid:
+        return False
+    from sqlalchemy import select
+    r = await db.execute(
+        select(AppConfig.value).where(AppConfig.key == _SECTOR_DEMAND_KEY))
+    demand = _parse_sector_demand(r.scalar_one_or_none() or "")
+    return (demand.get(sid) or {}).get("off") is True
 
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Live sector map (user spec: dispatch edits the driver-map sectors from
 #  the panel and every app updates over the socket — no redeploy, no app
-#  restart). The edited copy lives in app_config; the baked static file
+#  restart). The edited copy lives in app_config; the baked FL+AL data
 #  stays the seed/fallback until the first PUT. A monotonically increasing
 #  version is the change signal: the "zones_updated" socket event live,
 #  /zones/demand's sectors_version as the polling fallback.
 # ═══════════════════════════════════════════════════════════════════════
 
-_SECTORS_FILE = os.path.join(os.path.dirname(__file__), "..", "static",
-                             "fl_sectors.json")
 _SECTOR_MAX_FEATURES = 60
 _SECTOR_MAX_POINTS = 50000
-_sectors_file_cache: tuple = ()  # (mtime, geojson_dict)
+_sectors_file_cache: tuple = ()  # (file signature, geojson_dict)
 
 
 def _load_sectors_file() -> Optional[dict]:
-    """Baked sectors shipped with the deploy — the seed the panel edits
-    from and the fallback until the first PUT. Cached by mtime."""
+    """Combined baked sectors, cached from both static file signatures."""
     global _sectors_file_cache
     try:
-        mtime = os.path.getmtime(_SECTORS_FILE)
-        if _sectors_file_cache and _sectors_file_cache[0] == mtime:
+        from services.sector_defaults import (
+            baked_sectors_signature, load_baked_sector_collection)
+        signature = baked_sectors_signature()
+        if _sectors_file_cache and _sectors_file_cache[0] == signature:
             return _sectors_file_cache[1]
-        import json as _json
-        with open(_SECTORS_FILE, encoding="utf-8") as fh:
-            data = _json.load(fh)
-        if not isinstance(data, dict) or data.get("type") != "FeatureCollection":
-            raise ValueError("not a FeatureCollection")
-        _sectors_file_cache = (mtime, data)
+        data = load_baked_sector_collection()
+        _sectors_file_cache = (signature, data)
         return data
     except Exception as e:  # the endpoint turns this into a clean 503
-        logger.warning("[Zones] sectors file load failed: %s", e)
+        logger.warning("[Zones] sector files load failed: %s", e)
         return None
 
 
@@ -1094,7 +1113,7 @@ def _validate_sector_collection(req: SectorsGeojsonIn) -> list:
 @router.get("/zones/sectors", dependencies=[Depends(_verify_api_key)])
 async def get_zone_sectors(db=Depends(get_db)):
     """Live sector map for the apps. The dispatch-edited copy in app_config
-    wins; until the first PUT the baked static file is served. The version
+    wins; until the first PUT the baked FL+AL data is served. The version
     is the client's cache key — refetch only when it changes.
 
     The stored row is re-validated with the SAME rules the PUT applies

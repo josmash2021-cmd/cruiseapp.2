@@ -94,7 +94,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           fit: StackFit.expand,
           children: [
             Positioned.fill(
-                child: StaticMapSnapshot(center: _mapAnchor, zoom: 16, veilAlpha: 0.60)),
+                child: StaticMapSnapshot(
+                    center: _mapAnchor, zoom: 16, veilAlpha: 0.60)),
             Center(child: GoldLocationDotOverlay(bearing: _heading)),
           ],
         ),
@@ -112,8 +113,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         builder: (context, constraints) {
           // The projection turns a coordinate into a pixel of THIS box, so
           // it has to be measured rather than assumed.
-          final newSize =
-              Size(constraints.maxWidth, constraints.maxHeight);
+          final newSize = Size(constraints.maxWidth, constraints.maxHeight);
           // Rotación del teléfono (user report 2026-10-16: "cuando el
           // telefono se gira la flecha se mueve del sitio donde esta el
           // driver"): un resize puro no emite evento de cámara y el overlay
@@ -142,7 +142,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 Positioned.fill(
                   child: IgnorePointer(
                     child: AnimatedOpacity(
-                      opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0,
+                      opacity:
+                          (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0,
                       duration: const Duration(milliseconds: 200),
                       // 2026-10-17 (cero negro al volver de otra página): la
                       // foto REAL del mapa capturada al entregar la
@@ -173,9 +174,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   // Camera-rotation compensated (2026-09-19): in the
                   // heading-up chase the arrow keeps pointing UP while the
                   // world turns under it.
-                  final dot = GoldLocationDotOverlay(
-                      bearing:
-                          _heading - (_onlineCamState?.bearing ?? 0));
+                  final bearing = _heading - (_onlineCamState?.bearing ?? 0);
+                  final dot = _driverSonarActive && _driverSonarCtrl != null
+                      ? DriverSonarMarker(
+                          animation: _driverSonarCtrl!, bearing: bearing)
+                      : GoldLocationDotOverlay(bearing: bearing);
                   const half = GoldLocationDot.driverOverlaySize / 2;
                   // Centred is only true while the camera FOLLOWS — the
                   // driver really is the centre then. Not following and no
@@ -194,6 +197,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // The zone's "FL: <city>" label — a Flutter overlay glued per
               // frame (NOT a Mapbox SymbolLayer — see driver_online_map.dart).
               Positioned.fill(child: _zoneLabelOverlay()),
+              // Gold airport pills of the driver's working state (visual
+              // only, same flat-projection pipeline — 2026-10-22).
+              Positioned.fill(child: _airportPillOverlay()),
               // Hotspot invisible: long-press en la zona del chip de
               // earnings muestra/oculta el panel de diagnóstico de
               // movimiento (GPS/tick/cam/anot por segundo).
@@ -274,127 +280,142 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       // know whether a real finger is down when a scroll/zoom callback
       // arrives during a programmatic flight.
       child: Listener(
-        onPointerDown: (_) => _mapPointers++,
+        onPointerDown: (event) {
+          _mapPointers++;
+          if (_mapGestureGuard.pointerDown(event.position, _mapPointers)) {
+            _onCameraMoveStarted();
+          }
+        },
+        onPointerMove: (event) {
+          if (_mapGestureGuard.pointerMove(event.position, _mapPointers)) {
+            _onCameraMoveStarted();
+          }
+        },
         onPointerUp: (_) {
           if (_mapPointers > 0) _mapPointers--;
+          _mapGestureGuard.pointerUp(_mapPointers);
         },
         onPointerCancel: (_) {
           if (_mapPointers > 0) _mapPointers--;
+          _mapGestureGuard.reset();
         },
         child: mapbox.MapWidget(
-        key: _mapKey,
-        textureView: true,
-        // First full render (tiles drawn, camera idle) lifts the snapshot
-        // overlay — style-loaded alone was too early (2026-08-25).
-        onMapIdleListener: (_) {
-          if (!_firstRenderDone && mounted) {
-            _setState(() {
-              _firstRenderDone = true;
-              // La foto del handoff ya no hace falta (2026-10-17): el mapa
-              // real renderiza — libera los bytes y el velo se desvanece.
-              _surfaceStillBytes = null;
-            });
-            // Boot breadcrumb: how long each stage took on THIS device —
-            // the ~30 s black map survived the zones kill switch, so the
-            // next boot tells us which stage actually eats it.
-            final bootAt = _mapBootAt;
-            if (bootAt != null) {
-              ApiService.logClientEvent('map_boot',
-                  'styleMs=${_mapStyleMs ?? -1} idleMs=${DateTime.now().difference(bootAt).inMilliseconds} zones=${FeatureFlags.zonesMapEnabled} online=$_driverOnline');
-            }
-          }
-          // The zone layers wait for the map to be rendering (see
-          // _syncZoneLayers) — every idle beat is their cue to (re)try.
-          _syncZoneLayers();
-        },
-        styleUri: MapboxConfig.styleDark,
-        cameraOptions: mapbox.CameraOptions(
-          center: mapbox.Point(
-              coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-          // Offline with the zone layer on the map is BORN at the region
-          // view (user spec 2026-10-11: "cuando se abre la app sale con
-          // zoom in en vez del zoom out de la foto") — the entry ease only
-          // runs while the ticker ticks, and the ticker parks when the
-          // parked driver needs the wide view the most.
-          zoom: (!_driverOnline && FeatureFlags.zonesMapEnabled)
-              ? 10.8
-              : 16.0, // match home screen zoom — glides to 15.5 via _onSmoothTick
-          bearing: 0,
-          pitch: 0,
-        ),
-        onMapCreated: (ctrl) => _onOnlineMapReady(ctrl, isDark: isDark),
-        // Zone selection (user spec 2026-10-11: "el driver debe poder
-        // seleccionar las zonas" — tap a city on the map and the GO button
-        // lights up animated; no selection = GO stays off). Offline only.
-        onTapListener: _onZoneMapTap,
-        onStyleLoadedListener: (_) async {
-          // setState, not a bare write: the snapshot overlay over the live
-          // surface only fades out when the flag's change triggers a rebuild.
-          _setState(() => _mapStyleLoaded = true);
-          final bootAt = _mapBootAt;
-          if (bootAt != null && _mapStyleMs == null) {
-            _mapStyleMs = DateTime.now().difference(bootAt).inMilliseconds;
-          }
-          _mapStyleWatchdogTimer?.cancel();
-          if (_map != null) {
-            await MapTheme.applyNavyGold(_map!);
-            // Ensure top-down view on entry (no tilt unless actively
-            // navigating) — but keep the heading-up rotation the searching
-            // chase now carries (user spec 2026-09-19), never a north snap.
-            if (_phase == _Phase.searching || _phase == _Phase.rideRequest) {
-              // The only camera write on this screen still outside the
-              // guarded helper, and it needed its own catch: a style reload
-              // can be the last thing a surface does before it is torn down.
-              try {
-                // Programmatic, so it must wear the flight suppression and
-                // sync the last-written bearing (user report 2026-10-12,
-                // "el botón de recentrar offline no funciona"): without
-                // both, the next camera event read this snap as a MANUAL
-                // rotate, unlatched follow and raised the recenter FAB with
-                // the camera still on the driver — tapping it flew to where
-                // the camera already was. A dead button by construction.
-                _camFlightUntil = DateTime.now().add(
-                    const Duration(milliseconds: _kRecenterFlightMs + 120));
-                _lastCamWriteBearing = _smoothedBearing;
-                await _map!.flyTo(
-                  mapbox.CameraOptions(pitch: 0, bearing: _smoothedBearing),
-                  mapbox.MapAnimationOptions(duration: 0),
-                );
-              } catch (e) {
-                debugPrint('[DriverOnline] flatten on style load failed: $e');
+          key: _mapKey,
+          textureView: true,
+          // First full render (tiles drawn, camera idle) lifts the snapshot
+          // overlay — style-loaded alone was too early (2026-08-25).
+          onMapIdleListener: (_) {
+            if (!_firstRenderDone && mounted) {
+              _setState(() {
+                _firstRenderDone = true;
+                // La foto del handoff ya no hace falta (2026-10-17): el mapa
+                // real renderiza — libera los bytes y el velo se desvanece.
+                _surfaceStillBytes = null;
+              });
+              // Boot breadcrumb: how long each stage took on THIS device —
+              // the ~30 s black map survived the zones kill switch, so the
+              // next boot tells us which stage actually eats it.
+              final bootAt = _mapBootAt;
+              if (bootAt != null) {
+                ApiService.logClientEvent('map_boot',
+                    'styleMs=${_mapStyleMs ?? -1} idleMs=${DateTime.now().difference(bootAt).inMilliseconds} zones=${FeatureFlags.zonesMapEnabled} online=$_driverOnline');
               }
             }
-            // Re-apply pin layer properties after style reload —
-            // applyNavyGold resets them so they must be re-set here.
-            _reapplyManagerLayerProps();
-            // A style reload wipes custom sources/layers — the municipal
-            // zone shading + highlight are recreated on the next sync.
-            _zoneLayersReady = false;
-            _zoneSectorIds = [];
-            _syncZoneLayers(forceHighlight: true);
-          }
-        },
-        onScrollListener: (_) {
-          _onCameraMoveStarted();
-        },
-        onZoomListener: (_) {
-          // Pinch is a user gesture too: unlatch follow so the 60 fps chase
-          // never fights the fingers (10 s later it glides back by itself).
-          _onCameraMoveStarted();
-        },
-        onCameraChangeListener: (data) {
-          _onlineCamState = data.cameraState;
-          // See the same listener on the home screen: the overlay's pixel
-          // comes from this camera, and the motion ticker parks when the
-          // driver stops, so without this the arrow would stick to a stale
-          // pixel while a stationary driver drags the map.
-          _markerFrame.value++;
-          // The plugin (2.20) has NO onRotateListener: a two-finger twist
-          // only surfaces as the camera bearing diverging from the follow
-          // ticker's last write. That divergence IS the manual rotate —
-          // unlatch follow here or the chase fights the twist every frame.
-          _maybeUnlatchOnManualRotate(data.cameraState);
-        },
+            _syncDriverSonar();
+            // The zone layers wait for the map to be rendering (see
+            // _syncZoneLayers) — every idle beat is their cue to (re)try.
+            _syncZoneLayers();
+          },
+          styleUri: MapboxConfig.styleDark,
+          cameraOptions: mapbox.CameraOptions(
+            center: mapbox.Point(
+                coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+            // Offline with the zone layer on the map is BORN at the region
+            // view (user spec 2026-10-11: "cuando se abre la app sale con
+            // zoom in en vez del zoom out de la foto") — the entry ease only
+            // runs while the ticker ticks, and the ticker parks when the
+            // parked driver needs the wide view the most.
+            zoom: (!_driverOnline && FeatureFlags.zonesMapEnabled)
+                ? 10.8
+                : 16.0, // match home screen zoom — glides to 15.5 via _onSmoothTick
+            bearing: 0,
+            pitch: 0,
+          ),
+          onMapCreated: (ctrl) => _onOnlineMapReady(ctrl, isDark: isDark),
+          // Zone selection (user spec 2026-10-11: "el driver debe poder
+          // seleccionar las zonas" — tap a city on the map and the GO button
+          // lights up animated; no selection = GO stays off). Offline only.
+          onTapListener: _onZoneMapTap,
+          onStyleLoadedListener: (_) async {
+            // setState, not a bare write: the snapshot overlay over the live
+            // surface only fades out when the flag's change triggers a rebuild.
+            _setState(() => _mapStyleLoaded = true);
+            _syncDriverSonar();
+            final bootAt = _mapBootAt;
+            if (bootAt != null && _mapStyleMs == null) {
+              _mapStyleMs = DateTime.now().difference(bootAt).inMilliseconds;
+            }
+            _mapStyleWatchdogTimer?.cancel();
+            if (_map != null) {
+              await MapTheme.applyNavyGold(_map!);
+              // Ensure top-down view on entry (no tilt unless actively
+              // navigating) — but keep the heading-up rotation the searching
+              // chase now carries (user spec 2026-09-19), never a north snap.
+              if (_phase == _Phase.searching || _phase == _Phase.rideRequest) {
+                // The only camera write on this screen still outside the
+                // guarded helper, and it needed its own catch: a style reload
+                // can be the last thing a surface does before it is torn down.
+                try {
+                  // Programmatic, so it must wear the flight suppression and
+                  // sync the last-written bearing (user report 2026-10-12,
+                  // "el botón de recentrar offline no funciona"): without
+                  // both, the next camera event read this snap as a MANUAL
+                  // rotate, unlatched follow and raised the recenter FAB with
+                  // the camera still on the driver — tapping it flew to where
+                  // the camera already was. A dead button by construction.
+                  _camFlightUntil = DateTime.now().add(
+                      const Duration(milliseconds: _kRecenterFlightMs + 120));
+                  _lastCamWriteBearing = _smoothedBearing;
+                  await _map!.flyTo(
+                    mapbox.CameraOptions(pitch: 0, bearing: _smoothedBearing),
+                    mapbox.MapAnimationOptions(duration: 0),
+                  );
+                } catch (e) {
+                  debugPrint('[DriverOnline] flatten on style load failed: $e');
+                }
+              }
+              // Re-apply pin layer properties after style reload —
+              // applyNavyGold resets them so they must be re-set here.
+              _reapplyManagerLayerProps();
+              // A style reload wipes custom sources/layers — the municipal
+              // zone shading + highlight are recreated on the next sync.
+              _zoneLayersReady = false;
+              _zoneSectorIds = [];
+              _syncZoneLayers(forceHighlight: true);
+            }
+          },
+          onScrollListener: (_) {
+            _onCameraMoveStarted();
+          },
+          onZoomListener: (_) {
+            // Pinch is a user gesture too: unlatch follow so the chase never
+            // fights the fingers. Only manual recenter re-engages it.
+            _onCameraMoveStarted();
+          },
+          onCameraChangeListener: (data) {
+            _onlineCamState = data.cameraState;
+            _maybeCompleteRecenter(data.cameraState);
+            // See the same listener on the home screen: the overlay's pixel
+            // comes from this camera, and the motion ticker parks when the
+            // driver stops, so without this the arrow would stick to a stale
+            // pixel while a stationary driver drags the map.
+            _markerFrame.value++;
+            // The plugin (2.20) has NO onRotateListener: a two-finger twist
+            // only surfaces as the camera bearing diverging from the follow
+            // ticker's last write. That divergence IS the manual rotate —
+            // unlatch follow here or the chase fights the twist every frame.
+            _maybeUnlatchOnManualRotate(data.cameraState);
+          },
         ),
       ),
     );
@@ -446,9 +467,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       }
       if (mounted) _syncZoneLayers(forceHighlight: true);
     }));
-    // First paint already carries dispatch's heat when it exists.
+    // First paint already carries dispatch's heat when it exists. Refresh
+    // the offline hero too, or it stays at the default until the next poll.
     unawaited(ZoneService.loadDemand(force: true).then((_) {
-      if (mounted) _syncZoneLayers();
+      if (!mounted) return;
+      _syncZoneLayers();
+      if (!_driverOnline) _setState(() {});
     }));
     // Offline with zones the camera is born at the region view (10.8) — the
     // 16→target entry ease must not drag it back up on the first tick.
@@ -467,8 +491,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     _navyGoldRetryTimer?.cancel();
     final themeGen = _mapGeneration;
     var themeAttempts = 0;
-    _navyGoldRetryTimer =
-        Timer.periodic(const Duration(seconds: 1), (t) {
+    _navyGoldRetryTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted ||
           _map == null ||
           _mapGeneration != themeGen ||
@@ -496,6 +519,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     _mapStyleWatchdogTimer?.cancel();
     _mapStyleLoaded = false;
     _firstRenderDone = false;
+    _syncDriverSonar();
     // A remount loses the camera — the home-state frame runs again at sync.
     _offlineZonesFitDone = false;
     _offlineZonesRefitPending = false;
@@ -610,12 +634,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               point.id, 'icon-rotation-alignment', 'map');
         } catch (_) {}
         try {
-          await ctrl.style.setStyleLayerProperty(
-              point.id, 'icon-allow-overlap', true);
+          await ctrl.style
+              .setStyleLayerProperty(point.id, 'icon-allow-overlap', true);
         } catch (_) {}
         try {
-          await ctrl.style.setStyleLayerProperty(
-              point.id, 'icon-ignore-placement', true);
+          await ctrl.style
+              .setStyleLayerProperty(point.id, 'icon-ignore-placement', true);
         } catch (_) {}
         if (stale()) return;
 
@@ -636,8 +660,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               .setStyleLayerProperty(pin.id, 'icon-allow-overlap', true);
         } catch (_) {}
         try {
-          await ctrl.style.setStyleLayerProperty(
-              pin.id, 'icon-ignore-placement', true);
+          await ctrl.style
+              .setStyleLayerProperty(pin.id, 'icon-ignore-placement', true);
         } catch (_) {}
         try {
           await ctrl.style
@@ -694,8 +718,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             _pinAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
       } catch (_) {}
       try {
-        await map.style.setStyleLayerProperty(
-            _pinAnnotMgr!.id, 'icon-anchor', 'bottom');
+        await map.style
+            .setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-anchor', 'bottom');
       } catch (_) {}
       try {
         await map.style.setStyleLayerProperty(
@@ -973,8 +997,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         children: [
           Row(
             children: [
-              Icon(Icons.directions_car_filled_rounded,
-                  color: gold, size: 16),
+              Icon(Icons.directions_car_filled_rounded, color: gold, size: 16),
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
@@ -1149,8 +1172,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         ),
         child: Row(
           children: [
-            const Icon(Icons.notifications_off_outlined,
-                color: gold, size: 18),
+            const Icon(Icons.notifications_off_outlined, color: gold, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -2487,9 +2509,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           offer['photo_url'] ??
           '',
     );
-    final initial = riderName.trim().isNotEmpty
-        ? riderName.trim()[0].toUpperCase()
-        : '?';
+    final initial =
+        riderName.trim().isNotEmpty ? riderName.trim()[0].toUpperCase() : '?';
     return Container(
       width: 30,
       height: 30,
@@ -2572,7 +2593,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     );
     const whiteRing = BoxDecoration(
       shape: BoxShape.circle,
-      border: Border.fromBorderSide(BorderSide(color: Colors.white, width: 1.5)),
+      border:
+          Border.fromBorderSide(BorderSide(color: Colors.white, width: 1.5)),
     );
     // One box around the pair, not one around each. The two stops are a
     // single journey; a box each said they were two unrelated rows.
@@ -2792,13 +2814,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // just to start too tall rather than too short — a short first frame
     // is the one that paints overflow stripes.
     const double slack = 64;
-    const double base = pad +
-        fareBlock +
-        18 +
-        routeBlock +
-        divider +
-        riderRow +
-        slack;
+    const double base =
+        pad + fareBlock + 18 + routeBlock + divider + riderRow + slack;
     return base + extra;
   }
 
@@ -3936,8 +3953,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         // "el sheet solamente se puede abrir o cerrar tocando o deslizando
         // desde donde dice You're offline/online") — drags that start below
         // the strip are the map's / the list's, never the sheet's.
-        onVerticalDragStart: (d) =>
-            _sheetDragStartDy = d.localPosition.dy,
+        onVerticalDragStart: (d) => _sheetDragStartDy = d.localPosition.dy,
         onVerticalDragUpdate: (d) {
           if ((_sheetDragStartDy ?? 999) > _kSheetHeaderStripH) return;
           // Finger controls: dragging up increases frac, down decreases
@@ -4014,248 +4030,249 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             child: Stack(
               children: [
                 Column(
-              children: [
-                const SizedBox(height: 8),
-                _handle(isDark),
-                // Mapa único (2026-09-26): el contenido del panel cambia por
-                // MODO — offline = el panel del home (status + earnings + GO
-                // flotando aparte); online = el de siempre.
-                if (!_driverOnline)
-                  Expanded(
-                    child: _buildOfflinePanelContent(
-                        textMuted, MediaQuery.of(context).padding, t),
-                  )
-                else ...[
-                // Arrow icon: up when collapsed, down when expanded
-                Icon(
-                  t > 0.5
-                      ? Icons.keyboard_arrow_down_rounded
-                      : Icons.keyboard_arrow_up_rounded,
-                  color: textMuted.withValues(alpha: 0.5),
-                  size: 16,
-                ),
-                // Header row — icons sit in sunken neu wells
-                SizedBox(
-                  height: 34,
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 14),
-                      // Safety on the left, Reserved on the right — only here,
-                      // in the open panel, where each has room for a word.
-                      _panelAction(
-                        Icons.health_and_safety_outlined,
-                        isDark,
-                        textMuted,
-                        active: false,
-                        semanticLabel: S.of(context).safetyHub,
-                        onTap: () {
-                          HapticService.selectionClick();
-                          Navigator.push(
-                            context,
-                            slideFromRightRoute(const SafetyScreen()),
-                          );
-                        },
+                  children: [
+                    const SizedBox(height: 8),
+                    _handle(isDark),
+                    // Mapa único (2026-09-26): el contenido del panel cambia por
+                    // MODO — offline = el panel del home (status + earnings + GO
+                    // flotando aparte); online = el de siempre.
+                    if (!_driverOnline)
+                      Expanded(
+                        child: _buildOfflinePanelContent(
+                            textMuted, MediaQuery.of(context).padding, t),
+                      )
+                    else ...[
+                      // Arrow icon: up when collapsed, down when expanded
+                      Icon(
+                        t > 0.5
+                            ? Icons.keyboard_arrow_down_rounded
+                            : Icons.keyboard_arrow_up_rounded,
+                        color: textMuted.withValues(alpha: 0.5),
+                        size: 16,
                       ),
-                      const Spacer(),
-                      // The alternating status, not a fixed word.
+                      // Header row — icons sit in sunken neu wells
+                      SizedBox(
+                        height: 34,
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 14),
+                            // Safety on the left, Reserved on the right — only here,
+                            // in the open panel, where each has room for a word.
+                            _panelAction(
+                              Icons.health_and_safety_outlined,
+                              isDark,
+                              textMuted,
+                              active: false,
+                              semanticLabel: S.of(context).safetyHub,
+                              onTap: () {
+                                HapticService.selectionClick();
+                                Navigator.push(
+                                  context,
+                                  slideFromRightRoute(const SafetyScreen()),
+                                );
+                              },
+                            ),
+                            const Spacer(),
+                            // The alternating status, not a fixed word.
+                            //
+                            // This is the header the driver reads while waiting —
+                            // _floatingPanel is what the searching phase renders.
+                            // The label had been written into _searchingBar and into
+                            // the offers sheet, neither of which is on screen here.
+                            _searchingLabel(textMuted),
+                            const Spacer(),
+                            _panelAction(
+                              Icons.event_available_rounded,
+                              isDark,
+                              textMuted,
+                              active: false,
+                              badge: _scheduledAvailCount,
+                              semanticLabel: S.of(context).reservedLabel,
+                              onTap: () {
+                                HapticService.selectionClick();
+                                // La pantalla completa de agendados (user spec
+                                // 2026-10-15: la vista in-place "no avisa ni
+                                // muestra los viajes programados — tengo que entrar
+                                // y salir"). El badge refresca al volver y el mapa
+                                // se re-clama como toda salida de superficie.
+                                Navigator.push(
+                                  context,
+                                  slideFromRightRoute(
+                                      const ScheduledRidesMapScreen()),
+                                ).then((_) {
+                                  _fetchScheduledCount();
+                                  _remountMapSurface();
+                                });
+                              },
+                            ),
+                            const SizedBox(width: 14),
+                          ],
+                        ),
+                      ),
+                      // The divider, and the travelling light that now lives on it.
                       //
-                      // This is the header the driver reads while waiting —
-                      // _floatingPanel is what the searching phase renders.
-                      // The label had been written into _searchingBar and into
-                      // the offers sheet, neither of which is on screen here.
-                      _searchingLabel(textMuted),
-                      const Spacer(),
-                      _panelAction(
-                        Icons.event_available_rounded,
-                        isDark,
-                        textMuted,
-                        active: false,
-                        badge: _scheduledAvailCount,
-                        semanticLabel: S.of(context).reservedLabel,
-                        onTap: () {
-                          HapticService.selectionClick();
-                          // La pantalla completa de agendados (user spec
-                          // 2026-10-15: la vista in-place "no avisa ni
-                          // muestra los viajes programados — tengo que entrar
-                          // y salir"). El badge refresca al volver y el mapa
-                          // se re-clama como toda salida de superficie.
-                          Navigator.push(
-                            context,
-                            slideFromRightRoute(
-                                const ScheduledRidesMapScreen()),
-                          ).then((_) {
-                            _fetchScheduledCount();
-                            _remountMapSurface();
-                          });
-                        },
-                      ),
-                      const SizedBox(width: 14),
-                    ],
-                  ),
-                ),
-                // The divider, and the travelling light that now lives on it.
-                //
-                // Fixed here in the Column rather than scrolled with the list.
-                // It is the rule between the header and the content, so it
-                // belongs to the header — and a light that slides off the top
-                // of the screen the moment the driver scrolls is not an
-                // indicator of anything.
-                //
-                // Its own ListenableBuilder: the pulse ticks sixty times a
-                // second, and the builder above deliberately passes the whole
-                // sheet through as `child` so none of it rebuilds at that
-                // rate. This is the one part that has to.
-                if (t > 0.05) ...[
-                  const SizedBox(height: 12),
-                  Opacity(
-                    opacity: t.clamp(0.0, 1.0),
-                    child: ListenableBuilder(
-                      listenable: _searchPulseVal,
-                      builder: (_, __) => _SearchingDividerLine(
-                        progress: _searchPulseVal.value,
-                        baseColor: borderC,
-                      ),
-                    ),
-                  ),
-                ],
-                // Expanded content fades in
-                if (t > 0.05)
-                  Expanded(
-                    child: Opacity(
-                      opacity: t.clamp(0.0, 1.0),
-                      child: ListView(
-                        padding: EdgeInsets.zero,
-                        physics: t > 0.8
-                            ? const ClampingScrollPhysics()
-                            : const NeverScrollableScrollPhysics(),
-                        children: [
-                          const SizedBox(height: 18),
-                          // "Earnings", not "Recommended for you".
-                          //
-                          // The old heading introduced three links to other
-                          // screens. What follows it now is the figures
-                          // themselves, and a heading that promises
-                          // recommendations above a bar chart is just wrong.
-                          // Left-aligned and small, the same label the home
-                          // sheet puts over the same card.
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 18),
-                            child: Text(
-                              // The slot below crosses between the figures
-                              // and the reservations. A heading fixed on
-                              // "EARNINGS" over a list of scheduled rides
-                              // is the same mistake the old
-                              // "Recommended for you" made.
-                              S.of(context)
-                                  .earningsTitle
-                                  .toUpperCase(),
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                color: Colors.white.withValues(alpha: 0.45),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1.4,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          // Earnings, or the reserved rides — the same slot,
-                          // crossed over rather than swapped, and the height
-                          // eased so the button below never jumps.
-                          AnimatedSize(
-                            duration: const Duration(milliseconds: 420),
-                            curve: Curves.easeInOutCubicEmphasized,
-                            alignment: Alignment.topCenter,
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 340),
-                              switchInCurve: Curves.easeOutCubic,
-                              switchOutCurve: Curves.easeIn,
-                              layoutBuilder: (current, previous) => Stack(
-                                alignment: Alignment.topCenter,
-                                children: [
-                                  ...previous,
-                                  if (current != null) current,
-                                ],
-                              ),
-                              child: KeyedSubtree(
-                                key: const ValueKey('earnings'),
-                                child: _panelEarningsBody(isDark, borderC),
-                              ),
-                            ),
-                          ),
-                          // Reserved by the pinned button below now.
-                          const SizedBox(height: 8),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  const Spacer(),
-                // Pinned, not scrolled.
-                //
-                // This is the one control that ends the shift, and it was
-                // the last row of the list — so on a short panel it sat
-                // wherever the content happened to stop, and on a long one
-                // the driver had to scroll to reach it. A button that ends
-                // the working day belongs in the same place every time it
-                // is looked for.
-                if (t > 0.05)
-                  Opacity(
-                    opacity: t.clamp(0.0, 1.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // A clear gap before the one button that ends the
-                        // shift, so it never reads as another row in the list
-                        // above it.
-                        const SizedBox(height: 26),
-                        // GO OFFLINE button — the GO button's radar disc in
-                        // red (user spec 2026-10-11), shared builder.
-                        Center(
-                          child: GestureDetector(
-                            onTap: _goOffline,
-                            child: Column(
-                              children: [
-                                _offlineRadarDisc(),
-                                const SizedBox(height: 6),
-                                Text(
-                                  S.of(context).goOffline.toUpperCase(),
-                                  style: const TextStyle(
-                                    color: Color(0xFFCC3333),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
+                      // Fixed here in the Column rather than scrolled with the list.
+                      // It is the rule between the header and the content, so it
+                      // belongs to the header — and a light that slides off the top
+                      // of the screen the moment the driver scrolls is not an
+                      // indicator of anything.
+                      //
+                      // Its own ListenableBuilder: the pulse ticks sixty times a
+                      // second, and the builder above deliberately passes the whole
+                      // sheet through as `child` so none of it rebuilds at that
+                      // rate. This is the one part that has to.
+                      if (t > 0.05) ...[
+                        const SizedBox(height: 12),
+                        Opacity(
+                          opacity: t.clamp(0.0, 1.0),
+                          child: ListenableBuilder(
+                            listenable: _searchPulseVal,
+                            builder: (_, __) => _SearchingDividerLine(
+                              progress: _searchPulseVal.value,
+                              baseColor: borderC,
                             ),
                           ),
                         ),
-                        // Just the home indicator's own space. The 20 px
-                        // on top of it left the button floating above a
-                        // band of nothing at the foot of the panel.
-                        SizedBox(height: botPad),
                       ],
-                    ),
+                      // Expanded content fades in
+                      if (t > 0.05)
+                        Expanded(
+                          child: Opacity(
+                            opacity: t.clamp(0.0, 1.0),
+                            child: ListView(
+                              padding: EdgeInsets.zero,
+                              physics: t > 0.8
+                                  ? const ClampingScrollPhysics()
+                                  : const NeverScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 18),
+                                // "Earnings", not "Recommended for you".
+                                //
+                                // The old heading introduced three links to other
+                                // screens. What follows it now is the figures
+                                // themselves, and a heading that promises
+                                // recommendations above a bar chart is just wrong.
+                                // Left-aligned and small, the same label the home
+                                // sheet puts over the same card.
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 18),
+                                  child: Text(
+                                    // The slot below crosses between the figures
+                                    // and the reservations. A heading fixed on
+                                    // "EARNINGS" over a list of scheduled rides
+                                    // is the same mistake the old
+                                    // "Recommended for you" made.
+                                    S.of(context).earningsTitle.toUpperCase(),
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      color:
+                                          Colors.white.withValues(alpha: 0.45),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.4,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                // Earnings, or the reserved rides — the same slot,
+                                // crossed over rather than swapped, and the height
+                                // eased so the button below never jumps.
+                                AnimatedSize(
+                                  duration: const Duration(milliseconds: 420),
+                                  curve: Curves.easeInOutCubicEmphasized,
+                                  alignment: Alignment.topCenter,
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 340),
+                                    switchInCurve: Curves.easeOutCubic,
+                                    switchOutCurve: Curves.easeIn,
+                                    layoutBuilder: (current, previous) => Stack(
+                                      alignment: Alignment.topCenter,
+                                      children: [
+                                        ...previous,
+                                        if (current != null) current,
+                                      ],
+                                    ),
+                                    child: KeyedSubtree(
+                                      key: const ValueKey('earnings'),
+                                      child:
+                                          _panelEarningsBody(isDark, borderC),
+                                    ),
+                                  ),
+                                ),
+                                // Reserved by the pinned button below now.
+                                const SizedBox(height: 8),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        const Spacer(),
+                      // Pinned, not scrolled.
+                      //
+                      // This is the one control that ends the shift, and it was
+                      // the last row of the list — so on a short panel it sat
+                      // wherever the content happened to stop, and on a long one
+                      // the driver had to scroll to reach it. A button that ends
+                      // the working day belongs in the same place every time it
+                      // is looked for.
+                      if (t > 0.05)
+                        Opacity(
+                          opacity: t.clamp(0.0, 1.0),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // A clear gap before the one button that ends the
+                              // shift, so it never reads as another row in the list
+                              // above it.
+                              const SizedBox(height: 26),
+                              // GO OFFLINE button — the GO button's radar disc in
+                              // red (user spec 2026-10-11), shared builder.
+                              Center(
+                                child: GestureDetector(
+                                  onTap: _goOffline,
+                                  child: Column(
+                                    children: [
+                                      _offlineRadarDisc(),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        S.of(context).goOffline.toUpperCase(),
+                                        style: const TextStyle(
+                                          color: Color(0xFFCC3333),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              // Just the home indicator's own space. The 20 px
+                              // on top of it left the button floating above a
+                              // band of nothing at the foot of the panel.
+                              SizedBox(height: botPad),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+                // The header strip is the ONLY place that opens/closes the sheet
+                // (user spec 2026-10-13: "el sheet solamente se puede abrir o
+                // cerrar tocando o deslizando desde donde dice You're offline/
+                // online") — tap toggles resting ↔ open; drags from the strip
+                // pass the sheet's drag gate below.
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: _kSheetHeaderStripH,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: _onSheetHeaderTap,
+                    child: const SizedBox.expand(),
                   ),
-                ],
-              ],
-            ),
-            // The header strip is the ONLY place that opens/closes the sheet
-            // (user spec 2026-10-13: "el sheet solamente se puede abrir o
-            // cerrar tocando o deslizando desde donde dice You're offline/
-            // online") — tap toggles resting ↔ open; drags from the strip
-            // pass the sheet's drag gate below.
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: _kSheetHeaderStripH,
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: _onSheetHeaderTap,
-                child: const SizedBox.expand(),
-              ),
-            ),
+                ),
               ],
             ),
           ),
@@ -4702,7 +4719,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
   /// The reserved-rides body: what is bookable near the driver, or the fact
   /// that nothing is.
-  
 
   /// Small sunken neu well holding a single icon (panel header controls).
   Widget _panelWell(IconData ic, bool isDark, Color iconC) {
@@ -5195,8 +5211,8 @@ class _RecenterFabState extends State<_RecenterFab>
           child: Opacity(
             opacity: t,
             child: ImageFiltered(
-              imageFilter: ui.ImageFilter.blur(
-                  sigmaX: (1 - t) * 6, sigmaY: (1 - t) * 6),
+              imageFilter:
+                  ui.ImageFilter.blur(sigmaX: (1 - t) * 6, sigmaY: (1 - t) * 6),
               child: Transform.scale(
                 scale: 0.86 + 0.14 * t,
                 child: child,
@@ -5216,8 +5232,9 @@ class _RecenterFabState extends State<_RecenterFab>
             // Misma especificación que los `_fab` de la columna (2026-10-15,
             // spec "el botón de help alineado con los que están a la
             // derecha"): mismo disco oscuro, mismo borde dorado sutil.
-            border:
-                Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.18), width: 1.2),
+            border: Border.all(
+                color: const Color(0xFFE8C547).withValues(alpha: 0.18),
+                width: 1.2),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.35),
@@ -5236,7 +5253,6 @@ class _RecenterFabState extends State<_RecenterFab>
     );
   }
 }
-
 
 /// Render a compact pill-shaped badge used on the driver offer card.
 /// The color controls both the border and the translucent fill.
@@ -5429,7 +5445,6 @@ class _SizeReporterState extends State<_SizeReporter> {
     );
   }
 }
-
 
 /// Sequential label swap: the current line fades out completely, the child
 /// is rebuilt with the new text, then it fades back in. Unlike

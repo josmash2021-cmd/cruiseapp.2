@@ -7,24 +7,25 @@ import 'package:flutter_test/flutter_test.dart';
 /// into the app never turns online on by itself — the shift starts with GO
 /// (or a real work entry: offer push-tap, assigned trip).
 void main() {
-  final ghost =
-      File('backend/ghost_driver_agent.py').readAsStringSync();
+  final ghost = File('backend/ghost_driver_agent.py').readAsStringSync();
   final drivers = File('backend/routers/drivers.py').readAsStringSync();
   final auth = File('backend/routers/auth.py').readAsStringSync();
   final model = File('backend/models/database.py').readAsStringSync();
   final ctrl = File('lib/screens/driver/driver_online_controller.dart')
       .readAsStringSync();
-  final screen = File('lib/screens/driver/driver_online_screen.dart')
-      .readAsStringSync();
-  final welcome = File('lib/screens/driver/driver_welcome_screen.dart')
-      .readAsStringSync();
+  final screen =
+      File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+  final welcome =
+      File('lib/screens/driver/driver_welcome_screen.dart').readAsStringSync();
   final main_ = File('lib/main.dart').readAsStringSync();
 
   group('backend: the ghost agent caps shifts at 12 h', () {
     test('cap constant + cutoff + branch', () {
       expect(ghost, contains('SHIFT_CAP_HOURS = 12'));
-      expect(ghost,
-          contains('shift_cap_cutoff = now - timedelta(hours=SHIFT_CAP_HOURS)'));
+      expect(
+          ghost,
+          contains(
+              'shift_cap_cutoff = now - timedelta(hours=SHIFT_CAP_HOURS)'));
       expect(ghost, contains('since = driver.online_since'));
       expect(ghost, contains('driver.online_since = None'));
     });
@@ -32,8 +33,7 @@ void main() {
     test('never mid-trip, offers retire, driver is pushed', () {
       final idx = ghost.indexOf('since < shift_cap_cutoff');
       final block = ghost.substring(idx, idx + 1800);
-      expect(block.contains('if driver.id in drivers_on_active_trip:'),
-          isTrue,
+      expect(block.contains('if driver.id in drivers_on_active_trip:'), isTrue,
           reason: 'a rider aboard beats the clock — the cap lands on the '
               'next scan once the trip closes');
       expect(block.contains('expire_pending_offers_for_driver'), isTrue);
@@ -62,7 +62,8 @@ void main() {
 
   group('app: opening never turns online on by itself', () {
     test('routeExistingDriver opens OFFLINE (no resuming on login)', () {
-      final idx = welcome.indexOf('slideFromRightRoute(const DriverOnlineScreen(');
+      final idx =
+          welcome.indexOf('slideFromRightRoute(const DriverOnlineScreen(');
       final block = welcome.substring(idx, idx + 120);
       expect(block.contains('resuming: true'), isFalse,
           reason: 'resuming: true at login was the auto-online the user '
@@ -82,15 +83,21 @@ void main() {
       expect(ctrl, contains('const Duration(hours: 12)'));
       expect(ctrl, contains('driver_went_online_at'));
       expect(ctrl, contains('unawaited(_exitOnlineMode()'));
+      final dispose = screen.indexOf('void dispose() {');
+      expect(dispose, greaterThan(-1));
+      expect(
+          screen
+              .substring(dispose, dispose + 1800)
+              .contains('_shiftCapTimer?.cancel();'),
+          isTrue,
+          reason: 'the periodic cap clock must not outlive the screen');
     });
 
     test('the server push flips the live UI too', () {
       expect(screen, contains('shiftEndedNotifier'));
       expect(ctrl, contains('void _onShiftEndedPush()'));
       expect(main_, contains("if (type == 'driver_shift_ended')"));
-      expect(
-          File('lib/l10n/app_localizations.dart')
-              .readAsStringSync(),
+      expect(File('lib/l10n/app_localizations.dart').readAsStringSync(),
           contains('shiftEnded12h'));
     });
 

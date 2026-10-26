@@ -77,10 +77,8 @@ def reset_rate_limiter():
 
 @pytest.fixture(autouse=True)
 def zone_gate_fail_open(monkeypatch):
-    """The sector connect gate (2026-10-14) reads the live sector map
-    (app_config) with the baked static/fl_sectors.json as fallback, and most
-    suite drivers connect from Birmingham or other out-of-sector coords —
-    with real data loaded, every is_online flip in the suite would 403.
+    """The sector connect gate reads the live map with baked FL+AL as
+    fallback; most suite drivers use coordinates outside sector coverage.
     Point the baked-file loader at a file that does not exist and empty the
     in-process cache (its fail-open state); test_zone_gate.py forces a real
     load explicitly."""

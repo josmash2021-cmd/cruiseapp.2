@@ -75,6 +75,28 @@ Route<T> slideFromRightRoute<T>(Widget page, {int durationMs = 320}) {
   );
 }
 
+/// Full-screen route that enters smoothly from the left.
+Route<T> slideFromLeftRoute<T>(Widget page, {int durationMs = 320}) {
+  return PageRouteBuilder<T>(
+    opaque: true,
+    transitionDuration: Duration(milliseconds: durationMs),
+    reverseTransitionDuration:
+        Duration(milliseconds: (durationMs * 0.8).round()),
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final slide = Tween<Offset>(
+        begin: const Offset(-1, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      ));
+      return SlideTransition(position: slide, child: child);
+    },
+  );
+}
+
 /// Slide up from bottom + fade — for modals, sheets, overlays
 Route<T> slideUpFadeRoute<T>(Widget page, {int durationMs = 350}) {
   final dur = Duration(milliseconds: durationMs);

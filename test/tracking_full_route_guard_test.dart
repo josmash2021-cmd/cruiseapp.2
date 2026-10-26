@@ -140,23 +140,21 @@ void main() {
   // trip page — one moderate zoom-out that keeps the whole route visible
   // between the top card and the bottom sheet, fitted once and held.
   group('the trip camera fits once and holds', () {
-    test('no per-frame updateFollowFrame during the trip', () {
+    test('no per-frame chase or near-destination close-up', () {
       final tick = view.indexOf('void _onCameraTick(Duration elapsed)');
-      final tickEnd = tick + 9500;
-      final body = view.substring(
-          tick, tickEnd > view.length ? view.length : tickEnd);
-      final tripBranch = body.indexOf('if (isOnTrip) {');
-      expect(tripBranch, isNonNegative, reason: 'trip branch not found');
-      final arriving = body.indexOf('// Approach phase keeps', tripBranch);
-      expect(arriving, isNonNegative,
-          reason: 'the arriving branch marker moved — window ends there');
-      final branchBody = body.substring(tripBranch, arriving);
-      expect(branchBody.contains('.updateFollowFrame('), isFalse,
-          reason: 'per-frame recentering is exactly what the rider killed — '
-              'the trip fits once per content change and holds');
-      expect(branchBody.contains('fitBounds('), isTrue,
-          reason: 'the one-shot fit uses the native padding so the route '
-              'never hides behind the cards');
+      final end = view.indexOf('/// Identity of the trip frame', tick);
+      expect(tick, isNonNegative);
+      expect(end, greaterThan(tick));
+      final body = view.substring(tick, end);
+      expect(body.contains('.updateFollowFrame('), isFalse,
+          reason: 'both legs fit by route content, never by moving car');
+      expect(body.contains('fitBounds('), isTrue,
+          reason: 'the stable fit keeps the route between the cards');
+      expect(body.contains('_nearDestFramePoints'), isFalse,
+          reason: 'nearDestination shares the full-trip frame, no zoom-in');
+      expect(body.contains('_nearFitAnchor'), isFalse);
+      expect(body.contains('_lastApproachFitSig'), isTrue,
+          reason: 'the approach also re-fits only on route-content changes');
     });
 
     test('the fit is keyed on route content, never on the car position', () {
@@ -202,13 +200,26 @@ void main() {
               'when the route signature changes');
     });
 
-    test('the auto-resume after a manual pan requests the re-fit', () {
-      final resume = view.indexOf('difference(last).inMilliseconds');
-      expect(resume, isNonNegative);
-      final body = view.substring(resume, resume + 1000);
-      expect(body.contains('_needsTripReframe = true'), isTrue,
-          reason: 'after the rider pans, the full-route frame must come '
-              'back instead of parking where the pan left it');
+    test('a manual pan never auto-resumes; Show route refits on demand', () {
+      expect(view, isNot(contains('_lastUserCameraInteraction')));
+      expect(view, isNot(contains('_kResumeFollowAfterPanMs')));
+      expect(view.split('if (_userControllingCamera) return;').length - 1, 2,
+          reason: 'native and web both leave the camera with the rider');
+      expect(view, contains('_lastApproachFitSig'),
+          reason: 'approach has its own content-only fit signature');
+      expect(view.split('Object.hash(_tripFitSignature(), _approachRouteFetched)')
+          .length - 1, 2,
+          reason: 'both platforms include the approach route in the fit key, '
+              'not the moving car');
+      expect(screen, contains('ignoring: !_userControllingCamera'),
+          reason: 'Show route is disabled before a real gesture');
+      expect(screen, contains('opacity: _userControllingCamera ? 1 : 0'),
+          reason: 'and hidden until the rider actually pans or zooms');
+      final recenter = view.indexOf('void _recenter()');
+      final body = view.substring(recenter, recenter + 1400);
+      expect(body, contains('_userControllingCamera = false'));
+      expect(body, contains('fitBounds('),
+          reason: 'the button itself restores the full current route');
     });
 
     test('a real reroute requests the re-fit and the frame covers the splice', () {

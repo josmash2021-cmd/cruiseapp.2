@@ -61,7 +61,7 @@ async def test_available_lists_passed_trip_with_offer(client, db, test_rider, te
     trips = res.json()
     assert len(trips) == 1
     assert trips[0]["pickup_address"] == "100 Boardwalk Ave"
-    assert trips[0]["driver_earnings"] == 7.0  # 70% share of $10
+    assert trips[0]["driver_earnings"] == 9.0  # 90% share of $10
 
 
 @pytest.mark.asyncio

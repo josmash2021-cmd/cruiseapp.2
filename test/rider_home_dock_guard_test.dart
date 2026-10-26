@@ -17,8 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// Source-grep style, like driver_scheduled_neu_guard_test.dart.
 void main() {
   final widgets =
-      File('lib/screens/home_screen_widgets.dart').readAsStringSync();
-  final home = File('lib/screens/home_screen.dart').readAsStringSync();
+      File('lib/screens/home_screen_widgets.dart').readAsStringSync().replaceAll('\r\n', '\n');
+  final home = File('lib/screens/home_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
   group('dock', () {
     final sheetStart = widgets.indexOf('Widget _buildSheet(');
@@ -160,7 +160,7 @@ void main() {
         expect(block, contains(key), reason: 'missing $key');
       }
       final l10n =
-          File('lib/l10n/app_localizations.dart').readAsStringSync();
+          File('lib/l10n/app_localizations.dart').readAsStringSync().replaceAll('\r\n', '\n');
       expect(l10n, contains('Seats for 7 with room for bags'));
       expect(l10n, contains('Everyday sedan rides at our lowest price'));
     });
@@ -202,7 +202,7 @@ void main() {
   group('permissions', () {
     test('the cold-start permissions page exists and opens Settings', () {
       final perms =
-          File('lib/screens/rider_permissions_screen.dart').readAsStringSync();
+          File('lib/screens/rider_permissions_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
       expect(perms, contains('class RiderPermissionsScreen'));
       expect(perms, contains('openAppSettings()'));
       expect(perms, contains('NotificationService.isPermissionGranted()'));
@@ -231,7 +231,7 @@ void main() {
       // nuevo queda pendiente y sale al drenar (el patrón de `_writeCamera`
       // del driver), con timeout para que un write colgado no lo trabe.
       final home =
-          File('lib/screens/home_screen.dart').readAsStringSync();
+          File('lib/screens/home_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
       expect(home, contains('_pendingMiniCamWrite = point;'),
           reason: 'the newest centre is queued, never dropped');
       expect(home, contains('void _flushMiniCamWrite()'),

@@ -15,11 +15,12 @@ from utils.helpers import utc_now, _haversine, _trip_dict, ACTIVE_ACCOUNT_STATUS
 from services.fcm_service import _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
+from services import vehicle_tiers
 from config import _HAS_FIRESTORE, firestore_sync
 
 router = APIRouter(tags=["scheduled"])
 
-DRIVER_SHARE_RATE = 0.70
+DRIVER_SHARE_RATE = vehicle_tiers.DRIVER_SHARE_RATE
 # Lockout kicks in this many minutes before scheduled pickup
 # User spec 2026-09-30: no new offers in the hour before a claimed
 # scheduled pickup. The candidate-level enforcement lives in
@@ -109,7 +110,9 @@ def _scheduled_trip_card(trip: Trip, driver_lat: float = 0, driver_lng: float = 
     if driver_lat and driver_lng and trip.pickup_lat and trip.pickup_lng:
         dist_km = round(_haversine(driver_lat, driver_lng, trip.pickup_lat, trip.pickup_lng), 1)
 
-    driver_fare = round(float(trip.fare or 0) * DRIVER_SHARE_RATE, 2)
+    driver_fare = round(
+        float(trip.fare or 0) * vehicle_tiers.driver_share_for_trip(trip), 2,
+    )
     rider_name = ""
     rider_photo = None
     if rider is not None:
@@ -668,6 +671,7 @@ async def cancel_claimed_scheduled_trip(
     _require_cancel_notice_window(trip)
 
     trip.driver_id = None
+    trip.rider_approach_notified_at = None
     trip.status = "scheduled"
     await db.commit()
 
@@ -777,6 +781,7 @@ async def drop_scheduled_trip(
 
     try:
         trip.driver_id = None
+        trip.rider_approach_notified_at = None
         trip.status = "scheduled"
         trip.updated_at = datetime.now(timezone.utc)
         # Cancel any pending DispatchOffer rows for this trip so the

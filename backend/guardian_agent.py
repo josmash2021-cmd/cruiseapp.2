@@ -438,6 +438,22 @@ class DataGuardian:
                             trip_id, _n_err,
                         )
 
+                    # Demand waitlist (2026-10-17, owner spec): the rider
+                    # whose request died with no drivers gets ONE push the
+                    # moment a driver flips online in their state.
+                    try:
+                        if _trip_obj and getattr(_trip_obj, "rider_id", None):
+                            from services.demand_waitlist import add_demand_waitlist
+                            asyncio.create_task(add_demand_waitlist(
+                                _trip_obj.rider_id, trip_id,
+                                getattr(_trip_obj, "pickup_lat", None),
+                                getattr(_trip_obj, "pickup_lng", None)))
+                    except Exception as _dw_err:
+                        logger.warning(
+                            "[AutoCancel/Guardian] demand waitlist add failed for trip=%d: %s",
+                            trip_id, _dw_err,
+                        )
+
                 await session.commit()
                 self._trips_checked += len(orphaned) + len(stuck)
 
@@ -1208,6 +1224,7 @@ class DispatchTimeoutAgent:
                             offer.trip_id,
                         )
                         trip.driver_id = None
+                        trip.rider_approach_notified_at = None
                 # Notify the rider via SSE if possible
                 try:
                     from services.event_bus import event_bus
@@ -1403,12 +1420,11 @@ class UnmatchedTripRetryAgent:
                 rider_name, rider_phone = _resolve_rider_display(trip, rider)
                 rider_photo = rider.photo_url or "" if rider else ""
 
-                # Calculate driver fare
-                try:
-                    from routers.trips import DRIVER_SHARE_RATE
-                except ImportError:
-                    DRIVER_SHARE_RATE = 0.60
-                estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+                from services import vehicle_tiers
+                estimated_driver_fare = round(
+                    float(trip.fare or 0.0)
+                    * vehicle_tiers.driver_share_for_trip(trip), 2,
+                )
 
                 # SSE push
                 _pending_cache.pop(assigned.id, None)

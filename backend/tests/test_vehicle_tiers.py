@@ -141,23 +141,23 @@ CASES = [
      tier("Chevrolet", "Trax", 2024, seats=7, body="suv"), vt.TIER_PREMIUM),
 
     # ── Commission ────────────────────────────────────────────────────
-    ("Standard pays the driver 60%", vt.driver_share(vt.TIER_STANDARD), 0.60),
-    ("Compact pays 60%", vt.driver_share(vt.TIER_COMPACT), 0.60),
-    ("Electric Pro pays 60%", vt.driver_share(vt.TIER_ELECTRIC_PRO), 0.60),
-    ("Premium pays 60%", vt.driver_share(vt.TIER_PREMIUM), 0.60),
-    ("VIP pays 60%", vt.driver_share(vt.TIER_VIP), 0.60),
-    ("Electric Pro's commission tuple is the flat 40/60",
-     vt.commission(vt.TIER_ELECTRIC_PRO), (0.40, 0.60)),
+    ("Standard pays the driver 90%", vt.driver_share(vt.TIER_STANDARD), 0.90),
+    ("Compact pays 90%", vt.driver_share(vt.TIER_COMPACT), 0.90),
+    ("Electric Pro pays 90%", vt.driver_share(vt.TIER_ELECTRIC_PRO), 0.90),
+    ("Premium pays 90%", vt.driver_share(vt.TIER_PREMIUM), 0.90),
+    ("VIP pays 90%", vt.driver_share(vt.TIER_VIP), 0.90),
+    ("Electric Pro's commission tuple is the flat 10/90",
+     vt.commission(vt.TIER_ELECTRIC_PRO), (0.10, 0.90)),
     ("the two shares of a fare add up to one",
      [round(sum(v), 10) for v in vt.COMMISSION.values()],
      [1.0] * len(vt.COMMISSION)),
 
-    # ── Old rows get the same flat rate ───────────────────────────────
-    ("comfort pays the flat 60%", vt.driver_share("comfort"), 0.60),
-    ("a 'black' row pays the flat 60%", vt.driver_share("black"), 0.60),
-    ("suv_xl pays the flat 60%", vt.driver_share("suv_xl"), 0.60),
-    ("an unknown tier pays the Standard rate", vt.driver_share("banana"), 0.60),
-    ("no tier at all pays the Standard rate", vt.driver_share(None), 0.60),
+    # ── Old tier names get the current flat rate ──────────────────────
+    ("comfort pays the flat 90%", vt.driver_share("comfort"), 0.90),
+    ("a 'black' row pays the flat 90%", vt.driver_share("black"), 0.90),
+    ("suv_xl pays the flat 90%", vt.driver_share("suv_xl"), 0.90),
+    ("an unknown tier pays the Standard rate", vt.driver_share("banana"), 0.90),
+    ("no tier at all pays the Standard rate", vt.driver_share(None), 0.90),
 
     # ── Old tier strings map onto the five ────────────────────────────
     ("comfort becomes Standard", vt.normalize_tier("comfort"), vt.TIER_STANDARD),

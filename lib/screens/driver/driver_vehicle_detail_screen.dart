@@ -30,6 +30,7 @@ class DriverVehicleDetailScreen extends StatelessWidget {
     this.isActive = false,
     this.approvalStatus = 'pending',
     this.missingDocsCount = 0,
+    this.documentsApproved = false,
   });
 
   final String make;
@@ -45,6 +46,7 @@ class DriverVehicleDetailScreen extends StatelessWidget {
   final bool isActive;
   final String approvalStatus;
   final int missingDocsCount;
+  final bool documentsApproved;
 
   static const _gold = Color(0xFFE8C547);
 
@@ -327,10 +329,12 @@ class DriverVehicleDetailScreen extends StatelessWidget {
         const SizedBox(height: 14),
 
         // ── Use this vehicle ──
-        // An approved but inactive car can be put on the road from here.
-        // Pending/rejected cars do not get the button — the backend rejects
-        // the call anyway.
-        if (!isActive && approvalStatus == 'approved' && vehicleId != null)
+        // Only an approved car with its own approved, current documents can
+        // go on the road. The backend enforces the same rule.
+        if (!isActive &&
+            approvalStatus == 'approved' &&
+            documentsApproved &&
+            vehicleId != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: SizedBox(

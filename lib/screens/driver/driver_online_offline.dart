@@ -12,7 +12,7 @@ part of 'driver_online_screen.dart';
 ///     ([_ensureLocationReady]);
 ///   * the vehicle-document gates ([_checkVehicleDocStatus] +
 ///     [_startDocApprovalListener]);
-///   * the boot guards ([_checkAccountStatus], [_checkDriverAgreementConsent],
+///   * the boot guards ([_checkAccountStatus], [_checkContractsGate],
 ///     [_runDriverPermissionFlow], [_checkScheduledRideLockout]);
 ///   * active-trip detection + Resume ([_refreshActiveTripStatus],
 ///     [_checkBackendActiveTrip], [_resumeActiveTrip]);
@@ -230,6 +230,30 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       final canGo = result['can_go_online'] == true;
       final expired = result['has_expired_docs'] == true;
       final platePending = result['plate_change_pending'] == true;
+      final reasons = (result['reasons'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const <String>[];
+      // Contracts have their own gate: they must not masquerade as a
+      // vehicle-document failure when they are the only remaining blocker.
+      final vehicleDocsApproved = canGo ||
+          (reasons.isNotEmpty &&
+              reasons.every((r) => r == 'contracts_not_accepted'));
+      // Unsigned required contracts (e-acceptance gate, 2026-10-21): the GO
+      // tap opens the contracts hub before the mode flips.
+      final pending = (result['contracts_pending'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const <String>[];
+      // Daily face check (2026-10-23): a signal, never a blocker — the GO
+      // tap reads it fresh and runs the liveness screen before connecting.
+      final faceDue = result['face_check_due'] == true;
+      // Dress-code rejection path (2026-10-23): required = the next selfie
+      // needs manual dispatch review; pending = one is already in review.
+      final faceReview = result['face_review_required'] == true;
+      final facePending = result['face_check_pending'] == true;
+      // Dispatch GO switch (2026-10-23): a blocker, unlike the face signals.
+      final goDisabled = result['go_online_disabled'] == true;
 
       // Sync approval status locally
       if (result['approved'] == true) {
@@ -238,11 +262,17 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       if (!mounted) return;
 
       _setState(() {
-        _vehicleDocsApproved = canGo;
+        _vehicleDocsApproved = vehicleDocsApproved;
         _hasExpiredDocs = expired;
         _plateChangePending = platePending;
+        _contractsPending = pending;
+        _faceCheckDue = faceDue;
+        _faceReviewRequired = faceReview;
+        _faceCheckPending = facePending;
+        _goOnlineDisabled = goDisabled;
         _docStatusLoaded = true;
       });
+      _syncFaceReviewPoll();
     } catch (e) {
       debugPrint('[DriverOnline] _checkVehicleDocStatus error: $e');
       // On error, fail-closed: require docs to be explicitly approved
@@ -329,43 +359,29 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     } catch (_) {}
   }
 
-  /// Re-acceptance gate for the Independent Contractor Agreement (current
-  /// version: [kDriverAgreementVersion]). Every acceptance is logged
-  /// server-side (ConsentLog) with the document version, so when the
-  /// agreement version bumps, a driver whose newest
-  /// 'independent_contractor_agreement' acceptance is stale — or who has
-  /// none — must review and accept the new version before continuing.
-  /// Fail-open: a network failure never locks the driver out; the check
-  /// simply re-runs on the next app start.
-  Future<void> _checkDriverAgreementConsent() async {
+  /// Re-acceptance gate for the five driver contracts (2026-10-21, user
+  /// spec — Uber-style e-acceptance; it replaced the old single-ICA check).
+  /// The server tracks each document's current version against the driver's
+  /// newest acceptance (ConsentLog evidence), so a dispatch version bump —
+  /// or a driver who never signed — lands here and must review and sign
+  /// before continuing. Fail-open: a network failure never locks the driver
+  /// out; the check simply re-runs on the next app start.
+  Future<void> _checkContractsGate() async {
     try {
-      final items = await ApiService.fetchConsentHistory();
+      final data = await ApiService.getContracts();
       if (!mounted) return;
-      // The history comes newest-first: the first match is the latest.
-      String? acceptedVersion;
-      for (final item in items) {
-        if (item['consent_type'] == 'independent_contractor_agreement' &&
-            item['action'] == 'accepted') {
-          acceptedVersion = item['version']?.toString();
-          break;
-        }
-      }
-      if (acceptedVersion == kDriverAgreementVersion) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+      if (data['all_current'] == true) return;
+      final completed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
           fullscreenDialog: true,
-          builder: (_) => DriverAgreementScreen(
-            onAccept: () => ApiService.recordConsent(
-              consentType: 'independent_contractor_agreement',
-              action: 'accepted',
-              version: kDriverAgreementVersion,
-            ),
-          ),
+          builder: (_) => const DriverContractsScreen(gate: true),
         ),
       );
+      if (completed == true && mounted) {
+        _setState(() => _contractsPending = const []);
+      }
     } catch (e) {
-      debugPrint(
-          '[DriverOnline] agreement consent check skipped (fail-open): $e');
+      debugPrint('[DriverOnline] contracts gate skipped (fail-open): $e');
     }
   }
 
@@ -921,6 +937,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   void _onGoTap() async {
     // The mode flip dedups itself; two taps must not run the gates twice.
     if (_enteringOnline || _driverOnline) return;
+    // Dispatch GO switch (2026-10-23, owner spec — instant): a paused GO
+    // never even starts the gates — the tap only explains.
+    if (_goOnlineDisabled) {
+      HapticService.mediumImpact();
+      _showGoOnlineDisabledDialog();
+      return;
+    }
     // Zone selection gate (2026-10-11, user spec: "si no ha seleccionado o
     // tocado una zona se quedará el botón apagado") — with the zone layer
     // ON, the GO tap needs a tapped city first; the hint says so.
@@ -945,6 +968,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         content: Text(S.of(context).zoneSelectHint),
         duration: const Duration(seconds: 2),
       ));
+      return;
+    }
+    if (FeatureFlags.zonesMapEnabled &&
+        _selectedZoneName != null &&
+        ZoneService.demand[_selectedZoneName]?.off == true) {
+      HapticService.mediumImpact();
+      _showZoneDisabledDialog();
       return;
     }
     // Nothing about being online works without a location — dispatch ranks
@@ -973,9 +1003,34 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       return;
     }
 
+    // Zone OFF gate (2026-10-17, owner spec "todo se controla desde
+    // dispatch"): connecting inside a sector dispatch switched OFF is
+    // refused — the server's own gate (403 zone_disabled) is the backstop.
+    if (FeatureFlags.zonesMapEnabled &&
+        ZoneService.sectorsReady &&
+        _pos != null &&
+        ZoneService.sectorOff(_pos!)) {
+      HapticService.mediumImpact();
+      _showZoneDisabledDialog();
+      return;
+    }
+
     // _ensureVerified is synchronous in practice — the driver passed the
     // splash/login gates to be standing on this screen at all.
     if (!_isVerified) _setState(() => _isVerified = true);
+
+    // Re-verify FRESH before bouncing on a stale boot snapshot (2026-10-23,
+    // owner report: firmé los contratos y el GO seguía negando con la lista
+    // cacheada del boot — tuve que cerrar la app): the gates below trust the
+    // last _checkVehicleDocStatus result; when it says "blocked", re-run it
+    // NOW — a driver who JUST signed/approved must pass on the first tap.
+    if (_docStatusLoaded &&
+        (_hasExpiredDocs ||
+            !_vehicleDocsApproved ||
+            _contractsPending.isNotEmpty)) {
+      await _checkVehicleDocStatus();
+      if (!mounted) return;
+    }
 
     // If doc status has loaded, enforce doc gates synchronously (no await):
     // docs expired or the active vehicle not approved → documents page on
@@ -992,6 +1047,26 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       if (mounted) await _checkVehicleDocStatus();
       return;
     }
+    // Unsigned contracts gate (2026-10-21, user spec item 4: a driver is
+    // never activated — and never goes online — with required contracts
+    // pending). The backend can_go_online refuses as the backstop.
+    if (_docStatusLoaded && _contractsPending.isNotEmpty) {
+      HapticService.mediumImpact();
+      final completed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          fullscreenDialog: true,
+          builder: (_) => const DriverContractsScreen(gate: true),
+        ),
+      );
+      if (!mounted) return;
+      if (completed == true) {
+        _setState(() => _contractsPending = const []);
+      } else {
+        await _checkVehicleDocStatus();
+        if (!mounted) return;
+      }
+      if (_contractsPending.isNotEmpty) return;
+    }
     // else: doc status not loaded yet — don't block. _verifyAndGoOnline()
     // runs the backend check in background once the mode is on.
 
@@ -1002,9 +1077,65 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       return;
     }
 
+    // Daily face check (2026-10-23, owner spec — REAL, not a promise): >24 h
+    // without a verified selfie → the liveness screen runs BEFORE connecting;
+    // cancelling = no GO. A failed UPLOAD doesn't lock the driver out
+    // (fail-open: retried on the next GO tap). Runs after the active-trip
+    // resume so a mid-trip driver is never gated.
+    if (_docStatusLoaded && _faceCheckDue) {
+      HapticService.mediumImpact();
+      final res = await Navigator.of(context).push<Map?>(
+        MaterialPageRoute<Map?>(
+          fullscreenDialog: true,
+          builder: (_) => const SelfieCheckScreen(),
+        ),
+      );
+      if (!mounted) return;
+      final photoPath = res?['photo']?.toString();
+      if (photoPath == null || photoPath.isEmpty) return; // cancelled — no GO
+      // The screen uploaded the shot itself and held the verifying loader
+      // (owner spec 2026-10-23): an approval closes the page with the
+      // driver ALREADY connecting — no 1-3 s home detour.
+      if (res!['pending'] == true) {
+        // Dispatch has not decided (wait ceiling / escape X) — grey review
+        // GO + 30 s poll; no connect until it clears.
+        _setState(() {
+          _faceReviewRequired = true;
+          _faceCheckPending = true;
+          _faceCheckDue = false;
+        });
+        _syncFaceReviewPoll();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(S.of(context).faceReviewPending),
+          duration: const Duration(seconds: 3),
+        ));
+        return;
+      }
+      if (res['approved'] == false) {
+        _setState(() {
+          _faceReviewRequired = true;
+          _faceCheckPending = false;
+          _faceCheckDue = false;
+        });
+        _showFaceRejectedDialog();
+        return;
+      }
+      if (res['approved'] == true) {
+        _setState(() {
+          _faceReviewRequired = false;
+          _faceCheckPending = false;
+          _faceCheckDue = false;
+        });
+      }
+      // A bare photo = upload failed — fail-open: the GO proceeds and the
+      // check retries on a later tap (same rule as before).
+    }
+
     // The flip itself: GPS background mode, FCM token, backend online,
     // haptic + chime — all owned by _enterOnlineMode. `resuming` is the
     // pref read at boot: a shift that never closed is resumed, not started.
+    // The "You're now online!" intro no longer fires here (2026-10-23 owner
+    // spec): it is armed by _enterOnlineMode itself, 10 s into the shift.
     await _enterOnlineMode(resuming: _driverWasOnlineAtBoot);
   }
 
@@ -1022,6 +1153,181 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         content: Text(
           S.of(ctx).zoneOutsideBody(
               _pos == null ? null : ZoneService.stateOfPoint(_pos!)),
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(S.of(ctx).gotIt),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The GO face states (2026-10-23, owner spec): 0 normal · 1 verify
+  /// (GREY "Verificar", no animation — the owner killed the red the same
+  /// day: animation belongs to GO ONLINE only) · 2 pending review (disabled
+  /// grey). The collapsed GO circle does NOT render in a non-normal state
+  /// (circle rule).
+  int get _faceGateState =>
+      _faceCheckPending ? 2 : _faceReviewRequired ? 1 : 0;
+
+  /// While a selfie sits in manual review, a 30 s canGoOnline poll
+  /// auto-clears the pending state when dispatch approves. Cancelled on
+  /// dispose and as soon as the state clears.
+  void _syncFaceReviewPoll() {
+    if (_faceCheckPending && !_driverOnline) {
+      _faceReviewTimer ??= Timer.periodic(const Duration(seconds: 30), (_) {
+        _checkVehicleDocStatus();
+      });
+    } else {
+      _faceReviewTimer?.cancel();
+      _faceReviewTimer = null;
+    }
+  }
+
+  /// Dispatch decided the pending selfie (push face_check_rejected /
+  /// face_check_approved): re-read the gate flags.
+  void _onFaceReviewPush() {
+    if (!mounted) return;
+    _checkVehicleDocStatus();
+  }
+
+  /// Dispatch reviewed the dress-code selfie LIVE over the socket
+  /// (face_check_reviewed — 2026-10-23 owner report: "rechazar no
+  /// desconecta si está conectado"). Rejected && !deferred = the shift
+  /// ends NOW: the backend already wrote is_online=False, so exit online
+  /// mode and let the re-read flags paint the red "Verificar" GO.
+  /// Deferred = rider aboard — trips.py lands the cut at trip close; no
+  /// exit and no dialog mid-trip. Approved = the grey review GO unlocks.
+  void _onFaceCheckReviewed(Map<String, dynamic> data) {
+    if (!mounted) return;
+    final approved = data['approved'] == true;
+    final deferred = data['deferred'] == true;
+    final wasRequired = _faceReviewRequired;
+    unawaited(_checkVehicleDocStatus());
+    if (approved || deferred) return;
+    if (_driverOnline) unawaited(_exitOnlineMode());
+    if (!wasRequired) _showFaceRejectedDialog();
+  }
+
+  /// Same copy as the rejection push (main.dart _handleFaceCheckResult) —
+  /// shown by the live socket path, where no banner tap is involved.
+  void _showFaceRejectedDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A22),
+        title: Text(
+          S.of(ctx).faceRejectedTitle,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          S.of(ctx).faceRejectedBody,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(S.of(ctx).gotIt),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// GO in the VERIFY state (dress-code rejection): the SAME selfie flow as
+  /// the daily check, but the shot lands in MANUAL review — the screen holds
+  /// its verifying loader until dispatch decides (owner spec 2026-10-23: the
+  /// page closes with the driver ALREADY activating on approve; never a home
+  /// detour). Undecided (ceiling/escape) → the grey review GO + poll.
+  Future<void> _onFaceVerifyTap() async {
+    if (_enteringOnline || _driverOnline) return;
+    HapticService.mediumImpact();
+    final res = await Navigator.of(context).push<Map?>(
+      MaterialPageRoute<Map?>(
+        fullscreenDialog: true,
+        builder: (_) => const SelfieCheckScreen(),
+      ),
+    );
+    if (!mounted) return;
+    final photoPath = res?['photo']?.toString();
+    if (photoPath == null || photoPath.isEmpty) return; // cancelled — no GO
+    if (res!['pending'] == true) {
+      _setState(() {
+        _faceCheckPending = true;
+        _faceCheckDue = false;
+      });
+      _syncFaceReviewPoll();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(S.of(context).faceReviewPending),
+        duration: const Duration(seconds: 3),
+      ));
+      return;
+    }
+    if (res['approved'] == false) {
+      // Rejected again — back to the grey Verificar GO + the why dialog.
+      _setState(() {
+        _faceReviewRequired = true;
+        _faceCheckPending = false;
+      });
+      _showFaceRejectedDialog();
+      return;
+    }
+    if (res['approved'] == true) {
+      // Approved: connect NOW — the chime and the flip ride with the page
+      // closing (owner spec: "se cerrara ya activando al driver").
+      _setState(() {
+        _faceReviewRequired = false;
+        _faceCheckPending = false;
+        _faceCheckDue = false;
+      });
+      _onGoTap();
+      return;
+    }
+    // Bare photo = upload failed — fail-open: retry on the next tap.
+  }
+
+  /// The driver stands in a sector dispatch switched OFF (2026-10-17, owner
+  /// spec: "si esta apagada la zona no pueden prenderse") — no connect.
+  void _showZoneDisabledDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A22),
+        title: Text(
+          S.of(ctx).zoneDisabledTitle,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          S.of(ctx).zoneDisabledBody,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(S.of(ctx).gotIt),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Dispatch GO switch (2026-10-23, owner spec — instant): the tap on a
+  /// paused GO never flips — it only explains. The socket listener and the
+  /// terminal 403 path land here too.
+  void _showGoOnlineDisabledDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A22),
+        title: Text(
+          S.of(ctx).goOnlineDisabledTitle,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          S.of(ctx).goOnlineDisabledBody,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
         ),
         actions: [
@@ -1054,6 +1360,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   /// in-between.
   Widget _buildMorphingGoButton(EdgeInsets pad, {bool hidden = false}) {
     final t = (_panelFrac / _kSheetRestFrac).clamp(0.0, 1.0);
+    // Circle rule (2026-10-23, owner spec literal): in the VERIFY or REVIEW
+    // face states the collapsed GO circle/pill does NOT render with the
+    // sheet closed — the button only exists inside the open sheet.
+    final faceGateHidden = _faceGateState != 0 && t < 0.99;
     final height = ui.lerpDouble(_kGoCircleD, _kGoPillH, t)!;
     // estilo píldora (2026-10-15): esquinas = mitad de la altura
     final radius = ui.lerpDouble(_kGoCircleD / 2, _kGoPillH / 2, t)!;
@@ -1081,10 +1391,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       // INSIDE the Positioned: anything between a Positioned and its Stack
       // is a StackParentData cast crash on every rebuild (2026-08-28).
       child: IgnorePointer(
-        ignoring: hidden,
+        ignoring: hidden || faceGateHidden,
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 250),
-          opacity: hidden ? 0.0 : 1.0,
+          opacity: (hidden || faceGateHidden) ? 0.0 : 1.0,
           child: FadeTransition(
             opacity: _goFabScale ?? const AlwaysStoppedAnimation<double>(1.0),
             child: Container(
@@ -1178,16 +1488,27 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   //  FLOATING GO BUTTON — inner pulse glow
   // ═══════════════════════════════════════════════════
   Widget _buildGoButton({double radius = 16.0, double morph = 1.0}) {
+    final faceState = _faceGateState;
     return GestureDetector(
-      onTap: _isVerified
-          ? _onGoTap
-          : () async {
-              // El primer tap no puede morir en "marcar verificado" (user
-              // report 2026-10-16-noche: "al boton de go online hay que
-              // darle dos veces para que se conecte") — verificar y
-              // CONTINUAR al flip en el mismo tap.
-              if (await _ensureVerified()) _onGoTap();
-            },
+      // Dispatch GO switch (2026-10-23 owner spec): paused = the tap ONLY
+      // explains, never flips — and it outranks even the face gate.
+      // Face gate (2026-10-23 owner spec): pending review = dead button;
+      // verify = the red "Verificar" runs the liveness flow, not the flip.
+      onTap: _goOnlineDisabled
+          ? _showGoOnlineDisabledDialog
+          : faceState == 2
+              ? null
+              : faceState == 1
+                  ? _onFaceVerifyTap
+              : _isVerified
+                  ? _onGoTap
+                  : () async {
+                      // El primer tap no puede morir en "marcar verificado" (user
+                      // report 2026-10-16-noche: "al boton de go online hay que
+                      // darle dos veces para que se conecte") — verificar y
+                      // CONTINUAR al flip en el mismo tap.
+                      if (await _ensureVerified()) _onGoTap();
+                    },
       child: AnimatedBuilder(
         animation: Listenable.merge([
           if (_goPulseAnim != null) _goPulseAnim!,
@@ -1218,8 +1539,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // zona se queda apagado; al seleccionar se enciende animado"):
           // with the zone layer ON and the driver OFFLINE, the GO reads
           // dimmed until they tap their city on the map.
+          final selectedZoneOff = _selectedZoneName != null &&
+              ZoneService.demand[_selectedZoneName]?.off == true;
           final dimmed = FeatureFlags.zonesMapEnabled &&
-              _selectedZoneName == null &&
+              (_selectedZoneName == null || selectedZoneOff) &&
               !_driverOnline;
           final topColor = dimmed
               ? Color.lerp(topColor0, const Color(0xFF6B6B70), 0.55)!
@@ -1227,6 +1550,21 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           final botColor = dimmed
               ? Color.lerp(goldBot, const Color(0xFF4A4A4F), 0.55)!
               : goldBot;
+          // Face gate paint (2026-10-23 owner spec, REVISED same day):
+          // verify = GREY and static like pending review ("en vez de rojo
+          // será gris y no tendrá animación — la animación es solo para GO
+          // ONLINE") — the gold stays for the normal state. The dispatch GO
+          // switch paints the same dead grey and outranks both.
+          final topPaint = _goOnlineDisabled
+              ? const Color(0xFF6B6B70)
+              : faceState != 0
+                  ? const Color(0xFF6B6B70)
+                  : topColor;
+          final botPaint = _goOnlineDisabled
+              ? const Color(0xFF4A4A4F)
+              : faceState != 0
+                  ? const Color(0xFF4A4A4F)
+                  : botColor;
           const glowColor = Color(0xFFE8C547);
 
           // Black on gold — muted while dimmed.
@@ -1235,8 +1573,12 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           final fgColor =
               dimmed ? Colors.white54 : Colors.white;
 
-          // The ignite pop when a zone selection lights the GO up.
-          final igniteScale = _goIgniteAnim?.value ?? 1.0;
+          // The ignite pop when a zone selection lights the GO up. Fired
+          // ONLY in the normal state — a face-gated or dispatch-paused
+          // button is static by owner spec (2026-10-23).
+          final igniteScale = faceState == 0 && !_goOnlineDisabled
+              ? (_goIgniteAnim?.value ?? 1.0)
+              : 1.0;
 
           // The heartbeat lives on the OPEN PILL only (2026-10-14 user spec:
           // with the sheet closed and the button just "GO", it carries the
@@ -1252,13 +1594,17 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // (2026-10-11 spec).
           final pillLabel = _enteringOnline
               ? 'GOING ONLINE...'
-              : dimmed
-                  ? S.of(context).zoneSelectAction
-                  : !docsOk
-                      ? S.of(context).viewIssue
-                      : _goShowsResume
-                          ? S.of(context).resumeOnline
-                          : S.of(context).goOnline;
+              : faceState == 1
+                  ? S.of(context).goVerify
+                  : faceState == 2
+                      ? S.of(context).faceReviewPending
+                      : dimmed
+                          ? S.of(context).zoneSelectAction
+                          : !docsOk
+                              ? S.of(context).viewIssue
+                              : _goShowsResume
+                                  ? S.of(context).resumeOnline
+                                  : S.of(context).goOnline;
 
           return Transform.scale(
             scale: igniteScale * throb,
@@ -1309,7 +1655,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                               color: glowColor.withValues(
                                   alpha: ui.lerpDouble(
                                           0.12, 0.3 + 0.15 * p, morph)! *
-                                      (dimmed ? 0.3 : 1.0)),
+                                      (dimmed ? 0.3 : 1.0) *
+                                      (faceState != 0 ? 0.25 : 1.0)),
                               blurRadius: ui.lerpDouble(8, 16 + 8 * p, morph)!,
                               spreadRadius: 0,
                               offset: const Offset(0, 3),
@@ -1323,7 +1670,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                           gradient: LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
-                            colors: [topColor, botColor],
+                            colors: [topPaint, botPaint],
                           ),
                         ),
                   child: Row(
@@ -1478,8 +1825,14 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 // Brillo SOLO con el sheet abierto (user spec 2026-10-15:
                 // "la animación brillante solo cuando el sheet esté
                 // abierto"): una banda de luz barre la píldora; el disco
-                // cerrado conserva su radar de siempre.
-                if (_goGlossCtrl != null && !dimmed && morph > 0.5)
+                // cerrado conserva su radar de siempre. Y SOLO en el estado
+                // normal (owner spec 2026-10-23: la animación es del GO
+                // ONLINE — verify/pending/paused son grises y quietos).
+                if (_goGlossCtrl != null &&
+                    !dimmed &&
+                    morph > 0.5 &&
+                    faceState == 0 &&
+                    !_goOnlineDisabled)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: ClipRRect(
@@ -1511,8 +1864,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 // Radar sweep — SOLO en el disco cerrado (user spec
                 // 2026-10-14: "cuando el sheet esté cerrado y el botón
                 // solo diga GO, la animación que tenía antes"). El
-                // pill abierto palpita.
-                if (_goRadarCtrl != null && !dimmed && morph <= 0.5)
+                // pill abierto palpita. Y solo en el estado normal — el
+                // verify/pending/paused gris no anima (2026-10-23).
+                if (_goRadarCtrl != null &&
+                    !dimmed &&
+                    morph <= 0.5 &&
+                    faceState == 0 &&
+                    !_goOnlineDisabled)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: CustomPaint(
@@ -1859,32 +2217,35 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     );
   }
 
-  /// La cara Dash del sheet a medio abrir (user spec 2026-10-16): headline
-  /// grande que responde a la demanda del sector + UNA tarjeta con la
-  /// demanda de la zona (nivel + bonus) — dato real de ZoneService, polled
-  /// cada 60 s. Los botones (GO dorado + calendario) flotan encima por la
-  /// vía del morphing button, no van aquí.
+  /// La cara Dash del sheet a medio abrir: headline + tarjeta de demanda
+  /// (nivel + bonus). La ZONA SELECCIONADA tiene prioridad; el GPS es el
+  /// fallback cuando no hay selección. Datos de ZoneService, polled 60 s.
   Widget _buildOfflineHero(DriverColors dc, S s, EdgeInsets pad) {
     final pos = _pos;
-    final sector = pos != null ? ZoneService.sectorContaining(pos) : null;
+    final selectedId = _selectedZoneName;
+    final sector = selectedId != null
+        ? ZoneService.sectorById(selectedId)
+        : pos != null
+            ? ZoneService.sectorContaining(pos)
+            : null;
     final d = sector != null ? ZoneService.demand[sector.id] : null;
-    final level = d?.level ?? 0;
+    final off = d?.off ?? false;
+    final level = off ? 0 : d?.level ?? 0;
     final bonus = d?.bonus ?? 0;
     final headline = level >= 3
         ? s.offlineHeroHeadlineHigh
         : level == 2
             ? s.offlineHeroHeadlineMedium
             : s.offlineHeroHeadlineIdle;
-    // Escala del dispatcher (user spec 2026-10-16): zona APAGADA (sin calor)
-    // = "Muy lenta"; nivel 1 (dorado) = "Normal"; 2 = "Ocupado"; 3 = "Muy
-    // ocupado".
-    final demandLabel = level >= 3
-        ? s.offlineDemandVeryBusy
-        : level == 2
-            ? s.offlineDemandBusy
-            : level == 1
-                ? s.offlineDemandNormal
-                : s.offlineDemandVerySlow;
+    final demandLabel = off
+        ? s.offlineDemandZoneOff
+        : level >= 3
+            ? s.offlineDemandVeryBusy
+            : level == 2
+                ? s.offlineDemandBusy
+                : level == 1
+                    ? s.offlineDemandSlow
+                    : s.offlineDemandNoRides;
     return Padding(
       // El hero va compacto ARRIBA (estilo Dash — foto 2 del spec
       // 2026-10-16-noche), y el padding de abajo libra la fila de botones
@@ -1895,16 +2256,41 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            headline,
-            maxLines: 3,
-            overflow: TextOverflow.clip,
-            style: TextStyle(
-              color: dc.text,
-              fontSize: 30,
-              fontWeight: FontWeight.w800,
-              height: 1.12,
-              letterSpacing: -0.4,
+          // El headline también cruza animado con el nivel (misma spec).
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 350),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.18),
+                  end: Offset.zero,
+                ).animate(anim),
+                child: child,
+              ),
+            ),
+            // Una sola línea SIEMPRE (user spec 2026-10-21: "que ese texto
+            // se vea en horizontal, no que quede debajo la palabra ganar") —
+            // FittedBox achica solo lo necesario para caber; nunca parte la
+            // frase en dos líneas, con cualquier tamaño de pantalla/sistema.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                headline,
+                key: ValueKey(headline),
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+                style: TextStyle(
+                  color: dc.text,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  height: 1.12,
+                  letterSpacing: -0.4,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 18),
@@ -1927,12 +2313,31 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 const SizedBox(height: 5),
                 Row(
                   children: [
-                    Text(
-                      demandLabel,
-                      style: TextStyle(
-                        color: dc.text,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
+                    // El nivel cambia ANIMADO (2026-10-17, owner spec: "se
+                    // cambie de forma animada y fluida cuando las zonas
+                    // cambien de estado") — crossfade+slide por nivel.
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 350),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, anim) => FadeTransition(
+                        opacity: anim,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, 0.35),
+                            end: Offset.zero,
+                          ).animate(anim),
+                          child: child,
+                        ),
+                      ),
+                      child: Text(
+                        demandLabel,
+                        key: ValueKey(demandLabel),
+                        style: TextStyle(
+                          color: dc.text,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                     if (bonus > 0) ...[
@@ -2495,359 +2900,21 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   //  MENU BUTTON (the home top bar's `_glassBtn`, menu flavour)
   // ═══════════════════════════════════════════════════
 
-  /// The driver menu is a Dash-style LEFT DRAWER pushed as a TRANSPARENT
-  /// ROUTE of the Navigator (2026-10-17, tras "el menú no abre" en prod: el
-  /// overlay in-screen — AnimationController primero, TweenAnimationBuilder
-  /// después — nunca se pintó en el device del usuario aunque el tap sí
-  /// llegaba al servidor; la ruta la dibuja el Navigator por encima de todo,
-  /// la misma vía del menú viejo que sí abría). No es opaca: el mapa sigue
-  /// montado debajo, nunca cambia de manos y el negro es imposible.
+  /// Menú clásico de pantalla completa, empujado con una ruta opaca que
+  /// entra desde la izquierda. El mapa sigue montado debajo y se reclama al
+  /// volver solo si otra pantalla tomó su superficie.
   Future<void> _openDriverMenu() async {
     HapticService.selectionClick();
-    // Breadcrumb al servidor — si el tap llega, lo vemos en prod.
-    ApiService.logClientEvent('menu_drawer', 'tap route');
+    ApiService.logClientEvent('menu_classic', 'tap left route');
     if (_menuRouteOpen) return;
     _menuRouteOpen = true;
-    // Identidad ANTES de empujar: la ruta no se reconstruye con el setState
-    // de la pantalla, así que nombre/foto deben estar listos al montarla.
-    await _loadMenuIdentity();
-    if (!mounted) {
+    try {
+      await Navigator.of(context)
+          .push(slideFromLeftRoute(const DriverMenuScreen()));
+    } finally {
       _menuRouteOpen = false;
-      return;
+      if (mounted) unawaited(_remountMapSurface());
     }
-    unawaited(Navigator.of(context)
-        .push(_driverMenuRoute())
-        .whenComplete(() => _menuRouteOpen = false));
-  }
-
-  /// Drawer transparente con slide desde la izquierda (estilo Dash). La
-  /// barrera atenúa y cierra al tap; back la popea solo — la ruta responde
-  /// al pop, `_goBack` ya no intercepta nada.
-  PageRoute<void> _driverMenuRoute() {
-    return PageRouteBuilder<void>(
-      opaque: false,
-      barrierDismissible: true,
-      barrierColor: Colors.black.withValues(alpha: 0.45),
-      barrierLabel: 'menu_drawer',
-      transitionDuration: const Duration(milliseconds: 320),
-      reverseTransitionDuration: const Duration(milliseconds: 260),
-      pageBuilder: (routeContext, _, __) {
-        final size = MediaQuery.of(routeContext).size;
-        final panelW = math.min(320.0, size.width * 0.78);
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: SizedBox(
-            width: panelW,
-            height: size.height,
-            child: _buildMenuDrawerContent(),
-          ),
-        );
-      },
-      transitionsBuilder: (context, animation, _, child) {
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(-1, 0),
-            end: Offset.zero,
-          ).animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
-          child: child,
-        );
-      },
-    );
-  }
-
-  void _closeDriverMenu() {
-    Navigator.of(context).pop();
-  }
-
-  /// Cierra el drawer y luego navega — las dos animaciones no se pelean.
-  Future<void> _menuNav(Widget page) async {
-    _closeDriverMenu();
-    // El cierre animado dura 260 ms; navegar encima a la vez se ve brusco.
-    await Future.delayed(const Duration(milliseconds: 280));
-    if (!mounted) return;
-    Navigator.of(context).push(slideFromRightRoute(page));
-  }
-
-  /// El mapa de agendados toma la única superficie nativa — la reclamación
-  /// al volver vive en `_openScheduledRides` (misma disciplina del toast).
-  Future<void> _menuScheduled() async {
-    _closeDriverMenu();
-    await Future.delayed(const Duration(milliseconds: 280));
-    if (!mounted) return;
-    _openScheduledRides();
-  }
-
-  /// Nombre + foto para el header del drawer — cache-first como el menú
-  /// completo (sesión en disco primero; el notifier por si la foto rotó).
-  Future<void> _loadMenuIdentity() async {
-    if (_menuIdentityLoaded) return;
-    _menuIdentityLoaded = true;
-    final cachedPhoto = UserSession.photoUrlNotifier.value;
-    if (cachedPhoto.isNotEmpty) _menuPhotoUrl = cachedPhoto;
-    final user = await UserSession.getUser();
-    if (user == null || !mounted) return;
-    final first = (user['firstName'] ?? '').toString();
-    final last = (user['lastName'] ?? '').toString();
-    final photo = (user['photoUrl'] ?? '').toString();
-    if (!mounted) return;
-    _setState(() {
-      if (first.isNotEmpty) {
-        _menuDriverName =
-            last.isNotEmpty ? '$first ${last[0].toUpperCase()}' : first;
-      }
-      if (photo.isNotEmpty) _menuPhotoUrl = photo;
-    });
-  }
-
-  /// La foto puede ser URL absoluta, path local o path del servidor — la
-  /// misma resolución del menú completo.
-  ImageProvider? _menuPhotoImage() {
-    final p = _menuPhotoUrl;
-    if (p == null || p.isEmpty) return null;
-    if (p.startsWith('http')) return CachedNetworkImageProvider(p);
-    if (p.startsWith('/')) {
-      final f = File(p);
-      if (f.existsSync()) return FileImage(f);
-      return CachedNetworkImageProvider('${ApiService.publicBaseUrl}$p');
-    }
-    return CachedNetworkImageProvider('${ApiService.publicBaseUrl}/$p');
-  }
-
-  // ═══════════════════════════════════════════════════
-  //  MENU DRAWER (estilo Dash, foto 2026-10-16)
-  // ═══════════════════════════════════════════════════
-
-  Widget _buildMenuDrawerContent() {
-    final mq = MediaQuery.of(context);
-    final topPad = mq.padding.top;
-    final s = S.of(context);
-    final photo = _menuPhotoImage();
-    final initial = _menuDriverName.isNotEmpty ? _menuDriverName[0] : '·';
-    // Material es OBLIGATORIO aquí: la ruta transparente no trae uno y sin
-    // él los Text heredan el estilo fallback del overlay (las líneas
-    // amarillas bajo cada label del reporte con foto 2026-10-17).
-    return Material(
-      color: neuBase,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Header: burbuja de foto a la IZQUIERDA del nombre ──
-          Padding(
-            padding: EdgeInsets.fromLTRB(20, topPad + 10, 20, 8),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF2A2A33),
-                    border: Border.all(
-                      color: _offlineGold.withValues(alpha: 0.5),
-                      width: 1.4,
-                    ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: photo != null
-                      ? Image(
-                          image: photo,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _menuInitial(initial),
-                        )
-                      : _menuInitial(initial),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _menuDriverName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // ── Opciones categorizadas: cada división lleva el título de su
-          // categoría (spec 2026-10-17) y los items van compactos para que
-          // TODO quepa sin scroll — el ListView solo scrollea si la
-          // pantalla es más chica que el contenido (respaldo). ──
-          Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.only(
-                  left: 10, right: 10, bottom: mq.padding.bottom + 8),
-              children: [
-                _menuSection(s.menuSectionAccount),
-                _menuItem(Icons.attach_money_rounded, s.earningsTitle,
-                    () => _menuNav(const DriverEarningsScreen())),
-                _menuItem(Icons.health_and_safety_outlined, s.helpAndSafety,
-                    () => _menuNav(const HelpScreen())),
-                _menuItem(Icons.settings_rounded, s.settingsTitle,
-                    () => _menuNav(const DriverSettingsScreen())),
-                _menuSection(s.menuSectionGrowth),
-                _menuItem(Icons.workspace_premium_rounded, s.cruiseLevelLabel,
-                    () => _menuNav(const CruiseLevelScreen())),
-                _menuItem(Icons.work_outline_rounded, s.workHub,
-                    () => _menuNav(const WorkHubScreen())),
-                _menuItem(Icons.person_add_rounded, s.referFriends,
-                    () => _menuNav(const DriverReferralScreen())),
-                _menuSection(s.menuSectionWork),
-                _menuItem(Icons.event_note_rounded, s.scheduledTripsMenu,
-                    _menuScheduled),
-                _menuItem(Icons.directions_car_rounded, s.vehiclesLabel,
-                    () => _menuNav(const DriverVehicleScreen())),
-                _menuItem(Icons.description_rounded, s.documentsLabel,
-                    () => _menuNav(const DriverDocumentsScreen())),
-                _menuSection(s.moneySectionLabel),
-                _menuItem(Icons.receipt_long_rounded, s.taxInfo,
-                    () => _menuNav(const TaxInfoScreen())),
-                _menuItem(Icons.account_balance_rounded, s.payoutMethodsLabel,
-                    () => _menuNav(const PayoutMethodsScreen())),
-                _menuSection(s.resourcesSectionLabel),
-                _menuItem(Icons.school_rounded, s.learningCenter,
-                    () => _menuNav(const LearningCenterScreen())),
-                _menuItem(Icons.bug_report_rounded, s.bugReporter,
-                    () => _menuNav(const BugReporterScreen())),
-                _menuItem(Icons.info_outline_rounded, s.aboutLabel,
-                    () => _menuNav(const AboutScreen())),
-                const SizedBox(height: 4),
-                _menuItem(Icons.logout_rounded, s.signOut, _menuSignOut,
-                    danger: true),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _menuInitial(String initial) => Center(
-        child: Text(
-          initial,
-          style: const TextStyle(
-            color: Color(0xFFE8C547),
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      );
-
-  /// Título de categoría de cada división del drawer (spec 2026-10-17:
-  /// "categoriza cada cuadro y division colocale un titulo") — reemplaza a
-  /// la hairline divisoria como separador.
-  Widget _menuSection(String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
-        child: Text(
-          title.toUpperCase(),
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.42),
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.1,
-          ),
-        ),
-      );
-
-  Widget _menuItem(IconData icon, String label, VoidCallback onTap,
-      {bool danger = false}) {
-    final color = danger ? const Color(0xFFFF5252) : Colors.white;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        child: Row(
-          children: [
-            Icon(icon,
-                color: danger ? color : Colors.white.withValues(alpha: 0.85),
-                size: 20),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Sign-out desde el drawer — el mismo flujo del menú completo (offline en
-  /// backend antes del logout, luego Splash limpio).
-  Future<void> _menuSignOut() async {
-    _closeDriverMenu();
-    await Future.delayed(const Duration(milliseconds: 280));
-    if (!mounted) return;
-    final s = S.of(context);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: neuSurface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          s.signOutTitle,
-          style: const TextStyle(
-              color: Colors.white, fontWeight: FontWeight.w800),
-        ),
-        content: Text(
-          s.signOutConfirmation,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              s.cancel,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              try {
-                final user = await UserSession.getUser();
-                final id = int.tryParse(user?['userId'] ?? '');
-                if (id != null) {
-                  await ApiService.updateDriverLocation(
-                      driverId: id, lat: 0, lng: 0, isOnline: false);
-                }
-              } catch (_) {}
-              await UserSession.logout();
-              if (!context.mounted) return;
-              Navigator.of(context).pushAndRemoveUntil(
-                smoothFadeRoute(const SplashScreen()),
-                (_) => false,
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFF5252),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text(
-              s.signOutButton,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   /// The offline chrome's menu button.

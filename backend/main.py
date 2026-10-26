@@ -374,12 +374,28 @@ async def _transfer_and_settle(
     except Exception:
         transfer_id = getattr(transfer, "id", None)
 
+    drv_locale = "es"
     async with SessionLocal() as db:
         try:
             c = await db.get(Cashout, cashout_id)
             if c is not None and c.status != "completed":
                 c.status = "completed"
                 await db.commit()
+                drv = await db.get(User, driver_id)
+                if drv is not None:
+                    drv_locale = (drv.locale or "es").lower()
+                # Payout confirmation email (2026-10-20, user spec "los 4"):
+                # after the settle commits, once per cashout row.
+                if c.payout_email_sent_at is None:
+                    try:
+                        from services.driver_emails import send_payout_email
+                        if drv is not None and await send_payout_email(drv, amount):
+                            c.payout_email_sent_at = datetime.now(timezone.utc)
+                            await db.commit()
+                    except Exception as e:
+                        logging.warning(
+                            "[AutoPayout] payout email failed for driver %s: %s",
+                            driver_id, e)
         except Exception as e:
             await db.rollback()
             logging.error(
@@ -394,10 +410,15 @@ async def _transfer_and_settle(
     )
     if fcm_token:
         try:
+            # ES/EN by driver locale (2026-10-20, user spec: this push was
+            # English-only — every driver gets their own language).
+            _es_push = drv_locale.startswith("es")
             _send_fcm_push(
                 fcm_token,
-                title="💰 Payout Sent!",
-                body=f"${amount:.2f} has been transferred to your bank account.",
+                title="💰 ¡Pago enviado!" if _es_push else "💰 Payout Sent!",
+                body=(f"${amount:.2f} ha sido transferido a tu cuenta bancaria."
+                      if _es_push else
+                      f"${amount:.2f} has been transferred to your bank account."),
                 data={"type": "auto_payout", "amount": str(amount)},
             )
         except Exception as e:
@@ -905,6 +926,8 @@ async def _start_scheduler_agents() -> None:
     _spawn_background(_scheduled_rides_available_notify_loop(), "scheduled_rides_notify")
     _spawn_background(_nightly_reconcile_loop(), "nightly_reconcile")
     _spawn_background(_driver_referral_expiry_loop(), "driver_referral_expiry")
+    from driver_email_agent import run_driver_email_agent
+    _spawn_background(run_driver_email_agent(), "driver_email_agent")
 
     # Class-based autonomous agents
     document_expiry_agent.set_db_session_maker(SessionLocal)
@@ -1120,6 +1143,28 @@ async def lifespan(app: FastAPI):
                     logging.info("[DB Init] Column migrations applied (idempotent)")
                 except Exception as _mig_err:
                     logging.error("[DB Init] column migration failed (non-fatal): %s", _mig_err)
+
+            if not IS_SQLITE:
+                try:
+                    from services.sector_defaults import migrate_live_sector_map
+                    async with engine.begin() as conn:
+                        await migrate_live_sector_map(conn)
+                except Exception as _sector_mig_err:
+                    logging.error(
+                        "[DB Init] sector map migration failed (non-fatal): %s",
+                        _sector_mig_err)
+
+            # Contracts seed (2026-10-21, user spec — Uber-style
+            # e-acceptance): the 5 legal documents land in legal_documents
+            # on first boot, on BOTH backends (tests run SQLite); idempotent
+            # (empty-table only) so operator edits from dispatch never get
+            # clobbered by a redeploy.
+            try:
+                from services.legal_documents import seed_legal_documents
+                async with SessionLocal() as _legal_db:
+                    await seed_legal_documents(_legal_db)
+            except Exception as _seed_err:
+                logging.error("[DB Init] legal seed failed (non-fatal): %s", _seed_err)
 
             # NOTE: PostgreSQL index migrations moved to standalone script
             # (backend/run_migrations.py) to avoid running DDL on every boot.
@@ -1531,11 +1576,15 @@ _CORS_LOCALHOST_RE = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
 # -- LAYER 2: Security Headers -------------------------
 # Paths served to browsers (dispatch dashboard, photos, uploads)
 _BROWSER_PATHS = ("/dispatch", "/photos", "/uploads", "/panel")
+# Public landing pages (referral invite, email open-app): tiny self-contained
+# HTML with an inline <style> + an inline copy script. Under the strict
+# default-src 'none' they rendered UNSTYLED with the copy button dead
+# (2026-10-23, owner screenshot). They get their own relaxed CSP.
+_LANDING_PATHS = ("/drive", "/open-app")
 
 
 def _security_headers_for(path: str, method: str) -> list[tuple[bytes, bytes]]:
-    """The security-header set for one response (ported verbatim from the
-    old security_headers_middleware into the pure-ASGI gateway below)."""
+    """Security headers for one response, including panel asset revalidation."""
     if method == "OPTIONS":
         return []
     hdrs: list[tuple[bytes, bytes]] = [(b"x-content-type-options", b"nosniff")]
@@ -1553,6 +1602,12 @@ def _security_headers_for(path: str, method: str) -> list[tuple[bytes, bytes]]:
         (b"pragma", b"no-cache"),
         (b"permissions-policy", b"geolocation=(), camera=(), microphone=()"),
     ]
+    if path.startswith("/panel/assets/"):
+        # Public bundles can be stored and revalidated; the HTML and API stay
+        # no-store. No immutable flag: hand-edited bundles keep their names.
+        hdrs = [(name, value) for name, value in hdrs
+                if name not in {b"cache-control", b"pragma"}]
+        hdrs.append((b"cache-control", b"public, max-age=0, must-revalidate"))
     if any(path.startswith(p) for p in _BROWSER_PATHS):
         # 'wasm-unsafe-eval': Flutter's CanvasKit renderer compiles
         # canvaskit.wasm — Chrome blocks WebAssembly without it.
@@ -1570,6 +1625,17 @@ def _security_headers_for(path: str, method: str) -> list[tuple[bytes, bytes]]:
             "img-src 'self' data: blob: *; "
             "media-src 'self' blob: *; "
             "connect-src 'self' *; "
+            "frame-ancestors 'none'"
+        )
+    elif any(path.startswith(p) for p in _LANDING_PATHS):
+        # Public invite/open pages: inline <style> + inline copy script +
+        # the brand logo from the marketing domain. frame-ancestors stays
+        # 'none' (they must never be framed).
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https://cruiseinride.com; "
             "frame-ancestors 'none'"
         )
     else:
@@ -1651,7 +1717,7 @@ async def _rate_limit_check(path: str, method: str, client_ip: str) -> tuple[int
         # This runs BEFORE the global DDoS cap below and provides per-category limits.
         # The limiter may be sync (in-memory) or async (Redis) — handle both.
         try:
-            if "/auth/" in path:
+            if "/auth/" in path or path in ("/panel/login", "/dispatch/login"):
                 # Auth endpoints: 20 req/min per IP (prevents brute-force/OTP spam)
                 _check = _tiered_rate_limiter.check(f"auth:{client_ip}", max_requests=20, window_seconds=60)
             elif "/payments/" in path or "/webhooks/" in path:
@@ -1687,12 +1753,19 @@ _MAX_VERIFY_SIZE = 30 * 1024 * 1024  # 30 MB for verification (photos + video)
 _LARGE_BODY_PATHS = {"/auth/verify-request", "/drivers/documents", "/drivers/documents/upload"}
 
 
-def _body_size_check(path: str, method: str, headers) -> tuple[int, dict] | None:
-    """Body-size gate (ported verbatim from request_size_limit_middleware)."""
-    # GET/HEAD/OPTIONS/Socket.io/hot paths never have meaningful bodies — skip entirely
-    if method in ("GET", "HEAD", "OPTIONS") or path.startswith("/socket.io") or _is_hot_path(path):
+def _body_size_limit(path: str, method: str) -> int | None:
+    # Preserve the existing exemptions for GET/SSE/socket.io and hot paths.
+    if (method in ("GET", "HEAD", "OPTIONS") or path.startswith("/socket.io")
+            or _is_hot_path(path)):
         return None
-    limit = _MAX_VERIFY_SIZE if path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
+    return _MAX_VERIFY_SIZE if path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
+
+
+def _body_size_check(path: str, method: str, headers) -> tuple[int, dict] | None:
+    """Early Content-Length gate; the receive wrapper caps chunked bodies."""
+    limit = _body_size_limit(path, method)
+    if limit is None:
+        return None
     content_length = None
     for k, v in headers:
         if k.lower() == b"content-length":
@@ -1700,11 +1773,33 @@ def _body_size_check(path: str, method: str, headers) -> tuple[int, dict] | None
             break
     if content_length:
         try:
-            if int(content_length) > limit:
+            declared = int(content_length)
+            if declared < 0:
+                return 400, {"detail": "Invalid content-length"}
+            if declared > limit:
                 return 413, {"detail": "Request body too large"}
         except ValueError:
             return 400, {"detail": "Invalid content-length"}
     return None
+
+
+class _RequestBodyTooLarge(Exception):
+    pass
+
+
+def _body_limited_receive(receive, limit: int):
+    received = 0
+
+    async def limited_receive():
+        nonlocal received
+        message = await receive()
+        if message.get("type") == "http.request":
+            received += len(message.get("body") or b"")
+            if received > limit:
+                raise _RequestBodyTooLarge
+        return message
+
+    return limited_receive
 
 
 # Hot paths that should skip expensive middleware operations (checksum, etc.)
@@ -1750,6 +1845,8 @@ async def _asgi_json_response(send, payload: dict, status: int) -> None:
         "headers": [
             (b"content-type", b"application/json"),
             (b"content-length", str(len(body)).encode()),
+            (b"cache-control", b"no-store"),
+            (b"x-content-type-options", b"nosniff"),
         ],
     })
     await send({"type": "http.response.body", "body": body})
@@ -1766,8 +1863,8 @@ class CoreGatewayMiddleware:
     starlette/middleware/base.py call_next (py-spy): with ~600 requests in
     flight, each task hop queued behind hundreds of coroutines, and p50
     hit 3 s while CPU, DB pool and Postgres all idled. One pure-ASGI layer
-    makes the exact same decisions with zero task hops. Every check above
-    is ported verbatim from the middleware it replaces.
+    makes these decisions with zero task hops. The body gate checks both the
+    declared Content-Length and the actual bytes delivered through receive.
     """
 
     def __init__(self, app):
@@ -1794,6 +1891,9 @@ class CoreGatewayMiddleware:
         if too_big is not None:
             await _asgi_json_response(send, too_big[1], too_big[0])
             return
+        body_limit = _body_size_limit(path, method)
+        if body_limit is not None:
+            receive = _body_limited_receive(receive, body_limit)
 
         # ── Layers 0/1/2: crash guard + security headers + timing ──
         t0 = time.perf_counter()
@@ -1818,6 +1918,11 @@ class CoreGatewayMiddleware:
 
         try:
             await self.app(scope, receive, send_with_headers)
+        except _RequestBodyTooLarge:
+            if not headers_sent:
+                await _asgi_json_response(
+                    send, {"detail": "Request body too large"}, 413,
+                )
         except Exception as e:
             import traceback as _tb
             _tb_text = _tb.format_exc()
@@ -2261,6 +2366,7 @@ async def _dispatch_reserved_scheduled_rides(db, now):
             # so the normal cascade can give the ride to someone else.
             released_driver_id = trip.driver_id
             trip.driver_id = None
+            trip.rider_approach_notified_at = None
             trip.status = "scheduled"
             trip.updated_at = now
             # The claim wrote an ACCEPTED DispatchOffer; leaving it would
@@ -3096,7 +3202,7 @@ async def _driver_referral_expiry_loop():
 
 async def _nightly_reconcile_loop():
     """Once every 24 hours, reconcile each driver's pending_balance against
-    the ground-truth computed from trips.driver_earnings and cashouts.
+    the ground-truth computed from payable trips.driver_earnings and cashouts.
 
     Reports drift but NEVER auto-fixes — a human must review because the
     root cause could be refund clawback bugs, not a simple ledger drift.
@@ -3127,6 +3233,7 @@ async def _nightly_reconcile_loop():
                                COUNT(*) AS trip_count
                           FROM trips
                          WHERE driver_id IS NOT NULL
+                           AND payout_excluded IS NOT TRUE
                            AND (
                                status = 'completed'
                                OR (status = 'cancelled'

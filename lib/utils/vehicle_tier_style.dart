@@ -134,6 +134,14 @@ String tierCarImage(String? raw) {
 String tierLabel(String? raw) =>
     tierKey(raw).replaceAll('_', ' ').toUpperCase();
 
+/// Uppercase canonical tier for BOOKING surfaces (2026-10-18, owner spec:
+/// the Apple Pay / Google Pay sheet must read "CRUISE IN RIDE - STANDARD /
+/// COMPACT / PREMIUM / VIP" from the selected tier). Uses [tripTierKey] —
+/// "Sedan" (camry) is Compact and "SUV XL" is Premium in the booking sheet,
+/// which [tierKey] gets backwards for bookings.
+String tripTierLabel(String? raw) =>
+    tripTierKey(raw).replaceAll('_', ' ').toUpperCase();
+
 /// What a TRIP's `vehicle_type` means for display. Trip rows store the
 /// booking option's display name, not a car class — and the picker sold
 /// "Sedan" as Compact and "SUV XL" as Premium — so trip labels follow the

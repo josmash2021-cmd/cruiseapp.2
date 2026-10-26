@@ -16,24 +16,20 @@ from tests.conftest import _make_auth_headers
 
 pytestmark = pytest.mark.asyncio
 
-# Inside the baked miami_gardens sector, plus two certainly-outside points:
-# the Atlantic and Birmingham (no Alabama sectors baked — the panel draws
-# them; until then Birmingham is OUTSIDE the coverage and never gated).
+# Hialeah and Birmingham are inside baked sectors; the Atlantic is outside.
 HIALEAH = {"lat": 25.866939, "lng": -80.31336}
 OCEAN = {"lat": 25.70, "lng": -79.90}
 BIRMINGHAM = {"lat": 33.5186, "lng": -86.8104}
 
 
 def _force_real_sectors():
-    """The autouse conftest shim points the baked-file loader at a
-    nonexistent path for the whole suite — restore the real file and prime
-    the in-process cache so the gate runs on the real baked sectors."""
+    """Restore the real FL path after the fail-open shim and load FL+AL."""
     zone_polygons._PATH = os.path.join(
         os.path.dirname(zone_polygons.__file__), "..", "static",
         "fl_sectors.json")
     zone_polygons._sectors = zone_polygons._load_file()
     zone_polygons._cache_ts = time.monotonic()
-    assert zone_polygons._sectors, "fl_sectors.json should load in the repo"
+    assert zone_polygons._sectors, "baked FL+AL sectors should load"
 
 
 async def test_committed_sectors_json_integrity():
@@ -52,8 +48,7 @@ async def test_gate_math_real_boundaries():
     _force_real_sectors()
     # Inside a sector → not blocked.
     assert await zone_polygons.sector_gate_blocks(None, **HIALEAH) is False
-    # Outside every bbox (open Atlantic / Birmingham) = outside the coverage
-    # region entirely → the gate never even looks at it.
+    # The Atlantic is outside coverage; Birmingham is inside its AL sector.
     assert await zone_polygons.sector_gate_blocks(None, **OCEAN) is False
     assert await zone_polygons.sector_gate_blocks(None, **BIRMINGHAM) is False
 
@@ -91,11 +86,9 @@ async def test_online_flip_inside_sector_passes(client, db, test_driver):
     assert driver.is_online is True
 
 
-async def test_out_of_state_drivers_are_not_gated(client, db, test_driver):
-    """Drivers are state-separated: with REAL Florida sectors loaded, a
-    driver connecting from Alabama (outside the sector coverage region) is
-    never gated — Alabama gets gated once its sectors exist (drawn in the
-    panel), by this same dataset (2026-10-14 user decision)."""
+async def test_alabama_driver_inside_baked_sector_passes(
+        client, db, test_driver):
+    """The combined baked map covers Birmingham as well as South Florida."""
     _force_real_sectors()
     driver, token = test_driver
     driver.is_verified = True

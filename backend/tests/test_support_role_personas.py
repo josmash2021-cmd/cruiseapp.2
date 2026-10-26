@@ -256,6 +256,19 @@ async def test_rapid_messages_get_one_answer_not_two(client, db, test_rider, mon
     import asyncio
     import services.openai_support_service as ai_svc
     from tests.conftest import _make_auth_headers
+    # The read-settle window (2026-10-17) adds 4 s before generation — the
+    # test shrinks it so the 14 s budget still covers slow-LLM + typing.
+    monkeypatch.setattr("routers.support._BOT_READ_SETTLE_SECONDS", 0.1)
+    # Deterministic timing: never the 10% slow response, never the 15%
+    # mid-typing pause, typing delays at their floor — under suite-wide CPU
+    # pressure the random timings used to push the write past the budget.
+    class _R:
+        def random(self):
+            return 0.99
+
+        def uniform(self, a, b):
+            return a
+    monkeypatch.setattr("routers.support._rng", _R())
     rider, rtoken = test_rider
     chat = await _open_chat_in_phase(rider, db, "agent_active")
     chat.locale = "es"
@@ -1011,3 +1024,56 @@ async def test_get_typing_defaults_false_and_scopes_to_owner(client, db, test_ri
         headers={**_make_auth_headers(), "Authorization": f"Bearer {dtoken}"},
     )
     assert res.status_code == 403
+
+
+# ── 2026-10-17 (prod chat Yusmel + spec del dueño: "que no sea artificial") ──
+
+async def test_reply_task_settles_before_reading_fast_messages():
+    """El bot espera unos segundos antes de generar: un mensaje rápido
+    adicional cancela la task vieja (scheduler existente) y la nueva lee
+    TODO el historial — UNA respuesta consolidada, nunca "Parece que tu
+    mensaje se cortó" a un fragmento como "la"."""
+    import pathlib
+    src = pathlib.Path("routers/support.py").read_text(encoding="utf-8")
+    assert "_BOT_READ_SETTLE_SECONDS" in src
+    fn = src.index("async def _background_bot_reply")
+    region = src[fn:fn + 1000]
+    assert "await asyncio.sleep(_BOT_READ_SETTLE_SECONDS)" in region
+
+
+async def test_takeover_mid_flight_kills_the_rest_of_the_reply():
+    """Si el operador conecta un agente (o el chat escala) MIENTRAS el bot
+    compone, lo que quede por escribir NO se escribe: la fase se re-lee
+    fresca antes de cada mensaje. Las líneas system de la transferencia sí
+    salen."""
+    import pathlib
+    src = pathlib.Path("routers/support.py").read_text(encoding="utf-8")
+    fn = src.index("async def _background_bot_reply")
+    region = src[fn:fn + 6500]
+    # La fase Y el status se re-leen frescos antes de cada mensaje (2026-10-22:
+    # la query ganó SupportChat.status para el silencio tras cierre).
+    assert "select(SupportChat.bot_phase, SupportChat.status)" in region
+    assert '_phase_now == "dispatch_takeover"' in region
+    assert '_phase_now == "escalated" and r["role"] != "system"' in region
+    assert '_state[1] != "open"' in region
+    # y una task que entra ya escalated/takeover no habla en absoluto
+    assert 'in ("escalated", "dispatch_takeover")' in region
+
+
+async def test_unapproved_account_is_never_called_active():
+    """Prod Yusmel (2026-10-17): 'Account status: active' (solo significa
+    no bloqueada) hizo que el bot dijera 'tu cuenta está activa' en medio
+    de la revisión. El contexto y el prompt core lo prohíben."""
+    from services.openai_support_service import _format_user_context, _CORE_PROMPT
+
+    ctx = {"lang": "es",
+           "user": {"first_name": "Yusmel", "last_name": "T", "id": 276,
+                    "role": "driver", "locale": "es", "status": "active",
+                    "verification_status": "pending"}}
+    text = _format_user_context(ctx)
+    assert "NOTHING about approval" in text
+    assert "HARD RULE" in text and "NOT approved" in text
+
+    assert '"active" or "approved"' in _CORE_PROMPT
+    # y la regla de tono anti-plantilla existe
+    assert "NEVER end two consecutive messages with the same" in _CORE_PROMPT

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_compass/flutter_compass.dart';
@@ -25,7 +24,12 @@ import 'package:geolocator/geolocator.dart';
 /// the two so a car crawling in traffic does not flip back and forth every
 /// few seconds.
 class HeadingService {
-  HeadingService();
+  HeadingService({Stream<double>? compassReadings, DateTime Function()? now})
+      : _compassReadings = compassReadings,
+        _now = now ?? DateTime.now;
+
+  final Stream<double>? _compassReadings;
+  final DateTime Function() _now;
 
   /// Above this ground speed the GPS course is trusted. ~11 km/h — fast
   /// enough that consecutive fixes describe a real direction of travel.
@@ -37,12 +41,8 @@ class HeadingService {
   /// which looks like the arrow twitching for no reason.
   static const double _useCompassBelowMps = 1.5;
 
-  /// Compass readings closer together than this are dropped.
-  ///
-  /// A magnetometer at rest still wanders a degree or so, and every reading
-  /// that gets through is a redraw. Half a degree is under what anyone can
-  /// see on a 32-point arrow and it removes most of the traffic.
-  static const double _compassDeadBandDeg = 0.5;
+  /// Drops only sub-perceptual duplicates; slow real turns must keep flowing.
+  static const double _compassDeadBandDeg = 0.02;
 
   /// Circular EMA applied to the compass branch (user report 2026-09-27:
   /// "la flecha gira paso a paso y a veces se mueve hasta estabilizarse").
@@ -64,7 +64,7 @@ class HeadingService {
 
   final _controller = StreamController<double>.broadcast();
 
-  StreamSubscription<CompassEvent>? _compassSub;
+  StreamSubscription<dynamic>? _compassSub;
   double? _lastEmitted;
   DateTime? _lastEmitAt;
 
@@ -92,6 +92,15 @@ class HeadingService {
     // which, coming from a stream, arrives as an unhandled async error rather
     // than something the caller can try/catch.
     if (kIsWeb) return;
+    final injected = _compassReadings;
+    if (injected != null) {
+      _compassSub = injected.listen(
+        _onCompassHeading,
+        onError: (Object e) => debugPrint('[Heading] compass error: $e'),
+        cancelOnError: false,
+      );
+      return;
+    }
     try {
       final events = FlutterCompass.events;
       if (events == null) {
@@ -108,8 +117,9 @@ class HeadingService {
     }
   }
 
-  void _onCompass(CompassEvent e) {
-    final h = e.heading;
+  void _onCompass(CompassEvent e) => _onCompassHeading(e.heading);
+
+  void _onCompassHeading(double? h) {
     // Null means the sensor has nothing — uncalibrated, or absent. iOS also
     // reports negative values while the heading is invalid.
     if (h == null || h.isNaN || h.isInfinite || h < 0) return;
@@ -174,7 +184,7 @@ class HeadingService {
   void _emit(double heading, {double deadBand = 0}) {
     if (_controller.isClosed) return;
 
-    final now = DateTime.now();
+    final now = _now();
     if (_lastEmitAt != null && now.difference(_lastEmitAt!) < _minInterval) {
       return;
     }

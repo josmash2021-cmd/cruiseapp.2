@@ -10,8 +10,21 @@ from models.database import (
     RiderPaymentMethod, Notification, Vehicle, DispatchOffer,
     ActionRequest, SupportChat,
 )
-from models.schemas import CreateTripIn, AcceptTripIn
+from models.schemas import CreateTripIn, AcceptTripIn, RateTripIn, TripTipIn
 from pydantic import BaseModel, field_validator
+from services.payment_security import (
+    amount_authorized,
+    amount_received,
+    credit_tip_payment,
+    execute_trip_refund,
+    fare_collected_cents,
+    fare_collection_delta,
+    payment_status_for_intent,
+    stripe_call,
+    stripe_value,
+    validate_trip_hold,
+    validate_trip_payment,
+)
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
@@ -42,12 +55,10 @@ from config import (
 
 router = APIRouter()
 
-# Commission splits live in services/vehicle_tiers.py, which is the one
-# place that knows both the four tiers and the strings they replaced:
-# a flat 60% driver / 40% platform on every tier, legacy strings
-# included (pricing policy 2026-10-06, user spec "40/60 para todos").
-# Duplicating the table here is how the offer card ended up
-# quoting a rate the payout did not use.
+# Commission splits live in services/vehicle_tiers.py: 90% driver / 10%
+# platform on new trips, with the rate snapshotted on each row so historical
+# trips never change when pricing policy moves. Duplicating the table here
+# is how the offer card ended up quoting a rate the payout did not use.
 _COMMISSION_BY_TYPE = vehicle_tiers.COMMISSION
 _DEFAULT_COMMISSION = vehicle_tiers.DEFAULT_COMMISSION
 
@@ -161,9 +172,8 @@ _recent_status_patches: dict[tuple[int, str], float] = {}
 _DEDUP_WINDOW_SECONDS = 10.0
 _DEDUP_CACHE_MAX = 2000
 
-def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
-    """Return (platform_rate, driver_rate) for the given vehicle type."""
-    return vehicle_tiers.commission(vehicle_type)
+def _get_trip_commission(trip: Trip) -> tuple[float, float]:
+    return vehicle_tiers.commission_for_trip(trip)
 
 
 # ── Wait time fee policy (Uber/Lyft inspired) ──
@@ -194,17 +204,15 @@ def _wait_policy(vehicle_type: str | None, is_airport: bool) -> tuple[int, float
         return _AIRPORT_WAIT_POLICY
     return _WAIT_POLICY_BY_TYPE.get(_vehicle_key(vehicle_type), _DEFAULT_WAIT_POLICY)
 
-# Legacy constants kept for backward-compat in places that don't have vehicle_type
-# (pricing policy 2026-10-06: flat 60% driver / 40% platform on every tier)
-PLATFORM_COMMISSION_RATE = 0.40
-DRIVER_SHARE_RATE = 0.60
+PLATFORM_COMMISSION_RATE = vehicle_tiers.PLATFORM_COMMISSION_RATE
+DRIVER_SHARE_RATE = vehicle_tiers.DRIVER_SHARE_RATE
 
 
 def _driver_visible_trip_dict(trip: Trip) -> dict:
     """Return trip payload for drivers without exposing rider gross fare."""
     data = _trip_dict(trip)
     tip = float(trip.tip_amount or 0.0)
-    platform_rate, driver_rate = _get_commission(getattr(trip, "vehicle_type", None))
+    platform_rate, driver_rate = _get_trip_commission(trip)
     if trip.driver_earnings is not None:
         visible_fare = round(float(trip.driver_earnings), 2)
     elif trip.status in ("completed", "cancelled") and trip.payment_status != "paid":
@@ -242,8 +250,8 @@ def _trip_dict_for_user(trip: Trip, user: User) -> dict:
 async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]:
     """Split a charged cancellation fee with the driver using the SAME ledger
     mechanism as the completed-trip fare split:
-      - trip.driver_earnings  <- 60% driver share (e.g. $3.00 of $5.00)
-      - trip.platform_fee     <- 40% Company revenue (e.g. $2.00 of $5.00)
+      - trip.driver_earnings  <- the snapshotted driver share
+      - trip.platform_fee     <- the remainder collected by the company
       - driver.pending_balance / total_earnings incremented by the driver share
     Returns (driver_share, platform_share). No-op when there is no fee or
     no assigned driver.
@@ -254,6 +262,8 @@ async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]
     never collected (test-mode rides, released holds) must NOT pay the
     driver money that never arrived.
     """
+    if getattr(trip, "payout_excluded", False):
+        return 0.0, 0.0
     fee = float(trip.cancellation_fee or 0.0)
     if fee <= 0 or not trip.driver_id:
         return 0.0, 0.0
@@ -263,7 +273,9 @@ async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]
             trip.id, fee, trip.payment_status,
         )
         return 0.0, 0.0
-    driver_share = round(fee * DRIVER_SHARE_RATE, 2)
+    driver_share = round(
+        fee * vehicle_tiers.driver_share_for_trip(trip), 2,
+    )
     platform_share = round(fee - driver_share, 2)
     trip.driver_earnings = driver_share
     trip.platform_fee = platform_share
@@ -279,44 +291,64 @@ async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]
     return driver_share, platform_share
 
 
-async def _credit_driver_earnings(db, trip: Trip) -> bool:
-    """Split a COMPLETED trip's fare (vehicle-type commission) and credit the
-    driver's balances.
+async def _credit_driver_earnings(
+    db, trip: Trip, collected_amount: float | None = None,
+) -> bool:
+    """Credit only new, verified fare collection, never the tip or a promise.
 
-    REAL-MONEY RULE (2026-08-17): only a trip whose fare was actually
-    collected (payment_status == "paid") may credit the driver. Test-mode
-    rides and failed charges used to hand drivers payable money that never
-    arrived. Trips still settling (ACH "processing") are credited by the
-    payment_intent.succeeded webhook through this same helper.
-
-    Idempotent: driver_earnings NOT NULL means the split already ran.
-    Tips are NOT included here — they are credited by the tip endpoint when
-    the tip charge itself succeeds (and added onto driver_earnings there
-    once it exists), so this helper splits only the fare.
-    Returns True when the credit was applied.
+    The durable cumulative ledger makes capture + webhook + manual retries
+    idempotent. A partial capture may credit only by passing the actual amount
+    collected; a bare ``payment_status='partial'`` never infers the full fare.
     """
+    if getattr(trip, "payout_excluded", False):
+        logging.info("[Split] Trip %s NOT credited — payout excluded", trip.id)
+        return False
     if trip.status != "completed" or not trip.driver_id \
             or not (trip.fare and trip.fare > 0):
         return False
-    if trip.driver_earnings is not None:
-        return False
-    if trip.payment_status != "paid":
+    if trip.payment_status not in ("paid", "partial"):
         logging.info(
             "[Split] Trip %s NOT credited — payment_status=%s (fare not collected)",
             trip.id, trip.payment_status,
         )
         return False
-    platform_rate, driver_rate = _get_commission(trip.vehicle_type)
-    trip.platform_fee = round(trip.fare * platform_rate, 2)
-    trip.driver_earnings = round(trip.fare * driver_rate, 2)
+    if collected_amount is None:
+        if trip.payment_status != "paid":
+            return False
+        target_cents = int(round(float(trip.fare) * 100))
+    else:
+        if not math.isfinite(collected_amount) or collected_amount <= 0:
+            return False
+        target_cents = int(round(collected_amount * 100))
+
+    previous_cents, target_cents = await fare_collection_delta(db, trip, target_cents)
+    if target_cents <= previous_cents:
+        return False
+    platform_rate, driver_rate = _get_trip_commission(trip)
+    driver_delta = round(
+        (target_cents / 100.0) * driver_rate, 2,
+    ) - round((previous_cents / 100.0) * driver_rate, 2)
+    platform_delta = round(
+        (target_cents / 100.0) * platform_rate, 2,
+    ) - round((previous_cents / 100.0) * platform_rate, 2)
+    if driver_delta <= 0:
+        return False
+
+    trip.driver_earnings = round(
+        float(trip.driver_earnings or 0.0) + driver_delta, 2,
+    )
+    trip.platform_fee = round(
+        float(trip.platform_fee or 0.0) + platform_delta, 2,
+    )
     _drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
     _drv = _drv_res.scalar_one_or_none()
     if _drv:
-        _drv.pending_balance = round((_drv.pending_balance or 0.0) + trip.driver_earnings, 2)
-        _drv.total_earnings = round((_drv.total_earnings or 0.0) + trip.driver_earnings, 2)
+        _drv.pending_balance = round((_drv.pending_balance or 0.0) + driver_delta, 2)
+        _drv.total_earnings = round((_drv.total_earnings or 0.0) + driver_delta, 2)
     logging.info(
-        "[Split] Trip %s fare %.2f split: driver %.2f / company %.2f",
-        trip.id, trip.fare, trip.driver_earnings, trip.platform_fee,
+        "[Split] Trip %s collected fare $%.2f (new $%.2f): driver +$%.2f / company +$%.2f",
+        trip.id, target_cents / 100.0, (target_cents - previous_cents) / 100.0,
+        driver_delta, platform_delta,
     )
     return True
 
@@ -463,23 +495,11 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
         # dispatches (main.py creates the hold off-session) and captured
         # when it completes. Immediate rides keep the up-front hold:
         # without it the ride is a free ride when the charge fails.
-        pi_id = body.stripe_payment_intent_id
-        if not pi_id and not body.scheduled_at:
+        if not body.stripe_payment_intent_id and not body.scheduled_at:
             raise HTTPException(
                 402,
                 "A payment hold is required before booking. Please retry payment.",
             )
-        if pi_id and _HAS_STRIPE:
-            try:
-                intent = _stripe_mod.PaymentIntent.retrieve(pi_id)
-                if intent.status != "requires_capture":
-                    raise HTTPException(
-                        402,
-                        f"Payment hold is not valid (status: {intent.status}). Please retry payment.",
-                    )
-            except _stripe_mod.error.StripeError as e:
-                logging.warning("[Trips] Invalid PaymentIntent %s: %s", pi_id, e)
-                raise HTTPException(402, "Payment verification failed. Please retry.")
 
     # A rider books only once the account is approved — identity captured is
     # not enough. Covers immediate, scheduled AND airport rides: all three
@@ -494,9 +514,44 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
             "for approval before requesting rides.",
         )
 
+    from routers.misc import routing_preview
+    quote = await routing_preview(
+        pickup_lat=body.pickup_lat,
+        pickup_lng=body.pickup_lng,
+        dropoff_lat=body.dropoff_lat,
+        dropoff_lng=body.dropoff_lng,
+        vehicle_type=body.vehicle_type or "comfort",
+        is_scheduled=bool(body.scheduled_at),
+        is_airport=bool(body.is_airport),
+        meet_inside=False,
+        db=db,
+    )
+    fare_info = quote.get("fare_estimate") or {}
+    fare_total = fare_info.get("total")
+    if not isinstance(fare_total, (int, float)) or not math.isfinite(fare_total) or fare_total <= 0:
+        raise HTTPException(502, "Could not calculate the ride price")
+
+    hold_intent = None
+    if body.stripe_payment_intent_id and not is_sandbox and user.id not in _tester_ids:
+        if not _HAS_STRIPE:
+            raise HTTPException(503, "Stripe not configured")
+        hold_intent = await validate_trip_hold(
+            db,
+            payment_intent_id=body.stripe_payment_intent_id,
+            rider=user,
+            expected_cents=int(round(fare_total * 100)),
+            stripe_module=_stripe_mod,
+        )
+
     data = body.model_dump()
     # SECURITY: Force rider_id to be the authenticated user (prevent spoofing)
     data["rider_id"] = user.id
+    data["fare"] = round(float(fare_total), 2)
+    data["scheduled_surcharge"] = float(fare_info.get("scheduled_surcharge") or 0.0)
+    data["airport_fee_applied"] = float(fare_info.get("airport_fee") or 0.0)
+    data["meet_greet_fee"] = float(fare_info.get("meet_greet_fee") or 0.0)
+    if hold_intent is not None:
+        data["payment_status"] = payment_status_for_intent(hold_intent)
     # Parse scheduled_at string → timezone-aware datetime (column is TIMESTAMP WITH TIME ZONE)
     raw_sa = data.get("scheduled_at")
     if raw_sa:
@@ -534,14 +589,6 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
         logging.error("create_trip DB error: %s", e)
         await db.rollback()
         raise HTTPException(500, f"Failed to create trip: {e}")
-
-    # If a PaymentIntent hold was provided, mark payment_status as "held"
-    # so the scheduled dispatcher re-verifies it and cancellation
-    # settles it through _release_or_capture_fee_on_cancel.
-    if trip.stripe_payment_intent_id and trip.payment_status == "unpaid":
-        trip.payment_status = "held"
-        await db.commit()
-        await db.refresh(trip)
 
     # ── Dispatch immediately ──
     # Creating a trip used to send it to nobody: offers were only ever made
@@ -977,232 +1024,208 @@ async def _release_or_capture_fee_on_cancel(trip) -> str:
         return "pending_refund"
 
 
-async def _charge_trip(trip, db: AsyncSession) -> dict:
-    """Charge the rider's default Stripe payment method for a completed trip.
-    If a payment hold (authorization) exists, capture it instead of creating a new charge.
-    Returns a dict with status and payment_intent_id."""
-    if trip.payment_status == "paid":
-        return {"status": "already_paid", "message": "Trip already charged"}
-
-    if not _HAS_STRIPE:
-        trip.payment_status = "paid"
-        await db.commit()
-        return {"status": "mock_paid", "payment_intent_id": None}
-
-    # If there's an existing hold (authorized PaymentIntent), capture it
-    if trip.stripe_payment_intent_id:
-        try:
-            existing = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(
-                    None, _stripe_mod.PaymentIntent.retrieve, trip.stripe_payment_intent_id),
-                timeout=10.0,
-            )
-            if existing.status == "requires_capture":
-                # Capture the FINAL fare, not blindly the authorized amount
-                # (2026-08-05). The fare can move after the hold: a mid-trip
-                # stop or wait fees push it UP, a closer destination pulls
-                # it DOWN. Capturing the raw hold overcharged the second
-                # case; Stripe cannot capture more than authorized in the
-                # first, so the shortfall is charged off-session below.
-                fare_cents = max(int(round(float(trip.fare or 0) * 100)), 50)
-                authorized = int(getattr(existing, "amount", 0) or 0)
-                capture_amount = min(fare_cents, authorized) if authorized else fare_cents
-                intent = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: _stripe_mod.PaymentIntent.capture(
-                            trip.stripe_payment_intent_id,
-                            amount_to_capture=capture_amount),
-                    ),
-                    timeout=10.0,
-                )
-                trip.payment_status = "paid" if intent.status == "succeeded" else "failed"
-                await db.commit()
-                logging.info(
-                    "[Capture] Trip %s hold captured $%.2f of $%.2f authorized (fare $%.2f) - status: %s",
-                    trip.id, capture_amount / 100.0, authorized / 100.0,
-                    fare_cents / 100.0, intent.status)
-
-                # Fare grew past the hold — collect the shortfall on the
-                # saved method. Best-effort: a failed top-up never unpays
-                # the captured part; it is logged loudly for review.
-                shortfall = fare_cents - authorized
-                if intent.status == "succeeded" and authorized and shortfall >= 50:
-                    try:
-                        pm_r = await db.execute(
-                            select(RiderPaymentMethod).where(
-                                RiderPaymentMethod.user_id == trip.rider_id,
-                                RiderPaymentMethod.method_type.in_(
-                                ("stripe_card", "apple_pay", "google_pay")),
-                                RiderPaymentMethod.stripe_pm_id.isnot(None),
-                            ).order_by(
-                                RiderPaymentMethod.is_default.desc(),
-                                RiderPaymentMethod.created_at.asc(),
-                            )
-                        )
-                        pm_extra = pm_r.scalars().first()
-                        rider_r = await db.execute(
-                            select(User).where(User.id == trip.rider_id))
-                        rider_row = rider_r.scalar_one_or_none()
-                        customer_id = getattr(rider_row, "stripe_customer_id", None)
-                        if pm_extra:
-                            extra_intent = await asyncio.wait_for(
-                                asyncio.get_event_loop().run_in_executor(
-                                    None,
-                                    lambda: _stripe_mod.PaymentIntent.create(
-                                        amount=shortfall,
-                                        currency="usd",
-                                        payment_method=pm_extra.stripe_pm_id,
-                                        **({"customer": customer_id} if customer_id else {}),
-                                        confirm=True,
-                                        off_session=True,
-                                        automatic_payment_methods={
-                                            "enabled": True,
-                                            "allow_redirects": "never"},
-                                        metadata={
-                                            "trip_id": str(trip.id),
-                                            "rider_id": str(trip.rider_id),
-                                            "kind": "fare_shortfall"},
-                                    ),
-                                ),
-                                timeout=15.0,
-                            )
-                            logging.info(
-                                "[Capture] Trip %s shortfall $%.2f charged - status: %s",
-                                trip.id, shortfall / 100.0, extra_intent.status)
-                        else:
-                            logging.warning(
-                                "[Capture] Trip %s shortfall $%.2f UNCOLLECTED - no saved card",
-                                trip.id, shortfall / 100.0)
-                    except Exception as extra_err:
-                        logging.warning(
-                            "[Capture] Trip %s shortfall $%.2f UNCOLLECTED: %s",
-                            trip.id, shortfall / 100.0, extra_err)
-
-                return {"status": intent.status, "payment_intent_id": intent.id, "amount": intent.amount}
-            elif existing.status == "succeeded":
-                trip.payment_status = "paid"
-                await db.commit()
-                return {"status": "succeeded", "payment_intent_id": existing.id, "amount": existing.amount}
-            elif existing.status == "processing":
-                # ACH: the debit was already initiated when the rider requested
-                # the ride and Stripe settles it over the next few business
-                # days. There is nothing to capture, and falling through to the
-                # card path below would charge a second time for riders who
-                # also have a card on file. payment_intent.succeeded /
-                # payment_failed webhooks flip this to paid/failed later.
-                trip.payment_status = "processing"
-                await db.commit()
-                logging.info("[Capture] Trip %s ACH debit still processing (pi=%s)", trip.id, existing.id)
-                return {"status": "processing", "payment_intent_id": existing.id, "amount": existing.amount}
-        except asyncio.TimeoutError:
-            logging.error("[Capture] Stripe timeout for trip %s", trip.id)
-            trip.payment_status = "pending"
-            await db.commit()
-            return {"status": "timeout", "payment_intent_id": trip.stripe_payment_intent_id}
-        except _stripe_mod.error.StripeError as e:
-            logging.error("[Capture] Failed for trip %s: %s", trip.id, e)
-            # Cancel the old hold before creating a new charge to prevent
-            # duplicate holds on the rider's card.
-            try:
-                await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(
-                        None, _stripe_mod.PaymentIntent.cancel, trip.stripe_payment_intent_id),
-                    timeout=10.0,
-                )
-                logging.info("[Capture] Cancelled old hold %s for trip %s", trip.stripe_payment_intent_id, trip.id)
-            except Exception as _cancel_err:
-                logging.warning("[Capture] Could not cancel old hold %s: %s", trip.stripe_payment_intent_id, _cancel_err)
-            # Fall through to create new charge
-
-    # No existing hold - charge the saved method directly.
-    # Cards first (they settle instantly — a card saved through Apple Pay /
-    # Google Pay counts, 2026-08-29); a linked bank account (ACH) is the
-    # fallback so riders who only ever linked a bank aren't a free ride. The
-    # ACH mandate created at attach time is what makes this debit legal.
+async def _charge_fare_shortfall(
+    trip: Trip, db: AsyncSession, shortfall_cents: int, collected_cents: int,
+) -> tuple[int, bool]:
+    if shortfall_cents < 50:
+        return collected_cents, False
     pm_r = await db.execute(
         select(RiderPaymentMethod).where(
             RiderPaymentMethod.user_id == trip.rider_id,
-            RiderPaymentMethod.method_type.in_(
-                ("stripe_card", "apple_pay", "google_pay", "bank_account")),
+            RiderPaymentMethod.method_type.in_(("stripe_card", "apple_pay", "google_pay")),
             RiderPaymentMethod.stripe_pm_id.isnot(None),
         ).order_by(
-            case((RiderPaymentMethod.method_type == "bank_account", 1), else_=0),
             RiderPaymentMethod.is_default.desc(),
             RiderPaymentMethod.created_at.asc(),
         )
     )
     pm = pm_r.scalars().first()
-
-    if not pm:
-        logging.warning("[Charge] No Stripe payment method on file for rider %s, trip %s", trip.rider_id, trip.id)
-        trip.payment_status = "failed"
-        await db.commit()
-        return {"status": "no_card", "payment_intent_id": None}
-
-    # Stripe rejects off_session charges against a customer-attached
-    # PaymentMethod unless the customer is passed too, and the ACH mandate is
-    # resolved through it. Without this the fallback charge 400s.
     rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
     rider = rider_r.scalar_one_or_none()
-    rider_customer_id = getattr(rider, "stripe_customer_id", None) if rider else None
-
-    amount_cents = max(int((trip.fare or 0) * 100), 50)  # Stripe min = 50c
-    # Cap at 120% of fare to prevent overcharge
-    max_allowed = int((trip.fare or 0) * 1.20 * 100)
-    if amount_cents > max_allowed > 0:
-        amount_cents = max_allowed
+    customer_id = getattr(rider, "stripe_customer_id", None) if rider else None
+    if pm is None:
+        logging.warning("[Capture] Trip %s shortfall UNCOLLECTED - no saved card", trip.id)
+        return collected_cents, False
     try:
-        intent = await asyncio.wait_for(
-            asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: _stripe_mod.PaymentIntent.create(
-                    amount=amount_cents,
-                    currency="usd",
-                    payment_method=pm.stripe_pm_id,
-                    **({"customer": rider_customer_id} if rider_customer_id else {}),
-                    confirm=True,
-                    off_session=True,
-                    automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
-                    metadata={"trip_id": str(trip.id), "rider_id": str(trip.rider_id)},
-                ),
-            ),
-            timeout=10.0,
+        extra = await stripe_call(
+            _stripe_mod.PaymentIntent.create,
+            amount=shortfall_cents,
+            currency="usd",
+            payment_method=pm.stripe_pm_id,
+            **({"customer": customer_id} if customer_id else {}),
+            confirm=True,
+            off_session=True,
+            automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+            metadata={
+                "trip_id": str(trip.id),
+                "rider_id": str(trip.rider_id),
+                "kind": "fare_shortfall",
+            },
+            idempotency_key=f"trip-shortfall-{trip.id}-{shortfall_cents}",
+            timeout=15.0,
         )
-        # ACH lands on 'processing', not 'succeeded' — treating that as failed
-        # would flag a perfectly good debit as a payment failure.
-        if intent.status == "succeeded":
+    except Exception as exc:
+        logging.warning("[Capture] Trip %s shortfall UNCOLLECTED: %s", trip.id, exc)
+        return collected_cents, False
+    if stripe_value(extra, "status") == "processing":
+        return collected_cents, True
+    if stripe_value(extra, "status") != "succeeded":
+        return collected_cents, False
+    try:
+        await validate_trip_payment(db, trip, extra, "fare_shortfall", require_trip_metadata=True)
+    except HTTPException as exc:
+        logging.error("[Capture] Trip %s shortfall failed ownership validation: %s", trip.id, exc.detail)
+        return collected_cents, False
+    received = max(0, min(amount_received(extra), shortfall_cents))
+    if received != shortfall_cents:
+        logging.error(
+            "[Capture] Trip %s shortfall amount mismatch: expected %s, received %s",
+            trip.id, shortfall_cents, amount_received(extra),
+        )
+    return collected_cents + received, False
+
+
+async def _charge_trip(trip, db: AsyncSession) -> dict:
+    """Collect the final fare and report the exact cumulative amount received."""
+    if trip.payment_status == "paid":
+        return {"status": "already_paid", "message": "Trip already charged"}
+    if not _HAS_STRIPE:
+        trip.payment_status = "paid"
+        await db.commit()
+        return {"status": "mock_paid", "payment_intent_id": None}
+
+    fare_cents = max(int(round(float(trip.fare or 0) * 100)), 50)
+    collected_cents = await fare_collected_cents(db, trip.id)
+    processing = False
+    stripe_status = "failed"
+    try:
+        if trip.stripe_payment_intent_id:
+            existing = await stripe_call(
+                _stripe_mod.PaymentIntent.retrieve,
+                trip.stripe_payment_intent_id,
+            )
+            await validate_trip_payment(db, trip, existing, "fare")
+            stripe_status = stripe_value(existing, "status", "failed")
+            main_succeeded = False
+            if stripe_status == "requires_capture":
+                remaining = max(0, fare_cents - collected_cents)
+                capture_amount = min(remaining, amount_authorized(existing))
+                if capture_amount <= 0:
+                    raise ValueError("PaymentIntent has no capturable amount")
+                intent = await stripe_call(
+                    _stripe_mod.PaymentIntent.capture,
+                    trip.stripe_payment_intent_id,
+                    amount_to_capture=capture_amount,
+                    idempotency_key=f"trip-capture-{trip.id}-{capture_amount}",
+                )
+                await validate_trip_payment(db, trip, intent, "fare")
+                stripe_status = stripe_value(intent, "status", "failed")
+                if stripe_status == "succeeded":
+                    collected_cents = min(
+                        fare_cents, max(collected_cents, capture_amount),
+                    )
+                    main_succeeded = True
+            elif stripe_status == "succeeded":
+                received = amount_received(existing)
+                if received > fare_cents:
+                    raise ValueError(
+                        f"PaymentIntent received {received} above fare {fare_cents}"
+                    )
+                collected_cents = max(collected_cents, received)
+                main_succeeded = True
+            elif stripe_status == "processing":
+                processing = True
+
+            if main_succeeded and collected_cents < fare_cents:
+                collected_cents, shortfall_processing = await _charge_fare_shortfall(
+                    trip, db, fare_cents - collected_cents, collected_cents,
+                )
+                processing = processing or shortfall_processing
+        else:
+            pm_r = await db.execute(
+                select(RiderPaymentMethod).where(
+                    RiderPaymentMethod.user_id == trip.rider_id,
+                    RiderPaymentMethod.method_type.in_(
+                        ("stripe_card", "apple_pay", "google_pay", "bank_account")),
+                    RiderPaymentMethod.stripe_pm_id.isnot(None),
+                ).order_by(
+                    case((RiderPaymentMethod.method_type == "bank_account", 1), else_=0),
+                    RiderPaymentMethod.is_default.desc(),
+                    RiderPaymentMethod.created_at.asc(),
+                )
+            )
+            pm = pm_r.scalars().first()
+            if pm is None:
+                trip.payment_status = "failed"
+                await db.commit()
+                return {"status": "no_card", "payment_intent_id": None}
+            rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = rider_r.scalar_one_or_none()
+            customer_id = getattr(rider, "stripe_customer_id", None) if rider else None
+            intent = await stripe_call(
+                _stripe_mod.PaymentIntent.create,
+                amount=fare_cents,
+                currency="usd",
+                payment_method=pm.stripe_pm_id,
+                **({"customer": customer_id} if customer_id else {}),
+                confirm=True,
+                off_session=True,
+                automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+                metadata={
+                    "trip_id": str(trip.id),
+                    "rider_id": str(trip.rider_id),
+                    "kind": "fare",
+                },
+                idempotency_key=f"trip-fare-{trip.id}-{fare_cents}",
+            )
+            await validate_trip_payment(db, trip, intent, "fare", require_trip_metadata=True)
+            trip.stripe_payment_intent_id = stripe_value(intent, "id")
+            stripe_status = stripe_value(intent, "status", "failed")
+            if stripe_status == "succeeded":
+                received = amount_received(intent)
+                if received > fare_cents:
+                    raise ValueError("Direct charge exceeded the final fare")
+                collected_cents = max(collected_cents, received)
+            elif stripe_status == "processing":
+                processing = True
+
+        if collected_cents >= fare_cents:
             trip.payment_status = "paid"
-        elif intent.status == "processing":
+        elif collected_cents > 0:
+            trip.payment_status = "partial"
+        elif processing:
             trip.payment_status = "processing"
         else:
             trip.payment_status = "failed"
-        trip.stripe_payment_intent_id = intent.id
         await db.commit()
-        logging.info("[Charge] Trip %s charged %sc - status: %s", trip.id, amount_cents, intent.status)
-        return {"status": intent.status, "payment_intent_id": intent.id, "amount": amount_cents}
+        return {
+            "status": stripe_status,
+            "payment_status": trip.payment_status,
+            "payment_intent_id": trip.stripe_payment_intent_id,
+            "amount": collected_cents,
+            "collected_cents": collected_cents,
+        }
     except asyncio.TimeoutError:
-        trip.payment_status = "pending"
+        logging.error("[Capture] Stripe timeout for trip %s", trip.id)
+        trip.payment_status = "partial" if collected_cents > 0 else "pending"
         await db.commit()
-        logging.error("[Charge] Stripe timeout for trip %s", trip.id)
-        return {"status": "timeout", "payment_intent_id": None}
-    except _stripe_mod.error.StripeError as e:
-        trip.payment_status = "failed"
+        return {
+            "status": "timeout",
+            "payment_status": trip.payment_status,
+            "payment_intent_id": trip.stripe_payment_intent_id,
+            "collected_cents": collected_cents,
+        }
+    except Exception as exc:
+        logging.error("[Capture] Failed for trip %s: %s", trip.id, exc)
+        trip.payment_status = "partial" if collected_cents > 0 else "failed"
         await db.commit()
-        logging.error("[Charge] Stripe error for trip %s: %s", trip.id, e)
-        # Send admin alert on charge failure
-        try:
-            from services.admin_alerts import send_alert, CRITICAL
-            _safe_create_task(send_alert(
-                "stripe_charge_failed",
-                "Stripe Charge Failed",
-                f"Trip #{trip.id}: {e}",
-                severity=CRITICAL,
-                data={"trip_id": trip.id, "rider_id": trip.rider_id, "amount": amount_cents},
-            ))
-        except Exception:
-            pass
-        return {"status": "failed", "error": str(getattr(e, "user_message", None) or e)}
+        return {
+            "status": "failed",
+            "payment_status": trip.payment_status,
+            "payment_intent_id": trip.stripe_payment_intent_id,
+            "collected_cents": collected_cents,
+            "error": str(exc),
+        }
 
 
 @router.post("/trips/{trip_id}/charge", dependencies=[Depends(_verify_api_key)])
@@ -1212,19 +1235,18 @@ async def charge_trip_endpoint(trip_id: int, user: User = Depends(_get_current_u
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
-    if trip.rider_id != user.id and user.role not in ("admin", "driver"):
+    is_owner_rider = user.role == "rider" and trip.rider_id == user.id
+    is_assigned_driver = user.role == "driver" and trip.driver_id == user.id
+    if not (is_owner_rider or is_assigned_driver or user.role == "admin"):
         raise HTTPException(403, "Not authorized")
     if trip.status != "completed":
         raise HTTPException(400, f"Trip is not completed (status: {trip.status})")
-    if trip.payment_status == "paid":
-        return {"status": "already_paid", "payment_intent_id": trip.stripe_payment_intent_id}
     result = await _charge_trip(trip, db)
-    # A manual charge that lands on an already-completed trip must run the
-    # same driver split as the auto-charge path — otherwise the fare is
-    # collected but the driver is never credited.
-    if trip.payment_status == "paid":
+    if trip.payment_status in ("paid", "partial"):
         try:
-            if await _credit_driver_earnings(db, trip):
+            collected = result.get("collected_cents")
+            amount = collected / 100.0 if collected is not None else None
+            if await _credit_driver_earnings(db, trip, collected_amount=amount):
                 await db.commit()
         except Exception as e:
             logging.error("[Charge] driver split failed for trip %s: %s", trip_id, e)
@@ -1239,46 +1261,24 @@ async def refund_trip_endpoint(
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Refund a paid trip. Admin/dispatch only, or rider for full refund."""
+    """Refund real Stripe money; never represent a database-only refund."""
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
     if user.role not in ("admin",) and trip.rider_id != user.id:
         raise HTTPException(403, "Not authorized to refund this trip")
-    if trip.payment_status != "paid" or not trip.stripe_payment_intent_id:
-        raise HTTPException(400, "Trip has not been paid via Stripe")
-    if trip.refund_status == "full":
-        return {"status": "already_refunded", "refund_amount": trip.refund_amount}
-
+    if amount is not None and (not math.isfinite(amount) or amount <= 0):
+        raise HTTPException(400, "Refund amount must be positive and finite")
     if not _HAS_STRIPE:
-        trip.refund_status = "full"
-        trip.refund_amount = trip.fare or 0.0
-        trip.refund_reason = reason
-        trip.payment_status = "refunded"
-        await db.commit()
-        return {"status": "mock_refunded", "refund_amount": trip.refund_amount}
-
-    try:
-        refund_params = {
-            "payment_intent": trip.stripe_payment_intent_id,
-            "reason": reason if reason in ("duplicate", "fraudulent", "requested_by_customer") else "requested_by_customer",
-            "metadata": {"trip_id": str(trip.id)},
-        }
-        if amount and amount > 0:
-            refund_params["amount"] = int(amount * 100)
-        refund = _stripe_mod.Refund.create(**refund_params)
-        refunded_dollars = round(refund.amount / 100, 2)
-        trip.refund_amount = round((trip.refund_amount or 0.0) + refunded_dollars, 2)
-        trip.refund_status = "full" if not amount else "partial"
-        trip.refund_reason = reason
-        trip.payment_status = "refunded"
-        await db.commit()
-        logging.info("[Refund] Trip %s refunded $%.2f -- reason: %s", trip.id, refunded_dollars, reason)
-        return {"status": "refunded", "refund_amount": refunded_dollars, "refund_id": refund.id}
-    except _stripe_mod.error.StripeError as e:
-        logging.error("[Refund] Stripe error for trip %s: %s", trip.id, e)
-        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+        raise HTTPException(503, "Stripe not configured")
+    return await execute_trip_refund(
+        db,
+        trip,
+        amount_cents=None if amount is None else int(round(amount * 100)),
+        reason=reason,
+        stripe_module=_stripe_mod,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1727,6 +1727,36 @@ async def confirm_pickup_pin(trip_id: int, body: PickupPinIn,
     return {"status": "ok", "synced": True}
 
 
+async def _apply_deferred_face_kick(db: AsyncSession, driver_id: Optional[int]) -> None:
+    """Face-check cut deferred while a rider was aboard (2026-10-23, owner
+    spec — same rule as the 12 h shift cap: the rider wins, the cut lands
+    when the trip closes). Dispatch sets face_kick_pending on the reject;
+    every path that frees the driver calls this. Fail-soft: a kick that
+    errors must never break the trip close itself."""
+    if not driver_id:
+        return
+    try:
+        res = await db.execute(select(User).where(User.id == driver_id))
+        drv = res.scalar_one_or_none()
+        if not drv or not drv.face_kick_pending:
+            return
+        drv.face_kick_pending = False
+        drv.is_online = False
+        drv.online_since = None
+        from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+        await expire_pending_offers_for_driver(db, drv.id, "face check rejected")
+        await db.commit()
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_driver_location(drv.id, drv.lat or 0, drv.lng or 0, False)
+            except Exception:
+                pass
+        logging.info("[FaceCheck] deferred kick landed — driver %s offline", driver_id)
+    except Exception as _kick_err:
+        logging.warning("[FaceCheck] deferred kick failed for driver %s: %s",
+                        driver_id, _kick_err)
+
+
 @router.patch("/trips/{trip_id}/status", dependencies=[Depends(_verify_api_key)])
 async def update_trip_status(trip_id: int, request: Request, status: str = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # ── Idempotency pre-check: if the same (trip, status) pair arrived in
@@ -2129,21 +2159,18 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
     # Socket.io, SSE and the Firestore mirror all fired immediately after the
     # commit, above the guest block — see the comment there.
 
-    # Auto-charge rider when trip is completed
     charge_result = None
-    if canonical_new == "completed" and trip.payment_status in ("unpaid", "held"):
+    if canonical_new == "completed" and trip.payment_status in ("unpaid", "held", "partial"):
         try:
             charge_result = await _charge_trip(trip, db)
         except Exception as e:
             logging.error("[AutoCharge] Failed for trip %s: %s", trip_id, e)
 
-    # Credit the driver's split ONLY now that the charge outcome is known
-    # (2026-08-17 real-money rule). Covers: card hold captured above, trips
-    # already paid before completion (ACH settled mid-trip) and the mock_paid
-    # no-Stripe path. ACH still "processing" is credited by the webhook.
-    if canonical_new == "completed" and trip.payment_status == "paid":
+    if canonical_new == "completed" and trip.payment_status in ("paid", "partial"):
         try:
-            if await _credit_driver_earnings(db, trip):
+            collected = charge_result.get("collected_cents") if charge_result else None
+            amount = collected / 100.0 if collected is not None else None
+            if await _credit_driver_earnings(db, trip, collected_amount=amount):
                 await db.commit()
         except Exception as e:
             logging.error("[Split] credit failed for trip %s: %s", trip_id, e)
@@ -2246,6 +2273,12 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
             await evaluate_driver_level(db, trip.driver_id)
         except Exception as e:
             logging.warning("[CruiseLevel] Post-trip evaluation failed for driver %s: %s", trip.driver_id, e)
+
+    # Deferred face-check kick (2026-10-23, owner spec): a selfie rejected
+    # while a rider was aboard takes the driver offline the moment the trip
+    # closes — never mid-trip.
+    if canonical_new in ("completed", "cancelled"):
+        await _apply_deferred_face_kick(db, trip.driver_id)
 
     return _trip_dict_for_user(trip, user)
 
@@ -2537,6 +2570,10 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # still sees it come down. Fail-soft inside.
     _safe_create_task(_push_ride_live_activity(trip.id, "cancelled"))
 
+    # Deferred face-check kick (2026-10-23): the rider's cancel also ends
+    # the trip for the assigned driver — the cut lands here.
+    await _apply_deferred_face_kick(db, trip.driver_id)
+
     return {**_trip_dict_for_user(trip, user), "cancellation_fee": cancellation_fee, "payment_status": trip.payment_status}
 
 # ---====================================================
@@ -2639,6 +2676,9 @@ async def driver_cancel_trip(
             logging.warning("[DriverCancel] in-trip rider FCM failed for trip %d: %s", trip.id, _fcm_err)
         # The rider's lock-screen card dies with the trip (2026-09-23).
         _safe_create_task(_push_ride_live_activity(trip.id, "cancelled"))
+        # Deferred face-check kick (2026-10-23): the trip closed — a selfie
+        # rejected mid-trip takes the driver offline now.
+        await _apply_deferred_face_kick(db, user.id)
         return {"status": "ok", "in_trip_cancelled": True}
     if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
@@ -2668,6 +2708,7 @@ async def driver_cancel_trip(
 
     # ── Return the trip to the dispatch pool (rematch) ──
     trip.driver_id = None
+    trip.rider_approach_notified_at = None
     trip.status = "requested"
     trip.cancel_reason = None  # fresh dispatch cycle — the record lives in the audit log
     trip.driver_assigned_at = None
@@ -2763,6 +2804,10 @@ async def driver_cancel_trip(
             "[DriverCancel] rematch failed for trip %d: %s — left as requested for retry agent",
             trip.id, _rematch_err,
         )
+
+    # Deferred face-check kick (2026-10-23): the cancelling driver is free —
+    # a selfie rejected mid-trip takes them offline now.
+    await _apply_deferred_face_kick(db, user.id)
 
     return {
         "status": "cancelled_by_driver",
@@ -3077,90 +3122,45 @@ async def serve_shared_trip_page(token: str):
 # ---====================================================
 
 @router.post("/trips/{trip_id}/rate", dependencies=[Depends(_verify_api_key)])
-async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    body = await request.json()
-    stars = body.get("stars", 5)
-    if stars < 1 or stars > 5:
-        raise HTTPException(400, "Stars must be 1-5")
-
+async def rate_trip(
+    trip_id: int,
+    body: RateTripIn,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     trip_result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = trip_result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
-
-    # Only allow rating completed or cancelled trips
-    if trip.status not in ("completed", "cancelled"):
+    if user.role != "rider" or trip.rider_id != user.id:
+        raise HTTPException(403, "Only the rider of this trip can rate it")
+    if trip.status != "completed":
         raise HTTPException(400, "Trip must be completed before rating")
+    if not trip.driver_id:
+        raise HTTPException(400, "Cannot rate - no driver on this trip")
 
-    # Determine who we're rating
-    to_user_id = trip.driver_id if user.id == trip.rider_id else trip.rider_id
-    if not to_user_id:
-        raise HTTPException(400, "Cannot rate - no counterpart on this trip")
-
-    # Prevent duplicate ratings
     existing = await db.execute(
         select(Rating).where(and_(Rating.trip_id == trip_id, Rating.from_user_id == user.id))
     )
     if existing.scalar_one_or_none():
         raise HTTPException(409, "Already rated this trip")
 
-    tip_amount = float(body.get("tip_amount", 0.0))
-
+    stars = body.stars
+    to_user_id = trip.driver_id
+    tip_result = await _charge_and_credit_tip(db, trip, user, body.tip_amount)
+    tip_amount = float(tip_result.get("tip_amount") or 0.0)
     rating = Rating(
         trip_id=trip_id,
         from_user_id=user.id,
         to_user_id=to_user_id,
         stars=stars,
-        comment=body.get("comment"),
+        comment=body.comment,
         tip_amount=tip_amount,
     )
     db.add(rating)
-
-    # Apply tip to trip and driver earnings (100% tip goes to driver)
-    if tip_amount > 0 and trip.driver_id:
-        trip.tip_amount = (trip.tip_amount or 0.0) + tip_amount
-        driver_result = await db.execute(select(User).where(User.id == trip.driver_id))
-        driver = driver_result.scalar_one_or_none()
-        if driver:
-            driver.pending_balance = (driver.pending_balance or 0.0) + tip_amount
-            driver.total_earnings = (driver.total_earnings or 0.0) + tip_amount
-        # Charge tip from rider's saved card
-        if _HAS_STRIPE and tip_amount >= 0.50:
-            try:
-                pm_r = await db.execute(
-                    select(RiderPaymentMethod).where(
-                        RiderPaymentMethod.user_id == user.id,
-                        RiderPaymentMethod.method_type.in_(
-                            ("stripe_card", "apple_pay", "google_pay")),
-                        RiderPaymentMethod.stripe_pm_id.isnot(None),
-                    ).order_by(RiderPaymentMethod.is_default.desc())
-                )
-                pm = pm_r.scalars().first()
-                if pm:
-                    tip_cents = max(int(tip_amount * 100), 50)
-                    tip_intent = await asyncio.wait_for(
-                        asyncio.get_event_loop().run_in_executor(
-                            None,
-                            lambda: _stripe_mod.PaymentIntent.create(
-                                amount=tip_cents,
-                                currency="usd",
-                                payment_method=pm.stripe_pm_id,
-                                confirm=True,
-                                off_session=True,
-                                automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
-                                metadata={"trip_id": str(trip_id), "type": "tip", "rider_id": str(user.id)},
-                            ),
-                        ),
-                        timeout=10.0,
-                    )
-                    trip.stripe_tip_payment_intent_id = tip_intent.id
-            except Exception as e:
-                logging.error("[Tip] Stripe charge failed for trip %s: %s", trip_id, e)
-
     await db.commit()
     await db.refresh(rating)
 
-    # Create notification for rated user
     notif = Notification(
         user_id=to_user_id,
         title="New Rating",
@@ -3221,19 +3221,12 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
         except Exception as e:
             logging.warning("[Rating] avg_rating update failed for driver %s: %s", trip.driver_id, e)
 
-    # Mirror: a driver rating the rider moves the rider's score, by its own
-    # steps (+1.0 for 4-5 stars, -0.3 for anything lower).
-    if to_user_id == trip.rider_id and trip.rider_id:
-        try:
-            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-            rider = rider_result.scalar_one_or_none()
-            if rider:
-                await rating_actions.apply_rider_rating(db, rider, stars)
-                await db.commit()
-        except Exception as e:
-            logging.warning("[Rating] avg_rating update failed for rider %s: %s", trip.rider_id, e)
-
-    return {"id": rating.id, "stars": rating.stars, "tip_amount": rating.tip_amount}
+    return {
+        "id": rating.id,
+        "stars": rating.stars,
+        "tip_amount": rating.tip_amount,
+        "stripe_status": tip_result.get("stripe_status"),
+    }
 
 @router.get("/users/{user_id}/ratings", dependencies=[Depends(_verify_api_key)])
 async def get_user_ratings(user_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -3368,76 +3361,124 @@ async def get_chat_messages(
 #  TIPPING
 # ---====================================================
 
+async def _charge_and_credit_tip(
+    db: AsyncSession, trip: Trip, user: User, tip_amount: float,
+) -> dict:
+    if user.role != "rider" or trip.rider_id != user.id:
+        raise HTTPException(403, "Only the rider of this trip can tip")
+    if trip.status != "completed":
+        raise HTTPException(400, "Can only tip completed trips")
+    if not trip.driver_id:
+        raise HTTPException(400, "Cannot tip a trip without a driver")
+    if not math.isfinite(tip_amount) or not 0 <= tip_amount <= 100:
+        raise HTTPException(400, "Tip must be a finite amount between 0 and 100")
+    if 0 < tip_amount < 0.50:
+        raise HTTPException(400, "A tip must be at least $0.50")
+    tip_cents = int(round(tip_amount * 100))
+    if tip_cents == 0:
+        return {"status": "ok", "tip_amount": 0.0, "stripe_status": "not_requested"}
+
+    locked_r = await db.execute(
+        select(Trip)
+        .where(Trip.id == trip.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    trip = locked_r.scalar_one()
+    if float(trip.tip_amount or 0.0) > 0:
+        return {
+            "status": "ok",
+            "tip_amount": float(trip.tip_amount),
+            "stripe_status": "already_credited",
+            "already": True,
+        }
+    if not _HAS_STRIPE:
+        return {
+            "status": "ok", "tip_amount": 0.0, "stripe_status": "stripe_unavailable",
+            "message": "Tip was not charged; driver was not credited.",
+        }
+
+    try:
+        if trip.stripe_tip_payment_intent_id:
+            intent = await stripe_call(
+                _stripe_mod.PaymentIntent.retrieve,
+                trip.stripe_tip_payment_intent_id,
+            )
+        else:
+            pm_r = await db.execute(
+                select(RiderPaymentMethod).where(
+                    RiderPaymentMethod.user_id == user.id,
+                    RiderPaymentMethod.method_type.in_(("stripe_card", "apple_pay", "google_pay")),
+                    RiderPaymentMethod.stripe_pm_id.isnot(None),
+                ).order_by(
+                    RiderPaymentMethod.is_default.desc(),
+                    RiderPaymentMethod.created_at.asc(),
+                )
+            )
+            pm = pm_r.scalars().first()
+            if pm is None:
+                return {
+                    "status": "ok", "tip_amount": 0.0, "stripe_status": "no_payment_method",
+                    "message": "Tip was not charged; driver was not credited.",
+                }
+            intent = await stripe_call(
+                _stripe_mod.PaymentIntent.create,
+                amount=tip_cents,
+                currency="usd",
+                payment_method=pm.stripe_pm_id,
+                **({"customer": user.stripe_customer_id} if user.stripe_customer_id else {}),
+                confirm=True,
+                off_session=True,
+                automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+                metadata={
+                    "trip_id": str(trip.id), "type": "tip", "kind": "tip",
+                    "rider_id": str(user.id),
+                },
+                idempotency_key=f"trip-tip-{trip.id}",
+            )
+    except Exception as exc:
+        logging.error("[Tip] Stripe charge failed for trip %s: %s", trip.id, exc)
+        return {
+            "status": "ok", "tip_amount": 0.0, "stripe_status": "failed",
+            "message": "Tip charge did not go through; driver was not credited.",
+        }
+
+    stripe_status = stripe_value(intent, "status", "failed")
+    intent_id = stripe_value(intent, "id", None)
+    if intent_id and not trip.stripe_tip_payment_intent_id:
+        trip.stripe_tip_payment_intent_id = intent_id
+    if stripe_status != "succeeded":
+        await db.commit()
+        return {
+            "status": "ok", "tip_amount": 0.0, "stripe_status": stripe_status,
+            "message": "Tip charge did not go through; driver was not credited.",
+        }
+
+    credited, paid_cents = await credit_tip_payment(
+        db, trip, intent, expected_cents=tip_cents,
+    )
+    await db.commit()
+    return {
+        "status": "ok",
+        "tip_amount": round(paid_cents / 100.0, 2),
+        "stripe_status": stripe_status,
+        "credited": credited,
+        "already": not credited,
+    }
+
+
 @router.post("/trips/{trip_id}/tip", dependencies=[Depends(_verify_api_key)])
-async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Add tip to a completed trip - credited directly to driver's balance."""
+async def add_tip(
+    trip_id: int,
+    body: TripTipIn,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
-    if trip.rider_id != user.id:
-        raise HTTPException(403, "Only the rider can tip")
-    if trip.status != "completed":
-        raise HTTPException(400, "Can only tip completed trips")
-    # Charge tip from rider's saved card FIRST (100% goes to driver).
-    # REAL-MONEY RULE (2026-08-17): the driver is credited ONLY when the
-    # charge actually succeeds — until then this credited the tip before
-    # even attempting the charge, paying drivers money that never arrived.
-    stripe_status = "not_charged"
-    tip_intent_id = None
-    if _HAS_STRIPE and tip_amount >= 0.50:
-        try:
-            pm_r = await db.execute(
-                select(RiderPaymentMethod).where(
-                    RiderPaymentMethod.user_id == user.id,
-                    RiderPaymentMethod.method_type.in_(
-                        ("stripe_card", "apple_pay", "google_pay")),
-                    RiderPaymentMethod.stripe_pm_id.isnot(None),
-                ).order_by(RiderPaymentMethod.is_default.desc())
-            )
-            pm = pm_r.scalars().first()
-            if pm:
-                tip_cents = max(int(tip_amount * 100), 50)
-                intent = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: _stripe_mod.PaymentIntent.create(
-                            amount=tip_cents,
-                            currency="usd",
-                            payment_method=pm.stripe_pm_id,
-                            confirm=True,
-                            off_session=True,
-                            automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
-                            metadata={"trip_id": str(trip_id), "type": "tip", "rider_id": str(user.id)},
-                        ),
-                    ),
-                    timeout=10.0,
-                )
-                stripe_status = intent.status
-                tip_intent_id = intent.id
-        except Exception as e:
-            logging.error("[Tip] Stripe charge failed for trip %s: %s", trip_id, e)
-            stripe_status = "failed"
-    # Without the Stripe SDK (dev/test) there is no charge to wait for; the
-    # tip applies as before. With Stripe, only a succeeded charge credits.
-    tip_collected = stripe_status == "succeeded" or not _HAS_STRIPE
-    if not tip_collected:
-        await db.commit()
-        return {"status": "ok", "tip_amount": 0.0, "stripe_status": stripe_status,
-                "message": "Tip charge did not go through — driver not credited."}
-    trip.tip_amount = round((trip.tip_amount or 0.0) + tip_amount, 2)
-    if tip_intent_id:
-        trip.stripe_tip_payment_intent_id = tip_intent_id
-    if trip.driver_id:
-        drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
-        drv = drv_res.scalar_one_or_none()
-        if drv:
-            drv.pending_balance = round((drv.pending_balance or 0.0) + tip_amount, 2)
-            drv.total_earnings = round((drv.total_earnings or 0.0) + tip_amount, 2)
-        if trip.driver_earnings is not None:
-            trip.driver_earnings = round(trip.driver_earnings + tip_amount, 2)
-    await db.commit()
-    return {"status": "ok", "tip_amount": tip_amount, "stripe_status": stripe_status}
+    return await _charge_and_credit_tip(db, trip, user, body.tip_amount)
 
 
 # ---====================================================

@@ -159,6 +159,8 @@ class TestAccountApprovalStaysManual:
         await db.refresh(veh)
 
         assert veh.approval_status == "approved"
+        assert veh.insurance_valid is True
+        assert veh.registration_valid is True
         assert (driver.verification_status or "") != "approved"
         assert driver.is_verified is False
         assert not [c for c in captured_pushes["fcm"]
@@ -214,6 +216,9 @@ class TestAccountApprovalStaysManual:
         await db.refresh(driver)
         await db.refresh(veh)
         assert veh.approval_status == "approved"
+        assert veh.insurance_valid is True
+        assert veh.registration_valid is True
+        assert veh.inspection_valid is True
         assert (driver.verification_status or "") != "approved"
 
     async def test_no_account_approval_push_on_repeat(

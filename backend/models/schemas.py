@@ -1,6 +1,6 @@
 """Cruise App — Pydantic request/response schemas."""
 
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -23,10 +23,14 @@ class RegisterIn(BaseModel):
     password: str
     photo_url: Optional[str] = None
     role: str = "rider"
+    registration_source: Literal["app", "dispatch"] = "app"
     # YYYY-MM-DD. Required (and 25+, user spec 2026-09-27) for drivers;
     # optional for riders in this legacy payload (the phone onboarding
     # collects it at the name step) but age-gated 18+ whenever present.
     date_of_birth: Optional[str] = None
+    # Driver gender (2026-10-23, owner spec): the guide's dress-code variant
+    # (VIP/std × hombre/mujer) reads it. male/female; anything else ignored.
+    gender: Optional[str] = None
 
     @field_validator('first_name', 'last_name')
     @classmethod
@@ -193,6 +197,16 @@ class CreateTripIn(BaseModel):
     stop_address: Optional[str] = None
 
 
+class RateTripIn(BaseModel):
+    stars: int = Field(..., ge=1, le=5)
+    comment: Optional[str] = Field(default=None, max_length=500)
+    tip_amount: float = 0.0
+
+
+class TripTipIn(BaseModel):
+    tip_amount: float
+
+
 class AcceptTripIn(BaseModel):
     driver_id: int
 
@@ -205,6 +219,7 @@ class DriverLocationIn(BaseModel):
     lat: float
     lng: float
     is_online: bool = True
+    eta_seconds: int | None = Field(default=None, ge=0)
 
 
 class DriverDestinationIn(BaseModel):
@@ -344,6 +359,87 @@ class AdminUpdateTripIn(BaseModel):
 
 class AdminCancelTripIn(BaseModel):
     reason: Optional[str] = None
+
+
+class AdminNotificationIn(BaseModel):
+    user_id: int = Field(..., gt=0)
+    title: str = Field(..., min_length=1, max_length=255)
+    body: str = Field(..., min_length=1, max_length=4000)
+    data: Optional[dict] = None
+
+    @field_validator("title", "body")
+    @classmethod
+    def validate_text(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Notification text cannot be blank")
+        return value
+
+
+PLATE_STATE_CODES = frozenset({
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA",
+    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA",
+    "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
+    "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX",
+    "UT", "VT", "VA", "WA", "WV", "WI", "WY", "PR",
+})
+
+
+class AdminVehicleUpdateIn(BaseModel):
+    make: Optional[str] = Field(None, max_length=100)
+    model: Optional[str] = Field(None, max_length=100)
+    year: Optional[int] = Field(None, ge=1900, le=2100)
+    color: Optional[str] = Field(None, max_length=50)
+    plate: Optional[str] = Field(None, max_length=15)
+    plate_state: Optional[str] = None
+    vehicle_type: Optional[str] = None
+
+    @field_validator("make", "model")
+    @classmethod
+    def validate_required_text(cls, value):
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("Make and model cannot be blank")
+        return value
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value):
+        return value.strip() if value is not None else value
+
+    @field_validator("plate")
+    @classmethod
+    def validate_plate(cls, value):
+        if value is None:
+            return value
+        value = value.strip().upper()
+        import re as _re
+        if not _re.fullmatch(r"[A-Z0-9][A-Z0-9 \-]{0,14}", value):
+            raise ValueError("Invalid license plate")
+        return value
+
+    @field_validator("plate_state")
+    @classmethod
+    def validate_plate_state(cls, value):
+        if value is None or not value.strip():
+            return None
+        value = value.strip().upper()
+        if value not in PLATE_STATE_CODES:
+            raise ValueError("Invalid plate state")
+        return value
+
+    @field_validator("vehicle_type")
+    @classmethod
+    def validate_vehicle_type(cls, value):
+        if value is None:
+            return value
+        from services.vehicle_tiers import LEGACY_TIER_MAP, TIERS
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        value = LEGACY_TIER_MAP.get(normalized, normalized)
+        if value not in TIERS:
+            raise ValueError("Invalid vehicle category")
+        return value
 
 
 class VehicleIn(BaseModel):

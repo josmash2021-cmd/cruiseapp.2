@@ -800,6 +800,7 @@ class ApiService {
     String? photoUrl,
     String role = 'rider',
     String? dateOfBirth,
+    String? gender,
   }) async {
     final res = await _client
         .post(
@@ -816,6 +817,7 @@ class ApiService {
             'role': role,
             if (dateOfBirth != null && dateOfBirth.isNotEmpty)
               'date_of_birth': dateOfBirth,
+            if (gender != null && gender.isNotEmpty) 'gender': gender,
           }),
         )
         .timeout(const Duration(seconds: 10));
@@ -2498,13 +2500,19 @@ class ApiService {
     required double lat,
     required double lng,
     bool isOnline = true,
+    int? etaSeconds,
   }) async {
     final h = await _authHeaders();
     final res = await _client
         .patch(
           Uri.parse('$_baseUrl/drivers/$driverId/location'),
           headers: h,
-          body: jsonEncode({'lat': lat, 'lng': lng, 'is_online': isOnline}),
+          body: jsonEncode({
+            'lat': lat,
+            'lng': lng,
+            'is_online': isOnline,
+            if (etaSeconds != null) 'eta_seconds': etaSeconds,
+          }),
         )
         .timeout(const Duration(seconds: 3));
     return _parse(res);
@@ -2928,6 +2936,26 @@ class ApiService {
         )
         .timeout(const Duration(seconds: 10));
     return _parse(res);
+  }
+
+  /// Public pre-signup check: does this driver referral code exist?
+  /// No JWT — the person holding the code has no account yet (they got it
+  /// from the /drive/{code} invite link). Returns {valid, code,
+  /// referrer_name}; never throws on an unknown code, just valid=false.
+  static Future<bool> validateDriverReferralCode(String code) async {
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/driver-referrals/validate?code=${Uri.encodeQueryComponent(code)}'),
+          headers: _jsonHeaders(),
+        )
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) return false;
+    try {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      return body['valid'] == true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Redeem someone else's referral code (one-time, at signup).
@@ -3916,6 +3944,32 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Daily face check (2026-10-23, owner spec): the liveness photo goes to
+  /// the server, which stores it and stamps last_face_verified_at. The 200
+  /// body is `{ok, pending_review}` — pending_review=true means the selfie
+  /// landed in MANUAL dispatch review (dress-code rejection path): the
+  /// driver must NOT connect until it clears.
+  /// null = upload failed, retry on the next GO tap (fail-open).
+  static Future<Map<String, dynamic>?> submitFaceCheck(
+      String photoPath) async {
+    try {
+      final bytes = await File(photoPath).readAsBytes();
+      final token = await getToken();
+      if (token == null) return null;
+      final res = await _client
+          .post(Uri.parse('$_baseUrl/drivers/face-check'),
+              headers: _jsonHeaders(token),
+              body: jsonEncode({'photo_b64': base64Encode(bytes)}))
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      return data is Map<String, dynamic> ? data : const {'ok': true};
+    } catch (e) {
+      debugPrint('submitFaceCheck failed: $e');
+      return null;
+    }
+  }
+
   /// Check if driver can go online (backend single source of truth).
   static Future<Map<String, dynamic>> canGoOnline() async {
     final h = await _authHeaders();
@@ -4256,13 +4310,13 @@ class ApiService {
   /// Get user notifications.
   /// ✅ QUICK WIN #3: Added 5s cache for notification list
   /// Short TTL keeps them fresh while reducing API load
-  static Future<List<Map<String, dynamic>>> getNotifications() async {
+  static Future<List<Map<String, dynamic>>> getNotifications({bool useCache = true}) async {
     final h = await _authHeaders();
     final res = await _cachedGet(
       Uri.parse('$_baseUrl/notifications'),
       headers: h,
       cacheTtl: const Duration(seconds: 5),
-      useCache: true,
+      useCache: useCache,
     );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
@@ -4285,6 +4339,16 @@ class ApiService {
     await _client
         .post(Uri.parse('$_baseUrl/notifications/read-all'), headers: h)
         .timeout(const Duration(seconds: 5));
+  }
+
+  static Future<void> deleteNotification(int notifId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .delete(Uri.parse('$_baseUrl/notifications/$notifId'), headers: h)
+        .timeout(const Duration(seconds: 5));
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception('Notification delete failed (${res.statusCode})');
+    }
   }
 
   // ═══════════════════════════════════════════════════════
@@ -4959,6 +5023,72 @@ class ApiService {
         )
         .timeout(const Duration(seconds: 15));
     return _parse(res);
+  }
+
+  // ── Digital contracts (e-acceptance, 2026-10-21 — Uber-style) ────────────
+  //
+  // The five required driver contracts live server-side (legal_documents
+  // table, dispatch-editable). Acceptance is a ConsentLog row with the full
+  // evidence (version, content hash, IP, user agent, device info, exact
+  // timestamp); can_go_online refuses drivers with any contract pending.
+
+  /// `{contracts: [{slug, title_en, title_es, version, accepted_version,
+  /// accepted_at, needs_acceptance}], all_current}` for the signed-in driver.
+  static Future<Map<String, dynamic>> getContracts() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/legal/contracts'), headers: h)
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Full markdown of one contract: `{slug, title, version, locale,
+  /// content_markdown, content_hash}` (EN fallback when `lang` is missing).
+  static Future<Map<String, dynamic>> getContract(String slug,
+      {String lang = 'en'}) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/legal/contracts/$slug?lang=$lang'),
+            headers: h)
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Record the verifiable e-acceptance of one contract. The version must
+  /// be the current one — a stale text can never be signed (400).
+  static Future<Map<String, dynamic>> acceptContract({
+    required String slug,
+    required String version,
+    required String contentHash,
+    String deviceInfo = '',
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/legal/contracts/$slug/accept'),
+          headers: h,
+          body: jsonEncode({
+            'version': version,
+            'content_hash': contentHash,
+            'device_info': deviceInfo,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// The signed-copy PDF receipt (evidence block + the exact text the
+  /// driver accepted), as raw bytes for save/share.
+  static Future<Uint8List> downloadContractReceipt(String slug) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/legal/contracts/$slug/receipt.pdf'),
+            headers: h)
+        .timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) {
+      throw ApiException(res.statusCode, 'receipt download failed');
+    }
+    return res.bodyBytes;
   }
 
   /// Fetch the current user's consent history (all consent types).

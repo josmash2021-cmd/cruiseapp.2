@@ -46,6 +46,8 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
     OnboardingItem.registration,
     OnboardingItem.insurance,
     OnboardingItem.inspection,
+    // contracts NO va aquí (user spec 2026-10-21: "no en el to-do") — la
+    // firma llega por el gate automático antes del GO y el boot check.
   ];
 
   /// Items whose card opens the capture page directly (no intro step).

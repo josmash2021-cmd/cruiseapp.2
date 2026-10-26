@@ -28,7 +28,11 @@ void main() {
   final splash =
       File('lib/screens/splash_screen.dart').readAsStringSync();
   final mainDart = File('lib/main.dart').readAsStringSync();
-  final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
+  // CRLF-agnostic: the checkout converts line endings on Windows
+  // (core.autocrlf), and a needle spanning a line break must still match.
+  final l10n = File('lib/l10n/app_localizations.dart')
+      .readAsStringSync()
+      .replaceAll('\r\n', '\n');
 
   group('mock art — real illustration, OTA image chain', () {
     test('hero is the mock illustration: asset → /static → drawn widgets', () {
@@ -309,11 +313,15 @@ void main() {
     test('an approval gate runs at mount, live, and on the socket', () {
       expect(online, contains('_enforceAccountApproval();'),
           reason: 'the gate runs from initState');
-      expect(online, contains('LocalDataService.getDriverApprovalStatus()'),
-          reason: 'a cached non-approved status bounces at mount');
-      expect(online, contains('ApiService.getDriverApprovalStatus()'),
-          reason: 'a live re-check refreshes the truth (fail-open on '
-              'network failure)');
+      final gateIdx = online.indexOf('void _enforceAccountApproval()');
+      expect(gateIdx, isNonNegative);
+      final region = online.substring(gateIdx, gateIdx + 2200);
+      expect(region, contains('ApiService.getDriverApprovalStatus()'),
+          reason: 'the live re-check always runs and decides');
+      expect(region, isNot(contains('_approvalGatesOut(cached)')),
+          reason: 'a stale cache NEVER ejects by itself (prod 2026-10-17: '
+              'a just-approved driver with a pending cache would be bounced '
+              'out of the home) — only live truth or the socket ejects');
       expect(online, contains('SocketService.accountStatusStream.listen'),
           reason: 'the account_status_changed socket ejects live');
       expect(online, contains('_approvalStatusSub?.cancel();'),

@@ -37,6 +37,14 @@ ALLOWLIST = (
 )
 
 
+def _contains_dispatch_signing_material(text: str) -> bool:
+    crypto = "crypto.subtle.importKey" in text and "crypto.subtle.sign" in text
+    hmac = bool(re.search(r"[\"']HMAC[\"']", text))
+    api_key = bool(re.search(r"[\"']X-API-Key[\"']", text))
+    signature = bool(re.search(r"[\"']X-Signature[\"']", text))
+    return crypto and hmac and api_key and signature
+
+
 def _tracked_files():
     out = subprocess.run(
         ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True,
@@ -55,12 +63,34 @@ def test_no_real_secrets_are_committed():
             text = f.read_text(encoding="utf-8", errors="ignore")
         except (OSError, UnicodeError):
             continue
-        if len(text) > 2_000_000:  # skip binaries & giant bundles
-            continue
         for name, pat in PATTERNS.items():
             if pat.search(text):
                 offenders.append(f"{rel}: {name}")
+        if _contains_dispatch_signing_material(text):
+            offenders.append(f"{rel}: Dispatch signing material in browser code")
     assert not offenders, (
         "Secret(s) committed to the repo — rotate NOW and purge history:\n"
         + "\n".join(offenders)
     )
+
+
+def test_dispatch_signing_detector_matches_a_synthetic_bundle():
+    fixture = """
+    const key = "synthetic-fixture-not-a-credential";
+    async function sign(bytes) {
+      const keyObject = await crypto.subtle.importKey(
+        "raw", key, {name: "HMAC", hash: "SHA-256"}, false, ["sign"]
+      );
+      return crypto.subtle.sign("HMAC", keyObject, bytes);
+    }
+    const headers = {"X-API-Key": key, "X-Signature": "synthetic"};
+    """
+    assert _contains_dispatch_signing_material(fixture)
+
+
+def test_dispatch_signing_detector_allows_cookie_adapter():
+    fixture = """
+    async function Yr() { return {Accept: "application/json"}; }
+    fetch("/admin/example", {credentials: "same-origin", headers: await Yr()});
+    """
+    assert not _contains_dispatch_signing_material(fixture)

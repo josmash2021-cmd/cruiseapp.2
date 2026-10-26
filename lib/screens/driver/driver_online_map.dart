@@ -23,9 +23,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// on-screen size instead of three times it.
   double get _dotAnnotIconSize {
     final hiRes = _goldDot.currentBytesHiRes != null;
-    return _dotPopScale *
-        GoldLocationDot.offerMarkerScale.value *
-        (hiRes ? 1 / GoldLocationDot.rasterScale : 1.0);
+    return GoldLocationDot.driverAnnotationIconSize(
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      highRes: hiRes,
+      scale: _dotPopScale * GoldLocationDot.offerMarkerScale.value,
+    );
   }
 
   /// Shrink the driver badge toward the pickup/dropoff beads while an
@@ -38,9 +40,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// state, so this one hook covers them all. The animation itself is
   /// idempotent — re-asserting the current target is a no-op.
   void _syncArrowScale() {
-    final target = _previewingOffer != null
-        ? GoldLocationDot.offerMarkerScaleSmall
-        : 1.0;
+    final target =
+        _previewingOffer != null ? GoldLocationDot.offerMarkerScaleSmall : 1.0;
     GoldLocationDot.animateOfferMarkerScale(
       this,
       target,
@@ -131,6 +132,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             // driver — same _heading the nav car uses, already smoothed by
             // _motion (shortest-arc, low-passed).
             iconRotate: _heading,
+            isDraggable: false,
             // Born hidden if the Flutter overlay is already drawing the
             // marker. Creation set no opacity, so a fresh annotation arrived
             // fully visible under an overlay painting the same arrow — two
@@ -138,9 +140,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             // path below writes the opacity every time, so it did correct
             // itself, but only on the next tick: up to two seconds while the
             // driver is standing still and the watchdog is the only caller.
-            iconOpacity: _dotOverlayOwnsMarker ? 0.0 : 1.0,
+            iconOpacity: _overlayWantsMarker ? 0.0 : 1.0,
           ));
           _goldDotAnnotGen = _mapGeneration;
+          _goldDotHidden = _overlayWantsMarker;
           if (!_dotPopDone) _animateDotPop();
         } catch (_) {
         } finally {
@@ -153,7 +156,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       // annotation (cheap, synchronous). Only gate the mgr.update() IPC call.
       // This ensures the dot never stalls between async flushes — every tick
       // carries the latest position, and the next update() always sends it.
-      final overlayOwns = _dotOverlayOwnsMarker;
+      final overlayWanted = _overlayWantsMarker;
       try {
         _goldDotAnnot!.geometry = mapbox.Point(
             coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
@@ -162,9 +165,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         // driver would see two: the smooth one and this one stepping behind
         // it. Kept alive and kept current rather than deleted, so the moment
         // they pan away it is already in the right place.
-        _goldDotAnnot!.iconOpacity = overlayOwns ? 0.0 : 1.0;
+        _goldDotAnnot!.iconOpacity = overlayWanted ? 0.0 : 1.0;
         _goldDotAnnot!.iconSize = _dotAnnotIconSize;
         _goldDotAnnot!.iconRotate = _heading;
+        _goldDotAnnot!.isDraggable = false;
       } catch (_) {
         // Annotation became invalid (rare). Null it so next tick recreates.
         _goldDotAnnot = null;
@@ -175,7 +179,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       // While the overlay owns the marker there is nothing to look at here,
       // so send one flush to hide it and then leave the channel alone — the
       // map itself is what needs that bandwidth at sixty frames a second.
-      if (overlayOwns && _goldDotHidden) return;
+      if (overlayWanted && _goldDotHidden) return;
 
       // Fire update() only when previous IPC finished. If busy, the geometry
       // write above already captured the latest position — no info lost,
@@ -193,7 +197,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         // busy channel dropped the hide but kept the latch — every later
         // call early-returned, and the native arrow stayed visible, frozen
         // where it was, next to the overlay's live one.
-        _goldDotHidden = overlayOwns;
+        _goldDotHidden = overlayWanted;
       } catch (_) {
         // Delete before nulling: a transient failure must not orphan a
         // visible native annotation — the recreate path would stack a
@@ -240,6 +244,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             image: navCarBytes,
             iconSize: 1.2,
             iconRotate: _heading,
+            isDraggable: false,
             iconAnchor: mapbox.IconAnchor.CENTER,
             iconOffset: [0, 0],
           ));
@@ -261,6 +266,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _carAnnot!.geometry = mapbox.Point(
             coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
         _carAnnot!.iconRotate = _heading;
+        _carAnnot!.isDraggable = false;
       } catch (_) {
         _carAnnot = null;
         _carAnnotGen = 0;
@@ -360,7 +366,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// routeSummary, enRoute, inTrip — the old phase gate left preview and
   /// summary unsnapped, user report 2026-09-27); while searching there is
   /// no route, so the line is the matched polyline the RoadSnapService
-  /// maintains from the driver's own trace. With neither, raw GPS.
+  /// maintains from the driver's own trace. If that line is absent or not
+  /// trusted, the real GPS keeps feeding SmoothMotion instead of freezing
+  /// or jumping to a stale line; a later match rejoins with bounded motion.
   ///
   /// Hysteresis on the boundary, and continuity on the segment. The old flat
   /// 40 m in/out rule flickered: a fix at 39 m snapped to the lane, the next
@@ -372,67 +380,21 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   LatLng _snapToRoute(LatLng raw) {
     final onRoute = _routePts.length >= 2;
     final pts = onRoute ? _routePts : _roadLinePts;
-    if (pts.length < 2) {
-      _routeSnapActive = false;
-      _snapSegIdx = -1;
-      _snapOnRouteSrc = onRoute;
-      return raw;
-    }
-    // Source switch (a route appeared, or vanished): the segment
-    // bookkeeping belongs to the old line. Leaving the route also means a
-    // fresh search — the road trace restarts with it.
     if (_snapOnRouteSrc != onRoute) {
       _snapOnRouteSrc = onRoute;
-      _routeSnapActive = false;
-      _snapSegIdx = -1;
       if (onRoute) {
         _roadLinePts = const [];
         _roadSnap.reset();
       }
     }
-    double bestDist = double.infinity;
-    LatLng best = raw;
-    int bestIdx = -1;
-    for (int i = 0; i < pts.length - 1; i++) {
-      final candidate = _closestPointOnSegment(
-        raw,
-        pts[i],
-        pts[i + 1],
-      );
-      final d = _hav(raw, candidate);
-      if (d < bestDist) {
-        bestDist = d;
-        best = candidate;
-        bestIdx = i;
-      }
-    }
-    // Lane continuity: keep the segment we are on unless another wins by a
-    // real margin (8 m) — not by GPS noise. _hav is kilometres here.
-    if (_snapSegIdx >= 0 && _snapSegIdx < pts.length - 1) {
-      final prev = _closestPointOnSegment(
-          raw, pts[_snapSegIdx], pts[_snapSegIdx + 1]);
-      final dPrev = _hav(raw, prev);
-      if (dPrev < bestDist + 0.008) {
-        best = prev;
-        bestDist = dPrev;
-        bestIdx = _snapSegIdx;
-      }
-    }
-    final limitKm = _routeSnapActive ? 0.055 : 0.035;
-    if (bestDist <= limitKm) {
-      _routeSnapActive = true;
-      _snapSegIdx = bestIdx;
-      // Road line only: eat it behind the driver so the matched polyline
-      // stays a local window (the route has its own trim).
-      if (!onRoute && bestIdx > 2) {
-        _roadLinePts = _roadLinePts.sublist(bestIdx - 2);
-        _snapSegIdx = 2;
-      }
-      return best;
-    }
-    _routeSnapActive = false;
-    _snapSegIdx = -1;
-    return raw;
+    final result = _roadLock.project(
+      pts,
+      raw,
+      requireConfidence: !onRoute,
+      speedMps: _motion.speedMps,
+    );
+    _roadLockBearing = result.trusted ? result.bearing : null;
+    return driverDisplayPosition(result, raw);
   }
 
   /// The RoadSnapService found a better street line: swap the projection
@@ -441,86 +403,24 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   void _onRoadSnapLine(List<LatLng> line) {
     if (!mounted || line.length < 2) return;
     _roadLinePts = line;
-    _routeSnapActive = false; // re-enter hysteresis against the new line
-    _snapSegIdx = -1;
   }
 
-  /// Closest point on segment [a→b] to point [p] (flat lat/lng approximation).
-  LatLng _closestPointOnSegment(LatLng p, LatLng a, LatLng b) {
-    final dx = b.longitude - a.longitude;
-    final dy = b.latitude - a.latitude;
-    final len2 = dx * dx + dy * dy;
-    if (len2 < 1e-12) return a;
-    final t =
-        ((p.longitude - a.longitude) * dx + (p.latitude - a.latitude) * dy) /
-            len2;
-    final tc = t.clamp(0.0, 1.0);
-    return LatLng(a.latitude + tc * dy, a.longitude + tc * dx);
-  }
-
-  /// Per-frame snap of the RENDERED arrow onto the active line (user report
-  /// 2026-10-02: "la flecha se sale de las líneas de las calles y luego se
-  /// reincorpora").
-  ///
-  /// [_snapToRoute] clamps the TARGET once per fix (~1 Hz), but the rendered
-  /// marker comes from SmoothMotion with an extrapolated lead of up to 2 s
-  /// of travel past that target — at city speed that is 10-20 m past the end
-  /// of the matched line, visibly off the road, and the next fix dragged it
-  /// back. So the target lived on the road while the arrow did not. This
-  /// re-projects the engine's output onto the same line every frame, so the
-  /// arrow never leaves it between fixes either.
-  ///
-  /// Read-only and cheap: it reuses the segment hint [_snapSegIdx] the fix
-  /// snap maintains and only scans a small window around it (O(1)/frame);
-  /// when the fix snap is not engaged (no line, or the car is genuinely far
-  /// from it) the engine's point passes through untouched — we never force
-  /// the marker onto a road it is not on.
   LatLng _snapRenderedToLine(LatLng p) {
-    if (!_routeSnapActive || _snapSegIdx < 0) return p;
     final onRoute = _routePts.length >= 2;
     final pts = onRoute ? _routePts : _roadLinePts;
-    if (pts.length < 2) return p;
-
-    double bestDist = double.infinity;
-    LatLng best = p;
-    final from = (_snapSegIdx - 4).clamp(0, pts.length - 2);
-    final to = (_snapSegIdx + 4).clamp(0, pts.length - 2);
-    for (int i = from; i <= to; i++) {
-      final candidate = _closestPointOnSegment(p, pts[i], pts[i + 1]);
-      final d = _hav(p, candidate);
-      if (d < bestDist) {
-        bestDist = d;
-        best = candidate;
-      }
+    if (pts.length < 2 && _roadLock.lastPoint == null) return p;
+    final result = _roadLock.project(
+      pts,
+      p,
+      requireConfidence: !onRoute,
+      speedMps: _motion.speedMps,
+    );
+    if (!result.trusted) return driverDisplayPosition(result, p);
+    if (result.bearing != null && _motion.speedMps >= 1.0) {
+      _motion.setBearing(result.bearing!);
     }
-    // The matched road line ends at the last fix; the engine's lead runs
-    // past it. Let the projection ride the final segment's direction a
-    // little further instead of parking at the line's end (routes already
-    // extend far ahead, so this only matters for the road line).
-    if (!onRoute && bestDist > 0.004 && pts.length >= 2) {
-      final a = pts[pts.length - 2];
-      final b = pts[pts.length - 1];
-      final brg = _bearingBetween(a, b) * math.pi / 180;
-      for (final extM in <double>[8.0, 16.0, 25.0]) {
-        final ext = LatLng(
-          b.latitude + (extM / 110540.0) * math.cos(brg),
-          b.longitude +
-              (extM /
-                      (111320.0 * math.cos(b.latitude * math.pi / 180))) *
-                  math.sin(brg),
-        );
-        final candidate = _closestPointOnSegment(p, a, ext);
-        final d = _hav(p, candidate);
-        if (d < bestDist) {
-          bestDist = d;
-          best = candidate;
-        }
-      }
-    }
-    // Sanity: the engine moves smoothly, so a projection far from the
-    // engine's point means the line went stale — keep the raw point rather
-    // than yank the arrow across the map onto an old line.
-    return bestDist <= 0.040 ? best : p;
+    _roadLockBearing = result.bearing;
+    return driverDisplayPosition(result, p);
   }
 
   double _bearingBetween(LatLng a, LatLng b) {
@@ -657,8 +557,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
               size: kOfferEndpointSize, rasterScale: kEndpointRasterScale),
         ]);
         if (!mounted || _previewingOffer == null) return;
-        _prevPickupAnnot =
-            await pointMgr.create(mapbox.PointAnnotationOptions(
+        _prevPickupAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(
               coordinates:
                   mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
@@ -666,8 +565,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           iconSize: 1 / kEndpointRasterScale,
           iconAnchor: mapbox.IconAnchor.CENTER,
         ));
-        _prevDropoffAnnot =
-            await pointMgr.create(mapbox.PointAnnotationOptions(
+        _prevDropoffAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(
               coordinates:
                   mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
@@ -677,8 +575,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         ));
         final stopLL = _offerStopPoint(offer);
         if (stopLL != null) {
-          _prevStopAnnot =
-              await pointMgr.create(mapbox.PointAnnotationOptions(
+          _prevStopAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(
                 coordinates:
                     mapbox.Position(stopLL.longitude, stopLL.latitude)),
@@ -787,8 +684,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _isClearingAnnotations = true;
     // Every preview entry/exit funnels through here with _previewingOffer
     // already at its new value — the one place that starts the badge's
-    // shrink/grow glide no matter which path opened or closed the offer.
+    // shrink/grow glide and refreshes the spotlight for the new state.
     _syncArrowScale();
+    unawaited(_syncZoneLayers());
     try {
       // Web overlays live in the GL JS controller, not in annotation
       // managers — clear them by the ids the preview draws with.
@@ -1124,7 +1022,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
               _previewPickupAnnot = created;
             } else {
               // Preview dismissed while create() was in flight.
-              try { await polyMgr.delete(created); } catch (_) {}
+              try {
+                await polyMgr.delete(created);
+              } catch (_) {}
             }
           } catch (_) {}
         }
@@ -1258,8 +1158,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // cameraForCoordinatesPadding already works out the zoom from the
     // spread of what it is given, so a short hop and a cross-town run each
     // get the zoom they need; it just has to be given the real shape.
-    await _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL,
-        stopLL: stopLL));
+    await _fitBoundsMulti(
+        _routeFramePoints(driverPos, pickupLL, dropoffLL, stopLL: stopLL));
     if (!mounted || _previewingOffer == null) {
       _isCardAnimating = false;
       return;
@@ -1450,8 +1350,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     debugPrint('[OfferRoute] web draw: '
         'seg1=${_fullSegOne.length} seg2=${_fullSegTwo.length} points, '
         'layer=${web.hasLayer('cruise-polyline-offerSegOne')}, '
-        'painted=${web.renderedFeatureCount(
-            'cruise-polyline-offerSegOne', midOne.longitude, midOne.latitude)}');
+        'painted=${web.renderedFeatureCount('cruise-polyline-offerSegOne', midOne.longitude, midOne.latitude)}');
     // Re-assert the lines over the next seconds: if the style finished
     // loading late, or anything wiped runtime layers after the draw, the
     // first pass is gone and the card gives no second chance.
@@ -1463,8 +1362,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         drawSegments(w);
         debugPrint('[OfferRoute] web re-assert ($delayMs ms): '
             'layer=${w.hasLayer('cruise-polyline-offerSegOne')}, '
-            'painted=${w.renderedFeatureCount('cruise-polyline-offerSegOne',
-                midOne.longitude, midOne.latitude)}');
+            'painted=${w.renderedFeatureCount('cruise-polyline-offerSegOne', midOne.longitude, midOne.latitude)}');
       });
     }
 
@@ -1963,9 +1861,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       {List<LatLng>? waypoints}) async {
     final via = (waypoints == null || waypoints.isEmpty)
         ? null
-        : waypoints
-            .map((p) => '${p.latitude},${p.longitude}')
-            .join('|');
+        : waypoints.map((p) => '${p.latitude},${p.longitude}').join('|');
     final chain = [o, ...?waypoints, d]
         .map((p) => '${p.longitude},${p.latitude}')
         .join(';');
@@ -2090,12 +1986,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
   /// The plugin exposes no onRotateListener (2.20), so a two-finger twist
   /// is only observable as the camera's bearing diverging from the value
-  /// the follow ticker last wrote. Divergence beyond ~4° IS the driver
-  /// rotating by hand — unlatch follow (the 10 s auto-refollow returns the
-  /// heading-up chase), otherwise the chase would fight the twist 60 times
-  /// a second. Programmatic flights are suppressed by [_camFlightUntil].
+  /// the follow ticker last wrote. Divergence beyond ~4° releases follow
+  /// only with two fingers present, so a delayed chase write cannot be
+  /// mistaken for a gesture. Programmatic flights use [_camFlightUntil].
   void _maybeUnlatchOnManualRotate(mapbox.CameraState cam) {
     if (!_cameraFollowing || _previewingOffer != null) return;
+    if (_mapPointers < 2) return;
     if (DateTime.now().isBefore(_camFlightUntil)) return;
     final written = _lastCamWriteBearing;
     if (written == null) return;
@@ -2112,35 +2008,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// sixty times a second — the map fought the finger and sprang back the
   /// instant they let go.
   ///
-  /// The marker keeps tracking the whole time. It stops being the Flutter
-  /// overlay pinned to the centre and becomes the Mapbox annotation at its
-  /// true coordinates, so a driver who has panned away still sees exactly
-  /// where they are, off to the side of the view or off screen entirely.
+  /// The marker stays a vector overlay projected from the real coordinates
+  /// on every rendered frame. The pointer guard releases follow before the
+  /// next chase write, so the map moves under the finger instead of fighting
+  /// it. Only the manual recenter re-engages it.
   void _onCameraMoveStarted() {
-    // Phantom-gesture guard (2026-10-12, "el botón de recentrar no hace
-    // nada" — prod: taps landed=true y el FAB jamás se iba): durante un
-    // vuelo PROGRAMÁTICO el plugin puede escupir callbacks de scroll/zoom
-    // sin dedo encima — el propio flyTo del recentrado des-latchaba el
-    // follow y cancelaba el resume, dejando el FAB arriba para siempre con
-    // la cámara ya en casa. Sin dedo y dentro de la ventana de vuelo = no
-    // es un gesto. Un dedo REAL mid-flight (pointers > 0) siempre gana.
     if (_mapPointers == 0 && DateTime.now().isBefore(_camFlightUntil)) {
       _phantomGestureEvents++;
       return;
     }
-    _lastMapPanAt = DateTime.now();
-    _reFollowTimer?.cancel();
-    // A recentre in flight is abandoned the moment the driver grabs the map
-    // again — otherwise its resume would fire mid-gesture and snap the view
-    // out from under their finger. Only a finger reaches this method: it is
-    // wired to onScrollListener, which a programmatic flyTo does not trip.
-    _followResumeTimer?.cancel();
-    // Auto-resume ten seconds after the last drag, not ten seconds after the
-    // first: a driver still moving the map around should not have it yanked
-    // out from under them mid-gesture.
-    if (_autoRecenterEnabled) {
-      _reFollowTimer = Timer(const Duration(seconds: 10), _recenterCamera);
-    }
+    _cameraActionGate.begin();
+    _recenterLanding = null;
     // ONE arrow, always (user report 2026-10-10: "que la flecha sea la misma
     // cuando hace zoom o mueve el mapa que cuando está normal" — size jump,
     // wrong heading and a double-arrow flicker on every gesture). The overlay
@@ -2169,27 +2047,115 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// flag until the camera has arrived keeps the arrow on the ground the
   /// whole way: the map slides under it and it ends up centred because it
   /// really is, not because it was told to be.
+  void _maybeCompleteRecenter(mapbox.CameraState cam) {
+    final guard = _recenterLanding;
+    if (guard == null) return;
+    if (!_cameraActionGate.isCurrent(guard.sequence)) {
+      _recenterLanding = null;
+      return;
+    }
+    final center = cam.center.coordinates;
+    final cameraPoint = LatLng(center.lat.toDouble(), center.lng.toDouble());
+    if (!guard.isLanding(_cameraActionGate, cameraPoint)) return;
+    _recenterLanding = null;
+    if (!mounted) return;
+    _setState(() => _cameraFollowing = true);
+    _updateDriverAnnotation();
+    ApiService.logClientEvent(
+        'recenter_settle', 'landed=true phantoms=$_phantomGestureEvents');
+  }
+
+  Future<void> _recenterWithFollow({
+    required double zoom,
+    required double bearing,
+    required double tilt,
+  }) async {
+    final seq = _cameraActionGate.begin();
+    final pos = _pos;
+    if (pos == null) {
+      ApiService.logClientEvent('recenter_fired', 'no_position');
+      if (mounted) _setState(() => _cameraFollowing = true);
+      return;
+    }
+    if (_cameraFollowing) _setState(() => _cameraFollowing = false);
+    _recenterLanding = RecenterLandingGuard(seq, pos);
+    _pendingCamWrite = null;
+    _zoomEaseDone = true;
+    _cameraBearing = bearing;
+    final options = mapbox.CameraOptions(
+      center: mapbox.Point(
+          coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+      zoom: zoom,
+      bearing: bearing,
+      pitch: tilt,
+      padding: _kZeroCamPadding,
+    );
+    _camFlightUntil = DateTime.now()
+        .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
+    var issued = false;
+    var landed = false;
+    if (kIsWeb) {
+      final web = _webMap;
+      issued = web != null;
+      if (web != null) {
+        web.flyTo(
+          lng: pos.longitude,
+          lat: pos.latitude,
+          zoom: zoom,
+          bearing: bearing,
+          pitch: tilt,
+          durationMs: _kRecenterFlightMs,
+        );
+        landed = true;
+      }
+    } else {
+      final map = _map;
+      if (mounted && _mapMounted && map != null) {
+        issued = true;
+        try {
+          await map
+              .flyTo(options,
+                  mapbox.MapAnimationOptions(duration: _kRecenterFlightMs))
+              .timeout(const Duration(milliseconds: _kRecenterFlightMs + 2000));
+          landed = true;
+        } catch (e) {
+          debugPrint('[DriverOnline] recenter flyTo failed: $e');
+        }
+        if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
+        if (!landed && _mapMounted && identical(map, _map)) {
+          try {
+            await map.setCamera(options).timeout(const Duration(seconds: 2));
+            landed = true;
+          } catch (e) {
+            debugPrint('[DriverOnline] recenter fallback failed: $e');
+            ApiService.logClientEvent('recenter_settle_write', 'failed=$e');
+          }
+        }
+      }
+    }
+    if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
+    ApiService.logClientEvent('recenter_fired', '$issued');
+    if (kIsWeb && landed) {
+      _recenterLanding = null;
+      _setState(() => _cameraFollowing = true);
+      _updateDriverAnnotation();
+      return;
+    }
+    final cam = _onlineCamState;
+    if (cam != null) _maybeCompleteRecenter(cam);
+    if (!issued) {
+      _recenterLanding = null;
+      _setState(() => _cameraFollowing = true);
+      _updateDriverAnnotation();
+    }
+  }
+
   void _recenterCamera() {
     if (!mounted) return;
-    // Diag breadcrumb (2026-10-11, "el botón de recentrar no funciona"):
-    // the tap + the flight outcome land in the server log — visible without
-    // the device. Removed once the chain is proven healthy on prod.
     ApiService.logClientEvent('recenter_tap',
         'online=$_driverOnline phase=$_phase hasPos=${_pos != null} mapMounted=$_mapMounted hasMap=${_map != null}');
     _phantomGestureEvents = 0;
-    _reFollowTimer?.cancel();
-    _followResumeTimer?.cancel();
-    // An offer preview owns the frame: the route (driver → pickup →
-    // dropoff) is fitted above the card, and the ten-second auto-refollow
-    // after a pan must not yank the camera back onto the driver and leave
-    // the route behind. The driver explores freely until the offer closes.
     if (_previewingOffer != null) return;
-    // Recenter by mode (user specs 2026-10-13/14): OFFLINE = centre ON THE
-    // ARROW at the zone-view zoom ("el botón de centrar solo va a centrar
-    // donde esté la flecha, pero con ese zoom mostrando las zonas") — never
-    // the state-centroid frame; ONLINE = centre the ARROW ("el de la derecha
-    // será para centrar en la flecha") — the zone frame lives on the LEFT
-    // compass FAB (_onZoneCompassTap).
     if (_phase == _Phase.searching &&
         FeatureFlags.zonesMapEnabled &&
         !_driverOnline) {
@@ -2198,111 +2164,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
     final bearing = _smoothedBearing;
-    _cameraBearing = bearing; // sync for sprite selection
-    if (_pos == null) {
-      // No position to fly to, so there is no flight to wait out.
-      _setState(() => _cameraFollowing = true);
-      return;
-    }
     final isNav = _phase == _Phase.enRouteToPickup ||
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
-    // Recenter = the SAME in every mode (user spec 2026-10-12: "que funcione
-    // igual que cuando el driver está activo"): centre the arrow at street
-    // zoom, heading-up. The offline region view (10.8) stays as the resting
-    // state at boot/mode-flip — but this button means "take me to my arrow".
-    final fired = isNav
-        ? _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55)
-        // Searching: flat but HEADING-UP (user spec 2026-09-19) — the same
-        // rotation the per-frame chase keeps writing once follow resumes.
-        : _animateToPosition(_pos!, zoom: 15.5, bearing: bearing, tilt: 0);
-    ApiService.logClientEvent('recenter_fired', '$fired');
-    if (!fired) {
-      // The glide was vetoed (dead/remounting surface, mid ease) — flip
-      // follow NOW and let the per-frame chase centre the camera on the
-      // next frames. Never silent (user report 2026-10-11: "el botón de
-      // centrar offline no hace nada").
-      _setState(() => _cameraFollowing = true);
-      _updateDriverAnnotation();
-      return;
-    }
-
-    // The flyTo above runs for _kRecenterFlightMs. A little past that, the
-    // camera is where the marker already is and handing the overlay back to
-    // its centred mode changes nothing on screen.
-    //
-    // Not awaited: flyTo's future resolves on the native side and is
-    // rejected outright if the view goes away mid-flight, so the resume
-    // would be lost exactly when the driver most needs the camera to come
-    // back. A timer always fires, and _onCameraMoveStarted cancels it if
-    // they grab the map again.
-    _followResumeTimer = Timer(
-      const Duration(milliseconds: _kRecenterFlightMs + 40),
-      () {
-        if (!mounted) return;
-        _setState(() => _cameraFollowing = true);
-        // The overlay owns the marker again from this frame — flush the
-        // annotation to opacity 0 NOW (user report 2026-09-19, "se crean
-        // 2 flechas"): a parked driver produces no ticker frames, so no
-        // indirect caller was guaranteed to run this — the stale visible
-        // annotation and the overlay drew two arrows after pinch-zoom +
-        // recenter, for as long as the car stood still.
-        _updateDriverAnnotation();
-      },
-    );
-
-    // Settle check (2026-10-11: prod log shows recenter_fired=true yet the
-    // camera never moves — the native flyTo is issued and goes nowhere on
-    // this device). One beat after the flight we compare where the camera
-    // ACTUALLY sits: if it never arrived, a dry setCamera always lands — a
-    // dead button is worse than an unanimated jump, and the server log now
-    // carries the real outcome.
-    final settleTarget = _pos!;
-    // Same target as the flight above: online parity (2026-10-12 spec).
-    final settleZoom = isNav ? 17.5 : 15.5;
-    final settleTilt = isNav ? 55.0 : 0.0;
-    final tapAt = DateTime.now();
-    Timer(Duration(milliseconds: _kRecenterFlightMs + 200), () {
-      if (!mounted || kIsWeb) return;
-      final map = _map;
-      if (map == null || !_mapMounted) return;
-      // The driver grabbed the map again mid-flight — never fight the finger.
-      final lastPan = _lastMapPanAt;
-      if (lastPan != null && lastPan.isAfter(tapAt)) return;
-      final cam = _onlineCamState;
-      if (cam == null) return;
-      final c = cam.center.coordinates;
-      bool near(LatLng t) =>
-          (c.lat.toDouble() - t.latitude).abs() < 0.0005 &&
-          (c.lng.toDouble() - t.longitude).abs() < 0.0005;
-      final landed = near(settleTarget) || (_pos != null && near(_pos!));
-      ApiService.logClientEvent(
-          'recenter_settle', 'landed=$landed phantoms=$_phantomGestureEvents');
-      if (landed) return;
-      // Same discipline as every programmatic flight: suppress the manual-
-      // rotate unlatch and sync the last-written trackers, or THIS write's
-      // camera events read as a finger and the recenter FAB pops back up
-      // the moment the camera lands (user report 2026-10-12).
-      _camFlightUntil = DateTime.now()
-          .add(const Duration(milliseconds: _kRecenterFlightMs + 120));
-      _lastCamWriteCenter = settleTarget;
-      _lastCamWriteBearing = bearing;
-      _lastCamWriteZoom = settleZoom;
-      unawaited(map
-          .setCamera(mapbox.CameraOptions(
-        center: mapbox.Point(
-            coordinates: mapbox.Position(
-                settleTarget.longitude, settleTarget.latitude)),
-        zoom: settleZoom,
-        bearing: bearing,
-        pitch: settleTilt,
-        padding: _kZeroCamPadding,
-      ))
-          .catchError((Object e) {
-        debugPrint('[DriverOnline] recenter settle setCamera failed: $e');
-        ApiService.logClientEvent('recenter_settle_write', 'failed=$e');
-      }));
-    });
+    unawaited(_recenterWithFollow(
+      zoom: isNav ? 17.5 : 15.5,
+      bearing: bearing,
+      tilt: isNav ? 55 : 0,
+    ));
   }
 
   /// True while the marker is the Flutter overlay rather than the Mapbox
@@ -2316,6 +2185,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// back to the annotation, and FlatMapProjection decides that itself by
   /// returning null, so there is no phase check here to keep in sync.
   bool get _dotOverlayOwnsMarker {
+    if (kIsWeb) return _overlayWantsMarker;
+    if (_goldDotAnnot != null && !_goldDotHidden) return false;
+    return _overlayWantsMarker;
+  }
+
+  bool get _overlayWantsMarker {
     if (_pos == null) return false;
     // Web: one arrow for the whole app — this same Flutter overlay, placed
     // at the driver's projected pixel on this same map. While the preview
@@ -2370,21 +2245,21 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       if (p == null || web == null || size == null) return null;
       final off = web.pixelForCoordinate(p.longitude, p.latitude);
       if (!off.dx.isFinite || !off.dy.isFinite) return null;
-      if (off.dx < 0 || off.dy < 0 ||
+      if (off.dx < 0 ||
+          off.dy < 0 ||
           off.dx > size.width ||
           off.dy > size.height) {
         return null;
       }
       return off;
     }
-    // Centred while the camera follows — except during the offer preview,
-    // where the driver is an endpoint of the framed route, not the centre
-    // of the screen, so the arrow needs its real projected pixel.
-    if (_cameraFollowing && _previewingOffer == null) return null;
     final cam = _onlineCamState;
     final p = _pos;
     final size = _onlineMapSize;
     if (cam == null || p == null || size == null) return null;
+    if (_cameraFollowing && _previewingOffer == null) {
+      return Offset(size.width / 2, size.height / 2) + _camPadShift(cam);
+    }
     final c = cam.center.coordinates;
     final off = FlatMapProjection.screenOffsetHeading(
       target: p,
@@ -2400,13 +2275,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return shifted;
   }
 
-
   // ══════════════════════════════════════════════════════════════════
-  //  SECTOR LAYERS (2026-10-12, user spec: big SECTORS — "no de mini
-  //  ciudad en mini ciudad si no por sectores" — always visible in gray
-  //  with thick gray boundaries; dispatch turns a sector gold by demand
-  //  level with an optional +$ bonus pill; the driver's tap selection
-  //  paints brighter). ONE small source per sector — the single 83 KB
+  //  SECTOR LAYERS: big regions with gold boundaries. Offline, Dispatch
+  //  demand controls four gold opacities; a manually disabled sector is
+  //  gray. The selected active sector gets a brighter traveling border.
+  //  ONE small source per sector — the single 83 KB
   //  all-cities source never materialized on iOS, while ~5 KB sources
   //  draw fine (the size class of the proven highlight source).
   //  The fields live in the state class (extensions can't declare them).
@@ -2465,12 +2338,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         }
       }
       final demandSig = ZoneService.demand.entries
-          .map((e) => '${e.key}:${e.value.level}')
+          .map((e) => '${e.key}:${e.value.level}:${e.value.off}')
           .join('|');
       // The visible-state set rides the signature: crossing a state line
       // (or the first fix landing) repaints the look for the new state.
       final visibleIds = _zoneVisibleIds();
-      final visibleSig = visibleIds.join('|');
+      final visibleSig =
+          '${visibleIds.join('|')}|offer:${_previewingOffer != null}';
       if (_zoneLayersVisible != visible ||
           _zoneLookOnline != online ||
           _zoneDemandSig != demandSig ||
@@ -2599,8 +2473,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// The paint transition every zone layer carries (450 ms, no delay).
   static const _kZonePaintTransition = {'duration': 450, 'delay': 0};
 
-  List<Future<void>> _sectorTransitionWrites(
-      mapbox.MapboxMap map, Sector s) {
+  List<Future<void>> _sectorTransitionWrites(mapbox.MapboxMap map, Sector s) {
     final sid = s.id;
     return [
       _guardedStyleWrite(map.style.setStyleLayerProperty(
@@ -2623,24 +2496,20 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _addSectorSource(
       mapbox.MapboxMap map, Sector s, String emptyFc) {
     final sid = s.id;
-    // lineMetrics: true — habilita line-progress para la onda de selección
-    // (el gradiente viajero del borde, spec 2026-10-16).
-    return _guardedStyleWrite(map.style.addSource(mapbox.GeoJsonSource(
-        id: 'sec-src-$sid', data: emptyFc, lineMetrics: true)));
+    return _guardedStyleWrite(map.style
+        .addSource(mapbox.GeoJsonSource(id: 'sec-src-$sid', data: emptyFc)));
   }
 
-  /// The look per the user's specs (2026-10-12/14, ajustados 2026-10-16):
-  /// offline every sector paints its heat gold (tres niveles) con un borde
-  /// NEGRO con su sombra 3D; online ninguna zona pinta relleno ni highlight
-  /// — el mapa queda en su color normal debajo de las vías y solo quedan
-  /// el borde negro y su sombra.
+  /// Offline every sector paints one of four gold demand opacities; online
+  /// only the borders remain. Active borders are gold; a sector switched
+  /// off by Dispatch is gray instead.
   List<Future<void>> _addSectorLayers(mapbox.MapboxMap map, Sector s,
       [String? fillBelowId]) {
     final sid = s.id;
     final fill = mapbox.FillLayer(
       id: 'sec-fill-$sid',
       sourceId: 'sec-src-$sid',
-      fillColor: 0xFFE8C547, // 2026-10-15: zonas AMARILLAS (el gris/blanco murió)
+      fillColor: 0xFFE8C547,
       fillOpacity: 0.0,
     );
     return [
@@ -2651,7 +2520,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
         id: 'sec-shadow-$sid',
         sourceId: 'sec-src-$sid',
-        lineColor: 0xFF000000,
+        lineColor: 0xFFE8C547,
         lineWidth: 3.4,
         lineOpacity: 0.0,
         lineTranslate: const [0.0, 2.0],
@@ -2660,11 +2529,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
         id: 'sec-line-$sid',
         sourceId: 'sec-src-$sid',
-        // 2026-10-16 (user spec: "la linea que bordea la zona quiero que sea
-        // linea negra"): el borde gold murió — negro, como la sombra 3D.
-        lineColor: 0xFF000000,
+        lineColor: 0xFFE8C547,
         lineWidth: 2.4,
         lineOpacity: 0.0,
+      ))),
+      _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
+        id: 'sec-glow-$sid',
+        sourceId: 'sec-src-$sid',
+        lineColor: 0xFFFFE066,
+        lineWidth: 3.4,
+        lineOpacity: 0.0,
+        lineJoin: mapbox.LineJoin.ROUND,
       ))),
     ];
   }
@@ -2729,13 +2604,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
   }
 
-  /// Fill/line visibility + color per sector. Base (no dispatch heat): thin
-  /// gold wash offline, nothing online + the black boundary with its shadow.
-  /// Level 1 ("Dorado"): gold semi-transparent. Level 2 ("Ocupado"): more
-  /// gold. Level 3 ("Muy ocupado"): 100% solid gold (user spec 2026-10-12).
-  /// ONLINE ninguna zona pinta relleno (2026-10-15/16 specs: "debajo de las
-  /// vías el color normal del mapa", "quítale el amarillo cuando el driver
-  /// está activo") — solo quedan el borde negro y su sombra sobre las calles.
+  /// Offline fills go from the faintest gold (Sin viajes) to the strongest
+  /// semi-transparent gold (Muy ocupado). Online only borders remain: gold
+  /// for active sectors, gray for a sector switched off by Dispatch.
   Future<void> _writeZoneVisibility(mapbox.MapboxMap map, bool visible,
       bool online, Set<String> visibleIds) async {
     // The fill stacking follows the mode (offline on top / online under the
@@ -2761,27 +2632,26 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         visible && online && sel != null && _previewingOffer == null;
     await _writeZoneDim(map, spotlight ? ZoneService.sectorById(sel) : null);
     try {
-      await map.style
-          .setStyleLayerProperty('sec-hl-fill', 'fill-opacity', 0.0);
+      await map.style.setStyleLayerProperty('sec-hl-fill', 'fill-opacity', 0.0);
     } catch (_) {}
   }
 
   /// The spotlight mask: a world-sized polygon with the chosen sector's
   /// outer rings as holes. `null` = mask off (every sector visible).
   Future<void> _writeZoneDim(mapbox.MapboxMap map, Sector? sec) async {
+    final effectiveSec = _previewingOffer == null ? sec : null;
     var fc = <String, dynamic>{
       'type': 'FeatureCollection',
       'features': const [],
     };
-    if (sec != null) {
+    if (effectiveSec != null) {
       // Ring 0 of each poly is the sector's outer boundary — each becomes a
       // hole in the world ring (the sector's own holes stay dimmed: they
       // are not part of the zone either).
       final holes = [
-        for (final poly in sec.polys)
+        for (final poly in effectiveSec.polys)
           [
-            for (final p in poly.first)
-              [p.longitude, p.latitude]
+            for (final p in poly.first) [p.longitude, p.latitude]
           ]
       ];
       if (holes.isNotEmpty) {
@@ -2813,7 +2683,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await map.style
           .setStyleSourceProperty('sec-dim-src', 'data', jsonEncode(fc));
       await map.style.setStyleLayerProperty(
-          'sec-dim', 'fill-opacity', sec == null ? 0.0 : 0.70);
+          'sec-dim', 'fill-opacity', effectiveSec == null ? 0.0 : 0.25);
     } catch (e) {
       debugPrint('[Zones] dim write failed: $e');
     }
@@ -2822,51 +2692,48 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _writeSectorLook(
       mapbox.MapboxMap map, Sector s, bool visible, bool online) async {
     final sid = s.id;
-    final level = visible ? (ZoneService.demand[sid]?.level ?? 0) : 0;
-    final fillColor = 0xFFE8C547; // amarillo siempre; el nivel solo mueve la opacidad
-    // Heat ladder (user spec 2026-10-13): Apagado = wash mínimo, Busy = gold
-    // ALMOST solid, Ocupado = more, Muy ocupado = 100% solid gold — OFFLINE
-    // only: ONLINE ninguna zona pinta relleno (2026-10-15/16: "debajo de las
-    // vías el color normal del mapa"; el highlight de selección también
-    // murió online 2026-10-16 — quedan borde negro + sombra).
+    final demand = visible ? ZoneService.demand[sid] : null;
+    final off = demand?.off ?? false;
+    final level = off ? 0 : demand?.level ?? 0;
+    const gold = 0xFFE8C547;
+    const gray = 0xFF7F858E;
+    final color = off ? gray : gold;
+    // Offline: Sin viajes 8%, Lento 18%, Ocupado 32%, Muy ocupado 48%.
+    // Online solo quedan los bordes. El apagado manual siempre gana: gris.
     final fillOpacity = !visible || online
         ? 0.0
-        : level == 0
-            ? 0.07
-            : level == 1
-                ? 0.80
-                : level == 2
-                    ? 0.90
-                    : 1.0;
+        : off
+            ? 0.20
+            : level == 0
+                ? 0.08
+                : level == 1
+                    ? 0.18
+                    : level == 2
+                        ? 0.32
+                        : 0.48;
     try {
       await Future.wait([
-        map.style
-            .setStyleLayerProperty('sec-fill-$sid', 'fill-color', fillColor),
+        map.style.setStyleLayerProperty('sec-fill-$sid', 'fill-color', color),
         map.style.setStyleLayerProperty(
             'sec-fill-$sid', 'fill-opacity', fillOpacity),
+        map.style.setStyleLayerProperty('sec-line-$sid', 'line-color', color),
         map.style.setStyleLayerProperty(
             'sec-line-$sid', 'line-opacity', visible ? 0.85 : 0.0),
-        map.style.setStyleLayerProperty('sec-shadow-$sid', 'line-opacity',
-            visible && online ? 0.35 : 0.0),
+        map.style.setStyleLayerProperty('sec-shadow-$sid', 'line-opacity', 0.0),
+        map.style.setStyleLayerProperty('sec-glow-$sid', 'line-opacity', 0.0),
       ]);
     } catch (_) {}
   }
 
-  // ── Onda de selección en el BORDE (user spec 2026-10-16: "si el driver
-  // selecciona una zona no se prendera en amarillo si no el borde se
-  // iluminara en tendra animacion de onda smooth y fluida") — el fill gold
-  // de selección murió; el borde del sector elegido se enciende y una banda
-  // brillante lo recorre en loop (lineGradient sobre line-progress; el
-  // source nace con lineMetrics: true). Solo offline + searching. Los campos
-  // (`_zoneWaveTimer`/`_zoneWaveSectorId`/`_zoneWavePhase`) viven en la clase
-  // State — una extension no declara campos.
+  // Selected sector: a bright gold pulse on its own layer, never a gradient.
+  // This keeps polygon borders gold on native Mapbox builds where the old
+  // line-gradient path could render the selected sector black.
   void _syncZoneWave() {
     final sel = _selectedZoneName;
     final active = _map != null &&
         !kIsWeb &&
         _mapMounted &&
         _zoneLayersReady &&
-        !_driverOnline &&
         _phase == _Phase.searching &&
         sel != null;
     if (!active) {
@@ -2874,27 +2741,35 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
     if (_zoneWaveSectorId != sel) {
-      _stopZoneWave(); // restaura el borde anterior
+      _stopZoneWave();
       _zoneWaveSectorId = sel;
       _zoneWavePhase = 0;
       _paintZoneWaveBase(sel);
     }
-    _zoneWaveTimer ??= Timer.periodic(const Duration(milliseconds: 100), (_) {
+    _zoneWaveTimer ??= Timer.periodic(const Duration(milliseconds: 200), (_) {
       _tickZoneWave();
     });
   }
 
-  /// El borde seleccionado se enciende: dorado de base, un pelo más grueso.
+  double get _zoneGlowOpacity =>
+      0.60 + 0.40 * (0.5 + 0.5 * math.sin(_zoneWavePhase * 2 * math.pi));
+
   Future<void> _paintZoneWaveBase(String sid) async {
     final map = _map;
     if (map == null || kIsWeb) return;
     try {
       await Future.wait([
-        map.style.setStyleLayerProperty(
-            'sec-line-$sid', 'line-color', 0xFFE8C547),
+        map.style
+            .setStyleLayerProperty('sec-line-$sid', 'line-color', 0xFFE8C547),
         map.style.setStyleLayerProperty('sec-line-$sid', 'line-width', 3.0),
+        map.style
+            .setStyleLayerProperty('sec-glow-$sid', 'line-color', 0xFFFFE066),
+        map.style.setStyleLayerProperty('sec-glow-$sid', 'line-width', 3.4),
+        map.style.setStyleLayerProperty('sec-glow-$sid', 'line-opacity', 0.90),
       ]);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Zones] selection paint failed: $e');
+    }
   }
 
   void _tickZoneWave() {
@@ -2905,57 +2780,48 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _zoneWaveTimer = null;
       return;
     }
-    // En background no escribe nada (el timer queda vivo y retoma solo al
-    // volver — una escritura nativa por tick con la app tapada es gasto
-    // puro).
     if (!_appInForeground) return;
-    // Una vuelta en ~5 s a 100 ms por tick — lento y fluido, no un strobe.
-    _zoneWavePhase = (_zoneWavePhase + 0.02) % 1.0;
-    _guardedStyleWrite(map.style.setStyleLayerProperty(
-        'sec-line-$sid', 'line-gradient', _zoneWaveStops(_zoneWavePhase)));
-  }
-
-  /// Banda dorada viajera sobre el anillo negro. Tres copias de la banda
-  /// (fase−1, fase, fase+1) para que al cruzar el cierre del anillo salga
-  /// por un lado y entre por el otro sin salto — el anillo es cerrado.
-  List<dynamic> _zoneWaveStops(double phase) {
-    const half = 0.09; // media anchura de la banda
-    const dim = '#000000';
-    const lit = '#FFE066';
-    final stops = <double, String>{0.0: dim, 1.0: dim};
-    for (final c in [phase - 1.0, phase, phase + 1.0]) {
-      for (final p in [c - half, c, c + half]) {
-        if (p > 0.0001 && p < 0.9999) stops[p] = p == c ? lit : dim;
-      }
+    _zoneWavePhase = (_zoneWavePhase + 0.04) % 1.0;
+    if (_zoneWaveWriteBusy) {
+      _zoneWavePendingPhase = _zoneWavePhase;
+      return;
     }
-    final entries = stops.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-    return [
-      'interpolate',
-      ['linear'],
-      ['line-progress'],
-      for (final e in entries) ...[e.key, e.value],
-    ];
+    _zoneWaveWriteBusy = true;
+    map.style
+        .setStyleLayerProperty(
+            'sec-glow-$sid', 'line-opacity', _zoneGlowOpacity)
+        .then((_) {
+      _zoneWaveWriteBusy = false;
+      if (!mounted || !identical(map, _map)) return;
+      final pending = _zoneWavePendingPhase;
+      if (pending != null) {
+        _zoneWavePendingPhase = null;
+        _zoneWavePhase = pending;
+        _tickZoneWave();
+      }
+    }).catchError((Object e) {
+      _zoneWaveWriteBusy = false;
+      debugPrint('[Zones] selection pulse failed: $e');
+    });
   }
 
   void _stopZoneWave() {
     _zoneWaveTimer?.cancel();
     _zoneWaveTimer = null;
+    _zoneWaveWriteBusy = false;
+    _zoneWavePendingPhase = null;
     final map = _map;
     final prev = _zoneWaveSectorId;
     _zoneWaveSectorId = null;
     if (map == null || kIsWeb || prev == null) return;
-    // Restaura el borde negro de siempre y "limpia" el gradiente: la firma
-    // del plugin no acepta null, así que se escribe un gradiente plano
-    // negro (visualmente idéntico a quitarlo).
-    _guardedStyleWrite(map.style.setStyleLayerProperty(
-        'sec-line-$prev',
-        'line-gradient',
-        ['interpolate', ['linear'], ['line-progress'], 0.0, '#000000', 1.0, '#000000']));
-    _guardedStyleWrite(map.style
-        .setStyleLayerProperty('sec-line-$prev', 'line-color', 0xFF000000));
-    _guardedStyleWrite(map.style
-        .setStyleLayerProperty('sec-line-$prev', 'line-width', 2.4));
+    final off = ZoneService.demand[prev]?.off ?? false;
+    final color = off ? 0xFF7F858E : 0xFFE8C547;
+    _guardedStyleWrite(
+        map.style.setStyleLayerProperty('sec-glow-$prev', 'line-opacity', 0.0));
+    _guardedStyleWrite(
+        map.style.setStyleLayerProperty('sec-line-$prev', 'line-color', color));
+    _guardedStyleWrite(
+        map.style.setStyleLayerProperty('sec-line-$prev', 'line-width', 2.4));
   }
 
   /// Live boundary refresh (2026-10-13, user spec: "instantáneo, que se
@@ -2981,17 +2847,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       // a. Fade-out: every sector layer + the highlight to 0 in one batch.
       await Future.wait([
         for (final id in _zoneSectorIds) ...[
-          _guardedStyleWrite(map.style.setStyleLayerProperty(
-              'sec-fill-$id', 'fill-opacity', 0.0)),
-          _guardedStyleWrite(map.style.setStyleLayerProperty(
-              'sec-line-$id', 'line-opacity', 0.0)),
-          _guardedStyleWrite(map.style.setStyleLayerProperty(
-              'sec-shadow-$id', 'line-opacity', 0.0)),
+          _guardedStyleWrite(map.style
+              .setStyleLayerProperty('sec-fill-$id', 'fill-opacity', 0.0)),
+          _guardedStyleWrite(map.style
+              .setStyleLayerProperty('sec-line-$id', 'line-opacity', 0.0)),
+          _guardedStyleWrite(map.style
+              .setStyleLayerProperty('sec-shadow-$id', 'line-opacity', 0.0)),
+          _guardedStyleWrite(map.style
+              .setStyleLayerProperty('sec-glow-$id', 'line-opacity', 0.0)),
         ],
-        _guardedStyleWrite(map.style.setStyleLayerProperty(
-            'sec-hl-fill', 'fill-opacity', 0.0)),
         _guardedStyleWrite(map.style
-            .setStyleLayerProperty('sec-dim', 'fill-opacity', 0.0)),
+            .setStyleLayerProperty('sec-hl-fill', 'fill-opacity', 0.0)),
+        _guardedStyleWrite(
+            map.style.setStyleLayerProperty('sec-dim', 'fill-opacity', 0.0)),
       ]);
       await Future.delayed(const Duration(milliseconds: 200));
       if (!mounted) return;
@@ -3011,6 +2879,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         } catch (_) {}
         try {
           await map.style.removeStyleLayer('sec-shadow-$id');
+        } catch (_) {}
+        try {
+          await map.style.removeStyleLayer('sec-glow-$id');
         } catch (_) {}
         try {
           await map.style.removeStyleSource('sec-src-$id');
@@ -3086,7 +2957,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       } catch (_) {}
       _zoneLayersVisible = visible;
       _zoneLookOnline = online;
-      _zoneLookVisibleSig = visibleIds.join('|');
+      _zoneLookVisibleSig =
+          '${visibleIds.join('|')}|offer:${_previewingOffer != null}';
       _zoneDemandSig = ZoneService.demand.entries
           .map((e) => '${e.key}:${e.value.level}')
           .join('|');
@@ -3099,6 +2971,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       ApiService.logClientEvent('zones_swap', 'error=$e');
     } finally {
       _zoneSwapRunning = false;
+      unawaited(_syncZoneLayers());
     }
   }
 
@@ -3123,17 +2996,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await _fitAllZones(animated: animated);
       return false;
     }
-    await _fitSectors(ZoneService.sectorsForState(
-        ZoneService.stateOfPoint(pos)), animated: animated);
+    await _fitSectors(
+        ZoneService.sectorsForState(ZoneService.stateOfPoint(pos)),
+        animated: animated);
     return true;
   }
 
-  /// The offline zone-view recenter (2026-10-14 user spec: "el botón de
-  /// centrar solo va a centrar donde esté la flecha, pero con ese zoom
-  /// mostrando las zonas, pero centrando en la flecha"): the camera centres
-  /// ON THE ARROW at the zoom the home-state zone fit would use — the zones
-  /// of the driver's state stay in frame, the driver is the centre. No fix
-  /// (or no sectors) → the state-fit fallback of old.
+  /// Offline recentre frames every sector in the driver's state, north-up,
+  /// without re-engaging arrow follow. With no position it falls back to the
+  /// union of all sectors. The visible sheet inset belongs to the fit.
   /// El sheet abierto cubre la mitad baja de la pantalla (user spec
   /// 2026-10-15: "debe centrar en lo visible") — las cámaras offline centran
   /// en el área VISIBLE sobre el sheet, no en el centro de la pantalla.
@@ -3143,77 +3014,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _recenterArrowZoneZoom() async {
-    final map = _map;
-    if (map == null || kIsWeb) return;
-    // Este recenter es lo más nuevo — cualquier fit de zonas en vuelo (el
-    // glide-out del flip online→offline) muere y no puede pisarlo al caer.
-    final seq = ++_zoneFitSeq;
-    final pos = _pos;
-    if (pos == null || !ZoneService.sectorsReady) {
-      await _fitHomeZones();
-      return;
-    }
-    final secs =
-        ZoneService.sectorsForState(ZoneService.stateOfPoint(pos));
-    final bbox = _sectorsBBox(secs);
-    if (bbox == null) {
-      await _fitHomeZones();
-      return;
-    }
     try {
-      // The zoom that frames the driver's state sectors, then the centre is
-      // replaced with the arrow's.
-      final fitCam = await map.cameraForCoordinatesPadding(
-        [
-          mapbox.Point(coordinates: mapbox.Position(bbox[0], bbox[1])),
-          mapbox.Point(coordinates: mapbox.Position(bbox[2], bbox[3])),
-        ],
-        mapbox.CameraOptions(pitch: 0, bearing: 0),
-        mapbox.MbxEdgeInsets(
-            top: 130, left: 30, bottom: _visibleSheetPx, right: 30),
-        null,
-        null,
-      );
-      if (seq != _zoneFitSeq) return; // otro recenter llegó detrás
-      // Programmatic — wear the suppression so the flight's own camera
-      // events never read as a manual rotate/gesture.
-      _camFlightUntil = DateTime.now()
-          .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
-      await map.flyTo(
-          mapbox.CameraOptions(
-            center: mapbox.Point(
-                coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-            zoom: fitCam.zoom,
-            bearing: 0,
-            pitch: 0,
-            // Centrar en lo visible: el sheet abierto no se traga la flecha.
-            padding: mapbox.MbxEdgeInsets(
-                top: 120, left: 0, bottom: _visibleSheetPx, right: 0),
-          ),
-          mapbox.MapAnimationOptions(duration: _kRecenterFlightMs));
-      if (mounted) _setState(() => _cameraFollowing = false);
+      await _fitHomeZones();
     } catch (e) {
-      // Nunca en silencio (2026-10-16): si la medición nativa falla, el
-      // recenter igual vuela a la flecha al zoom de vista de zonas.
-      debugPrint('[Zones] arrow zone-zoom recenter failed: $e');
-      ApiService.logClientEvent('recenter_fit', 'scope=arrow_zone_zoom_fallback');
-      if (!mounted || seq != _zoneFitSeq) return;
-      try {
-        _camFlightUntil = DateTime.now()
-            .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
-        await map.flyTo(
-            mapbox.CameraOptions(
-              center: mapbox.Point(
-                  coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-              zoom: 10.8,
-              bearing: 0,
-              pitch: 0,
-              padding: mapbox.MbxEdgeInsets(
-                  top: 120, left: 0, bottom: _visibleSheetPx, right: 0),
-            ),
-            mapbox.MapAnimationOptions(duration: _kRecenterFlightMs));
-        if (mounted) _setState(() => _cameraFollowing = false);
-      } catch (_) {}
+      debugPrint('[Zones] home-state fit failed: $e');
+      ApiService.logClientEvent(
+          'recenter_fit', 'scope=arrow_zone_zoom_fallback');
+      await _fitAllZones();
     }
   }
 
@@ -3230,10 +3037,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return w > e || s > n ? null : [w, s, e, n];
   }
 
-  Future<void> _fitSectors(List<Sector> sectors,
-      {bool animated = true}) async {
+  void _pauseFollowForZoneFit() {
+    _recenterLanding = null;
+    _pendingCamWrite = null;
+    if (_cameraFollowing) _setState(() => _cameraFollowing = false);
+  }
+
+  Future<void> _fitSectors(List<Sector> sectors, {bool animated = true}) async {
     final map = _map;
     if (map == null || kIsWeb || !ZoneService.sectorsReady) return;
+    _pauseFollowForZoneFit();
     final bbox = _sectorsBBox(sectors);
     if (bbox == null) return;
     final w = bbox[0], s = bbox[1], e = bbox[2], n = bbox[3];
@@ -3242,7 +3055,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // fit del flip quedaba en vuelo cuando el driver tocaba recentrar y
     // aterrizaba DESPUÉS, pisando el recenter — un fit viejo muere si otro
     // fit/recenter arrancó después.
-    final seq = ++_zoneFitSeq;
+    final seq = _cameraActionGate.begin();
     try {
       final cam = await map.cameraForCoordinatesPadding(
         [
@@ -3257,7 +3070,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         null,
         null,
       );
-      if (seq != _zoneFitSeq) return; // un recenter/fit más nuevo manda
+      if (!_cameraActionGate.isCurrent(seq))
+        return; // un recenter/fit más nuevo manda
       // Programmatic — wear the suppression so the flight's own camera
       // events never read as a manual rotate/gesture.
       _camFlightUntil = DateTime.now()
@@ -3266,7 +3080,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           cam,
           mapbox.MapAnimationOptions(
               duration: animated ? _kRecenterFlightMs : 0));
-      if (mounted) _setState(() => _cameraFollowing = false);
+      if (mounted && _cameraActionGate.isCurrent(seq)) {
+        _setState(() => _cameraFollowing = false);
+      }
     } catch (e) {
       debugPrint('[Zones] fit-all failed: $e');
     }
@@ -3279,10 +3095,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _fitZone(Sector sec) async {
     final map = _map;
     if (map == null || kIsWeb) return;
+    _pauseFollowForZoneFit();
     final b = sec.bbox;
     // Mismo token anti-stale que los otros fits (2026-10-16-noche): un fit
     // de zona viejo jamás aterriza sobre una cámara más nueva.
-    final seq = ++_zoneFitSeq;
+    final seq = _cameraActionGate.begin();
     try {
       final cam = await map.cameraForCoordinatesPadding(
         [
@@ -3294,12 +3111,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         null,
         null,
       );
-      if (seq != _zoneFitSeq) return;
+      if (!_cameraActionGate.isCurrent(seq)) return;
       _camFlightUntil = DateTime.now()
           .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
       await map.flyTo(
           cam, mapbox.MapAnimationOptions(duration: _kRecenterFlightMs));
-      if (mounted) _setState(() => _cameraFollowing = false);
+      if (mounted && _cameraActionGate.isCurrent(seq)) {
+        _setState(() => _cameraFollowing = false);
+      }
     } catch (e) {
       debugPrint('[Zones] fit-zone failed: $e');
     }
@@ -3348,10 +3167,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _setState(() => _selectedZoneName = s.id);
     // The working zone survives app restarts (user spec 2026-10-13: "la zona
     // debe mantenerse cuando se cierra y se abre la app").
-    PrefsCache.instance
-        .then((p) => p.setString('driver_selected_zone', s.id));
+    PrefsCache.instance.then((p) => p.setString('driver_selected_zone', s.id));
     HapticService.selectionClick();
-    _goIgniteCtrl?.forward(from: 0.0);
+    if (ZoneService.demand[s.id]?.off != true) {
+      _goIgniteCtrl?.forward(from: 0.0);
+    }
     _syncZoneLayers(forceHighlight: true);
   }
 
@@ -3447,12 +3267,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           final off = project(s.center);
           if (off == null) continue;
           final isMax = d.level >= 3;
-          final label = isMax
-              ? S.of(context).zoneVeryBusy
-              : S.of(context).zoneBusy;
-          final bonus = d.bonus > 0
-              ? '  ·  +\$${d.bonus.toStringAsFixed(2)}'
-              : '';
+          final label =
+              isMax ? S.of(context).zoneVeryBusy : S.of(context).zoneBusy;
+          final bonus =
+              d.bonus > 0 ? '  ·  +\$${d.bonus.toStringAsFixed(2)}' : '';
           children.add(Positioned(
             left: off.dx,
             top: off.dy + (hl != null && s.id == hl.id ? -26 : 0),
@@ -3467,8 +3285,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
                         ? const Color(0xFFE8C547)
                         : const Color(0xFF14141A),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: const Color(0xFFE8C547), width: 1.2),
+                    border:
+                        Border.all(color: const Color(0xFFE8C547), width: 1.2),
                     boxShadow: const [
                       BoxShadow(color: Colors.black54, blurRadius: 6),
                     ],
@@ -3476,11 +3294,95 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
                   child: Text(
                     '$label$bonus',
                     style: TextStyle(
-                      color:
-                          isMax ? Colors.black : const Color(0xFFE8C547),
+                      color: isMax ? Colors.black : const Color(0xFFE8C547),
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800,
                     ),
+                  ),
+                ),
+              ),
+            ),
+          ));
+        }
+        if (children.isEmpty) return const SizedBox.shrink();
+        return Stack(children: children);
+      },
+    );
+  }
+
+  /// Gold airport pills for the driver's working state (2026-10-22, owner
+  /// spec: "solo los grandes", VISUAL ONLY — IgnorePointer, no tap): same
+  /// flat-projection zero-IPC pipeline as the zone pills, in BOTH searching
+  /// views (offline zone map and online "Finding trips"). Hidden beyond
+  /// zoom 8.5 (map clutter) and during navigation phases.
+  Widget _airportPillOverlay() {
+    if (kIsWeb) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: _markerFrame,
+      builder: (_, __) {
+        if (_phase != _Phase.searching) return const SizedBox.shrink();
+        // Misma regla que las etiquetas de zona: nunca sobre el velo/negro
+        // de un remount.
+        if (!_mapStyleLoaded || !_firstRenderDone) {
+          return const SizedBox.shrink();
+        }
+        final cam = _onlineCamState;
+        final size = _onlineMapSize;
+        if (cam == null || size == null) return const SizedBox.shrink();
+        if (cam.zoom < 8.5) return const SizedBox.shrink();
+        final p = _pos;
+        final airports = airportsForState(_driveStateCode ??
+            (p == null ? null : ZoneService.stateOfPoint(p)));
+        if (airports.isEmpty) return const SizedBox.shrink();
+        final c = cam.center.coordinates;
+        final camCenter = LatLng(c.lat.toDouble(), c.lng.toDouble());
+        final children = <Widget>[];
+        for (final a in airports) {
+          final off = FlatMapProjection.screenOffsetHeading(
+            target: LatLng(a.lat, a.lng),
+            cameraCenter: camCenter,
+            zoom: cam.zoom,
+            bearingDeg: cam.bearing,
+            pitchDeg: cam.pitch,
+            viewport: size,
+          );
+          if (off == null) continue;
+          final shifted = off + _camPadShift(cam);
+          if (!FlatMapProjection.isOnScreen(shifted, size)) continue;
+          children.add(Positioned(
+            left: shifted.dx,
+            top: shifted.dy,
+            child: IgnorePointer(
+              child: FractionalTranslation(
+                translation: const Offset(-0.5, -0.5),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF14141A),
+                    borderRadius: BorderRadius.circular(20),
+                    border:
+                        Border.all(color: const Color(0xFFE8C547), width: 1.2),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black54, blurRadius: 6),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.flight_rounded,
+                          color: Color(0xFFE8C547), size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        a.code,
+                        style: const TextStyle(
+                          color: Color(0xFFE8C547),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

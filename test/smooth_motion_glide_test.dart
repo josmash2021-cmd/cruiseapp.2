@@ -90,4 +90,108 @@ void main() {
         reason: 'with the feed dead the marker must hold near where the car '
             'was last seen, not glide on at speed (drifted ${driftM}m)');
   });
+
+  for (final gapSeconds in [2, 5, 15]) {
+    test('a $gapSeconds second GPS gap cannot produce a sprint on reacquire',
+        () {
+      var now = DateTime(2026, 1, 1);
+      final m = SmoothMotion(clock: () => now)
+        ..snapTo(startLat, startLng, bearing: 0);
+      final steps = <double>[];
+      var previous = m.lat!;
+      void advance(double seconds) {
+        final frames = (seconds * 60).round();
+        for (var frame = 0; frame < frames; frame++) {
+          now = now.add(const Duration(microseconds: 16667));
+          m.tick(1 / 60);
+          steps.add((m.lat! - previous).abs() * 110540.0);
+          previous = m.lat!;
+        }
+      }
+
+      for (var second = 1; second <= 6; second++) {
+        m.setTarget(north(8.0 * second), startLng,
+            accuracyM: 5,
+            timestampMs: now.millisecondsSinceEpoch.toDouble(),
+            speedMps: 8);
+        advance(1);
+      }
+      advance(gapSeconds.toDouble());
+      final reacquireAt = steps.length;
+      m.setTarget(north(8.0 * (6 + gapSeconds)), startLng,
+          accuracyM: 5,
+          timestampMs: now.millisecondsSinceEpoch.toDouble(),
+          speedMps: 8);
+      advance(2);
+
+      final recovery = steps.sublist(reacquireAt);
+      final worst = recovery.fold<double>(0, (a, b) => a > b ? a : b);
+      expect(worst, lessThan(1.0),
+          reason: 'reacquiring after $gapSeconds s produced a $worst m frame: '
+              'the marker must rejoin with bounded speed');
+    });
+  }
+
+  test('an out-of-order fix cannot move or rotate the marker backwards', () {
+    var now = DateTime(2026, 1, 1);
+    final m = SmoothMotion(clock: () => now)
+      ..snapTo(startLat, startLng, bearing: 0);
+    void advance(double seconds) {
+      for (var frame = 0; frame < (seconds * 60).round(); frame++) {
+        now = now.add(const Duration(microseconds: 16667));
+        m.tick(1 / 60);
+      }
+    }
+
+    advance(1);
+    m.setTarget(north(8), startLng,
+        bearing: 0,
+        timestampMs: now.millisecondsSinceEpoch.toDouble(),
+        speedMps: 8);
+    advance(1);
+    m.setTarget(north(16), startLng,
+        bearing: 0,
+        timestampMs: now.millisecondsSinceEpoch.toDouble(),
+        speedMps: 8);
+    advance(0.2);
+    final goodLat = m.lat!;
+    m.setTarget(north(4), startLng,
+        bearing: 180,
+        timestampMs: (now.millisecondsSinceEpoch - 1000).toDouble(),
+        speedMps: 8);
+    advance(0.5);
+
+    expect(m.lat!, greaterThanOrEqualTo(goodLat));
+    expect(m.bearing, closeTo(0, 0.001));
+  });
+
+  test('a future timestamp cannot poison the next valid fix', () {
+    var now = DateTime(2026, 1, 1);
+    final m = SmoothMotion(clock: () => now)
+      ..snapTo(startLat, startLng, bearing: 0);
+    void advance(double seconds) {
+      for (var frame = 0; frame < (seconds * 60).round(); frame++) {
+        now = now.add(const Duration(microseconds: 16667));
+        m.tick(1 / 60);
+      }
+    }
+
+    advance(1);
+    m.setTarget(north(8), startLng,
+        timestampMs: now.millisecondsSinceEpoch.toDouble(), speedMps: 8);
+    advance(1);
+    m.setTarget(north(16), startLng,
+        timestampMs: now.millisecondsSinceEpoch.toDouble(), speedMps: 8);
+    advance(0.2);
+    m.setTarget(north(24), startLng,
+        timestampMs: (now.millisecondsSinceEpoch + 10000).toDouble(),
+        speedMps: 8);
+    advance(1);
+    final beforeValid = m.lat!;
+    m.setTarget(north(32), startLng,
+        timestampMs: now.millisecondsSinceEpoch.toDouble(), speedMps: 8);
+    advance(0.5);
+
+    expect(m.lat!, greaterThan(beforeValid));
+  });
 }

@@ -29,6 +29,7 @@ import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/driver_wait_estimate.dart';
+import '../services/feature_flags.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
@@ -68,6 +69,8 @@ import 'tap_to_pay_screen.dart';
 import 'searching_driver_screen.dart';
 import 'waiting_for_driver_screen.dart';
 import 'home_screen.dart';
+import 'schedule_hub_screen.dart'; // botón "Agendar para más tarde" del diálogo sin drivers
+import '../utils/vehicle_tier_style.dart'; // tripTierLabel — label del sheet de pago por tier
 
 part 'ride_request_controller.dart';
 part 'ride_request_map.dart';

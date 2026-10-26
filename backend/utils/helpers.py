@@ -342,6 +342,8 @@ def _user_dict(u) -> dict:
         "device_model": getattr(u, 'device_model', None),
         "os_version": getattr(u, 'os_version', None),
         "app_version": getattr(u, 'app_version', None),
+        "registration_source": getattr(u, 'registration_source', None),
+        "last_active_at": u.last_active_at.isoformat() if getattr(u, 'last_active_at', None) else None,
         "is_verified": u.is_verified or False,
         "id_document_type": u.id_document_type,
         "verification_status": u.verification_status or "none",
@@ -366,6 +368,10 @@ def _user_dict(u) -> dict:
         "email_verified": u.email_verified or False,
         "email_verified_at": u.email_verified_at.isoformat() if u.email_verified_at else None,
         "date_of_birth": u.date_of_birth.isoformat() if getattr(u, 'date_of_birth', None) else None,
+        # Variante de la guía (vestimenta/selfie) la lee del perfil (2026-10-23).
+        "gender": getattr(u, 'gender', None),
+        # Dispatch GO switch — la ficha del panel lo muestra (2026-10-23).
+        "go_online_disabled": bool(getattr(u, 'go_online_disabled', False)),
         "background_check_status": u.background_check_status or "none",
         "background_check_completed_at": u.background_check_completed_at.isoformat() if u.background_check_completed_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
@@ -450,8 +456,8 @@ def _trip_dict(t) -> dict:
                     _legs[_i][0], _legs[_i][1], _legs[_i + 1][0], _legs[_i + 1][1])
             computed_miles = round(_km * 0.621371, 1)
             computed_minutes = max(round(computed_miles * 2.5), 3) if computed_miles else None
-            d["distance_miles"] = computed_miles
-            d["duration_minutes"] = computed_minutes
+            d["distance_miles"] = d["distance"] if d.get("distance") is not None else computed_miles
+            d["duration_minutes"] = d["duration"] if d.get("duration") is not None else computed_minutes
             # Backfill the raw fields that Flutter reads when the DB values are NULL
             if d.get("distance") is None:
                 d["distance"] = computed_miles
@@ -505,6 +511,8 @@ def _vehicle_dict(v) -> dict:
         # registration that names the new plate.
         "plate_pending_review": getattr(v, "plate_pending_review", False) or False,
         "is_active": getattr(v, "is_active", False) or False,
+        "archived_at": (v.archived_at.isoformat()
+                        if getattr(v, "archived_at", None) else None),
         "approval_status": getattr(v, "approval_status", "pending"),
         "doors": getattr(v, "doors", None),
         "seatbelts": getattr(v, "seatbelts", None),
@@ -519,6 +527,9 @@ def _doc_dict(d) -> dict:
         "file_path": d.file_path,
         "doc_number": d.doc_number,
         "expiry_date": d.expiry_date.isoformat() if d.expiry_date else None,
+        "expiry_suggested_at": (d.expiry_suggested_at.isoformat()
+                                if getattr(d, "expiry_suggested_at", None)
+                                else None),
         "rejection_reason": d.rejection_reason,
         "vehicle_id": getattr(d, "vehicle_id", None),
         "created_at": d.created_at.isoformat() if d.created_at else None,

@@ -8,6 +8,8 @@ the driver account: account approval is always a manual dispatch decision via
 
 import json
 import logging
+import os
+import html as _html
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -19,6 +21,12 @@ from services.socketio_service import notify_user
 from services.fcm_service import _send_fcm_push_async
 
 logger = logging.getLogger(__name__)
+
+# Email buttons point at the backend's /open-app bounce page (Gmail strips
+# custom-scheme hrefs), which deep-links into the app or falls back to the
+# platform's store.
+_OPEN_APP_URL = os.getenv(
+    "PUBLIC_BASE_URL", "https://cruiseapp2-production.up.railway.app") + "/open-app"
 
 # doc_type → onboarding item name in the app's To-do hub (onboarding_items
 # JSON override — what GET /auth/onboarding-items reads).
@@ -210,6 +218,9 @@ async def notify_document_reviewed(
     except Exception as e:
         logger.warning("[DocApproval] FCM/SMS failed for user %s: %s", user.id, e)
 
+    if not approved:
+        await send_document_rejected_email(user, item, reason)
+
 
 async def send_approved_email(user: User) -> None:
     """The welcome email, shared by dispatch-approve and the doc-by-doc
@@ -218,21 +229,28 @@ async def send_approved_email(user: User) -> None:
         return
     try:
         from services.email_sms_service import _send_email
-        driver_name = user.first_name or "Driver"
+        driver_name = _html.escape(user.first_name or "Driver")
         _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
-        await _send_email(
-            user.email,
-            "You're Approved — Welcome to Cruise",
-            f"""
+        # _send_email is SYNC (blocking urllib) — awaiting it used to raise
+        # "object bool can't be used in 'await' expression" and the welcome
+        # email NEVER left (prod 2026-10-18). Run it in the executor like the
+        # SMS branch above.
+        import asyncio
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, lambda: _send_email(
+                user.email,
+                "You're Approved — Welcome to CRUISE IN RIDE",
+                f"""
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #050505; border-radius: 16px; overflow: hidden; border: 1px solid #1a1a1a;">
                 <div style="background: linear-gradient(90deg, transparent, #D4AF37, #E8C547, #D4AF37, transparent); height: 2px;"></div>
                 <div style="padding: 48px 40px 40px;">
                     <div style="text-align: center; margin-bottom: 40px;">
                         <img src="{_logo_url}" alt="Cruise" width="80" height="80" style="display: block; margin: 0 auto 16px; border-radius: 20px;">
-                        <h2 style="font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 700; color: #E8C547; letter-spacing: 8px; margin: 0; text-indent: 8px;">CRUISE</h2>
+                        <h2 style="font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 700; color: #E8C547; letter-spacing: 8px; margin: 0; text-indent: 8px;">CRUISE IN RIDE</h2>
                     </div>
                     <h1 style="text-align: center; color: #FFFFFF; font-size: 26px; font-weight: 300; margin: 0 0 6px; letter-spacing: -0.3px;">You're <strong>Approved</strong>, {driver_name}.</h1>
-                    <p style="text-align: center; color: #666; font-size: 14px; margin: 10px 0 0; line-height: 1.6;">Your application has been reviewed and accepted.<br>Welcome to the Cruise driver team.</p>
+                    <p style="text-align: center; color: #666; font-size: 14px; margin: 10px 0 0; line-height: 1.6;">Your application has been reviewed and accepted.<br>Welcome to the CRUISE IN RIDE driver team.</p>
                     <div style="width: 36px; height: 1px; background: #D4AF37; margin: 32px auto;"></div>
                     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 36px;">
                         <tr>
@@ -249,76 +267,166 @@ async def send_approved_email(user: User) -> None:
                         </tr>
                     </table>
                     <div style="text-align: center;">
-                        <a href="https://cruiseinride.com" style="display: inline-block; background: #D4AF37; color: #000; text-decoration: none; padding: 14px 48px; border-radius: 28px; font-size: 14px; font-weight: 700; letter-spacing: 1px;">GET STARTED</a>
+                        <a href="{_OPEN_APP_URL}" style="display: inline-block; background: #D4AF37; color: #000; text-decoration: none; padding: 14px 48px; border-radius: 28px; font-size: 14px; font-weight: 700; letter-spacing: 1px;">OPEN THE APP</a>
                     </div>
                 </div>
                 <div style="border-top: 1px solid #111; padding: 24px 40px; text-align: center;">
-                    <p style="color: #333; font-size: 11px; letter-spacing: 3px; margin: 0 0 4px;">CRUISE</p>
+                    <p style="color: #333; font-size: 11px; letter-spacing: 2px; margin: 0 0 4px;">CRUISE IN RIDE</p>
                     <p style="color: #252525; font-size: 10px; margin: 0;">Premium Rides &mdash; cruiseinride.com</p>
                 </div>
             </div>
             """,
-        )
+            ))
         logger.info("[DocApproval] approval email sent to %s", user.email)
     except Exception as e:
         logger.warning("[DocApproval] approval email failed: %s", e)
 
 
-async def recompute_driver_approval(db: AsyncSession, user: User) -> bool:
-    """Re-evaluate the active vehicle after a document decision.
+# Display names per To-do item for the rejection email (ES, EN).
+_DOC_NAME = {
+    "license": ("Licencia de conducir", "Driver's license"),
+    "insurance": ("Seguro del vehículo", "Vehicle insurance"),
+    "registration": ("Registración del vehículo", "Vehicle registration"),
+    "inspection": ("Inspección del vehículo", "Vehicle inspection"),
+    "background": ("Verificación de antecedentes", "Background check"),
+    "vehicle": ("Vehículo", "Vehicle"),
+    "profile_photo": ("Foto de perfil", "Profile photo"),
+    "id_document": ("Documento de identidad", "Identity document"),
+    "selfie": ("Selfie biométrica", "Biometric selfie"),
+    "biometric_video": ("Video biométrico", "Biometric video"),
+}
 
-    A complete, live document set can approve the vehicle. The driver ACCOUNT
-    is NEVER approved here: account approval is always a manual dispatch
-    decision via /auth/dispatch-approve. Returns False for compatibility with
-    callers that used the old account-flip result.
-    """
+
+async def send_document_rejected_email(
+    user: User,
+    doc_item: str,
+    reason: str | None = None,
+) -> None:
+    """Email the driver when one document is rejected (2026-10-18, user
+    spec): the operator's reason, and a button that opens the app via
+    /open-app (Gmail strips custom-scheme hrefs). Fail-soft like every
+    other channel — a mail failure never breaks the review."""
+    if not user.email:
+        return
+    try:
+        from services.email_sms_service import _send_email
+        es = (getattr(user, "locale", None) or "es").lower().startswith("es")
+        names = _DOC_NAME.get(doc_item, ("Documento", "Document"))
+        doc_name = names[0] if es else names[1]
+        driver_name = _html.escape(
+            user.first_name or ("Conductor" if es else "Driver"))
+        _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
+        reason_block = ""
+        if reason:
+            reason_block = f"""
+                    <div style="background: #111; border: 1px solid #2a1a1a; border-radius: 10px; padding: 16px 20px; margin: 0 0 28px; text-align: left;">
+                        <p style="color: #555; font-size: 11px; letter-spacing: 2px; margin: 0 0 4px;">{"MOTIVO" if es else "REASON"}</p>
+                        <p style="color: #e0e0e0; font-size: 14px; margin: 0; line-height: 1.5;">{_html.escape(reason)}</p>
+                    </div>"""
+        subject = ("CRUISE IN RIDE — Documento rechazado" if es
+                   else "CRUISE IN RIDE — Document rejected")
+        headline = ("Documento <strong>rechazado</strong>" if es
+                    else "Document <strong>rejected</strong>")
+        body_line = (
+            f"{driver_name}, no pudimos aprobar este documento. Corrígelo y "
+            "vuelve a subirlo desde tu lista To-do en la app." if es else
+            f"{driver_name}, we couldn't approve this document. Fix it and "
+            "upload it again from your To-do list in the app.")
+        lbl_doc = "Documento" if es else "Document"
+        lbl_status = "Estado" if es else "Status"
+        val_status = "Rechazado" if es else "Rejected"
+        btn = "ABRIR LA APP" if es else "OPEN THE APP"
+        import asyncio
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, lambda: _send_email(
+                user.email,
+                subject,
+                f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #050505; border-radius: 16px; overflow: hidden; border: 1px solid #1a1a1a;">
+                <div style="background: linear-gradient(90deg, transparent, #D4AF37, #E8C547, #D4AF37, transparent); height: 2px;"></div>
+                <div style="padding: 48px 40px 40px;">
+                    <div style="text-align: center; margin-bottom: 32px;">
+                        <img src="{_logo_url}" alt="CRUISE IN RIDE" width="80" height="80" style="display: block; margin: 0 auto 16px; border-radius: 20px;">
+                        <h2 style="font-family: Georgia, 'Times New Roman', serif; font-size: 22px; font-weight: 700; color: #E8C547; letter-spacing: 4px; margin: 0; text-indent: 4px;">CRUISE IN RIDE</h2>
+                    </div>
+                    <h1 style="text-align: center; color: #FFFFFF; font-size: 24px; font-weight: 300; margin: 0 0 6px;">{headline}</h1>
+                    <p style="text-align: center; color: #666; font-size: 14px; margin: 10px 0 28px; line-height: 1.6;">{body_line}</p>
+                    <div style="background: #111; border: 1px solid #1a1a1a; border-radius: 10px; padding: 16px 20px; margin: 0 0 28px;">
+                        <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                            <tr>
+                                <td style="color: #555; font-size: 12px; padding: 4px 0;">{lbl_doc}</td>
+                                <td style="color: #e0e0e0; font-size: 14px; text-align: right; padding: 4px 0;">{doc_name}</td>
+                            </tr>
+                            <tr>
+                                <td style="color: #555; font-size: 12px; padding: 4px 0;">{lbl_status}</td>
+                                <td style="color: #ff6b6b; font-size: 14px; font-weight: 600; text-align: right; padding: 4px 0;">{val_status}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    {reason_block}
+                    <div style="text-align: center;">
+                        <a href="{_OPEN_APP_URL}" style="display: inline-block; background: #D4AF37; color: #000; text-decoration: none; padding: 14px 48px; border-radius: 28px; font-size: 14px; font-weight: 700; letter-spacing: 1px;">{btn}</a>
+                    </div>
+                </div>
+                <div style="border-top: 1px solid #111; padding: 24px 40px; text-align: center;">
+                    <p style="color: #333; font-size: 11px; letter-spacing: 2px; margin: 0 0 4px;">CRUISE IN RIDE</p>
+                    <p style="color: #252525; font-size: 10px; margin: 0;">Premium Rides &mdash; cruiseinride.com</p>
+                </div>
+            </div>
+            """,
+            ))
+        logger.info("[DocApproval] rejection email sent to %s", user.email)
+    except Exception as e:
+        logger.warning("[DocApproval] rejection email failed: %s", e)
+
+
+async def recompute_driver_approval(
+    db: AsyncSession, user: User, vehicle_id: int | None = None
+) -> bool:
+    """Re-evaluate one unarchived vehicle, never the driver account."""
     if (user.role or "") != "driver":
         return False
-    now = datetime.now(timezone.utc)
+    from services.vehicle_eligibility import vehicle_document_status
 
-    # Coverage mirrors can_go_online's rule: the row names this vehicle, or —
-    # only with a single car on the account — it is a legacy vehicle_id NULL row.
-    veh_r = await db.execute(select(Vehicle).where(
-        Vehicle.user_id == user.id, Vehicle.is_active == True,
-    ))
-    veh = veh_r.scalars().first()
-    if veh:
-        count_r = await db.execute(
-            select(func.count()).select_from(Vehicle).where(
-                Vehicle.user_id == user.id)
+    query = select(Vehicle).where(
+        Vehicle.user_id == user.id,
+        Vehicle.archived_at.is_(None),
+    )
+    if vehicle_id is not None:
+        query = query.where(Vehicle.id == vehicle_id)
+    else:
+        query = query.order_by(
+            Vehicle.is_active.desc(), Vehicle.created_at.desc())
+    veh = (await db.execute(query)).scalars().first()
+    if not veh:
+        return False
+
+    count_r = await db.execute(
+        select(func.count()).select_from(Vehicle).where(
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
         )
-        single_vehicle = (count_r.scalar() or 0) <= 1
-        docs_r = await db.execute(
-            select(Document).where(
-                Document.user_id == user.id,
-                Document.doc_type.in_(
-                    ["insurance", "registration", "vehicle_inspection"]),
-            )
-        )
-        docs = docs_r.scalars().all()
+    )
+    single_vehicle = (count_r.scalar() or 0) <= 1
+    status = await vehicle_document_status(db, user, veh, single_vehicle)
+    approved_types = set(status["approved_vehicle_docs"])
+    changed = False
+    for attr, value in {
+        "insurance_valid": "insurance" in approved_types,
+        "registration_valid": "registration" in approved_types,
+        "inspection_valid": "vehicle_inspection" in approved_types,
+    }.items():
+        if getattr(veh, attr) != value:
+            setattr(veh, attr, value)
+            changed = True
 
-        required = ["insurance", "registration"]
-        if (user.drive_state or "").strip().upper() == "AL":
-            required.append("vehicle_inspection")
-
-        def _covers(d: Document) -> bool:
-            return d.vehicle_id == veh.id or (
-                single_vehicle and d.vehicle_id is None)
-
-        def _approved_live(t: str) -> bool:
-            return any(
-                (d.status or "").lower() == "approved"
-                and (d.expiry_date is None or d.expiry_date >= now)
-                and _covers(d)
-                for d in docs if d.doc_type == t
-            )
-
-        vehicle_ok = all(_approved_live(t) for t in required)
-        if vehicle_ok and (veh.approval_status or "").lower() != "approved":
-            veh.approval_status = "approved"
-            db.add(veh)
-            await db.commit()
-            logger.info("[DocApproval] vehicle %s auto-approved (docs green)",
-                        veh.id)
-
+    if (status["documents_approved"]
+            and (veh.approval_status or "").lower() != "approved"):
+        veh.approval_status = "approved"
+        changed = True
+        logger.info("[DocApproval] vehicle %s auto-approved (docs green)", veh.id)
+    if changed:
+        db.add(veh)
+        await db.commit()
     return False

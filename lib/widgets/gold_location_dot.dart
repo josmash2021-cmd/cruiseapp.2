@@ -70,6 +70,19 @@ class GoldLocationDot {
   /// `iconSize` for the Mapbox annotation, so it lands at the same size.
   static const double driverIconSize = driverScale;
 
+  /// Mapbox iconSize that matches [driverOverlaySize] at this device density.
+  static double driverAnnotationIconSize({
+    required double devicePixelRatio,
+    required bool highRes,
+    double scale = 1.0,
+  }) {
+    final ratio = devicePixelRatio.isFinite && devicePixelRatio > 0
+        ? devicePixelRatio
+        : 1.0;
+    final bitmapPixels = _canvasSize * (highRes ? rasterScale : 1.0);
+    return scale * ratio * _driverBaseSize / bitmapPixels;
+  }
+
   // ── High-resolution frame ─────────────────────────────────────────────
   //
   // The cached bitmap is 160 px. Handed to Mapbox at `iconSize` 2.9 it is

@@ -44,10 +44,11 @@ import 'package:geolocator/geolocator.dart';
 /// no matter how small [distanceFilter] is. The car then glides for the
 /// 3.5 s SmoothMotion dares to extrapolate, stalls, and snaps to the next
 /// fix: the "jumps like it loses signal" the driver and the rider both
-/// see. 1 s is the cadence Google Maps navigation runs at.
+/// see. The 500 ms override below removes that floor without requiring
+/// the driver to cover metres first.
 LocationSettings driverLocationSettings({
   LocationAccuracy accuracy = LocationAccuracy.bestForNavigation,
-  int distanceFilter = 5,
+  int distanceFilter = 0,
   // 500 ms: real-time, not near-real-time. The socket cadence below is
   // 250–400 ms, so the fix stream must not be the slowest link.
   Duration intervalDuration = const Duration(milliseconds: 500),

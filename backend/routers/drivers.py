@@ -30,6 +30,7 @@ from utils.helpers import (
 # reads as a 500 with no clue in it.
 from utils.image_validation import validate_image_bytes
 from services.fcm_service import _send_fcm_push_async
+from services.approach_notifications import maybe_notify_rider_approach
 from services import vehicle_tiers
 from config import (
     PUBLIC_URL, STRIPE_SECRET, _HAS_STRIPE, _stripe_mod,
@@ -53,8 +54,8 @@ router = APIRouter()
 _COMMISSION_BY_TYPE = vehicle_tiers.COMMISSION
 _DEFAULT_COMMISSION = vehicle_tiers.DEFAULT_COMMISSION
 
-PLATFORM_COMMISSION_RATE = 0.30
-DRIVER_SHARE_RATE = 0.70
+PLATFORM_COMMISSION_RATE = vehicle_tiers.PLATFORM_COMMISSION_RATE
+DRIVER_SHARE_RATE = vehicle_tiers.DRIVER_SHARE_RATE
 
 
 def _create_driver_connect_account(_stripe, email: str, **extra):
@@ -207,9 +208,8 @@ async def _usable_connect_id(_stripe, user, db) -> str:
     return acct["id"]
 
 
-def _get_driver_rate(vehicle_type: str | None) -> float:
-    """Return the driver share rate for the given vehicle type."""
-    return vehicle_tiers.driver_share(vehicle_type)
+def _get_driver_rate(trip: Trip) -> float:
+    return vehicle_tiers.driver_share_for_trip(trip)
 
 
 def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
@@ -225,10 +225,17 @@ def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
     # charges). Trips still in flight keep the live estimate below.
     if trip.status in ("completed", "cancelled") and trip.payment_status != "paid":
         return 0.0, 0.0
-    # Use vehicle-type-dependent rate instead of flat DRIVER_SHARE_RATE
-    driver_rate = _get_driver_rate(getattr(trip, "vehicle_type", None))
+    driver_rate = _get_driver_rate(trip)
     base = round(float(trip.fare or 0.0) * driver_rate, 2)
     return base, round(base + tip, 2)
+
+
+def _payable_trip_earnings(trips) -> float:
+    return round(sum(
+        _driver_trip_amounts(t)[1]
+        for t in trips
+        if not getattr(t, "payout_excluded", False)
+    ), 2)
 
 
 def _driver_visible_trip_dict(trip: Trip) -> dict:
@@ -237,7 +244,10 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
     data["fare"] = total
     data["driver_earnings"] = total
     if trip.platform_fee is None and trip.fare is not None:
-        data["platform_fee"] = round(float(trip.fare or 0.0) * PLATFORM_COMMISSION_RATE, 2)
+        platform_rate, _ = vehicle_tiers.commission_for_trip(trip)
+        data["platform_fee"] = round(
+            float(trip.fare or 0.0) * platform_rate, 2,
+        )
     data["driver_base_earnings"] = base
     # Guest-booking override for driver-facing rider name/phone. Fires
     # whenever guest fields are set — not only when rider_id is NULL —
@@ -295,6 +305,26 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         _driver_locations.pop(driver_id, None)
         raise HTTPException(403, "account_not_approved")
 
+    # Dispatch GO switch (2026-10-23, owner spec — instant): a driver paused
+    # from the panel can never flip online. Terminal for the app (it joins
+    # the zone_disabled/account_not_approved no-retry set).
+    if body.is_online and user.go_online_disabled:
+        _driver_locations.pop(driver_id, None)
+        raise HTTPException(403, "go_online_disabled")
+
+    # Face-check rejection (2026-10-23, owner report: "le doy rechazar y no
+    # desconecta al driver si esta conectado"): the dispatch reject writes
+    # is_online=False — but the live app never learned and its next location
+    # PATCH (every 5 s online) re-flipped the driver online within seconds.
+    # The kick only sticks if re-online is REFUSED here. Terminal for the app
+    # (same no-retry set as go_online_disabled). The DEFERRED kick (rider
+    # aboard → face_kick_pending) keeps heartbeating until trips.py lands
+    # the cut at trip close — after that this gate applies.
+    if (body.is_online and user.face_review_required
+            and not user.face_kick_pending):
+        _driver_locations.pop(driver_id, None)
+        raise HTTPException(403, "face_review_required")
+
     # Sector connect gate (2026-10-14, user spec: "dentro del cuadro podrá
     # conectarse" — Florida AND Alabama sectors, one dataset, the one the
     # panel edits): connecting is refused inside the sector coverage region
@@ -306,6 +336,12 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         if await sector_gate_blocks(db, body.lat, body.lng):
             _driver_locations.pop(driver_id, None)
             raise HTTPException(403, "outside_service_area")
+        # 2026-10-17 (owner spec, "todo se controla desde dispatch"): a zone
+        # switched OFF in the panel blocks its drivers from connecting.
+        from routers.system import sector_is_off
+        if await sector_is_off(db, body.lat, body.lng):
+            _driver_locations.pop(driver_id, None)
+            raise HTTPException(403, "zone_disabled")
 
     # Update in-memory location cache FIRST (instant for nearby reads)
     _now = time.monotonic()
@@ -339,6 +375,15 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
             user.online_since = utc_now() if body.is_online else None
         await db.commit()
         _driver_last_db_write[driver_id] = _now
+        # Demand waitlist (2026-10-17, owner spec): a rider whose request
+        # died with no drivers gets ONE push the moment a driver flips
+        # online in their state. Background — the heartbeat never waits on
+        # the fan-out (geocoder + pushes).
+        if _online_flipped and body.is_online:
+            from services.demand_waitlist import notify_waiting_riders
+            from utils.helpers import _safe_create_task
+            _safe_create_task(notify_waiting_riders(body.lat, body.lng),
+                              name=f"demand_notify_{driver_id}")
 
     # Going offline retires every pending offer immediately — an offline
     # driver cannot accept, and leaving them "pending" lets a late-tapped
@@ -376,6 +421,8 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     # Only push real location to trip watchers when driver is online.
     # Skipping when is_online=False prevents corrupting the rider's map with (0,0).
     if trip_row and body.is_online:
+        _safe_create_task(maybe_notify_rider_approach(driver_id, body.eta_seconds, trip_row),
+                          name=f"rider_approach_{driver_id}")
         _safe_create_task(event_bus.push_driver_location(trip_row, driver_id, body.lat, body.lng))
         # Socket.io primary channel (sub-200ms latency)
         _safe_create_task(emit_driver_location(
@@ -696,7 +743,24 @@ async def get_driver_trips(driver_id: int, user: User = Depends(_get_current_use
     if user.id != driver_id and user.role != "admin":
         raise HTTPException(403, "Not authorized to view these trips")
     result = await db.execute(select(Trip).where(Trip.driver_id == driver_id).order_by(Trip.created_at.desc()).limit(100))
-    return [_driver_visible_trip_dict(t) for t in result.scalars().all()]
+    trips = result.scalars().all()
+    rider_ids = {t.rider_id for t in trips if t.rider_id}
+    rider_map: dict[int, str] = {}
+    if rider_ids:
+        r_res = await db.execute(
+            select(User.id, User.first_name, User.last_name).where(User.id.in_(rider_ids))
+        )
+        for r_id, r_first, r_last in r_res.all():
+            rider_map[r_id] = f"{r_first or ''} {r_last or ''}".strip()
+
+    out = []
+    for t in trips:
+        trip_dict = _driver_visible_trip_dict(t)
+        has_guest = (t.guest_first_name or "").strip() or (t.guest_last_name or "").strip()
+        if t.rider_id and not has_guest:
+            trip_dict["rider_name"] = rider_map.get(t.rider_id, "")
+        out.append(trip_dict)
+    return out
 
 
 @router.get("/drivers/{driver_id}/locations", dependencies=[Depends(_require_dispatch_auth)])
@@ -1444,6 +1508,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
         )
         completed_trips = completed_r.scalars().all()
         total_earnings = round(sum(_driver_trip_amounts(t)[1] for t in completed_trips), 2)
+        payable_earnings = _payable_trip_earnings(completed_trips)
         cashouts_r = await db.execute(
             select(func.coalesce(func.sum(Cashout.amount), 0.0)).where(
                 Cashout.user_id == user.id,
@@ -1451,7 +1516,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
             )
         )
         total_cashouts = float(cashouts_r.scalar() or 0)
-        available_balance = round(total_earnings - total_cashouts, 2)
+        available_balance = round(payable_earnings - total_cashouts, 2)
         # Update cache
         locked_user.pending_balance = available_balance
         locked_user.total_earnings = total_earnings
@@ -2043,25 +2108,20 @@ async def delete_payout_method(payout_id: int, user: User = Depends(_get_current
 #  Debit-card payout method (real, via Stripe Connect external_account)
 # ─────────────────────────────────────────────────────────────────────
 
+_DEBIT_CARD_PAYOUTS_ENABLED = False
+
+
 @router.post("/drivers/payout-methods/debit-card", dependencies=[Depends(_verify_api_key)])
 async def add_debit_card_payout(
     body: dict = Body(...),
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Attach a debit card as an external_account on the driver's Stripe
-    Connect Express account so we can do **instant cashouts** to it.
-
-    Client must tokenize the PAN client-side first (Stripe.js / Stripe
-    iOS SDK / Stripe Android SDK) and send us only the resulting
-    ``card_token`` (e.g. ``tok_visa``). We never see the raw PAN.
-
-    Returns the persisted PayoutMethod row. The Stripe external_account
-    id is appended to display_name as ``[ext:card_xxx]`` so the delete
-    flow can detach it cleanly.
-    """
+    """New debit-card payouts are paused; existing methods are untouched."""
     if (user.role or "").lower() != "driver":
         raise HTTPException(403, "Only drivers can add payout methods")
+    if not _DEBIT_CARD_PAYOUTS_ENABLED:
+        raise HTTPException(410, "debit_card_payouts_coming_soon")
     if not STRIPE_SECRET:
         raise HTTPException(503, "Stripe not configured on this server")
     # Auto-create Stripe Connect account if it doesn't exist yet
@@ -2936,6 +2996,7 @@ async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
         select(Vehicle).where(
             Vehicle.user_id == driver_id,
             Vehicle.is_active == True,
+            Vehicle.archived_at.is_(None),
         )
     )
     vehicle = result.scalar_one_or_none()
@@ -2992,10 +3053,14 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     v_result = await db.execute(select(Vehicle).where(
         Vehicle.user_id == user.id,
         Vehicle.is_active == True,
+        Vehicle.archived_at.is_(None),
     ))
     vehicle = v_result.scalar_one_or_none()
     n_vehicles = await db.scalar(
-        select(func.count(Vehicle.id)).where(Vehicle.user_id == user.id)
+        select(func.count(Vehicle.id)).where(
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
+        )
     ) or 0
     single_vehicle = n_vehicles <= 1
 
@@ -3014,59 +3079,20 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         else:
             reasons.append("vehicle_not_approved")
 
-    # 3. Vehicle-level documents must describe the ACTIVE car: insurance +
-    # registration, plus the inspection for Alabama drivers. A row counts
-    # when it is not rejected and not expired and either names this vehicle
-    # or — only with exactly one car on the account, where there is no
-    # doubt which car the paper belongs to — is a legacy vehicle_id NULL
-    # row / user-level URL column.
-    now = datetime.now(timezone.utc)
+    # 3. The active car needs its OWN approved, current documents. Pending
+    # uploads are visible in the UI but do not authorize going online.
     all_docs_approved = False
     has_expired = False
     missing_docs: List[str] = []
     if vehicle:
-        docs_result = await db.execute(
-            select(Document).where(
-                Document.user_id == user.id,
-                Document.doc_type.in_(
-                    ["insurance", "registration", "vehicle_inspection"]),
-            )
-        )
-        docs = docs_result.scalars().all()
-
-        legacy_url = {
-            "insurance": user.insurance_url,
-            "registration": user.vehicle_registration_url,
-            "vehicle_inspection": user.inspection_url,
-        }
-        required = ["insurance", "registration"]
-        if (user.drive_state or "").strip().upper() == "AL":
-            required.append("vehicle_inspection")
-
-        def _covers(d: Document) -> bool:
-            return d.vehicle_id == vehicle.id or (
-                single_vehicle and d.vehicle_id is None)
-
-        for doc_type in required:
-            rows = [d for d in docs if d.doc_type == doc_type and _covers(d)]
-            live = [
-                d for d in rows
-                if (d.status or "").lower() != "rejected"
-                and (d.expiry_date is None or d.expiry_date >= now)
-            ]
-            if any(
-                d.expiry_date is not None and d.expiry_date < now
-                and (d.status or "").lower() == "approved"
-                for d in rows
-            ):
-                has_expired = True
-            if live or (single_vehicle and legacy_url[doc_type]):
-                continue
-            missing_docs.append(doc_type)
-
+        from services.vehicle_eligibility import vehicle_document_status
+        doc_status = await vehicle_document_status(
+            db, user, vehicle, single_vehicle)
+        missing_docs = doc_status["unapproved_vehicle_docs"]
+        has_expired = doc_status["has_expired"]
+        all_docs_approved = doc_status["documents_approved"]
         if missing_docs:
             reasons.append("vehicle_docs_missing")
-        all_docs_approved = not missing_docs
 
     # 4. A plate change that dispatch has not signed off yet overrides an
     # approved account on purpose: the registration on file names a
@@ -3078,13 +3104,55 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     if has_expired:
         reasons.append("expired_documents")
 
+    # 5. Legal contracts must be accepted at current versions (2026-10-21,
+    # user spec — Uber-style e-acceptance: "no permitir que un conductor sea
+    # activado hasta completar la aceptación"). The legacy ICA acceptance
+    # (consent_type "independent_contractor_agreement" at v2.2) counts — the
+    # seed ships v2.2, so only the OTHER four docs are new asks.
+    from services.legal_documents import contracts_pending
+    pending_contracts = await contracts_pending(db, user)
+    if pending_contracts:
+        reasons.append("contracts_not_accepted")
+
+    # 6. Dispatch GO switch (2026-10-23, owner spec — instant per-driver
+    # kill/restore from the panel). This one IS a blocker, unlike the
+    # face-check signals: a paused driver can never go online until
+    # dispatch re-enables him.
+    go_disabled = bool(user.go_online_disabled)
+    if go_disabled:
+        reasons.append("go_online_disabled")
+
     can_go = (
         approved
         and vehicle_ok
         and all_docs_approved
         and not has_expired
         and not plate_pending
+        and not pending_contracts
+        and not go_disabled
     )
+
+    # Daily face check (2026-10-23, owner spec: "verificación de selfie cada
+    # 24h" — the guide's last page promises it, so it's REAL): due when never
+    # stamped or older than 24 h. A SIGNAL, never a blocker — the app reads
+    # it fresh at the GO tap and runs the liveness screen before connecting
+    # (a hard can_go=False would strand drivers if the camera fails).
+    _last_face = user.last_face_verified_at
+    if _last_face is not None and _last_face.tzinfo is None:
+        # SQLite devuelve naive — se normaliza a UTC para comparar.
+        _last_face = _last_face.replace(tzinfo=timezone.utc)
+    face_due = _last_face is None or (utc_now() - _last_face) > timedelta(hours=24)
+
+    # Dispatch-review signals (2026-10-23, owner spec): face_review_required
+    # = the next selfie goes to manual review; face_check_pending = one is
+    # already waiting on dispatch. SIGNALS, never blockers — they don't go
+    # in reasons; the real cut is the reject itself.
+    face_pending = bool((await db.execute(
+        select(func.count(Document.id)).where(
+            Document.user_id == user.id,
+            Document.doc_type == "selfie_check",
+            Document.status == "pending",
+        ))).scalar())
 
     return {
         "can_go_online": can_go,
@@ -3096,8 +3164,60 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         "has_expired_docs": has_expired,
         "plate_change_pending": plate_pending,
         "missing_vehicle_docs": missing_docs,
+        "contracts_pending": pending_contracts,
+        "face_check_due": face_due,
+        "face_review_required": bool(user.face_review_required),
+        "face_check_pending": face_pending,
+        "go_online_disabled": go_disabled,
         "reasons": reasons,
     }
+
+
+@router.post("/drivers/face-check", dependencies=[Depends(_verify_api_key)])
+async def driver_face_check(request: Request,
+                            user: User = Depends(_get_current_user),
+                            db: AsyncSession = Depends(get_db)):
+    """Daily face check (2026-10-23, owner spec: "verificación de selfie cada
+    24h" — the guide's last page promises it, so it's REAL). The GO tap runs
+    the liveness screen when can_go_online reports face_check_due; its
+    success lands here: the selfie is stored for the record (dispatch sees
+    it in the person file) and last_face_verified_at is stamped."""
+    if (user.role or "").lower() != "driver":
+        raise HTTPException(403, "Drivers only")
+    body = await request.json()
+    photo_b64 = (body.get("photo_b64") or "").strip()
+    if not photo_b64:
+        raise HTTPException(400, "photo_b64 required")
+    if len(photo_b64) > 30_000_000:
+        raise HTTPException(413, "Photo too large")
+    import base64 as _b64
+    import time as _time
+    try:
+        decoded = _b64.b64decode(photo_b64, validate=True)
+    except Exception:
+        raise HTTPException(400, "Invalid photo data")
+    validate_image_bytes(decoded)
+    from utils.image_validation import shrink_image_bytes
+    decoded = shrink_image_bytes(decoded)
+    fb_path = f"drivers/{user.id}/face_check_{int(_time.time())}.jpg"
+    fb_url = firestore_sync.upload_to_firebase_storage(decoded, fb_path, "image/jpeg")
+    if not fb_url:
+        raise HTTPException(503, "Document storage unavailable. Please try again later.")
+    # Dispatch review (2026-10-23, owner spec): the selfie AUTO-APPROVES by
+    # default; a driver dispatch rejected once is on manual review — their
+    # selfie stays PENDING (no stamp, no connect) until dispatch approves.
+    if user.face_review_required:
+        db.add(Document(user_id=user.id, doc_type="selfie_check",
+                        status="pending", file_path=fb_url))
+        await db.commit()
+        return {"ok": True, "pending_review": True}
+    user.last_face_verified_at = utc_now()
+    # Informational row — dispatch sees the daily checks in the person file.
+    db.add(Document(user_id=user.id, doc_type="selfie_check",
+                    status="approved", file_path=fb_url))
+    await db.commit()
+    return {"ok": True, "pending_review": False,
+            "last_face_verified_at": user.last_face_verified_at.isoformat()}
 
 
 @router.post("/drivers/vehicle/plate", dependencies=[Depends(_verify_api_key)])
@@ -3140,6 +3260,7 @@ async def change_license_plate(
     result = await db.execute(select(Vehicle).where(
         Vehicle.user_id == user.id,
         Vehicle.is_active == True,
+        Vehicle.archived_at.is_(None),
     ))
     vehicle = result.scalar_one_or_none()
     if not vehicle:
@@ -3224,6 +3345,7 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
     if body.year is not None and body.year < 2018:
         raise HTTPException(400, "Vehicle year must be 2018 or newer")
     v = await _get_active_vehicle(db, user.id)
+    created = v is None
     update_data = body.model_dump(exclude_unset=True)
     if v:
         for k, val in update_data.items():
@@ -3238,7 +3360,7 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
             plate=body.plate or "",
             vin=body.vin,
             vehicle_type="comfort",  # will be auto-classified below
-            is_active=True,
+            is_active=False,
             approval_status="pending",
             doors=body.doors,
             seatbelts=body.seatbelts,
@@ -3254,16 +3376,20 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
 
     await db.commit()
     await db.refresh(v)
+    if created:
+        from services.vehicle_eligibility import notify_vehicle_added
+        await notify_vehicle_added(user, v)
     logging.info("[Vehicle] Driver %s: %s %s %s → tier=%s", user.id, make, model, year, v.vehicle_type)
     return {"vehicle": _vehicle_dict(v)}
 
 
 async def _get_active_vehicle(db: AsyncSession, user_id: int) -> Vehicle | None:
-    """The driver's currently selected vehicle — the one dispatch reads."""
+    """The driver's currently selected, unarchived vehicle."""
     result = await db.execute(
         select(Vehicle).where(
             Vehicle.user_id == user_id,
             Vehicle.is_active == True,
+            Vehicle.archived_at.is_(None),
         )
     )
     return result.scalar_one_or_none()
@@ -3271,24 +3397,30 @@ async def _get_active_vehicle(db: AsyncSession, user_id: int) -> Vehicle | None:
 
 @router.get("/drivers/vehicles", dependencies=[Depends(_verify_api_key)])
 async def list_vehicles(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """All vehicles the driver has ever added, oldest first."""
+    """Unarchived vehicles with their real per-car document state."""
     result = await db.execute(
-        select(Vehicle).where(Vehicle.user_id == user.id).order_by(Vehicle.created_at.asc())
+        select(Vehicle)
+        .where(Vehicle.user_id == user.id, Vehicle.archived_at.is_(None))
+        .order_by(Vehicle.created_at.asc())
     )
     vehicles = result.scalars().all()
-    return {"vehicles": [_vehicle_dict(v) for v in vehicles]}
+    from services.vehicle_eligibility import vehicle_document_status
+    single_vehicle = len(vehicles) <= 1
+    payload = []
+    for vehicle in vehicles:
+        data = _vehicle_dict(vehicle)
+        status = await vehicle_document_status(
+            db, user, vehicle, single_vehicle)
+        data["missing_vehicle_docs"] = status["missing_vehicle_docs"]
+        data["pending_vehicle_docs"] = status["pending_vehicle_docs"]
+        data["documents_approved"] = status["documents_approved"]
+        payload.append(data)
+    return {"vehicles": payload}
 
 
 @router.post("/drivers/vehicles", dependencies=[Depends(_verify_api_key)])
 async def add_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Add a NEW vehicle — never touches the existing one.
-
-    The first vehicle a driver adds becomes active by default; every later
-    one starts pending until dispatch approves its documents.
-    """
-    result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
-    existing = result.scalars().all()
-    is_first = len(existing) == 0
+    """Add a NEW vehicle, pending and inactive until fully approved."""
     if body.year is not None and body.year < 2018:
         raise HTTPException(400, "Vehicle year must be 2018 or newer")
 
@@ -3301,7 +3433,7 @@ async def add_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), 
         plate=body.plate or "",
         vin=body.vin,
         vehicle_type=_classify_vehicle_tier(body.make or "", body.model or "", body.year or 0),
-        is_active=is_first,
+        is_active=False,
         approval_status="pending",
         doors=body.doors,
         seatbelts=body.seatbelts,
@@ -3309,6 +3441,8 @@ async def add_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), 
     db.add(vehicle)
     await db.commit()
     await db.refresh(vehicle)
+    from services.vehicle_eligibility import notify_vehicle_added
+    await notify_vehicle_added(user, vehicle)
     logging.info("[Vehicle] Driver %s added vehicle %s: %s %s %s → tier=%s",
                  user.id, vehicle.id, vehicle.make, vehicle.model, vehicle.year, vehicle.vehicle_type)
     return {"vehicle": _vehicle_dict(vehicle)}
@@ -3316,18 +3450,34 @@ async def add_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), 
 
 @router.post("/drivers/vehicles/{vehicle_id}/use", dependencies=[Depends(_verify_api_key)])
 async def use_vehicle(vehicle_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Mark one vehicle as the active one (the one that receives trips)."""
+    """Activate only an approved, documented, unarchived vehicle."""
     result = await db.execute(
-        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+        select(Vehicle).where(
+            Vehicle.id == vehicle_id,
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
+        )
     )
     vehicle = result.scalar_one_or_none()
     if not vehicle:
         raise HTTPException(404, "Vehicle not found")
-    if (vehicle.approval_status or "").lower() != "approved":
-        raise HTTPException(400, "Vehicle is not approved yet")
+    count_r = await db.execute(
+        select(func.count()).select_from(Vehicle).where(
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
+        )
+    )
+    single_vehicle = (count_r.scalar() or 0) <= 1
+    from services.vehicle_eligibility import vehicle_is_selectable
+    if not await vehicle_is_selectable(db, user, vehicle, single_vehicle):
+        if (vehicle.approval_status or "").lower() != "approved":
+            raise HTTPException(400, "Vehicle is not approved yet")
+        raise HTTPException(400, "Vehicle documents are not approved yet")
 
     await db.execute(
-        update(Vehicle).where(Vehicle.user_id == user.id).values(is_active=False)
+        update(Vehicle)
+        .where(Vehicle.user_id == user.id, Vehicle.archived_at.is_(None))
+        .values(is_active=False)
     )
     vehicle.is_active = True
     await db.commit()
@@ -3338,30 +3488,62 @@ async def use_vehicle(vehicle_id: int, user: User = Depends(_get_current_user), 
 
 @router.delete("/drivers/vehicles/{vehicle_id}", dependencies=[Depends(_verify_api_key)])
 async def delete_vehicle(vehicle_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Remove a vehicle. If it was the active one, the oldest approved
-    vehicle becomes active; if none are approved, the driver is offline."""
+    """Archive a vehicle and keep its documents; never hard-delete history."""
     result = await db.execute(
-        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+        select(Vehicle).where(
+            Vehicle.id == vehicle_id,
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
+        )
     )
     vehicle = result.scalar_one_or_none()
     if not vehicle:
         raise HTTPException(404, "Vehicle not found")
     was_active = bool(vehicle.is_active)
-    await db.delete(vehicle)
+    vehicle.archived_at = datetime.now(timezone.utc)
+    vehicle.is_active = False
     await db.commit()
+
+    replacement = None
     if was_active:
         result = await db.execute(
             select(Vehicle).where(
                 Vehicle.user_id == user.id,
+                Vehicle.archived_at.is_(None),
                 Vehicle.approval_status == "approved",
             ).order_by(Vehicle.created_at.asc())
         )
-        next_vehicle = result.scalars().first()
-        if next_vehicle:
-            next_vehicle.is_active = True
+        candidates = result.scalars().all()
+        remaining_count = await db.scalar(
+            select(func.count()).select_from(Vehicle).where(
+                Vehicle.user_id == user.id,
+                Vehicle.archived_at.is_(None),
+            )
+        ) or 0
+        single_vehicle = remaining_count <= 1
+        from services.vehicle_eligibility import vehicle_document_status
+        for candidate in candidates:
+            status = await vehicle_document_status(
+                db, user, candidate, single_vehicle)
+            if status["documents_approved"]:
+                replacement = candidate
+                break
+        if replacement:
+            replacement.is_active = True
             await db.commit()
-    logging.info("[Vehicle] Driver %s deleted vehicle %s", user.id, vehicle_id)
-    return {"deleted": True}
+        else:
+            user.is_online = False
+            user.online_since = None
+            _driver_locations.pop(user.id, None)
+            from routers.dispatch import expire_pending_offers_for_driver
+            await expire_pending_offers_for_driver(
+                db, user.id, "vehicle archived without eligible replacement")
+            await db.commit()
+    logging.info("[Vehicle] Driver %s archived vehicle %s", user.id, vehicle_id)
+    return {
+        "archived": True,
+        "replacement_vehicle_id": replacement.id if replacement else None,
+    }
 
 
 async def _resolve_doc_vehicle(
@@ -3375,14 +3557,18 @@ async def _resolve_doc_vehicle(
     with NO vehicle at all still gets a 400, with a actionable message."""
     if vehicle_id is not None:
         result = await db.execute(
-            select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user_id)
+            select(Vehicle).where(
+                Vehicle.id == vehicle_id,
+                Vehicle.user_id == user_id,
+                Vehicle.archived_at.is_(None),
+            )
         )
         if not result.scalar_one_or_none():
             raise HTTPException(404, "Vehicle not found")
         return vehicle_id
     result = await db.execute(
         select(Vehicle)
-        .where(Vehicle.user_id == user_id)
+        .where(Vehicle.user_id == user_id, Vehicle.archived_at.is_(None))
         .order_by(Vehicle.is_active.desc(), Vehicle.created_at.desc())
     )
     vehicle = result.scalars().first()
@@ -3480,6 +3666,9 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
         if body.get("expiry_date"):
             existing.expiry_date = datetime.fromisoformat(body["expiry_date"])
         existing.rejection_reason = None
+        # New photo ⇒ the old AI suggestion belongs to the old photo
+        # (2026-10-20 self-review); the reader re-fills it if readable.
+        existing.expiry_suggested_at = None
         existing.updated_at = datetime.now(timezone.utc)
         doc = existing
     else:
@@ -3498,6 +3687,12 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     # Same panel sync as the multipart path (see _store_driver_document).
     if _HAS_FIRESTORE and firestore_sync and doc.file_path:
         firestore_sync.sync_verification_doc_url(user.id, doc_type, doc.file_path)
+    # AI expiry suggestion (2026-10-20, user-approved design) — background,
+    # suggestion-only; the operator confirms the real expiry_date.
+    from utils.helpers import _safe_create_task
+    from services.doc_expiry_reader import read_and_suggest
+    _safe_create_task(read_and_suggest(doc.id, doc.file_path, doc_type),
+                      name=f"doc_expiry_ai_{doc.id}")
     return _doc_dict(doc)
 
 async def _store_driver_document(
@@ -3567,6 +3762,10 @@ async def _store_driver_document(
         existing.status = "pending"
         existing.file_path = file_path or existing.file_path
         existing.rejection_reason = None
+        # New photo ⇒ the old AI suggestion describes a photo that no longer
+        # exists; the reader re-fills it if the new photo is readable
+        # (2026-10-20 self-review).
+        existing.expiry_suggested_at = None
         existing.updated_at = datetime.now(timezone.utc)
         doc = existing
     else:
@@ -3594,6 +3793,14 @@ async def _store_driver_document(
     if _HAS_FIRESTORE and firestore_sync and doc.file_path:
         firestore_sync.sync_verification_doc_url(
             user.id, doc_type, doc.file_path, side=side)
+    # AI expiry suggestion (2026-10-20, user-approved design: "la IA lee,
+    # yo confirmo en dispatch"): the vision reader writes ONLY a suggestion
+    # in the background — reminders and suspension wait for the operator's
+    # confirmed expiry_date.
+    from utils.helpers import _safe_create_task
+    from services.doc_expiry_reader import read_and_suggest
+    _safe_create_task(read_and_suggest(doc.id, doc.file_path, doc_type),
+                      name=f"doc_expiry_ai_{doc.id}")
     return doc
 
 
@@ -3872,6 +4079,17 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             driver.background_check_status = status
         await db.commit()
         logging.info(f"Checkr report.completed: driver={driver.id} status={status}")
+        # Background-check result email (2026-10-20, user spec "los 4"):
+        # clear = approved, consider = under review. Fail-soft like the
+        # push below — Checkr retries a 500, so nothing here may raise.
+        if status in ("clear", "consider"):
+            try:
+                from services.driver_emails import send_background_check_email
+                await send_background_check_email(driver, clear=(status == "clear"))
+            except Exception as _mail_err:
+                logging.warning(
+                    "[Checkr] background-check email failed for driver %s: %s",
+                    driver.id, _mail_err)
         if status == "clear":
             try:
                 # Never a 500 to Checkr (they retry) — a push/aggregation
@@ -3948,32 +4166,14 @@ async def stripe_connect_onboard(user: User = Depends(_get_current_user), db: As
     return {"account_link": account_link.url, "account_id": account_id}
 
 @router.post("/drivers/payout/transfer", dependencies=[Depends(_verify_api_key)])
-async def driver_payout_transfer(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Transfer driver's pending balance to their Stripe Connect account."""
+async def driver_payout_transfer(user: User = Depends(_get_current_user)):
     if user.role != "driver":
         raise HTTPException(403, "Only drivers can request payouts")
-    if not user.stripe_connect_id:
-        raise HTTPException(400, "Driver must complete Stripe Connect onboarding first")
-    if user.pending_balance <= 0:
-        raise HTTPException(400, "No pending balance to transfer")
-
-    if not _HAS_STRIPE:
-        amount = user.pending_balance
-        user.pending_balance = 0.0
-        await db.commit()
-        return {"amount": amount, "status": "paid", "mock": True}
-
-    # Heal stale connect ids (old Stripe account) before transferring.
-    cid = await _usable_connect_id(_stripe_mod, user, db)
-    amount_cents = int(user.pending_balance * 100)
-    transfer = _stripe_mod.Transfer.create(
-        amount=amount_cents, currency="usd", destination=cid,
-        description=f"Weekly payout for driver {user.id}",
+    raise HTTPException(
+        410,
+        "This payout endpoint was retired. Use /drivers/cashout, which claims "
+        "the balance under a database lock and uses Stripe idempotency keys.",
     )
-    payout_amount = user.pending_balance
-    user.pending_balance = 0.0
-    await db.commit()
-    return {"amount": payout_amount, "transfer_id": transfer.id, "status": "paid", "estimated_arrival": "2-3 business days"}
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  DRIVER INCENTIVES & QUESTS

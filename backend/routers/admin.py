@@ -1,9 +1,10 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, Form, File
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, or_, text, case, cast, Date, delete, update
+from pydantic import ValidationError
+from sqlalchemy import select, func, and_, or_, text, case, cast, Date, String, delete, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
@@ -14,6 +15,7 @@ from models.database import (
     PasswordResetToken, Referral, CruiseCashBalance, CruiseCashTransaction,
     DriverReferral, FavoriteLocation, RevokedToken, DriverLocationHistory,
     SmsLog, EmailLog, ZeroToleranceComplaint, ConsentLog,
+    LegalDocument, LegalDocumentVersion,
     SummaryOfRightsDelivery, WalletTransaction, ZeroToleranceAudit,
     LoginActivity, StoreOrder,
 )
@@ -22,6 +24,7 @@ from models.database import (
 _SERVER_START_TIME = datetime.now(timezone.utc)
 from models.schemas import (
     AdminStatsResponse, CreateTripIn, AdminUpdateTripIn, AdminCancelTripIn,
+    AdminNotificationIn, AdminVehicleUpdateIn,
 )
 from utils.security import (
     _get_current_user, _require_admin, _verify_api_key,
@@ -112,15 +115,29 @@ async def _get_driver_rating(driver_id: int, db: AsyncSession) -> float:
 @router.get("/admin/users", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_users(
     role: Optional[str] = None, status: Optional[str] = None,
+    search: Optional[str] = Query(None, max_length=120),
     limit: int = 200, offset: int = Query(0, ge=0, le=10000),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all users with optional role/status filter. For dispatch admin panel."""
+    """List users with optional role/status/text filters for dispatch."""
     query = select(User)
     if role:
         query = query.where(User.role == role)
     if status:
         query = query.where(User.status == status)
+    if search and search.strip():
+        term = search.strip().lower()
+        full_name = (
+            func.coalesce(User.first_name, "") + " " +
+            func.coalesce(User.last_name, "")
+        )
+        query = query.where(or_(
+            func.lower(full_name).contains(term, autoescape=True),
+            func.lower(func.coalesce(User.first_name, "")).contains(term, autoescape=True),
+            func.lower(func.coalesce(User.last_name, "")).contains(term, autoescape=True),
+            func.lower(func.coalesce(User.email, "")).contains(term, autoescape=True),
+            func.lower(func.coalesce(User.phone, "")).contains(term, autoescape=True),
+        ))
     limit = min(limit, 500)  # Cap max results
     query = query.order_by(User.id.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
@@ -136,9 +153,21 @@ async def admin_update_user_status(user_id: int, status: str = Body(..., embed=T
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
+    old_status = (user.status or "").lower()
     user.status = status
     await db.commit()
     await _terminate_account_session(db, user, status)
+    # Account lifecycle email (2026-10-20, user spec "los 4") — drivers
+    # only, and only on an actual flip (deactivated / blocked / back to
+    # active). Fail-soft: the status change itself already committed.
+    if user.role == "driver" and status != old_status and status in (
+            "active", "blocked", "deactivated"):
+        try:
+            from services.driver_emails import send_account_status_email
+            await send_account_status_email(user, status)
+        except Exception as e:
+            logging.warning("[Admin] account-status email failed for user %s: %s",
+                            user_id, e)
     # Sync to Firestore
     if _HAS_FIRESTORE:
         try:
@@ -920,6 +949,12 @@ async def admin_list_verifications(
         "video_url": u.video_url,
         "is_verified": u.is_verified,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,
+        # Panel: la ficha de Verificación muestra la ciudad de trabajo y la
+        # fecha de nacimiento del driver (2026-10-17 user spec) — el roster
+        # /admin/users ya los lleva; esta cola los necesita igual.
+        "drive_city": getattr(u, 'drive_city', None),
+        "drive_state": getattr(u, 'drive_state', None),
+        "date_of_birth": u.date_of_birth.isoformat() if getattr(u, 'date_of_birth', None) else None,
         # The panel sorts its verification queue by submission date; without
         # the account creation date these rows carried submittedAt=null and
         # sank to the bottom of the list regardless of how recent they were.
@@ -1172,10 +1207,12 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
         select(Document).where(Document.user_id == user_id).order_by(Document.created_at.desc())
     )
     docs = docs_result.scalars().all()
-    # Get ALL vehicles (multi-vehicle 2026-08-29) — admin sees each with its
-    # approval status and active flag.
+    # Deleted vehicles stay in history, but never in the editable fleet.
     veh_result = await db.execute(
-        select(Vehicle).where(Vehicle.user_id == user_id).order_by(Vehicle.created_at.asc())
+        select(Vehicle).where(
+            Vehicle.user_id == user_id,
+            Vehicle.archived_at.is_(None),
+        ).order_by(Vehicle.created_at.asc())
     )
     vehicles = veh_result.scalars().all()
     ud = _user_dict(user)
@@ -1210,22 +1247,6 @@ async def admin_get_user_ssn(user_id: int, db: AsyncSession = Depends(get_db)):
         "ssn": format_ssn_for_display(full),
         "ssn_masked": get_ssn_masked(user.ssn),
         "ssn_provided": True,
-    }
-
-
-@router.get("/admin/users/{user_id}/password", dependencies=[Depends(_require_dispatch_auth)])
-async def admin_get_user_password(user_id: int, db: AsyncSession = Depends(get_db)):
-    """Reveal a user's plaintext password. Restricted to dispatch admin.
-    Every reveal is audit-logged."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(404, "User not found")
-    has_password = bool(user.password_hash and len(user.password_hash) > 0)
-    _security_audit_log("ADMIN_PASSWORD_REVEAL", "admin", f"user_id={user_id}")
-    return {
-        "password": user.password_plain or None,
-        "has_password": has_password,
     }
 
 
@@ -1278,7 +1299,34 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
         if not any(c.isdigit() for c in pw):
             raise HTTPException(400, "Password must contain at least one digit")
         user.password_hash = pwd.hash(body["password"])
-        user.password_plain = pw
+    if any(key in body for key in ("vehicle_type", "plate_number", "plate_state")):
+        payload_data = {}
+        if "vehicle_type" in body:
+            payload_data["vehicle_type"] = body["vehicle_type"]
+        if "plate_number" in body:
+            payload_data["plate"] = body["plate_number"]
+        if "plate_state" in body:
+            payload_data["plate_state"] = body["plate_state"]
+        try:
+            payload = AdminVehicleUpdateIn(**payload_data)
+        except ValidationError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        data = payload.model_dump(exclude_unset=True)
+        for key in ("vehicle_type", "plate"):
+            if key in data and data[key] is None:
+                raise HTTPException(400, f"{key} cannot be null")
+        result = await db.execute(select(Vehicle).where(
+            Vehicle.user_id == user.id,
+            Vehicle.is_active == True,
+            Vehicle.archived_at.is_(None),
+        ))
+        vehicle = result.scalar_one_or_none()
+        if not vehicle:
+            raise HTTPException(404, "No active vehicle to update")
+        for key, value in data.items():
+            setattr(vehicle, key, value)
+        user.plate_number = vehicle.plate
+        user.plate_state = vehicle.plate_state
     await db.commit()
     await db.refresh(user)
     # Sync to Firestore
@@ -1474,126 +1522,173 @@ async def update_surge_zone(zone_name: str = Body(...), center_lat: float = Body
 #  ADMIN DASHBOARD ENDPOINTS
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+_LIVE_MAP_TRIP_STATUSES = (
+    "requested", "accepted", "driver_en_route", "arrived", "in_trip",
+    "scheduled_active",
+)
+
+
 @router.get("/admin/drivers/online", dependencies=[Depends(_require_dispatch_auth)])
 async def get_online_drivers(db: AsyncSession = Depends(get_db)):
-    """Get all online drivers with their current location and status. Requires dispatch auth."""
-    try:
-        result = await db.execute(
-            select(User, Vehicle).outerjoin(
-                Vehicle, and_(
-                    Vehicle.user_id == User.id,
-                    Vehicle.is_active == True,
-                )
-            ).where(
-                and_(User.role == "driver", User.is_online == True)
+    rows = (await db.execute(
+        select(User, Vehicle).outerjoin(
+            Vehicle, and_(
+                Vehicle.user_id == User.id,
+                Vehicle.is_active == True,
             )
-        )
-        
-        drivers = []
-        for user, vehicle in result.all():
-            # Check if driver is on a trip
-            trip_result = await db.execute(
-                select(Trip).where(
-                    and_(
-                        Trip.driver_id == user.id,
-                        Trip.status.in_(["driver_en_route", "arrived", "in_trip"])
-                    )
-                )
+        ).where(and_(User.role == "driver", User.is_online == True))
+    )).all()
+    driver_ids = [user.id for user, _vehicle in rows]
+    trip_by_driver: dict[int, int] = {}
+    rating_by_driver: dict[int, float] = {}
+    if driver_ids:
+        trip_rows = (await db.execute(
+            select(Trip.id, Trip.driver_id)
+            .where(
+                Trip.driver_id.in_(driver_ids),
+                Trip.status.in_(_LIVE_MAP_TRIP_STATUSES),
             )
-            active_trip = trip_result.scalar_one_or_none()
-            
-            drivers.append({
-                "id": user.id,
-                "name": f"{user.first_name} {user.last_name}",
-                "phone": user.phone,
-                "lat": user.lat,
-                "lng": user.lng,
-                "rating": await _get_driver_rating(user.id, db),  # Calculate from reviews
-                "vehicle": {
-                    "make": vehicle.make if vehicle else None,
-                    "model": vehicle.model if vehicle else None,
-                    "color": vehicle.color if vehicle else None,
-                    "plate": vehicle.plate if vehicle else None,
-                } if vehicle else None,
-                "on_trip": active_trip is not None,
-                "trip_id": active_trip.id if active_trip else None,
-                "last_updated": user.last_active_at.isoformat() if user.last_active_at else None,
-            })
-        
-        return {"drivers": drivers}
-    except Exception as e:
-        logging.error("[Admin] Error getting online drivers: %s", e)
-        raise HTTPException(500, f"Error getting drivers: {str(e)}")
+            .order_by(Trip.id.desc())
+        )).all()
+        for trip_id, driver_id in trip_rows:
+            trip_by_driver.setdefault(driver_id, trip_id)
+        rating_rows = (await db.execute(
+            select(Rating.to_user_id, func.avg(Rating.stars))
+            .where(
+                Rating.to_user_id.in_(driver_ids),
+                Rating.from_user_id != Rating.to_user_id,
+            )
+            .group_by(Rating.to_user_id)
+        )).all()
+        rating_by_driver = {
+            driver_id: round(float(average), 1) if average else 0.0
+            for driver_id, average in rating_rows
+        }
+
+    drivers = []
+    for user, vehicle in rows:
+        trip_id = trip_by_driver.get(user.id)
+        drivers.append({
+            "id": user.id,
+            "name": f"{user.first_name or ''} {user.last_name or ''}".strip(),
+            "phone": user.phone,
+            "lat": user.lat,
+            "lng": user.lng,
+            "rating": rating_by_driver.get(user.id, 0.0),
+            "vehicle": {
+                "make": vehicle.make,
+                "model": vehicle.model,
+                "color": vehicle.color,
+                "plate": vehicle.plate,
+            } if vehicle else None,
+            "on_trip": trip_id is not None,
+            "trip_id": trip_id,
+            "last_updated": (
+                user.last_active_at.isoformat() if user.last_active_at else None
+            ),
+        })
+    return {"drivers": drivers}
+
+def _live_trip_payload(trip: Trip, rider: User | None,
+                       driver: User | None) -> dict:
+    driver_info = None
+    if driver:
+        driver_info = {
+            "id": driver.id,
+            "name": f"{driver.first_name or ''} {driver.last_name or ''}".strip(),
+            "phone": driver.phone,
+            "lat": driver.lat,
+            "lng": driver.lng,
+        }
+    rider_name, rider_phone = _resolve_rider_display(trip, rider)
+    is_web = bool(
+        getattr(trip, "guest_first_name", None)
+        or getattr(trip, "guest_last_name", None)
+        or getattr(trip, "guest_phone", None)
+    )
+    return {
+        "id": trip.id,
+        "status": trip.status,
+        "pickup": {
+            "address": trip.pickup_address,
+            "lat": trip.pickup_lat,
+            "lng": trip.pickup_lng,
+        },
+        "dropoff": {
+            "address": trip.dropoff_address,
+            "lat": trip.dropoff_lat,
+            "lng": trip.dropoff_lng,
+        },
+        "rider": {
+            "id": rider.id if rider else None,
+            "name": rider_name or "Rider",
+            "phone": rider_phone or "",
+            "is_guest": is_web,
+        },
+        "driver": driver_info,
+        "fare": trip.fare,
+        "created_at": trip.created_at.isoformat() if trip.created_at else None,
+        "vehicle_type": trip.vehicle_type,
+        "is_web_booking": False,
+        "source": "app" if (rider or is_web) else "system",
+    }
+
 
 @router.get("/admin/trips/active", dependencies=[Depends(_require_dispatch_auth)])
 async def get_active_trips(db: AsyncSession = Depends(get_db)):
-    """Get all active trips with driver and rider info. Requires dispatch auth."""
-    try:
-        # LEFT JOIN rider too — guest web bookings have rider_id pointing to
-        # a shared system user which may be missing/null. We need those trips
-        # to show up in the dispatch panel regardless.
-        RiderAlias = aliased(User)
-        DriverAlias = aliased(User)
-        result = await db.execute(
-            select(Trip, RiderAlias, DriverAlias).outerjoin(
-                RiderAlias, RiderAlias.id == Trip.rider_id
-            ).outerjoin(
-                DriverAlias, DriverAlias.id == Trip.driver_id
-            ).where(
-                Trip.status.in_(["requested", "driver_en_route", "arrived", "in_trip"])
-            ).order_by(Trip.created_at.desc()).limit(200)
+    RiderAlias = aliased(User)
+    DriverAlias = aliased(User)
+    result = await db.execute(
+        select(Trip, RiderAlias, DriverAlias)
+        .outerjoin(RiderAlias, RiderAlias.id == Trip.rider_id)
+        .outerjoin(DriverAlias, DriverAlias.id == Trip.driver_id)
+        .where(Trip.status.in_(_LIVE_MAP_TRIP_STATUSES))
+        .order_by(Trip.created_at.desc(), Trip.id.desc())
+    )
+    return {
+        "trips": [
+            _live_trip_payload(trip, rider, driver)
+            for trip, rider, driver in result.all()
+        ]
+    }
+
+
+@router.get("/admin/drivers/{driver_id}/active-trip",
+            dependencies=[Depends(_require_dispatch_auth)])
+async def get_driver_active_trip(driver_id: int,
+                                 db: AsyncSession = Depends(get_db)):
+    RiderAlias = aliased(User)
+    DriverAlias = aliased(User)
+    result = await db.execute(
+        select(Trip, RiderAlias, DriverAlias)
+        .outerjoin(RiderAlias, RiderAlias.id == Trip.rider_id)
+        .outerjoin(DriverAlias, DriverAlias.id == Trip.driver_id)
+        .where(
+            Trip.driver_id == driver_id,
+            Trip.status.in_(_LIVE_MAP_TRIP_STATUSES),
         )
+        .order_by(Trip.created_at.desc(), Trip.id.desc())
+        .limit(1)
+    )
+    row = result.first()
+    if row is None:
+        return {"trip": None, "route": None, "route_status": "no_trip"}
+    trip, rider, driver = row
+    from services import dispatch_map_routes
+    try:
+        route = await dispatch_map_routes.route_for_trip(trip, driver)
+    except Exception as exc:
+        logging.warning("[Admin] selected-trip route failed: %s",
+                        type(exc).__name__)
+        route = {"route": None, "route_status": "route_unavailable"}
+    return {"trip": _live_trip_payload(trip, rider, driver), **route}
 
-        trips = []
-        for trip, rider, driver in result.all():
-            driver_info = None
-            if driver:
-                driver_info = {
-                    "id": driver.id,
-                    "name": f"{driver.first_name or ''} {driver.last_name or ''}".strip(),
-                    "phone": driver.phone,
-                    "lat": driver.lat,
-                    "lng": driver.lng,
-                }
+@router.get("/admin/zones/sectors",
+            dependencies=[Depends(_require_dispatch_auth)])
+async def admin_get_zone_sectors(db: AsyncSession = Depends(get_db)):
+    from routers.system import get_zone_sectors
+    return await get_zone_sectors(db)
 
-            # Prefer guest_* fields for web bookings so dispatch shows the real
-            # booker's name instead of "Web Booking" (the system user).
-            rider_name, rider_phone = _resolve_rider_display(trip, rider)
-            is_web = bool(
-                (getattr(trip, "guest_first_name", None) or getattr(trip, "guest_last_name", None) or getattr(trip, "guest_phone", None))
-            )
-
-            trips.append({
-                "id": trip.id,
-                "status": trip.status,
-                "pickup": {
-                    "address": trip.pickup_address,
-                    "lat": trip.pickup_lat,
-                    "lng": trip.pickup_lng,
-                },
-                "dropoff": {
-                    "address": trip.dropoff_address,
-                    "lat": trip.dropoff_lat,
-                    "lng": trip.dropoff_lng,
-                },
-                "rider": {
-                    "id": rider.id if rider else None,
-                    "name": rider_name or "Rider",
-                    "phone": rider_phone or "",
-                    "is_guest": is_web,
-                },
-                "driver": driver_info,
-                "fare": trip.fare,
-                "created_at": trip.created_at.isoformat() if trip.created_at else None,
-                "vehicle_type": trip.vehicle_type,
-                "is_web_booking": False,
-                "source": "app" if (rider or is_web) else "system",
-            })
-
-        return {"trips": trips}
-    except Exception as e:
-        logging.error("[Admin] Error getting active trips: %s", e)
-        raise HTTPException(500, f"Error getting trips: {str(e)}")
 
 @router.get("/admin/heatmap", dependencies=[Depends(_require_dispatch_auth)])
 async def get_heatmap_data(
@@ -1747,28 +1842,146 @@ async def create_driver_incentive(
 #  ADMIN — PUSH NOTIFICATIONS
 # ══════════════════════════════════════════════════════════
 
-@router.post("/admin/notifications/send", dependencies=[Depends(_require_dispatch_auth)])
-async def admin_send_notification(
-    user_id: int = Body(...),
-    title: str = Body(...),
-    body: str = Body(...),
-    data: Optional[dict] = Body(None),
+@router.get("/admin/notification-recipients", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_notification_recipients(
+    role: str = Query(..., pattern="^(driver|rider)$"),
+    search: Optional[str] = Query(None, max_length=120),
+    online: str = Query("all", pattern="^(all|online|offline)$"),
+    limit: int = Query(500, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=10000),
     db: AsyncSession = Depends(get_db),
 ):
-    """Send a push notification to a specific user by user_id."""
-    result = await db.execute(select(User).where(User.id == user_id))
+    """Return lightweight recipients for the dispatch notification picker."""
+    query = (
+        select(User, Vehicle)
+        .outerjoin(Vehicle, and_(
+            Vehicle.user_id == User.id,
+            Vehicle.is_active == True,
+            Vehicle.archived_at.is_(None),
+        ))
+        .where(User.role == role)
+    )
+    if online == "online":
+        query = query.where(User.is_online == True)
+    elif online == "offline":
+        query = query.where(or_(User.is_online == False, User.is_online.is_(None)))
+    if search and search.strip():
+        term = search.strip().lower()
+        full_name = (
+            func.coalesce(User.first_name, "") + " " +
+            func.coalesce(User.last_name, "")
+        )
+        text_columns = [
+            User.first_name, User.last_name, User.email, User.phone,
+            User.drive_city, User.drive_state, User.plate_number,
+            User.plate_state, User.platform, User.status,
+            User.verification_status, User.app_version, User.device_model,
+            User.os_version, User.cruise_level, Vehicle.make, Vehicle.model,
+            Vehicle.color, Vehicle.plate, Vehicle.plate_state,
+            Vehicle.vehicle_type, Vehicle.vin,
+        ]
+        conditions = [
+            func.lower(func.coalesce(column, "")).contains(term, autoescape=True)
+            for column in text_columns
+        ]
+        conditions.extend([
+            func.lower(full_name).contains(term, autoescape=True),
+            cast(User.id, String).contains(term, autoescape=True),
+            cast(Vehicle.year, String).contains(term, autoescape=True),
+        ])
+        query = query.where(or_(*conditions))
+
+    result = await db.execute(
+        query.order_by(User.id.desc(), Vehicle.id.desc()).offset(offset).limit(limit)
+    )
+    rows = result.all()
+    recipients = []
+    seen = set()
+    for user, vehicle in rows:
+        if user.id in seen:
+            continue
+        seen.add(user.id)
+        recipients.append({
+            "id": user.id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "phone": user.phone,
+            "role": user.role,
+            "photo_url": _abs_photo_url(user.photo_url),
+            "drive_city": user.drive_city,
+            "drive_state": user.drive_state,
+            "plate_number": user.plate_number,
+            "plate_state": user.plate_state,
+            "platform": user.platform,
+            "status": user.status,
+            "verification_status": user.verification_status,
+            "app_version": user.app_version,
+            "has_fcm": bool(user.fcm_token),
+            "is_online": bool(user.is_online),
+            "vehicle": None if vehicle is None else {
+                "make": vehicle.make,
+                "model": vehicle.model,
+                "year": vehicle.year,
+                "color": vehicle.color,
+                "plate": vehicle.plate,
+                "plate_state": vehicle.plate_state,
+                "vehicle_type": vehicle.vehicle_type,
+            },
+        })
+    return {"items": recipients, "has_more": len(rows) == limit}
+
+
+@router.post("/admin/notifications/send", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_send_notification(
+    payload: AdminNotificationIn,
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist a dispatch notification and dispatch its push when possible."""
+    result = await db.execute(select(User).where(User.id == payload.user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
-    if not user.fcm_token:
-        raise HTTPException(400, "User has no FCM token registered")
-    # Awaited (not fire-and-forget): this endpoint reports back to the operator,
-    # so the response must not return before the push has actually been handed
-    # to FCM. _send_fcm_push_async swallows FCM errors internally, so delivery
-    # is still not *confirmed* — the wording below reflects only what we know.
-    await _send_fcm_push_async(user.fcm_token, title, body, data)
-    logging.info("[Admin] Push notification dispatched to FCM for user %d", user_id)
-    return {"ok": True, "delivery": "dispatched"}
+    if user.role not in ("driver", "rider"):
+        raise HTTPException(400, "Recipient must be a driver or rider")
+
+    notification = Notification(
+        user_id=user.id,
+        title=payload.title,
+        body=payload.body,
+        notif_type="dispatch_notification",
+        is_read=False,
+    )
+    db.add(notification)
+    await db.flush()
+    notification_id = notification.id
+    data = dict(payload.data or {})
+    data["type"] = "dispatch_notification"
+    data["notification_id"] = str(notification_id)
+    notification.data = json.dumps(data, ensure_ascii=False)
+    await db.commit()
+
+    delivery = "inbox_only"
+    if user.fcm_token:
+        # Awaiting hands the message to FCM before the panel reports success;
+        # actual device delivery is still not confirmed by this response.
+        try:
+            await _send_fcm_push_async(user.fcm_token, payload.title, payload.body, data)
+            delivery = "dispatched"
+        except Exception as exc:
+            logging.warning(
+                "[Admin] Push failed for user %d; inbox notification %d remains available: %s",
+                user.id, notification_id, exc,
+            )
+    logging.info(
+        "[Admin] Notification %d saved for user %d (%s)",
+        notification_id, user.id, delivery,
+    )
+    _security_audit_log(
+        "ADMIN_NOTIFICATION_SENT", "admin",
+        f"user_id={user.id} role={user.role} delivery={delivery} notification_id={notification_id}",
+    )
+    return {"ok": True, "delivery": delivery, "notification_id": notification_id}
 
 
 @router.post("/admin/notifications/broadcast/drivers", dependencies=[Depends(_require_dispatch_auth)])
@@ -2302,7 +2515,8 @@ async def admin_driver_fleet_stats(db: AsyncSession = Depends(get_db)):
     drivers). Document rows AND the legacy user *_url columns both count.
     """
     drivers = (await db.execute(
-        select(User.id, User.drive_state, User.license_front_url,
+        select(User.id, User.drive_state, User.drive_city,
+               User.license_front_url,
                User.insurance_url, User.vehicle_registration_url,
                User.inspection_url)
         .where(User.role == "driver")
@@ -2350,7 +2564,11 @@ async def admin_driver_fleet_stats(db: AsyncSession = Depends(get_db)):
         complete += 1 if docs_ok else 0
         # Por driver — los chips del panel son filtros clicables (2026-10-15:
         # "si selecciono uno de esos botones debe mostrarme los usuarios").
-        per_driver.append({"id": u.id, "tier": tier, "docs": docs_ok})
+        # drive_city/drive_state viajan para que los conteos por categoría y
+        # documentos se recalculen con la ciudad elegida (2026-10-18).
+        per_driver.append({"id": u.id, "tier": tier, "docs": docs_ok,
+                           "drive_city": u.drive_city,
+                           "drive_state": u.drive_state})
 
     return {
         "drivers_total": len(drivers),
@@ -2358,6 +2576,368 @@ async def admin_driver_fleet_stats(db: AsyncSession = Depends(get_db)):
         "docs": {"complete": complete, "incomplete": len(drivers) - complete},
         "drivers": per_driver,
     }
+
+
+@router.get("/admin/rider-insights", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_rider_insights(db: AsyncSession = Depends(get_db)):
+    """Complete rider roster for Dispatch analytics and the Zonas page."""
+    from services.rider_geography import resolve_city_state
+    from services.zone_polygons import sector_id_at
+
+    riders = (await db.execute(
+        select(User)
+        .where(
+            User.role == "rider",
+            or_(User.registration_source.is_(None),
+                User.registration_source != "system"),
+            func.lower(func.coalesce(User.email, "")) !=
+            "web@cruiseinride.com",
+        )
+        .order_by(User.id.desc())
+    )).scalars().all()
+    rider_ids = [u.id for u in riders]
+    if not rider_ids:
+        return {"riders": [], "city_centers": {}, "summary": {
+            "total": 0, "verified": 0, "unverified": 0,
+            "with_documents": 0, "without_documents": 0,
+            "with_area": 0, "without_area": 0,
+        }}
+
+    latest_trips = select(
+        Trip.rider_id.label("rider_id"),
+        Trip.pickup_lat.label("pickup_lat"),
+        Trip.pickup_lng.label("pickup_lng"),
+        Trip.created_at.label("created_at"),
+        func.row_number().over(
+            partition_by=Trip.rider_id,
+            order_by=(Trip.created_at.desc(), Trip.id.desc()),
+        ).label("trip_rank"),
+    ).where(Trip.rider_id.in_(rider_ids)).subquery()
+    latest_rows = (await db.execute(
+        select(latest_trips).where(latest_trips.c.trip_rank == 1)
+    )).all()
+    latest_by_rider = {row.rider_id: row for row in latest_rows}
+
+    favorite_rows = (await db.execute(
+        select(FavoriteLocation.user_id, FavoriteLocation.label,
+               FavoriteLocation.lat, FavoriteLocation.lng)
+        .where(
+            FavoriteLocation.user_id.in_(rider_ids),
+            func.lower(FavoriteLocation.label).in_(
+                ["home", "work", "casa", "trabajo"]),
+        )
+        .order_by(FavoriteLocation.user_id, FavoriteLocation.id)
+    )).all()
+    favorites_by_rider: dict[int, dict[str, tuple[float, float]]] = {}
+    for row in favorite_rows:
+        label = (row.label or "").strip().lower()
+        source = "home" if label in ("home", "casa") else "work"
+        favorites_by_rider.setdefault(row.user_id, {})[source] = (
+            row.lat, row.lng)
+
+    document_rows = (await db.execute(
+        select(Document.user_id, Document.doc_type, Document.status)
+        .where(Document.user_id.in_(rider_ids))
+    )).all()
+    documents_by_rider: dict[int, list] = {}
+    for row in document_rows:
+        documents_by_rider.setdefault(row.user_id, []).append(row)
+
+    payment_rows = (await db.execute(
+        select(RiderPaymentMethod.user_id, RiderPaymentMethod.method_type,
+               RiderPaymentMethod.display_name,
+               RiderPaymentMethod.is_default,
+               RiderPaymentMethod.created_at)
+        .where(RiderPaymentMethod.user_id.in_(rider_ids))
+        .order_by(RiderPaymentMethod.user_id,
+                  RiderPaymentMethod.is_default.desc(),
+                  RiderPaymentMethod.created_at)
+    )).all()
+    payments_by_rider: dict[int, list] = {}
+    for row in payment_rows:
+        payments_by_rider.setdefault(row.user_id, []).append({
+            "method_type": row.method_type,
+            "display_name": row.display_name,
+            "is_default": bool(row.is_default),
+        })
+
+    def _valid_point(lat, lng) -> bool:
+        return (
+            lat is not None and lng is not None
+            and math.isfinite(lat) and math.isfinite(lng)
+            and -90 <= lat <= 90 and -180 <= lng <= 180
+        )
+
+    candidates_by_rider: dict[int, list] = {}
+    cells = set()
+    for user in riders:
+        candidates = []
+        latest = latest_by_rider.get(user.id)
+        if latest is not None and _valid_point(
+                latest.pickup_lat, latest.pickup_lng):
+            candidates.append(
+                ("last_trip", latest.pickup_lat, latest.pickup_lng))
+        saved = favorites_by_rider.get(user.id, {})
+        for source in ("home", "work"):
+            point = saved.get(source)
+            if point is not None and _valid_point(*point):
+                candidates.append((source, point[0], point[1]))
+        candidates_by_rider[user.id] = candidates
+        cells.update((round(lat, 2), round(lng, 2))
+                     for _, lat, lng in candidates)
+
+    semaphore = asyncio.Semaphore(6)
+
+    async def _resolve(cell):
+        async with semaphore:
+            try:
+                return cell, await resolve_city_state(cell[0], cell[1])
+            except Exception as exc:
+                logging.warning("[RiderInsights] geocode failed for %s: %s",
+                                cell, exc)
+                return cell, {"city": None, "state": None}
+
+    geo_results = await asyncio.gather(
+        *(_resolve(cell) for cell in sorted(cells)))
+    geo_by_cell = dict(geo_results)
+
+    rows = []
+    city_centers: dict = {}
+    summary = {
+        "total": 0, "verified": 0, "unverified": 0,
+        "with_documents": 0, "without_documents": 0,
+        "with_area": 0, "without_area": 0,
+    }
+    for user in riders:
+        area = None
+        for source, lat, lng in candidates_by_rider[user.id]:
+            geo = geo_by_cell.get((round(lat, 2), round(lng, 2)),
+                                  {"city": None, "state": None})
+            try:
+                sector_id = await sector_id_at(db, lat, lng)
+            except Exception as exc:
+                logging.warning("[RiderInsights] sector lookup failed: %s", exc)
+                sector_id = None
+            city = geo.get("city")
+            state = geo.get("state")
+            if city or state or sector_id:
+                area = {
+                    "city": city,
+                    "state": state,
+                    "sector_id": sector_id,
+                    "source": source,
+                    "city_key": f"{state}|{city}" if city and state else None,
+                }
+                break
+
+        user_docs = documents_by_rider.get(user.id, [])
+        has_documents = bool(user_docs or any((
+            user.id_photo_url, user.selfie_url, user.license_front_url,
+            user.license_back_url, user.video_url,
+        )))
+        verified = bool(user.is_verified or
+                        (user.verification_status or "") == "approved")
+        payment_methods = payments_by_rider.get(user.id, [])
+        default_payment = next(
+            (p for p in payment_methods if p["is_default"]), None)
+        latest = latest_by_rider.get(user.id)
+        user_data = _user_dict(user)
+        allowed_keys = (
+            "id", "first_name", "last_name", "email", "phone", "photo_url",
+            "role", "platform", "device_model", "os_version", "app_version",
+            "is_verified", "id_document_type", "verification_status",
+            "id_photo_url", "selfie_url", "license_front_url",
+            "license_back_url", "video_url", "verified_at", "status",
+            "auth_provider", "date_of_birth", "created_at", "last_active_at",
+            "registration_source",
+        )
+        row = {key: user_data.get(key) for key in allowed_keys}
+        row.update({
+            "verified": verified,
+            "has_documents": has_documents,
+            "document_statuses": sorted({
+                (doc.status or "").strip().lower()
+                for doc in user_docs if (doc.status or "").strip()
+            }),
+            "last_trip_at": (latest.created_at.isoformat()
+                             if latest is not None and latest.created_at else None),
+            "payment_methods": payment_methods,
+            "payment_types": sorted({
+                p["method_type"] for p in payment_methods
+                if p["method_type"]
+            }),
+            "default_payment_method": default_payment,
+            "area": area,
+        })
+        rows.append(row)
+
+        summary["total"] += 1
+        summary["verified" if verified else "unverified"] += 1
+        summary["with_documents" if has_documents else "without_documents"] += 1
+        has_area = bool(area and (area["city"] or area["sector_id"]))
+        summary["with_area" if has_area else "without_area"] += 1
+        if area and area["city_key"]:
+            key = area["city_key"]
+            if key not in city_centers:
+                center = _city_center(key)
+                if center is not None:
+                    city_centers[key] = center
+
+    return {"riders": rows, "city_centers": city_centers,
+            "summary": summary}
+
+
+@router.get("/admin/driver-locations", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
+    """Last known position of every driver for the Zonas page map
+    (2026-10-18 user spec: "en zonas ver dónde están ubicados cada uno
+    seleccionando por ciudad o varias ciudades").
+
+    The in-memory `_driver_locations` overlay (updated on every heartbeat)
+    wins over the throttled `users.lat/lng` columns (written every 3 s);
+    `last_active_at` is the display timestamp. Drivers with NO position at
+    all are included with lat/lng null — the city view still counts them.
+    """
+    from routers.drivers import _driver_locations
+
+    rows = (await db.execute(
+        select(User.id, User.first_name, User.last_name, User.phone,
+               User.photo_url, User.drive_city, User.drive_state,
+               User.is_online, User.lat, User.lng, User.last_active_at,
+               User.verification_status, User.created_at,
+               User.license_front_url, User.insurance_url,
+               User.vehicle_registration_url, User.inspection_url)
+        .where(User.role == "driver")
+    )).all()
+
+    # Docs completeness per driver (2026-10-22, owner spec: "ver en el mapa
+    # los que ya tienen documentos y los que no") — the SAME definition the
+    # Drivers page fleet stats use: license + insurance + registration
+    # (+ inspection in Alabama), on file in ANY review status, Document rows
+    # or the legacy user *_url columns.
+    doc_rows = (await db.execute(
+        select(Document.user_id, Document.doc_type)
+        .where(Document.doc_type.in_(
+            ["drivers_license", "driver_license", "license", "insurance",
+             "registration", "vehicle_registration", "vehicle_inspection",
+             "inspection"]))
+    )).all()
+    doc_types_by_driver: dict[int, set] = {}
+    for d in doc_rows:
+        doc_types_by_driver.setdefault(d.user_id, set()).add(d.doc_type)
+
+    def _docs_ok(u) -> bool:
+        have = doc_types_by_driver.get(u.id, set())
+        has_license = bool(have & {"drivers_license", "driver_license",
+                                   "license"}) or bool(u.license_front_url)
+        has_insurance = "insurance" in have or bool(u.insurance_url)
+        has_registration = bool(have & {"registration",
+                                        "vehicle_registration"}) or bool(
+                                            u.vehicle_registration_url)
+        needs_inspection = (u.drive_state or "").strip().upper() == "AL"
+        has_inspection = (not needs_inspection or
+                          bool(have & {"vehicle_inspection", "inspection"})
+                          or bool(u.inspection_url))
+        return has_license and has_insurance and has_registration \
+            and has_inspection
+
+    out = []
+    for u in rows:
+        live = _driver_locations.get(u.id)
+        lat = live["lat"] if live is not None else u.lat
+        lng = live["lng"] if live is not None else u.lng
+        # is_online comes from the DB ONLY (2026-10-22, "le di offline y en
+        # dispatch sigo activo"): prod runs UVICORN_WORKERS=4 and the
+        # overlay is per-process — the worker serving this request may hold
+        # a heartbeat from BEFORE the offline flip (TTL 1 h) and overrode
+        # the DB with a ghost "online". The flip writes the DB immediately
+        # (it bypasses the 3 s throttle), so the DB is always the freshest
+        # truth for the flag; the overlay only freshens POSITION.
+        is_online = bool(u.is_online)
+        out.append({
+            "id": u.id,
+            "name": f"{u.first_name or ''} {u.last_name or ''}".strip(),
+            "phone": u.phone,
+            "photo_url": u.photo_url,
+            "drive_city": u.drive_city,
+            "drive_state": u.drive_state,
+            "is_online": is_online,
+            # Waitlist view (2026-10-22): the side panel filters by this.
+            "verification_status": u.verification_status,
+            "created_at": (u.created_at.isoformat()
+                           if u.created_at else None),
+            "docs_ok": _docs_ok(u),
+            "lat": lat,
+            "lng": lng,
+            "last_active_at": (u.last_active_at.isoformat()
+                               if u.last_active_at else None),
+        })
+
+    # The city view anchors its bubbles to the CITY coordinates (2026-10-18:
+    # almost no driver had GPS rows in prod — 5 of 194 — so a bubble per
+    # driver position showed nothing). Centers come from the same GeoNames
+    # dump as the app's city picker (31,226 "ST|City" entries), shipped in
+    # backend/data. Keys with no center simply get no bubble.
+    centers: dict = {}
+    for u in rows:
+        st = (u.drive_state or "").strip().upper()
+        city = (u.drive_city or "").strip()
+        if not city:
+            continue
+        key = f"{st}|{city}"
+        if key in centers:
+            continue
+        c = _city_center(key)
+        if c is not None:
+            centers[key] = c
+    # Drivers per zone (2026-10-18, user spec: "ver en qué zona o parte del
+    # sur de la Florida hay más drivers"): each driver's work-city GeoNames
+    # center is tested against the SAME sector polygons the panel edits —
+    # the zone choropleth works for the whole roster, GPS or not.
+    zone_counts: dict = {}
+    try:
+        from services.zone_polygons import sector_id_at
+        city_sector: dict = {}
+        for u in rows:
+            st = (u.drive_state or "").strip().upper()
+            city = (u.drive_city or "").strip()
+            key = f"{st}|{city}"
+            if not city or key in city_sector:
+                continue
+            c = _city_center(key)
+            city_sector[key] = (
+                await sector_id_at(db, c[0], c[1])) if c is not None else None
+        for u in rows:
+            st = (u.drive_state or "").strip().upper()
+            city = (u.drive_city or "").strip()
+            sec = city_sector.get(f"{st}|{city}")
+            if sec:
+                zone_counts[sec] = zone_counts.get(sec, 0) + 1
+    except Exception as e:
+        logging.warning("[DriverLocations] zone counts failed: %s", e)
+    return {"drivers": out, "city_centers": centers,
+            "zone_counts": zone_counts}
+
+
+_city_centers_cache: dict | None = None
+
+
+def _city_center(key: str):
+    """[lat, lng] for a "ST|City" key, or None — loaded once from the
+    GeoNames-derived table in backend/data/us_city_centers.json."""
+    global _city_centers_cache
+    if _city_centers_cache is None:
+        import json
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[1] / "geo" / \
+            "us_city_centers.json"
+        try:
+            _city_centers_cache = json.loads(path.read_text(
+                encoding="utf-8"))
+        except Exception as e:
+            logging.warning("[CityCenters] load failed: %s", e)
+            _city_centers_cache = {}
+    return _city_centers_cache.get(key)
 
 
 @router.get("/admin/platform-stats", dependencies=[Depends(_require_dispatch_auth)])
@@ -2445,12 +3025,14 @@ async def admin_wipe_firestore():
 
 
 def _admin_trip_driver_earnings(trip: Trip) -> float:
-    """Best-effort driver earnings for the admin earnings endpoint."""
     if trip.driver_earnings is not None:
         return float(trip.driver_earnings)
-    # Fallback to the default 60/40 split when the field hasn't been backfilled.
+    from services import vehicle_tiers
     tip = float(trip.tip_amount or 0.0)
-    base = round(float(trip.fare or 0.0) * 0.6, 2)
+    base = round(
+        float(trip.fare or 0.0)
+        * vehicle_tiers.driver_share_for_trip(trip), 2,
+    )
     return round(base + tip, 2)
 
 
@@ -2504,6 +3086,34 @@ async def admin_get_driver_earnings(
     }
 
 
+@router.patch("/admin/vehicles/{vehicle_id}", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_update_vehicle(
+    vehicle_id: int, body: AdminVehicleUpdateIn,
+    db: AsyncSession = Depends(get_db),
+):
+    """Edit one unarchived vehicle, including its plate and category."""
+    data = body.model_dump(exclude_unset=True)
+    for key in ("make", "model", "year", "plate", "vehicle_type"):
+        if key in data and data[key] is None:
+            raise HTTPException(400, f"{key} cannot be null")
+    result = await db.execute(select(Vehicle).where(
+        Vehicle.id == vehicle_id,
+        Vehicle.archived_at.is_(None),
+    ))
+    vehicle = result.scalar_one_or_none()
+    if not vehicle:
+        raise HTTPException(404, "Vehicle not found")
+    for key, value in data.items():
+        setattr(vehicle, key, value)
+    await db.commit()
+    await db.refresh(vehicle)
+    _security_audit_log(
+        "ADMIN_VEHICLE_UPDATE", "admin",
+        f"vehicle_id={vehicle.id} user_id={vehicle.user_id}",
+    )
+    return {"vehicle": _vehicle_dict(vehicle)}
+
+
 @router.post("/admin/vehicles/{vehicle_id}/status", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_set_vehicle_status(vehicle_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Approve or reject a vehicle (multi-vehicle 2026-08-29).
@@ -2545,7 +3155,8 @@ async def admin_set_vehicle_status(vehicle_id: int, request: Request, db: AsyncS
         except Exception as e:
             logging.warning("[Admin] vehicle notify failed: %s", e)
         try:
-            await driver_approval.recompute_driver_approval(db, veh_user)
+            await driver_approval.recompute_driver_approval(
+                db, veh_user, vehicle_id=vehicle.id)
         except Exception as e:
             logging.warning("[Admin] approval recompute failed: %s", e)
     return {"vehicle": _vehicle_dict(vehicle)}
@@ -2598,9 +3209,464 @@ async def admin_set_document_status(document_id: int, request: Request, db: Asyn
             doc_user, doc.doc_type, action == "approve",
             reason=doc.rejection_reason)
         try:
-            await driver_approval.recompute_driver_approval(db, doc_user)
+            await driver_approval.recompute_driver_approval(
+                db, doc_user, vehicle_id=doc.vehicle_id)
         except Exception as e:
             logging.warning("[Admin] approval recompute failed: %s", e)
+    return {"document": _doc_dict(doc)}
+
+
+# ── AI expiry suggestions: dispatch confirms (2026-10-20, user-approved
+# design: "la IA sugiere, yo confirmo en dispatch") ─────────────────────
+# The vision reader only ever writes `expiry_suggested_at`. These endpoints
+# are the ONLY path that turns a suggestion into the official `expiry_date`
+# (what reminders and suspension consume). Confirm = operator approved it
+# (optionally edited); dismiss = the read was wrong; confirm-all = the
+# batch button for the review queue.
+
+@router.get("/admin/documents/expiry-suggestions", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_list_expiry_suggestions(db: AsyncSession = Depends(get_db)):
+    """Documents with an AI-read expiry date PENDING operator confirmation."""
+    r = await db.execute(
+        select(Document, User.first_name, User.last_name)
+        .join(User, Document.user_id == User.id)
+        .where(Document.expiry_suggested_at.isnot(None),
+               Document.expiry_date.is_(None))
+        .order_by(Document.expiry_suggested_at))
+    out = []
+    for doc, first, last in r.all():
+        out.append({
+            "id": doc.id,
+            "user_id": doc.user_id,
+            "driver_name": f"{first or ''} {last or ''}".strip(),
+            "doc_type": doc.doc_type,
+            "file_path": doc.file_path,
+            "expiry_suggested_at": doc.expiry_suggested_at.isoformat(),
+        })
+    return {"suggestions": out}
+
+
+@router.post("/admin/documents/expiry-suggestions/confirm-all", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_confirm_all_expiry_suggestions(db: AsyncSession = Depends(get_db)):
+    """The batch button: confirm every pending suggestion as read."""
+    r = await db.execute(
+        select(Document).where(Document.expiry_suggested_at.isnot(None),
+                               Document.expiry_date.is_(None)))
+    docs = r.scalars().all()
+    for doc in docs:
+        doc.expiry_date = doc.expiry_suggested_at
+        doc.expiry_suggested_at = None
+        doc.expiry_email_stage = 0  # fresh countdown, same as single-confirm
+        doc.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    _security_audit_log("ADMIN_EXPIRY_CONFIRM_ALL", "admin",
+                        f"count={len(docs)}")
+    return {"confirmed": len(docs)}
+
+
+@router.post("/admin/documents/{document_id}/expiry-suggestion/confirm", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_confirm_expiry_suggestion(document_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Confirm (optionally edited) one AI-suggested expiry into the
+    official expiry_date — the only way the AI read takes effect."""
+    body = await request.json()
+    override = (body.get("expiry_date") or "").strip()
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if override:
+        try:
+            doc.expiry_date = datetime.fromisoformat(override)
+            if doc.expiry_date.tzinfo is None:
+                doc.expiry_date = doc.expiry_date.replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(400, "expiry_date must be ISO (YYYY-MM-DD)")
+    elif doc.expiry_suggested_at is not None:
+        doc.expiry_date = doc.expiry_suggested_at
+    else:
+        raise HTTPException(400, "No suggestion to confirm — pass expiry_date")
+    doc.expiry_suggested_at = None
+    # A newly confirmed date starts a FRESH reminder countdown (2026-10-20
+    # self-review: the stage of the old date used to carry over, silencing
+    # the 30/15-day notices for the new one).
+    doc.expiry_email_stage = 0
+    doc.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    _security_audit_log("ADMIN_EXPIRY_CONFIRM", "admin",
+                        f"doc={document_id} expiry={doc.expiry_date}")
+    return {"document": _doc_dict(doc)}
+
+
+@router.post("/admin/documents/{document_id}/expiry-suggestion/dismiss", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_dismiss_expiry_suggestion(document_id: int, db: AsyncSession = Depends(get_db)):
+    """The AI read was wrong (or there is no expiry on the document):
+    drop the suggestion without touching anything else."""
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    doc.expiry_suggested_at = None
+    doc.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    _security_audit_log("ADMIN_EXPIRY_DISMISS", "admin", f"doc={document_id}")
+    return {"document": _doc_dict(doc)}
+
+
+# ── Daily face-check review (2026-10-23, owner spec): the selfie
+# AUTO-APPROVES by default; dispatch reviews it here after the fact. A
+# reject takes the driver offline (deferred while a rider is aboard — same
+# rule as the 12 h shift cap) and puts their NEXT selfie on manual review;
+# an approve clears that flag and hands the auto-approve back. ────────────
+
+@router.get("/admin/face-checks/pending", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_list_pending_face_checks(db: AsyncSession = Depends(get_db)):
+    """Selfies waiting on dispatch review (drivers whose last selfie was
+    rejected once — their checks stop auto-approving)."""
+    r = await db.execute(
+        select(Document, User.first_name, User.last_name, User.photo_url)
+        .join(User, Document.user_id == User.id)
+        .where(Document.doc_type == "selfie_check",
+               Document.status == "pending")
+        .order_by(Document.created_at.desc()))
+    out = []
+    for doc, first, last, photo in r.all():
+        out.append({
+            "id": doc.id,
+            "user_id": doc.user_id,
+            "driver_name": f"{first or ''} {last or ''}".strip(),
+            "photo_url": photo,
+            "file_path": doc.file_path,
+            "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        })
+    return {"face_checks": out}
+
+
+@router.post("/admin/face-checks/{document_id}/approve", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_approve_face_check(document_id: int, db: AsyncSession = Depends(get_db)):
+    """Approve a pending selfie: stamps the daily check and hands the
+    auto-approve back (a deferred kick, if any, dies with the review)."""
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc.doc_type != "selfie_check":
+        raise HTTPException(400, "Not a face check document")
+    doc.status = "approved"
+    doc.rejection_reason = None
+    doc.updated_at = datetime.now(timezone.utc)
+    u_r = await db.execute(select(User).where(User.id == doc.user_id))
+    driver = u_r.scalar_one_or_none()
+    if driver:
+        driver.last_face_verified_at = utc_now()
+        driver.face_review_required = False
+        driver.face_kick_pending = False
+    await db.commit()
+    _security_audit_log("ADMIN_FACE_CHECK_APPROVE", "admin",
+                        f"doc={document_id} user_id={doc.user_id}")
+    # Live unlock (same socket as the reject): the app's grey "Selfie en
+    # revisión" GO clears now instead of waiting out the 30 s poll.
+    if driver:
+        try:
+            await notify_user(driver.id, "face_check_reviewed",
+                              {"approved": True})
+        except Exception as e:
+            logging.warning("[Admin] face-check approve socket failed for %s: %s",
+                            driver.id, e)
+    if driver and driver.fcm_token:
+        es = user_lang(driver) == "es"
+        _safe_create_task(
+            _send_fcm_push_async(
+                driver.fcm_token,
+                "✅ Selfie aprobada" if es else "✅ Selfie approved",
+                "Ya puedes conectarte y recibir viajes" if es
+                else "You can go online and receive rides now",
+                {"type": "face_check_approved"},
+            ),
+            name=f"face_check_approved_{driver.id}",
+        )
+    return {"document": _doc_dict(doc)}
+
+
+@router.post("/admin/face-checks/{document_id}/reject", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_reject_face_check(document_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Reject a selfie (dress code): the driver goes offline NOW — unless a
+    rider is aboard, in which case face_kick_pending defers the cut to the
+    trip's end (trips.py applies it) — and their next selfie stops
+    auto-approving until dispatch approves one."""
+    try:
+        body = await request.json()
+        reason = body.get("reason") if isinstance(body, dict) else None
+    except Exception:
+        reason = None
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc.doc_type != "selfie_check":
+        raise HTTPException(400, "Not a face check document")
+    doc.status = "rejected"
+    doc.rejection_reason = reason
+    doc.updated_at = datetime.now(timezone.utc)
+    u_r = await db.execute(select(User).where(User.id == doc.user_id))
+    driver = u_r.scalar_one_or_none()
+    kick_deferred = False
+    if driver:
+        driver.face_review_required = True
+        # Rider aboard wins (the SAME set the 12 h shift cap uses to keep a
+        # driver online): a committed trip defers the cut to its end —
+        # trips.py applies face_kick_pending when the trip closes.
+        _COMMITTED_TRIP_STATUSES = (
+            "accepted", "driver_en_route", "arrived", "in_trip",
+            "scheduled_accepted", "scheduled_active",
+        )
+        active = await db.execute(
+            select(Trip.id).where(
+                and_(Trip.driver_id == driver.id,
+                     Trip.status.in_(_COMMITTED_TRIP_STATUSES))).limit(1))
+        if active.scalar_one_or_none():
+            # Rider aboard wins — the cut lands when the trip closes.
+            driver.face_kick_pending = True
+            kick_deferred = True
+        else:
+            # Same retirement as a manual offline: no pending offer outlives
+            # the flip (expire also drops the Live Activity offer card).
+            driver.face_kick_pending = False
+            driver.is_online = False
+            driver.online_since = None
+            from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+            await expire_pending_offers_for_driver(db, driver.id, "face check rejected")
+    await db.commit()
+    if driver and not kick_deferred and _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_driver_location(driver.id, driver.lat or 0, driver.lng or 0, False)
+        except Exception:
+            pass
+    _security_audit_log("ADMIN_FACE_CHECK_REJECT", "admin",
+                        f"doc={document_id} user_id={doc.user_id} deferred={kick_deferred}")
+    # Instant socket to the live app (same pattern as go_online_gate_changed)
+    # — without it the driver only learned by TAPPING the push banner, and
+    # their heartbeats re-onlined them against the DB write above.
+    if driver:
+        try:
+            await notify_user(driver.id, "face_check_reviewed",
+                              {"approved": False, "deferred": kick_deferred})
+        except Exception as e:
+            logging.warning("[Admin] face-check reject socket failed for %s: %s",
+                            driver.id, e)
+    if driver and driver.fcm_token:
+        es = user_lang(driver) == "es"
+        _safe_create_task(
+            _send_fcm_push_async(
+                driver.fcm_token,
+                "📷 Selfie rechazada" if es else "📷 Selfie rejected",
+                "No cumple con las normas de vestimenta" if es
+                else "Does not meet the dress code rules",
+                {"type": "face_check_rejected"},
+            ),
+            name=f"face_check_rejected_{driver.id}",
+        )
+    return {"document": _doc_dict(doc), "kick_deferred": kick_deferred}
+
+
+# ── Dispatch GO switch (2026-10-23, owner spec — "un botón para desactivar
+# y activar el botón de go online de cada driver y que funcione instantaneo")
+@router.post("/admin/users/{user_id}/go-online-gate", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_go_online_gate(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """disabled=True kills the driver's online state on the spot (pending
+    offers expire, Live Activity offer drops, Firestore goes offline) and
+    the live app is told over the socket; the GO button then stays dead
+    (can_go_online blocks + the online flip 403s) until re-enabled here."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    disabled = body.get("disabled") if isinstance(body, dict) else None
+    if not isinstance(disabled, bool):
+        raise HTTPException(400, "disabled (bool) required")
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    user.go_online_disabled = disabled
+    if disabled:
+        user.is_online = False
+        user.online_since = None
+        from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+        await expire_pending_offers_for_driver(db, user.id, "go online disabled by dispatch")
+    await db.commit()
+    if disabled and _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_driver_location(user.id, user.lat or 0, user.lng or 0, False)
+        except Exception:
+            pass
+    _security_audit_log("ADMIN_GO_ONLINE_GATE", "admin",
+                        f"user_id={user_id} disabled={disabled}")
+    try:
+        await notify_user(user.id, "go_online_gate_changed",
+                          {"disabled": disabled})
+    except Exception as e:
+        logging.warning("[Admin] go-online gate socket failed for %s: %s",
+                        user.id, e)
+    return {"ok": True, "disabled": disabled}
+
+
+# ── Digital contracts admin (2026-10-21, user spec — Uber-style): consult
+# acceptances, download receipt PDFs, update the documents (version bump →
+# re-acceptance wave), and read the version history ──────────────────────
+
+@router.get("/admin/contracts", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_list_contracts(db: AsyncSession = Depends(get_db)):
+    """The current legal documents (both locales) for the dispatch editor —
+    slug, title, live version and full markdown."""
+    r = await db.execute(select(LegalDocument).order_by(
+        LegalDocument.slug, LegalDocument.locale))
+    return {"documents": [{
+        "slug": d.slug, "locale": d.locale, "title": d.title,
+        "version": d.version, "is_required": bool(d.is_required),
+        "content_markdown": d.content_markdown,
+        "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+        "updated_by": d.updated_by,
+    } for d in r.scalars().all()]}
+
+
+@router.get("/admin/contracts/acceptances", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_contract_acceptances(user_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
+    """Who accepted what, at which version, when, from which IP."""
+    q = (select(ConsentLog, User.first_name, User.last_name)
+         .join(User, ConsentLog.user_id == User.id)
+         .where(ConsentLog.action == "accepted",
+                ConsentLog.consent_type.in_(
+                    ["contract_acceptance", "independent_contractor_agreement"]))
+         .order_by(ConsentLog.created_at.desc()))
+    if user_id is not None:
+        q = q.where(ConsentLog.user_id == user_id)
+    r = await db.execute(q.limit(500))
+    out = []
+    for log, first, last in r.all():
+        out.append({
+            "user_id": log.user_id,
+            "driver_name": f"{first or ''} {last or ''}".strip(),
+            "document_id": log.document_id or log.consent_type,
+            "version": log.version,
+            "accepted_at": log.created_at.isoformat() if log.created_at else None,
+            "ip_address": log.ip_address,
+            "content_hash": log.content_hash,
+        })
+    return {"acceptances": out}
+
+
+@router.put("/admin/contracts/{slug}", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_update_contract(slug: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Update a legal document from dispatch: bumps the version, appends to
+    the version history, and every driver below the new version falls back
+    to needs_acceptance (the gate re-asks them at their next GO)."""
+    body = await request.json()
+    content = (body.get("content_markdown") or "").strip()
+    locale = (body.get("locale") or "en").strip().lower()[:5]
+    notes = (body.get("notes") or "").strip()
+    if not content:
+        raise HTTPException(400, "content_markdown required")
+
+    r = await db.execute(select(LegalDocument).where(
+        LegalDocument.slug == slug, LegalDocument.locale == locale))
+    doc = r.scalars().first()
+    if doc is None:
+        raise HTTPException(404, "Unknown contract")
+    try:
+        major, minor = doc.version.split(".")[:2]
+        new_version = f"{major}.{int(minor) + 1}"
+    except Exception:
+        new_version = f"{doc.version}.1"
+
+    now = datetime.now(timezone.utc)
+    db.add(LegalDocumentVersion(
+        slug=slug, locale=locale, version=new_version,
+        content_markdown=content, created_at=now,
+        created_by=f"dispatch: {notes}" if notes else "dispatch"))
+    doc.content_markdown = content
+    doc.version = new_version
+    doc.updated_at = now
+    doc.updated_by = "dispatch"
+    await db.commit()
+    _security_audit_log("ADMIN_CONTRACT_UPDATE", "admin",
+                        f"slug={slug} locale={locale} v={new_version}")
+    return {"slug": slug, "locale": locale, "version": new_version}
+
+
+@router.get("/admin/contracts/versions", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_contract_versions(slug: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """Version history of the legal documents (append-only)."""
+    q = select(LegalDocumentVersion).order_by(LegalDocumentVersion.created_at.desc())
+    if slug:
+        q = q.where(LegalDocumentVersion.slug == slug)
+    r = await db.execute(q.limit(100))
+    out = [{
+        "slug": v.slug, "locale": v.locale, "version": v.version,
+        "created_at": v.created_at.isoformat() if v.created_at else None,
+        "created_by": v.created_by,
+        "chars": len(v.content_markdown or ""),
+    } for v in r.scalars().all()]
+    return {"versions": out}
+
+
+@router.get("/admin/contracts/{slug}/receipt.pdf", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_contract_receipt(slug: str, user_id: int, db: AsyncSession = Depends(get_db)):
+    """Dispatch downloads the signed-copy PDF for a driver."""
+    from routers.legal import _build_receipt_pdf, _receipt_for
+    user_r = await db.execute(select(User).where(User.id == user_id))
+    user = user_r.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    doc, log = await _receipt_for(db, user, slug)
+    pdf_bytes = _build_receipt_pdf(doc, log, user)
+    _security_audit_log("ADMIN_CONTRACT_RECEIPT", "admin",
+                        f"slug={slug} user_id={user_id}")
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition":
+                 f'attachment; filename="receipt_{slug}_u{user_id}_v{doc.version}.pdf"'})
+
+
+# Doc types an operator may upload FOR the user (the driver's own upload
+# set + the identity docs, which live as user columns until the backfill).
+_ADMIN_UPLOAD_DOC_TYPES = {
+    "drivers_license", "insurance", "registration", "vehicle_inspection",
+    "background_check", "profile_photo", "id_document", "selfie",
+    "biometric_video",
+}
+
+
+@router.post("/admin/users/{user_id}/documents", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_upload_user_document(
+    user_id: int,
+    doc_type: str = Form(...),
+    file: UploadFile = File(...),
+    vehicle_id: Optional[int] = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Dispatch uploads or replaces a document photo FOR the user
+    (2026-10-17, user spec: "si el usuario necesita ayuda para subirlos yo
+    mismo lo puedo actualizar"). Same storage/upsert/mirror pipeline as the
+    driver's own upload (_store_driver_document): the row lands pending for
+    review and the panel mirror + user columns stay in sync.
+    """
+    _sanitize_string(doc_type)
+    if doc_type not in _ADMIN_UPLOAD_DOC_TYPES:
+        raise HTTPException(400, f"Invalid document type. Allowed: {', '.join(sorted(_ADMIN_UPLOAD_DOC_TYPES))}")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    from routers.drivers import _store_driver_document
+    data = await file.read()
+    doc = await _store_driver_document(
+        db, target, doc_type, data, vehicle_id=vehicle_id)
+    logging.info("[Admin] Document %s (%s) uploaded by dispatch for user %s",
+                 doc.id, doc_type, user_id)
+    _security_audit_log("ADMIN_DOCUMENT_UPLOAD", "admin",
+                        f"user_id={user_id} doc_type={doc_type} doc_id={doc.id}")
     return {"document": _doc_dict(doc)}
 
 

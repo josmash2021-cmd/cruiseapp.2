@@ -115,18 +115,22 @@ async def _get_referral_settings(db: AsyncSession) -> dict:
 # ─────────────────────────────────────────────────────────────────────
 
 def _generate_driver_code(first_name: Optional[str]) -> str:
-    """Build a friendly code like 'MARIA-DRV-7K2D'. Caller checks unique.
+    """Build a friendly code like 'JHON-7K2D'. Caller checks unique.
 
+    2026-10-23 (owner report: codes came out "DRVR-DRV-AJGH"): the old
+    format was `{base}-DRV-{suffix}` — drivers minted while their name was
+    still empty (phone signup) got base "DRVR" and the fixed "-DRV-" infix
+    doubled it. The infix is dead: name + suffix only, short and typeable.
     Readability rules (same as the rider codes): up to 6 letters of the
     name, and a suffix alphabet without look-alikes (0/O, 1/I/L) — these
     get read aloud and typed by hand."""
     base = (first_name or "").strip().upper()
     base = "".join(ch for ch in base if ch.isalpha())[:6]
     if len(base) < 2:
-        base = "DRVR"
+        base = "CRUISE"
     alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
     suffix = "".join(secrets.choice(alphabet) for _ in range(4))
-    return f"{base}-DRV-{suffix}"
+    return f"{base}-{suffix}"
 
 
 def _normalize_driver_code(raw: str) -> str:
@@ -180,12 +184,19 @@ async def get_my_driver_referrals(
     total_earned_cents = 0
     pending_cents = 0
     m1 = settings["milestones"][0]
+    m2 = settings["milestones"][1]
     for r in referrals:
         referee_res = await db.execute(
             select(User.id, User.first_name, User.last_name, User.photo_url)
             .where(User.id == r.referred_driver_id)
         )
         ref = referee_res.first()
+        first_name = (ref.first_name or "").strip() if ref else ""
+        last_name = (ref.last_name or "").strip() if ref else ""
+        display_name = (
+            f"{first_name} {last_name[0].upper()}."
+            if first_name and last_name else first_name or "Driver"
+        )
         # Earned = what was actually credited: full bonus once paid_at is
         # set (legacy qualified rows and milestone-2 rows both land there),
         # milestone-1 amount for rows that only cleared the first bar.
@@ -198,21 +209,45 @@ async def get_my_driver_referrals(
         total_earned_cents += earned
         if r.status in ("pending", "milestone1"):
             pending_cents += (r.bonus_amount_cents or settings["amount_cents"]) - earned
+
+        if r.status == "expired":
+            payment_status = "expired"
+            next_rides = r.rides_required or m2["rides"]
+            next_amount = 0
+        elif r.paid_at is not None or r.status == "qualified":
+            # Fully paid (200 rides): nothing left to chase. Must come
+            # BEFORE the milestone1 branch — those rows keep qualified_at
+            # set and would otherwise report a phantom next milestone.
+            payment_status = "paid"
+            next_rides = m2["rides"]
+            next_amount = 0
+        elif r.status == "milestone1" or r.qualified_at is not None:
+            payment_status = "paid"
+            next_rides = m2["rides"]
+            next_amount = m2["amount_cents"]
+        else:
+            payment_status = "pending"
+            next_rides = m1["rides"]
+            next_amount = m1["amount_cents"]
+
         referees.append({
             "id": r.id,
             "referred_driver_id": r.referred_driver_id,
-            "name": (
-                f"{ref.first_name or ''} {ref.last_name or ''}".strip()
-                if ref else "Unknown"
-            ),
+            "name": display_name,
+            "display_name": display_name,
             "photo_url": ref.photo_url if ref else None,
             "status": r.status,
+            "payment_status": payment_status,
             "rides_completed": r.rides_completed or 0,
             "rides_required": r.rides_required or settings["rides_required"],
+            "next_milestone_rides": next_rides,
+            "next_milestone_amount_cents": next_amount,
             "bonus_amount_cents": r.bonus_amount_cents or settings["amount_cents"],
             "earned_cents": earned,
+            "joined_at": r.created_at.isoformat() if r.created_at else None,
             "expires_at": r.expires_at.isoformat() if r.expires_at else None,
             "qualified_at": r.qualified_at.isoformat() if r.qualified_at else None,
+            "paid_at": r.paid_at.isoformat() if r.paid_at else None,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         })
 
@@ -223,6 +258,32 @@ async def get_my_driver_referrals(
         "pending_cents": pending_cents,
         "referees_count": len(referees),
         "referees": referees,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  GET /driver-referrals/validate — public read, no account yet
+# ─────────────────────────────────────────────────────────────────────
+
+@router.get("/driver-referrals/validate", dependencies=[Depends(_verify_api_key)])
+async def validate_driver_referral_code(code: str, db: AsyncSession = Depends(get_db)):
+    """Check a shared driver code before signup; never creates a referral."""
+    normalized = _normalize_driver_code(code)
+    if not normalized:
+        return {"valid": False}
+    rr = await db.execute(
+        select(User).where(
+            func.upper(func.replace(User.driver_referral_code, "-", "")) == normalized
+        )
+    )
+    referrer = rr.scalar_one_or_none()
+    if referrer is None or (referrer.role or "").lower() != "driver":
+        return {"valid": False}
+    name = f"{referrer.first_name or ''} {referrer.last_name or ''}".strip()
+    return {
+        "valid": True,
+        "code": referrer.driver_referral_code,
+        "referrer_name": name or "Driver",
     }
 
 
@@ -397,6 +458,11 @@ async def bump_driver_referral_progress(
                 if referrer is not None:
                     cents = ref.bonus_amount_cents or 0
                     await _credit_cash(db, referrer, cents)
+                    try:
+                        from services.driver_emails import send_referral_milestone_email
+                        await send_referral_milestone_email(referrer, cents / 100)
+                    except Exception as _mail_err:
+                        logging.warning("[DriverReferrals] milestone email failed: %s", _mail_err)
                     ref.status = "qualified"
                     ref.qualified_at = now
                     ref.paid_at = now
@@ -423,6 +489,11 @@ async def bump_driver_referral_progress(
             if referee is not None:
                 cents = settings["referee_bonus_cents"]
                 await _credit_cash(db, referee, cents)
+                try:
+                    from services.driver_emails import send_referral_milestone_email
+                    await send_referral_milestone_email(referee, cents / 100)
+                except Exception as _mail_err:
+                    logging.warning("[DriverReferrals] milestone email failed: %s", _mail_err)
                 ref.referee_bonus_paid_at = now
                 _push(referee, "¡Bono de bienvenida ganado!",
                       f"Acabas de ganar ${cents // 100} por completar tus "
@@ -451,6 +522,11 @@ async def bump_driver_referral_progress(
                 if referrer is not None:
                     cents = m1["amount_cents"]
                     await _credit_cash(db, referrer, cents)
+                    try:
+                        from services.driver_emails import send_referral_milestone_email
+                        await send_referral_milestone_email(referrer, cents / 100)
+                    except Exception as _mail_err:
+                        logging.warning("[DriverReferrals] milestone email failed: %s", _mail_err)
                     ref.qualified_at = now
                     ref.status = "milestone1"
                     _push(referrer, "¡Bono de referido ganado!",
@@ -474,6 +550,11 @@ async def bump_driver_referral_progress(
             if referrer is not None:
                 cents = m2["amount_cents"]
                 await _credit_cash(db, referrer, cents)
+                try:
+                    from services.driver_emails import send_referral_milestone_email
+                    await send_referral_milestone_email(referrer, cents / 100)
+                except Exception as _mail_err:
+                    logging.warning("[DriverReferrals] milestone email failed: %s", _mail_err)
                 ref.paid_at = now
                 ref.status = "qualified"
                 _push(referrer, "¡Bono de referido ganado!",

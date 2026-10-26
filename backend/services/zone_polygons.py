@@ -1,8 +1,9 @@
 """Sector polygons for the driver connect gate (2026-10-14).
 
 Source of truth: the LIVE sector map — the dispatch-edited copy in
-app_config (`fl_sectors_geojson`) wins; the baked `static/fl_sectors.json`
-is the seed/fallback until the first PUT (same rule as GET /zones/sectors).
+app_config (`fl_sectors_geojson`) wins; the combined baked
+`static/fl_sectors.json` + `static/al_sectors.json` is the seed/fallback
+until the first PUT (same rule as GET /zones/sectors).
 One dataset, the one the panel edits, covering Florida AND Alabama. The old
 per-city file (`fl_zones.json`) died as a gate input with the move to
 sectors; it remains only as the build source of scripts/build_fl_sectors.py.
@@ -53,6 +54,10 @@ def _parse_collection(data) -> list[dict]:
         lngs = [p[0] for p in pts]
         lats = [p[1] for p in pts]
         out.append({
+            # The sector id rides along (properties.id) so the OFF switch can
+            # name the sector a point falls in (2026-10-17, owner spec:
+            # a zone switched off in dispatch blocks its drivers).
+            "id": str((feat.get("properties") or {}).get("id") or ""),
             "bbox": [min(lngs), min(lats), max(lngs), max(lats)],
             "polys": polys,
         })
@@ -60,12 +65,12 @@ def _parse_collection(data) -> list[dict]:
 
 
 def _load_file() -> list[dict]:
-    """The baked seed. Missing/broken file = empty (fail-open)."""
+    """The combined baked seed. Missing/broken data = empty (fail-open)."""
     try:
-        with open(_PATH, encoding="utf-8") as f:
-            return _parse_collection(json.load(f))
+        from services.sector_defaults import load_baked_sector_collection
+        return _parse_collection(load_baked_sector_collection(fl_path=_PATH))
     except Exception as e:
-        logger.warning("[Zones] baked sector file unreadable: %s", e)
+        logger.warning("[Zones] baked sector files unreadable: %s", e)
         return []
 
 
@@ -135,3 +140,22 @@ async def sector_gate_blocks(db, lat: float, lng: float) -> bool:
         if any(_ring_contains(lng, lat, ring) for ring in s["polys"]):
             return False
     return True
+
+
+async def sector_id_at(db, lat: float, lng: float) -> str | None:
+    """The id of the sector polygon containing the point, or None.
+
+    Backs the OFF switch (2026-10-17, owner spec: a zone switched off in
+    dispatch blocks its drivers from connecting). None when the point is in
+    no sector (or the map is unreadable) — the caller treats that as
+    "nothing to gate on", never as "off".
+    """
+    sectors = await _sectors_cached(db)
+    for s in sectors:
+        w, so, e, n = s["bbox"]
+        if lng < w or lng > e or lat < so or lat > n:
+            continue
+        if any(_ring_contains(lng, lat, ring) for ring in s["polys"]):
+            sid = s.get("id") or ""
+            return sid or None
+    return None

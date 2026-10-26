@@ -1,6 +1,7 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
+from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text
@@ -8,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, PromoCode, Notification,
     PasswordResetToken, SurgeZone, ServiceArea,
-    Referral, FavoriteLocation,
+    Referral, FavoriteLocation, Document,
 )
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
@@ -105,6 +106,19 @@ async def mark_all_notifications_read(user: User = Depends(_get_current_user), d
     await db.commit()
     return {"status": "all_read"}
 
+
+@router.delete("/notifications/{notif_id}", dependencies=[Depends(_verify_api_key)])
+async def delete_notification(notif_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Notification).where(and_(Notification.id == notif_id, Notification.user_id == user.id))
+    )
+    notification = result.scalar_one_or_none()
+    if not notification:
+        raise HTTPException(404, "Notification not found")
+    await db.delete(notification)
+    await db.commit()
+    return {"status": "deleted"}
+
 # -- Tunnel URL discovery -------------------------------
 
 @router.get("/tunnel-url", dependencies=[Depends(_verify_api_key)])
@@ -117,18 +131,100 @@ async def tunnel_url():
     return {"tunnel_url": None}
 
 
+_DOCUMENT_URL_FIELDS = (
+    "photo_url", "id_photo_url", "selfie_url", "license_front_url",
+    "license_back_url", "vehicle_registration_url", "insurance_url",
+    "inspection_url", "registration_photo_url", "video_url",
+)
+
+
+def _local_document_name(locator: object) -> str | None:
+    if not isinstance(locator, str) or not locator.strip():
+        return None
+    try:
+        path = urlsplit(locator.strip()).path.replace("\\", "/")
+    except ValueError:
+        return None
+    if "/" not in path:
+        return path or None
+    marker = "/uploads/documents/"
+    if marker in path:
+        name = path.rsplit(marker, 1)[1]
+    elif path.startswith("uploads/documents/"):
+        name = path[len("uploads/documents/"):]
+    else:
+        return None
+    if not name or "/" in name:
+        return None
+    return name
+
+
+async def _document_actor(request: Request, db: AsyncSession):
+    try:
+        return await _get_current_user(
+            request, authorization=request.headers.get("authorization"), db=db,
+        )
+    except HTTPException:
+        authorization = request.headers.get("authorization", "")
+        from services import dispatch_sessions
+        has_cookie = bool(request.cookies.get(dispatch_sessions.DISPATCH_PANEL_COOKIE))
+        if not has_cookie and not authorization.startswith("Bearer "):
+            raise
+        from utils.security import _require_dispatch_auth
+        return await _require_dispatch_auth(
+            request,
+            authorization=authorization or None,
+            x_api_key=request.headers.get("x-api-key", ""),
+            x_timestamp=request.headers.get("x-timestamp", ""),
+            x_nonce=request.headers.get("x-nonce", ""),
+            x_signature=request.headers.get("x-signature", ""),
+            x_device_fp=request.headers.get("x-device-fp", ""),
+            x_client_version=request.headers.get("x-client-version", ""),
+        )
+
+
 @router.get("/uploads/documents/{filename}", dependencies=[Depends(_verify_api_key)])
-async def serve_document(filename: str, user: User = Depends(_get_current_user)):
-    """Serve an uploaded KYC document file. Requires valid API key + user auth."""
-    # Prevent path traversal
+async def serve_document(
+    filename: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve a local KYC file only to its owner or authorized Dispatch."""
+    actor = await _document_actor(request, db)
     safe_name = os.path.basename(filename)
-    if safe_name != filename or ".." in filename:
+    if (not filename or safe_name != filename or ".." in filename
+            or "/" in filename or "\\" in filename or "\x00" in filename):
         raise HTTPException(400, "Invalid filename")
-    fpath = os.path.join(UPLOADS_DIR, "documents", safe_name)
-    if not os.path.exists(fpath):
+
+    documents_dir = os.path.realpath(os.path.join(UPLOADS_DIR, "documents"))
+    fpath = os.path.realpath(os.path.join(documents_dir, safe_name))
+    try:
+        if os.path.commonpath((documents_dir, fpath)) != documents_dir:
+            raise HTTPException(400, "Invalid filename")
+    except ValueError:
+        raise HTTPException(400, "Invalid filename")
+
+    is_dispatch = not isinstance(actor, User)
+    if not is_dispatch and (actor.role or "").lower() not in ("admin", "dispatch"):
+        rows = (await db.execute(
+            select(Document.file_path).where(
+                Document.user_id == actor.id,
+                Document.file_path.isnot(None),
+            )
+        )).all()
+        locators = [row[0] for row in rows]
+        locators.extend(getattr(actor, field, None) for field in _DOCUMENT_URL_FIELDS)
+        if not any(_local_document_name(value) == safe_name for value in locators):
+            raise HTTPException(403, "Not your document")
+
+    if not os.path.isfile(fpath):
         raise HTTPException(404, "Document not found")
     ext = os.path.splitext(safe_name)[1].lower()
-    mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".mp4": "video/mp4", ".mov": "video/quicktime"}
+    mime_map = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+        ".pdf": "application/pdf", ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+    }
     media = mime_map.get(ext, "application/octet-stream")
     return FileResponse(fpath, media_type=media)
 

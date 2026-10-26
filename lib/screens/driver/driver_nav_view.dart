@@ -13,6 +13,8 @@ import '../../config/api_keys.dart';
 import '../../config/map_theme.dart';
 import '../../config/mapbox_config.dart';
 import '../../l10n/app_localizations.dart';
+import '../../map/camera_action_gate.dart';
+import '../../map/driver_road_lock.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../map/web_map_view.dart';
 import '../../models/lat_lng.dart';
@@ -21,6 +23,7 @@ import '../../services/haptic_service.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../services/socket_service.dart';
 import '../../utils/driver_location_settings.dart';
+import '../../utils/gps_fix_policy.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../utils/route_splice.dart';
 import '../../utils/smooth_motion.dart';
@@ -218,6 +221,8 @@ class DriverNavViewState extends State<DriverNavView>
   /// road. Refreshed at dot-tick rate and consumed by the annotation write
   /// and the chase camera, so every rendered thing rides the line.
   LatLng? _renderPos;
+  final DriverRoadLock _roadLock = DriverRoadLock();
+  double? _roadLockBearing;
   mapbox.PolylineAnnotation? _routeAnnot;
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
@@ -234,6 +239,7 @@ class DriverNavViewState extends State<DriverNavView>
   // ── Driver marker: the same GoldLocationDot + SmoothMotion as the online
   //    map. onTick (throttled) writes the annotation; onFrame chases. ──
   final GoldLocationDot _dot = GoldLocationDot(heading: true);
+  final GpsFixPolicy _gpsFixPolicy = GpsFixPolicy();
 
   // ── Rider live location (pickup leg only) ──
   final SmoothMotion _riderMotion = SmoothMotion();
@@ -253,6 +259,7 @@ class DriverNavViewState extends State<DriverNavView>
 
   // ── Camera state machine ──
   _CamState _camState = _CamState.following;
+  final CameraActionGate _cameraActionGate = CameraActionGate();
   bool _overview = false;
   int _mapPointers = 0;
   mapbox.CameraOptions? _pendingCamWrite;
@@ -480,6 +487,7 @@ class DriverNavViewState extends State<DriverNavView>
     _waitTicker?.cancel();
     _riderTicker?.dispose();
     _dot.dispose();
+    _roadLock.reset();
     super.dispose();
   }
 
@@ -600,10 +608,9 @@ class DriverNavViewState extends State<DriverNavView>
     _map = ctrl;
     // Each call stands alone so one refusal does not skip the rest.
     for (final step in <Future<void> Function()>[
-      () => ctrl.scaleBar
-          .updateSettings(mapbox.ScaleBarSettings(enabled: false)),
       () =>
-          ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false)),
+          ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false)),
+      () => ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false)),
       () => ctrl.attribution
           .updateSettings(mapbox.AttributionSettings(enabled: false)),
       () => ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false)),
@@ -678,13 +685,14 @@ class DriverNavViewState extends State<DriverNavView>
     // route like every later fix (2026-09-19) — the nav opens with the
     // arrow ON the line, never floating in the pickup's block.
     if (_dot.lat == null) {
-      final seed =
-          _snapToNavRoute(widget.initialDriverPos) ?? widget.initialDriverPos;
-      _dot.setTarget(
-        seed.latitude,
-        seed.longitude,
-        timestampMs: DateTime.now().millisecondsSinceEpoch.toDouble(),
-      );
+      final seed = _snapToNavRoute(widget.initialDriverPos);
+      if (seed != null) {
+        _dot.setTarget(
+          seed.latitude,
+          seed.longitude,
+          timestampMs: DateTime.now().millisecondsSinceEpoch.toDouble(),
+        );
+      }
     }
     // Aim down-route from the very first frame: the GPS heading at 0 mph is
     // noise, so the opening arrow (and chase camera) takes the route
@@ -751,7 +759,7 @@ class DriverNavViewState extends State<DriverNavView>
   }
 
   void _onGpsFix(Position pos) {
-    if (!mounted) return;
+    if (!mounted || !_gpsFixPolicy.accept(pos)) return;
     _lastGpsFixAt = DateTime.now();
     if (_gpsDown) {
       _gpsDown = false;
@@ -770,8 +778,8 @@ class DriverNavViewState extends State<DriverNavView>
     // block reads as a bug. The DISPLAY target is ALWAYS the projection on
     // the line now. Everything that MEASURES keeps the raw fix: the
     // off-route check (which answers "did he take the exit or not" in real
-    // time), the tangent, the trim cursor, the arrival latch.
-    final display = _snapToNavRoute(fixLL) ?? fixLL;
+    // time), the trim cursor and the arrival latch.
+    final display = _snapToNavRoute(fixLL);
     // On the route, the tangent below is the arrow's ONLY compass (user
     // spec 2026-09-19, "que gire fluido, no de golpe"): GPS headings arrive
     // once a second and the lerp chased them in steps through every curve —
@@ -780,16 +788,20 @@ class DriverNavViewState extends State<DriverNavView>
     // speaks off-route, where a tangent means nothing.
     final onRoute = _routePts.length >= 2 &&
         RouteSplice.distanceToPolylineM(_routePts, fixLL) <= 40;
-    _dot.setTarget(
-      display.latitude,
-      display.longitude,
-      bearing: onRoute ? null : (pos.heading >= 0 ? pos.heading : null),
-      accuracyM: pos.accuracy,
-      timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
-      // The fix's own speed reading parks the arrow against GPS wander —
-      // a parked driver's position jumps but his speed keeps reading ~0.
-      speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null,
-    );
+    if (display != null) {
+      _dot.setTarget(
+        display.latitude,
+        display.longitude,
+        bearing: onRoute
+            ? _roadLockBearing
+            : (pos.heading >= 0 ? pos.heading : null),
+        accuracyM: pos.accuracy,
+        timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
+        // The fix's own speed reading parks the arrow against GPS wander —
+        // a parked driver's position jumps but his speed keeps reading ~0.
+        speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null,
+      );
+    }
     // Speed readout (user spec 2026-09-27 — "tiene que ser instantaneo y en
     // tiempo real"): the platform speed when the fix carries one; iOS
     // reports -1 when it has none, so fall back to the smoother's own
@@ -797,9 +809,8 @@ class DriverNavViewState extends State<DriverNavView>
     // (~2 mph): under that the car is stopped and the box must read 0 THE
     // SAME fix — the old 0.45 floor let a stop sit at 7-10 mph while the
     // extrapolated glide bled off.
-    final rawSpeed = pos.speed.isFinite && pos.speed >= 0
-        ? pos.speed
-        : _dot.speedMps;
+    final rawSpeed =
+        pos.speed.isFinite && pos.speed >= 0 ? pos.speed : _dot.speedMps;
     _speedMps = rawSpeed < 0.9 ? 0.0 : rawSpeed;
     final mph = (_speedMps * 2.23694).round();
     if (mph != _lastMphShown) {
@@ -845,47 +856,13 @@ class DriverNavViewState extends State<DriverNavView>
   /// the arrow — so "did he take it or not" is answered in real time by
   /// the line itself, never by the arrow lying off-road.
   LatLng? _snapToNavRoute(LatLng p) {
-    final pts = _routePts;
-    if (pts.length < 2) return null;
-    final seg = RouteSplice.closestSegmentIndex(pts, p);
-    return RouteSplice.projectOnSegment(p, pts[seg], pts[seg + 1]);
+    final result = _roadLock.project(_routePts, p, speedMps: _speedMps);
+    _roadLockBearing = result.trusted ? result.bearing : null;
+    return result.point;
   }
 
-  /// Where the arrow should point when the GPS has nothing to say: along
-  /// the route, from the driver's projection toward a look-ahead point up
-  /// to ~30 m on — the same tangent trick the rider's tracking map steers
-  /// its car by.
   double? _routeHeadingFor(LatLng pos) {
-    final pts = _routePts;
-    if (pts.length < 2) return null;
-    final seg = RouteSplice.closestSegmentIndex(pts, pos);
-    var from = RouteSplice.projectOnSegment(pos, pts[seg], pts[seg + 1]);
-    // Look-ahead scaled by speed (user reports 2026-09-26: "la camara y la
-    // flecha giran antes de que el driver realmente gire", y 2026-09-27:
-    // "cuando da la vuelta la flecha se pasa o se sale de la linea"): a
-    // fixed 30 m crossed the corner up to ~2.5 s before the car did, and
-    // even the 1.2 s-of-travel scale pointed the arrow a full curve ahead
-    // mid-turn, visibly off the road under the car. ~0.8 s of travel now,
-    // floored at 6 m (parked: the street the car is ON), capped at 24 m
-    // (highway: the anticipation is genuinely needed there) — the arrow
-    // turns WITH the car, on the line.
-    var remaining = (_speedMps * 0.8).clamp(6.0, 24.0);
-    for (var i = seg + 1; i < pts.length; i++) {
-      final d = RouteSplice.haversineM(from, pts[i]);
-      if (d >= remaining && d > 1e-3) {
-        final b = Geolocator.bearingBetween(
-            from.latitude, from.longitude, pts[i].latitude, pts[i].longitude);
-        return (b + 360) % 360;
-      }
-      remaining -= d;
-      from = pts[i];
-    }
-    // Closer to the destination than the look-ahead: aim at the pin — unless
-    // we are already on top of it, where a bearing means nothing.
-    if (RouteSplice.haversineM(pos, pts.last) < 1.0) return null;
-    final b = Geolocator.bearingBetween(
-        pos.latitude, pos.longitude, pts.last.latitude, pts.last.longitude);
-    return (b + 360) % 360;
+    return _roadLock.project(_routePts, pos, speedMps: _speedMps).bearing;
   }
 
   /// Approaching under 200 m; arrived after consecutive close fixes — with
@@ -894,8 +871,8 @@ class DriverNavViewState extends State<DriverNavView>
   /// to its arrived banner; the parent's sliders stay the authority.
   void _checkArrival(Position pos) {
     if (_navArrived) return;
-    final d = RouteSplice.haversineM(
-        LatLng(pos.latitude, pos.longitude), _dest);
+    final d =
+        RouteSplice.haversineM(LatLng(pos.latitude, pos.longitude), _dest);
     final approaching = d < _approachRadiusM;
     if (approaching != _navApproaching) {
       _navApproaching = approaching;
@@ -982,9 +959,8 @@ class DriverNavViewState extends State<DriverNavView>
     final s = S.of(context);
     final street =
         cur == null || cur.name.isEmpty ? s.navFollowRoute : cur.name;
-    final dist = cur == null
-        ? ''
-        : _fmtDist(nav.distanceToCurrentMeters(driverPos), s);
+    final dist =
+        cur == null ? '' : _fmtDist(nav.distanceToCurrentMeters(driverPos), s);
     // The full maneuver instruction ("Take exit 67B on the right onto
     // I-4 W") — what the bar announces on the freeway, where the bare
     // street name says nothing about the exit to take (user report).
@@ -1018,9 +994,9 @@ class DriverNavViewState extends State<DriverNavView>
       // read minutes low for the entire trip. Steps from idx on count full.
       final onStep = idx >= 1 ? nav.steps[idx - 1] : null;
       if (onStep != null && onStep.distanceMeters > 1) {
-        final frac = (nav.distanceToCurrentMeters(driverPos) /
-                onStep.distanceMeters)
-            .clamp(0.0, 1.0);
+        final frac =
+            (nav.distanceToCurrentMeters(driverPos) / onStep.distanceMeters)
+                .clamp(0.0, 1.0);
         secs += (onStep.durationSeconds * frac).round();
       }
       for (var i = idx; i < nav.steps.length; i++) {
@@ -1277,8 +1253,7 @@ class DriverNavViewState extends State<DriverNavView>
 
   void _armOfflineRetry() {
     _offlineRetryTimer?.cancel();
-    final idx =
-        _offlineRetryAttempt.clamp(0, _offlineBackoff.length - 1);
+    final idx = _offlineRetryAttempt.clamp(0, _offlineBackoff.length - 1);
     _offlineRetryAttempt++;
     _offlineRetryTimer = Timer(_offlineBackoff[idx], () {
       if (!mounted) return;
@@ -1331,6 +1306,7 @@ class DriverNavViewState extends State<DriverNavView>
     _offlineRetryAttempt = 0;
     _offlineKeepRoute = false;
     _routeError = false;
+    _roadLock.reset();
     _routePts = [];
     _trimS = 0; // leg flip: the erase cursor starts over with the new plan
     _routeLenM = 0;
@@ -1470,8 +1446,8 @@ class DriverNavViewState extends State<DriverNavView>
     if (!mounted || seq != _osmStopsSeq || stops.isEmpty) return;
     var added = false;
     for (final at in stops) {
-      final dup = _furniture.any(
-          (e) => RouteSplice.haversineM(e.f.at, at) < 30);
+      final dup =
+          _furniture.any((e) => RouteSplice.haversineM(e.f.at, at) < 30);
       if (dup) continue;
       final snapped = _snapFurniture((at: at, isStopSign: true));
       if (snapped == null) continue;
@@ -1533,8 +1509,8 @@ class DriverNavViewState extends State<DriverNavView>
       try {
         sign.annot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(
-              coordinates: mapbox.Position(
-                  sign.f.at.longitude, sign.f.at.latitude)),
+              coordinates:
+                  mapbox.Position(sign.f.at.longitude, sign.f.at.latitude)),
           image: bytes,
           // 0.9 → 1.35 (user spec 2026-09-19): the iOS plugin reads image
           // bytes at the device scale (×3), so 0.9 landed at ~11×18 pt —
@@ -1642,10 +1618,7 @@ class DriverNavViewState extends State<DriverNavView>
       if (web != null && _routePts.length >= 2) {
         web.setPolyline(
           'navRoute',
-          [
-            for (final p in _routePts)
-              (lng: p.longitude, lat: p.latitude)
-          ],
+          [for (final p in _routePts) (lng: p.longitude, lat: p.latitude)],
           color: '#E8C547',
           // 8 como en nativo (user spec 2026-09-27).
           width: 8,
@@ -1755,10 +1728,7 @@ class DriverNavViewState extends State<DriverNavView>
     if (_routePts.length < 2) return;
     if (kIsWeb) {
       _webMap?.fitBounds(
-        [
-          for (final p in _routePts)
-            (lng: p.longitude, lat: p.latitude)
-        ],
+        [for (final p in _routePts) (lng: p.longitude, lat: p.latitude)],
         paddingTop: 120,
         paddingLeft: 48,
         paddingBottom: 220,
@@ -1775,6 +1745,7 @@ class DriverNavViewState extends State<DriverNavView>
             mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
         .toList();
     if (coords.isEmpty) return;
+    final seq = _cameraActionGate.begin();
     try {
       final cam = await map.cameraForCoordinatesPadding(
         coords,
@@ -1788,7 +1759,7 @@ class DriverNavViewState extends State<DriverNavView>
         null,
         null,
       );
-      if (!mounted) return;
+      if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
       // The overview toggle reuses this fit; chasing from it keeps follow on.
       await map.flyTo(cam, mapbox.MapAnimationOptions(duration: 900));
     } catch (e) {
@@ -1805,12 +1776,14 @@ class DriverNavViewState extends State<DriverNavView>
     final lat = _dot.lat;
     final lng = _dot.lng;
     if (lat != null && lng != null) {
-      // Re-project onto the route line: the fix-level projection alone let
-      // the extrapolated lead wander off the road between fixes.
-      _renderPos = _snapToNavRoute(LatLng(lat, lng)) ?? LatLng(lat, lng);
-      // The route erase rides the dot's animated position — the line is
-      // eaten under the car exactly as it glides, not once a GPS second.
-      _trimRouteTo(LatLng(lat, lng));
+      final projected = _snapToNavRoute(LatLng(lat, lng));
+      if (projected != null) {
+        _renderPos = projected;
+        if (_roadLockBearing != null && _speedMps >= 1.0) {
+          _dot.setBearing(_roadLockBearing!);
+        }
+        _trimRouteTo(projected);
+      }
     }
     _updateDriverAnnotation();
   }
@@ -1881,8 +1854,8 @@ class DriverNavViewState extends State<DriverNavView>
     if (_camState != _CamState.following || _overview || !_mapMounted) {
       return;
     }
-    final lat = _dot.lat;
-    final lng = _dot.lng;
+    final lat = _renderPos?.latitude ?? _dot.lat;
+    final lng = _renderPos?.longitude ?? _dot.lng;
     if (lat == null || lng == null) return;
     final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 240;
     _writeCamera(mapbox.CameraOptions(
@@ -1901,8 +1874,8 @@ class DriverNavViewState extends State<DriverNavView>
     if (_camState != _CamState.following || _overview || !_mapMounted) {
       return;
     }
-    final lat = _dot.lat;
-    final lng = _dot.lng;
+    final lat = _renderPos?.latitude ?? _dot.lat;
+    final lng = _renderPos?.longitude ?? _dot.lng;
     if (lat == null || lng == null) return;
     final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 240;
     if (kIsWeb) {
@@ -1965,6 +1938,10 @@ class DriverNavViewState extends State<DriverNavView>
   void _flushCameraWrite(mapbox.MapboxMap map) {
     final opts = _pendingCamWrite;
     if (opts == null) return;
+    if (!mounted || !identical(map, _map)) {
+      _pendingCamWrite = null;
+      return;
+    }
     _pendingCamWrite = null;
     _camWriteBusy = true;
     try {
@@ -1974,10 +1951,10 @@ class DriverNavViewState extends State<DriverNavView>
       // it receives regardless.
       map.setCamera(opts).timeout(const Duration(milliseconds: 800)).then((_) {
         _camWriteBusy = false;
-        _flushCameraWrite(map);
+        if (mounted && identical(map, _map)) _flushCameraWrite(map);
       }).catchError((Object _) {
         _camWriteBusy = false;
-        _flushCameraWrite(map);
+        if (mounted && identical(map, _map)) _flushCameraWrite(map);
       });
     } catch (_) {
       _camWriteBusy = false;
@@ -2015,22 +1992,22 @@ class DriverNavViewState extends State<DriverNavView>
         _driverAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
           image: img,
-          // Hi-res bitmap at 1/3 density lands at the overlay's size.
-          iconSize: GoldLocationDot.driverIconSize /
-              (_dot.currentBytesHiRes != null
-                  ? GoldLocationDot.rasterScale
-                  : 1.0),
+          iconSize: GoldLocationDot.driverAnnotationIconSize(
+            devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+            highRes: _dot.currentBytesHiRes != null,
+            scale: GoldLocationDot.driverIconSize,
+          ),
           iconAnchor: mapbox.IconAnchor.CENTER,
           iconRotate: bearing,
         ));
         try {
-          await _map?.style.setStyleLayerProperty(
-              mgr.id, 'icon-rotation-alignment', 'map');
+          await _map?.style
+              .setStyleLayerProperty(mgr.id, 'icon-rotation-alignment', 'map');
           // La flecha también se inclina con la cámara (user spec 2026-09-27,
           // "la flecha un poquito inclinada"): pitch-alignment 'map' la
           // acuesta con el tilt de 50° en vez de dejarla parada como sticker.
-          await _map?.style.setStyleLayerProperty(
-              mgr.id, 'icon-pitch-alignment', 'map');
+          await _map?.style
+              .setStyleLayerProperty(mgr.id, 'icon-pitch-alignment', 'map');
         } catch (_) {}
       } else {
         _driverAnnot!.geometry =
@@ -2219,8 +2196,9 @@ class DriverNavViewState extends State<DriverNavView>
   /// following. A drag mid-flight moves the state to freeLook instead.
   Future<void> _recenter() async {
     HapticService.lightImpact();
-    final lat = _dot.lat;
-    final lng = _dot.lng;
+    final seq = _cameraActionGate.begin();
+    final lat = _renderPos?.latitude ?? _dot.lat;
+    final lng = _renderPos?.longitude ?? _dot.lng;
     setState(() {
       _overview = false;
       _camState = _CamState.recentering;
@@ -2263,7 +2241,8 @@ class DriverNavViewState extends State<DriverNavView>
     } catch (_) {}
     if (!mounted) return;
     // Only close the maneuver if the recenter still owns the camera.
-    if (_camState == _CamState.recentering) {
+    if (_cameraActionGate.isCurrent(seq) &&
+        _camState == _CamState.recentering) {
       setState(() => _camState = _CamState.following);
     }
   }
@@ -2274,6 +2253,7 @@ class DriverNavViewState extends State<DriverNavView>
   /// wrapping the MapWidget. onCameraChangeListener is never usable here:
   /// it fires for the chase's own writes and would unlatch follow on them.
   void _onUserGesture() {
+    _cameraActionGate.begin();
     if (_overview) return;
     if (_camState == _CamState.freeLook) return;
     setState(() => _camState = _CamState.freeLook);
@@ -2432,8 +2412,7 @@ class DriverNavViewState extends State<DriverNavView>
         AnimatedBuilder(
           animation: _sheetCtrl,
           builder: (ctx, _) {
-            final extent =
-                _sheetCtrl.isAttached ? _sheetCtrl.size : 0.20;
+            final extent = _sheetCtrl.isAttached ? _sheetCtrl.size : 0.20;
             final lift = media.size.height * extent + 16;
             return Stack(
               children: [
@@ -2494,8 +2473,7 @@ class DriverNavViewState extends State<DriverNavView>
             top: _riderLabelPos!.dy - 10,
             child: IgnorePointer(
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: _navyBar.withValues(alpha: 0.75),
                   borderRadius: BorderRadius.circular(8),
@@ -2683,8 +2661,7 @@ class DriverNavViewState extends State<DriverNavView>
               alignment: Alignment.topCenter,
               child: Container(
                 margin: const EdgeInsets.only(left: 8, right: 4, top: 2),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 decoration: BoxDecoration(
                   color: _gold.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(8),
@@ -2729,8 +2706,7 @@ class DriverNavViewState extends State<DriverNavView>
   }
 
   /// Small status pill under the maneuver bar (Rerouting… / offline).
-  Widget _buildNavPill(String label,
-      {bool spinner = false, IconData? icon}) {
+  Widget _buildNavPill(String label, {bool spinner = false, IconData? icon}) {
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -2842,16 +2818,15 @@ class DriverNavViewState extends State<DriverNavView>
     );
   }
 
-  Widget _navCardButton(
-      ({String label, bool filled, VoidCallback onTap}) b) {
+  Widget _navCardButton(({String label, bool filled, VoidCallback onTap}) b) {
     if (b.filled) {
       return ElevatedButton(
         onPressed: b.onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: _gold,
           foregroundColor: Colors.black,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           elevation: 0,
           padding: const EdgeInsets.symmetric(vertical: 12),
         ),
@@ -2865,8 +2840,7 @@ class DriverNavViewState extends State<DriverNavView>
       onPressed: b.onTap,
       style: OutlinedButton.styleFrom(
         side: const BorderSide(color: Colors.white24),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 12),
       ),
@@ -2960,8 +2934,7 @@ class DriverNavViewState extends State<DriverNavView>
           decoration: BoxDecoration(
             color: _navyBar.withValues(alpha: 0.92),
             shape: BoxShape.circle,
-            border:
-                Border.all(color: _gold.withValues(alpha: 0.35), width: 1),
+            border: Border.all(color: _gold.withValues(alpha: 0.35), width: 1),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.4),
@@ -3036,8 +3009,8 @@ class DriverNavViewState extends State<DriverNavView>
           backgroundColor: _gold,
           foregroundColor: Colors.black,
           elevation: 0,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(26)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
         ),
       ),
     );
@@ -3141,11 +3114,11 @@ class DriverNavViewState extends State<DriverNavView>
                   key: const ValueKey('trip-details'),
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _sheetAddressRow(
-                        Icons.place_rounded, s.pickupLabel, widget.pickupAddress),
+                    _sheetAddressRow(Icons.place_rounded, s.pickupLabel,
+                        widget.pickupAddress),
                     const SizedBox(height: 10),
-                    _sheetAddressRow(
-                        Icons.flag_rounded, s.dropOffLabel, widget.dropoffAddress),
+                    _sheetAddressRow(Icons.flag_rounded, s.dropOffLabel,
+                        widget.dropoffAddress),
                     if (widget.passengerInstructions.isNotEmpty) ...[
                       const SizedBox(height: 14),
                       Container(
@@ -3164,7 +3137,8 @@ class DriverNavViewState extends State<DriverNavView>
                       children: [
                         Text(
                           s.navEstimatedEarnings,
-                          style: const TextStyle(color: Colors.white54, fontSize: 13),
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 13),
                         ),
                         const Spacer(),
                         Text(
@@ -3188,8 +3162,8 @@ class DriverNavViewState extends State<DriverNavView>
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
-                          border:
-                              Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.12)),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,

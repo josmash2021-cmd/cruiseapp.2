@@ -59,7 +59,7 @@ void main() {
       expect(exitBlock.contains('_roadLinePts = const [];'), isTrue);
       final screen =
           File('lib/screens/driver/driver_online_screen.dart')
-              .readAsStringSync();
+          .readAsStringSync();
       expect(screen.contains('_roadSnap.reset(); // in-flight'), isTrue);
     });
   });

@@ -294,12 +294,71 @@ class _DriverDriveCityScreenState extends State<DriverDriveCityScreen> {
 }
 
 /// Bottom sheet with the curated US city list, grouped by state.
-class _CityPickerSheet extends StatelessWidget {
+class _CityPickerSheet extends StatefulWidget {
   const _CityPickerSheet();
+
+  @override
+  State<_CityPickerSheet> createState() => _CityPickerSheetState();
+}
+
+class _CityPickerSheetState extends State<_CityPickerSheet> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Filtered flat results (2026-10-18: 31,726 inhabited US places — without
+  /// search the grouped list is unusable). Kicks in at 2+ chars, capped.
+  List<UsCity> get _results {
+    final q = _query.trim().toLowerCase();
+    if (q.length < 2) return const [];
+    final out = <UsCity>[];
+    for (final g in kUsCitiesByState) {
+      for (final c in g.cities) {
+        if (c.name.toLowerCase().contains(q)) {
+          out.add(c);
+          if (out.length >= 100) return out;
+        }
+      }
+    }
+    return out;
+  }
+
+  Widget _cityRow(UsCity city) {
+    return InkWell(
+      onTap: () => Navigator.of(context).pop(city),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                city.name,
+                style: const TextStyle(fontSize: 16, color: Colors.white),
+              ),
+            ),
+            Text(
+              city.stateCode,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white.withValues(alpha: 0.4),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final pad = MediaQuery.of(context).padding;
+    final searching = _query.trim().length >= 2;
+    final results = _results;
 
     return FractionallySizedBox(
       heightFactor: 0.85,
@@ -328,61 +387,72 @@ class _CityPickerSheet extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(
-            child: ListView.builder(
-              padding: EdgeInsets.only(bottom: pad.bottom + 16),
-              itemCount: kUsCitiesByState.length,
-              itemBuilder: (context, i) {
-                final group = kUsCitiesByState[i];
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 18, 24, 4),
-                      child: Text(
-                        group.stateName,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFFE8C547),
-                          letterSpacing: 0.4,
-                        ),
-                      ),
-                    ),
-                    for (final city in group.cities)
-                      InkWell(
-                        onTap: () => Navigator.of(context).pop(city),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 13,
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  city.name,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                city.stateCode,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.white.withValues(alpha: 0.4),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
+          // ── Search field (2026-10-18): the full US city list lives below ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
+            child: TextField(
+              controller: _searchCtrl,
+              autofocus: true,
+              onChanged: (v) => setState(() => _query = v),
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+              cursorColor: const Color(0xFFE8C547),
+              decoration: InputDecoration(
+                hintText: S.of(context).searchCityHint,
+                hintStyle:
+                    TextStyle(color: Colors.white.withValues(alpha: 0.35)),
+                prefixIcon: Icon(Icons.search_rounded,
+                    color: Colors.white.withValues(alpha: 0.5)),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.06),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
             ),
+          ),
+          Expanded(
+            child: searching
+                ? (results.isEmpty
+                    ? Center(
+                        child: Text(
+                          S.of(context).noCitiesFound,
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5)),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: EdgeInsets.only(bottom: pad.bottom + 16),
+                        itemCount: results.length,
+                        itemBuilder: (context, i) => _cityRow(results[i]),
+                      ))
+                : ListView.builder(
+                    padding: EdgeInsets.only(bottom: pad.bottom + 16),
+                    itemCount: kUsCitiesByState.length,
+                    itemBuilder: (context, i) {
+                      final group = kUsCitiesByState[i];
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(24, 18, 24, 4),
+                            child: Text(
+                              group.stateName,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFE8C547),
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                          for (final city in group.cities) _cityRow(city),
+                        ],
+                      );
+                    },
+                  ),
           ),
         ],
       ),

@@ -11,9 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///      from the dropoff (the chained unlock every trip already had).
 void main() {
   final screen = File('lib/screens/driver/scheduled_ride_details_screen.dart')
-      .readAsStringSync();
-  final dispatch = File('backend/routers/dispatch.py').readAsStringSync();
-  final scheduled = File('backend/routers/scheduled.py').readAsStringSync();
+      .readAsStringSync().replaceAll('\r\n', '\n');
+  final dispatch = File('backend/routers/dispatch.py').readAsStringSync().replaceAll('\r\n', '\n');
+  final scheduled = File('backend/routers/scheduled.py').readAsStringSync().replaceAll('\r\n', '\n');
 
   group('countdown coin (numbers never escape)', () {
     test('the countdown is one fitted line inside padded bounds', () {

@@ -450,10 +450,12 @@ class LocalDataService {
     required String title,
     required String message,
     String type = 'general',
+    String? id,
   }) async {
     final existing = await getNotifications();
+    if (id != null && existing.any((item) => item.id == id)) return;
     final notification = AppNotificationItem(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      id: id ?? DateTime.now().microsecondsSinceEpoch.toString(),
       title: title,
       message: message,
       type: type,
@@ -466,6 +468,16 @@ class LocalDataService {
     await prefs.setString(
       _notificationsKey,
       jsonEncode(updated.map((item) => item.toJson()).toList()),
+    );
+  }
+
+  static Future<void> removeNotification(String id) async {
+    final remaining = (await getNotifications())
+        .where((item) => item.id != id)
+        .toList();
+    await _p.setString(
+      _notificationsKey,
+      jsonEncode(remaining.map((item) => item.toJson()).toList()),
     );
   }
 

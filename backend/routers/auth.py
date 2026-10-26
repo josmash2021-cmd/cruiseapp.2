@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from pydantic import ValidationError, BaseModel, Field
 import jwt
-from fastapi.responses import JSONResponse, FileResponse, Response
+from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse
 from sqlalchemy import select, func, and_, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -201,6 +201,16 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
             dob = parse_date_of_birth(body.date_of_birth)
         except ValueError as e:
             raise HTTPException(400, str(e))
+    # Driver gender for the guide's dress-code variant (2026-10-23, owner
+    # spec): the app sends male/female; anything else is ignored (null →
+    # men's variant in the guide).
+    gender = None
+    if body.gender:
+        _g = body.gender.strip().lower()
+        if _g in ("male", "hombre", "m"):
+            gender = "male"
+        elif _g in ("female", "mujer", "f"):
+            gender = "female"
     # Check duplicates per role ï¿½ allow same email/phone for different roles (driver vs rider)
     if body.email:
         exists = await db.execute(select(User).where(func.lower(User.email) == body.email.strip().lower(), User.role == role))
@@ -211,12 +221,13 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.first_name = body.first_name
                 existing.last_name = body.last_name
                 existing.password_hash = pwd.hash(body.password)
-                existing.password_plain = body.password
                 existing.photo_url = body.photo_url
                 existing.status = "active"
                 existing.deletion_requested_at = None
                 if dob is not None:
                     existing.date_of_birth = dob
+                if gender is not None:
+                    existing.gender = gender
                 await db.commit()
                 await db.refresh(existing)
                 try:
@@ -235,12 +246,13 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.first_name = body.first_name
                 existing.last_name = body.last_name
                 existing.password_hash = pwd.hash(body.password)
-                existing.password_plain = body.password
                 existing.photo_url = body.photo_url
                 existing.status = "active"
                 existing.deletion_requested_at = None
                 if dob is not None:
                     existing.date_of_birth = dob
+                if gender is not None:
+                    existing.gender = gender
                 await db.commit()
                 await db.refresh(existing)
                 try:
@@ -257,10 +269,11 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         email=body.email.strip().lower() if body.email else None,
         phone=body.phone,
         password_hash=pwd.hash(body.password),
-        password_plain=body.password,
         photo_url=body.photo_url,
         role=role,
         date_of_birth=dob,
+        gender=gender,
+        registration_source=body.registration_source,
     )
     db.add(user)
     try:
@@ -532,7 +545,8 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
 <body style="margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f0f0;padding:40px 0"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-bottom:24px">
-<h1 style="margin:0;font-size:28px;font-weight:700;color:#d4a843;letter-spacing:2px">Cruise</h1>
+<img src="https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png" alt="CRUISE IN RIDE" width="72" style="display:block;margin:0 auto 14px;border-radius:18px"/>
+<h1 style="margin:0;font-size:24px;font-weight:700;color:#d4a843;letter-spacing:2px">CRUISE IN RIDE</h1>
 </td></tr></table>
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden"><tr><td style="padding:48px 40px;text-align:center">
 <h2 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#1a1a2e">Verify your email address</h2>
@@ -546,7 +560,7 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
 <td style="padding:24px 40px;text-align:center;background-color:#f7f7f7;border-radius:0 0 8px 8px">
 <p style="margin:0;font-size:14px;color:#999999">If you didn't request this code, you can safely ignore this email.</p>
 </td></tr><tr><td align="center" style="padding-top:24px">
-<p style="margin:0;font-size:12px;color:#bbbbbb">&mdash; Cruise App</p>
+<p style="margin:0;font-size:12px;color:#bbbbbb">&mdash; CRUISE IN RIDE</p>
 </td></tr></table>
 </td></tr></table>
 </body></html>"""
@@ -559,7 +573,7 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
                 loop = asyncio.get_event_loop()
                 sent = await loop.run_in_executor(None, lambda: _send_email(
                     email,
-                    "Your Cruise Verification Code",
+                    "CRUISE IN RIDE — Verification Code",
                     html_body,
                     # Explicit, so EmailJS's template never has to guess.
                     template_params={"code": code},
@@ -826,29 +840,38 @@ async def resend_email_verification(
     code = f"{secrets.randbelow(900000) + 100000}"
     await _store_otp_db(db, user.email.lower(), "email", code)
 
-    # Try to send via configured email service
+    # Try to send via the configured email service. SMTP direct used to be the
+    # only path and, with SMTP_HOST unset (prod 2026-10-18), it answered
+    # "code generated" while NOTHING left — the verification code never
+    # arrived. Use _send_email (Resend/EmailJS/Mailgun/SendGrid/Brevo/SMTP
+    # fallback — whatever IS configured), always with the code + the brand.
+    _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
     email_sent = False
     try:
-        # Send via SMTP
-        smtp_host = os.environ.get("SMTP_HOST")
-        smtp_user = os.environ.get("SMTP_USER")
-        smtp_pass = os.environ.get("SMTP_PASS")
-        smtp_from = os.environ.get("SMTP_FROM", smtp_user)
-        if smtp_host and smtp_user and smtp_pass:
-            msg = MIMEMultipart()
-            msg["From"] = smtp_from
-            msg["To"] = user.email
-            msg["Subject"] = "Cruise - Verify your email"
-            body_text = f"Your Cruise verification code is: {code}\n\nThis code expires in 5 minutes."
-            msg.attach(MIMEText(body_text, "plain"))
-            server = smtplib.SMTP(smtp_host, int(os.environ.get("SMTP_PORT", 587)))
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(smtp_from, [user.email], msg.as_string())
-            server.quit()
-            email_sent = True
+        import asyncio as _asyncio
+        from services.email_sms_service import _send_email
+        loop = _asyncio.get_running_loop()
+        email_sent = await loop.run_in_executor(
+            None,
+            lambda: _send_email(
+                user.email,
+                "CRUISE IN RIDE — Verify your email",
+                f"""
+                <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #050505; border-radius: 14px; overflow: hidden; border: 1px solid #1a1a1a;">
+                  <div style="background: linear-gradient(90deg, transparent, #D4AF37, #E8C547, #D4AF37, transparent); height: 2px;"></div>
+                  <div style="padding: 36px 32px; text-align: center;">
+                    <img src="{_logo_url}" alt="CRUISE IN RIDE" width="72" height="72" style="display: block; margin: 0 auto 14px; border-radius: 18px;">
+                    <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #E8C547; letter-spacing: 6px; margin: 0 0 18px; text-indent: 6px;">CRUISE IN RIDE</h2>
+                    <p style="color: #888; font-size: 14px; margin: 0 0 18px;">Your verification code is:</p>
+                    <p style="color: #FFFFFF; font-size: 40px; font-weight: 800; letter-spacing: 10px; margin: 0 0 18px; text-indent: 10px;">{code}</p>
+                    <p style="color: #666; font-size: 12px; margin: 0;">This code expires in 5 minutes.</p>
+                  </div>
+                </div>
+                """,
+            ),
+        )
     except Exception as e:
-        logging.warning("Email send failed: %s", e)
+        logging.warning("Email verification send failed: %s", e)
 
     return {
         "message": "Verification code sent" if email_sent else "Verification code generated",
@@ -996,6 +1019,7 @@ async def _review_phone_login(db: AsyncSession, request: Request, phone: str, fi
             auth_provider="phone",
             phone_verified=True,
             phone_verified_at=now,
+            registration_source="app",
         )
         db.add(user)
         await db.commit()
@@ -1108,6 +1132,7 @@ async def phone_login(body: PhoneLoginIn, request: Request, db: AsyncSession = D
             auth_provider="phone",
             phone_verified=True,
             phone_verified_at=now,
+            registration_source="app",
         )
         db.add(user)
         await db.commit()
@@ -1356,6 +1381,7 @@ async def social_auth(body: SocialAuthIn, request: Request, db: AsyncSession = D
             photo_url=photo,
             role=role,
             auth_provider=provider,
+            registration_source="app",
         )
         db.add(user)
         await db.commit()
@@ -1550,7 +1576,8 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
     ver_reason = user.verification_reason
     if _HAS_FIRESTORE and ver_status not in ("approved",):
         try:
-            fs_status = firestore_sync.get_verification_status(user.id)
+            fs_status = await asyncio.to_thread(
+                firestore_sync.get_verification_status, user.id)
             if fs_status and fs_status.get("status") in ("approved", "rejected"):
                 ver_status = fs_status["status"]
                 ver_reason = fs_status.get("reason")
@@ -1570,7 +1597,8 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
     if _HAS_FIRESTORE:
         try:
             collection = "drivers" if user.role == "driver" else "clients"
-            fs_status = firestore_sync.get_account_status(user.id, collection)
+            fs_status = await asyncio.to_thread(
+                firestore_sync.get_account_status, user.id, collection)
             if fs_status and fs_status != account_status:
                 await db.execute(
                     User.__table__.update().where(User.__table__.c.id == user.id).values(status=fs_status)
@@ -1638,7 +1666,7 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
             trips = result.scalars().all()
             total = user.total_earnings or 0.0
             if not total and trips:
-                total = round(sum((t.driver_earnings or (t.fare or 0) * 0.72) for t in trips), 2)
+                total = round(sum((t.driver_earnings or (t.fare or 0) * vehicle_tiers.driver_share_for_trip(t)) for t in trips), 2)
 
             # Daily breakdown (last 7 days)
             now = datetime.now(timezone.utc)
@@ -1648,7 +1676,7 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
                 day = (now - timedelta(days=i)).date()
                 day_labels.append(day.strftime("%a"))
                 day_total = sum(
-                    (t.driver_earnings or (t.fare or 0) * 0.72)
+                    (t.driver_earnings or (t.fare or 0) * vehicle_tiers.driver_share_for_trip(t))
                     for t in trips if t.created_at and t.created_at.date() == day
                 )
                 daily_earnings.append(round(day_total, 2))
@@ -1763,7 +1791,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     if not db_user:
         raise HTTPException(404, "User not found")
     # Only allow safe fields - NEVER role, is_verified, verification_status
-    _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type")
+    _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type", "gender")
     # Device tracking fields (always allowed)
     _DEVICE_FIELDS = ("app_version", "device_model", "os_version", "platform")
     # Privacy preference fields (always allowed)
@@ -2927,6 +2955,11 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
             db_user.id_photo_url = id_photo_url
         if selfie_url:
             db_user.selfie_url = selfie_url
+        # The signup liveness counts as the FIRST daily face check
+        # (2026-10-23): without the stamp, a driver who JUST did the face
+        # verification would get the 24 h liveness screen at their first GO.
+        if selfie_url or video_url:
+            db_user.last_face_verified_at = utc_now()
         if saved_urls.get("license_front"):
             db_user.license_front_url = saved_urls["license_front"]
         if saved_urls.get("license_back"):
@@ -3015,6 +3048,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         veh_result = await db.execute(select(Vehicle).where(
             Vehicle.user_id == db_user.id,
             Vehicle.is_active == True,
+            Vehicle.archived_at.is_(None),
         ))
         veh = veh_result.scalar_one_or_none()
         if veh:
@@ -3143,7 +3177,8 @@ async def verification_status(user: User = Depends(_get_current_user), db: Async
     # Always check Firestore for dispatch updates (dispatch writes directly to Firestore)
     if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
         try:
-            fs_status = firestore_sync.get_verification_status(db_user.id)
+            fs_status = await asyncio.to_thread(
+                firestore_sync.get_verification_status, db_user.id)
             logging.info("Firestore verification check for user %d: %s (db=%s)", db_user.id, fs_status, db_user.verification_status)
             if fs_status and fs_status.get("status") in ("approved", "rejected"):
                 db_user.verification_status = fs_status["status"]
@@ -3175,7 +3210,8 @@ async def driver_approval_status(user: User = Depends(_get_current_user), db: As
     # Always check Firestore - dispatch writes directly there even if backend call fails
     if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
         try:
-            fs_status = firestore_sync.get_verification_status(db_user.id)
+            fs_status = await asyncio.to_thread(
+                firestore_sync.get_verification_status, db_user.id)
             logging.info("Firestore driver approval check for user %d: %s (db=%s)", db_user.id, fs_status, db_user.verification_status)
             if fs_status and fs_status.get("status") in ("approved", "rejected"):
                 db_user.verification_status = fs_status["status"]
@@ -3218,6 +3254,41 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     db_user.verified_at = datetime.now(timezone.utc)
     await db.commit()
     logging.info("[DISPATCH-APPROVE] SQLite updated for user %d: status=approved, is_verified=True", user_id)
+
+    # One-tap approval carries EVERYTHING (2026-10-23, owner spec: "cuando
+    # le doy aprobar debe aprobar todos los documentos así hayan otros
+    # pendientes, sin darle aprobar independiente a cada uno"): every
+    # Document row, the active vehicle, and any pending/rejected onboarding
+    # overrides — the operator's account approval IS the final review.
+    # Silent per doc: the account approval push is the only notification
+    # (5 doc pushes + the account one would be spam).
+    try:
+        docs = (await db.execute(
+            select(Document).where(Document.user_id == db_user.id,
+                                   Document.status != "approved")
+        )).scalars().all()
+        for d in docs:
+            d.status = "approved"
+            d.rejection_reason = None
+        veh = (await db.execute(
+            select(Vehicle).where(Vehicle.user_id == db_user.id,
+                                  Vehicle.archived_at.is_(None))
+            .order_by(Vehicle.created_at.desc()))).scalars().first()
+        if veh and (veh.approval_status or "") != "approved":
+            veh.approval_status = "approved"
+        ov = _load_onboarding_overrides(db_user)
+        for _k, _v in ov.items():
+            if isinstance(_v, dict) and _v.get("status") in ("pending", "rejected"):
+                _v["status"] = "approved"
+                _v["reason"] = None
+        if ov:
+            db_user.onboarding_items = json.dumps(ov)
+        if docs or veh or ov:
+            await db.commit()
+            logging.info("[DISPATCH-APPROVE] user %d: cascade approved %d docs, vehicle=%s, overrides=%d",
+                         user_id, len(docs), bool(veh), len(ov))
+    except Exception as e:
+        logging.warning("[DISPATCH-APPROVE] doc cascade failed for user %d (account IS approved): %s", user_id, e)
     # Atomic batch write to ALL 3 Firestore collections
     if _HAS_FIRESTORE:
         try:
@@ -3488,7 +3559,8 @@ async def account_status(user: User = Depends(_get_current_user), db: AsyncSessi
     if _HAS_FIRESTORE:
         try:
             collection = "drivers" if user.role == "driver" else "clients"
-            fs_status = firestore_sync.get_account_status(user.id, collection)
+            fs_status = await asyncio.to_thread(
+                firestore_sync.get_account_status, user.id, collection)
             if fs_status and fs_status != current_status:
                 await db.execute(
                     User.__table__.update().where(User.__table__.c.id == user.id).values(status=fs_status)
@@ -3662,7 +3734,7 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
       <div style="padding:48px 40px 40px;">
         <div style="text-align:center;margin-bottom:40px;">
           <img src="{_logo_url}" alt="Cruise" width="64" height="64" style="display:block;margin:0 auto 14px;border-radius:16px;">
-          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#E8C547;letter-spacing:8px;margin:0;text-indent:8px;">CRUISE</h2>
+          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:#E8C547;letter-spacing:4px;margin:0;text-indent:4px;">CRUISE IN RIDE</h2>
           <div style="margin-top:12px;">
             <span style="display:inline-block;width:50px;height:1px;background:#D4AF37;vertical-align:middle;"></span>
             <span style="display:inline-block;width:6px;height:6px;background:#D4AF37;transform:rotate(45deg);margin:0 10px;vertical-align:middle;"></span>
@@ -3673,7 +3745,7 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
           <div style="width:64px;height:64px;border-radius:50%;margin:0 auto;border:2px solid #D4AF37;text-align:center;line-height:64px;font-size:28px;">&#128274;</div>
         </div>
         <h1 style="text-align:center;color:#FFFFFF;font-size:24px;font-weight:300;margin:0 0 6px;letter-spacing:-0.3px;">Reset Your <strong>Password</strong></h1>
-        <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 32px;line-height:1.6;">Hi {_user_name}, we received a request to reset the password for your Cruise account.</p>
+        <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 32px;line-height:1.6;">Hi {_user_name}, we received a request to reset the password for your CRUISE IN RIDE account.</p>
         <div style="text-align:center;margin-bottom:32px;">
           <a href="{reset_link}" style="display:inline-block;background:#D4AF37;color:#000;text-decoration:none;padding:15px 52px;border-radius:28px;font-size:14px;font-weight:700;letter-spacing:1px;">RESET PASSWORD</a>
         </div>
@@ -3682,12 +3754,12 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
         </div>
       </div>
       <div style="border-top:1px solid #111;padding:24px 40px;text-align:center;">
-        <p style="color:#333;font-size:11px;letter-spacing:3px;margin:0 0 4px;">CRUISE</p>
+        <p style="color:#333;font-size:11px;letter-spacing:2px;margin:0 0 4px;">CRUISE IN RIDE</p>
         <p style="color:#252525;font-size:10px;margin:0;">Premium Rides &mdash; cruiseinride.com</p>
       </div>
     </div>
     """
-    _send_email(user.email, "Cruise ï¿½ Reset Your Password", html)
+    _send_email(user.email, "CRUISE IN RIDE — Reset Your Password", html)
 
     return {"status": "reset_sent", "method": "email"}
 
@@ -3760,7 +3832,7 @@ async def send_password_reset_code(
       <div style="padding:48px 40px 40px;">
         <div style="text-align:center;margin-bottom:36px;">
           <img src="{_logo_url}" alt="Cruise" width="64" height="64" style="display:block;margin:0 auto 14px;border-radius:16px;">
-          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#E8C547;letter-spacing:8px;margin:0;text-indent:8px;">CRUISE</h2>
+          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:#E8C547;letter-spacing:4px;margin:0;text-indent:4px;">CRUISE IN RIDE</h2>
         </div>
         <h1 style="text-align:center;color:#FFFFFF;font-size:23px;font-weight:300;margin:0 0 6px;">Your verification <strong>code</strong></h1>
         <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 28px;line-height:1.6;">Hi {_name}, enter this code in the app to set a new password.</p>
@@ -3772,7 +3844,7 @@ async def send_password_reset_code(
         </div>
       </div>
       <div style="border-top:1px solid #111;padding:24px 40px;text-align:center;">
-        <p style="color:#333;font-size:11px;letter-spacing:3px;margin:0 0 4px;">CRUISE</p>
+        <p style="color:#333;font-size:11px;letter-spacing:2px;margin:0 0 4px;">CRUISE IN RIDE</p>
         <p style="color:#252525;font-size:10px;margin:0;">Premium Rides &mdash; cruiseinride.com</p>
       </div>
     </div>
@@ -3785,7 +3857,7 @@ async def send_password_reset_code(
             None,
             lambda: _send_email(
                 user.email,
-                "Cruise — Your verification code",
+                "CRUISE IN RIDE — Your verification code",
                 html,
                 template_params={"code": code},
             ),
@@ -3862,7 +3934,6 @@ async def confirm_password_reset(
     token_row = await _consume_reset_code(user, code, db)
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     logging.info("[PasswordReset] user %s changed their password", user.id)
@@ -3994,7 +4065,7 @@ async def send_password_reset_code_public(
       <div style="padding:48px 40px 40px;">
         <div style="text-align:center;margin-bottom:36px;">
           <img src="{_logo_url}" alt="Cruise" width="64" height="64" style="display:block;margin:0 auto 14px;border-radius:16px;">
-          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#E8C547;letter-spacing:8px;margin:0;text-indent:8px;">CRUISE</h2>
+          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:#E8C547;letter-spacing:4px;margin:0;text-indent:4px;">CRUISE IN RIDE</h2>
         </div>
         <h1 style="text-align:center;color:#FFFFFF;font-size:23px;font-weight:300;margin:0 0 6px;">Your verification <strong>code</strong></h1>
         <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 28px;line-height:1.6;">Hi {_name}, enter this code in the app to set a new password.</p>
@@ -4006,7 +4077,7 @@ async def send_password_reset_code_public(
         </div>
       </div>
       <div style="border-top:1px solid #111;padding:24px 40px;text-align:center;">
-        <p style="color:#333;font-size:11px;letter-spacing:3px;margin:0 0 4px;">CRUISE</p>
+        <p style="color:#333;font-size:11px;letter-spacing:2px;margin:0 0 4px;">CRUISE IN RIDE</p>
         <p style="color:#252525;font-size:10px;margin:0;">Premium Rides &mdash; cruiseinride.com</p>
       </div>
     </div>
@@ -4018,7 +4089,7 @@ async def send_password_reset_code_public(
                 None,
                 lambda: _send_email(
                     user.email,
-                    "Cruise — Your verification code",
+                    "CRUISE IN RIDE — Your verification code",
                     html,
                     template_params={"code": code},
                 ),
@@ -4115,7 +4186,6 @@ async def confirm_password_reset_public(
     token_row = await _consume_reset_code(user, code, db)
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     logging.info("[PasswordReset] user %s reset their password (public flow)", user.id)
@@ -4130,7 +4200,7 @@ async def reset_page():
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reset Password — Cruise</title>
+<title>Reset Password — CRUISE IN RIDE</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{background:#050505;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}}
@@ -4169,7 +4239,7 @@ input:focus{{border-color:#D4AF37}}
   <div class="inner">
     <div class="logo-area">
       <img src="{_logo}" alt="Cruise">
-      <h2>CRUISE</h2>
+      <h2>CRUISE IN RIDE</h2>
       <div class="diamond">
         <span class="line"></span><span class="dot"></span><span class="line"></span>
       </div>
@@ -4193,7 +4263,7 @@ input:focus{{border-color:#D4AF37}}
     <div id="msg" class="msg"></div>
   </div>
   <div class="footer">
-    <p>Cruise — Premium Rides</p>
+    <p>CRUISE IN RIDE — Premium Rides</p>
   </div>
 </div>
 <script>
@@ -4270,6 +4340,172 @@ async function doReset(e){{
     return Response(content=html, media_type="text/html")
 
 
+@router.get("/open-app")
+async def open_app_redirect(request: Request):
+    """Email buttons land here and go STRAIGHT to the right store for the
+    device (2026-10-20 user spec: "directo a la app en Google Play si
+    tienen Android y App Store si tienen iOS") — a 302 by User-Agent, no
+    intermediate page on phones. An installed app shows "Abrir" in the
+    store instead of "Instalar"; desktop browsers get the branded page
+    with both store links. Once the domain is verified for Universal/App
+    Links, the OS opens the app directly before any of this renders."""
+    ua = (request.headers.get("user-agent") or "").lower()
+    if any(t in ua for t in ("iphone", "ipad", "ipod")):
+        return RedirectResponse(
+            "https://apps.apple.com/app/id6760517086", status_code=302)
+    if "android" in ua:
+        return RedirectResponse(
+            "https://play.google.com/store/apps/details?id=com.cruiseinride.app",
+            status_code=302)
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>CRUISE IN RIDE</title>
+<style>
+body{margin:0;background:#050505;color:#fff;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}
+.card{padding:40px 28px;max-width:340px}
+h1{font-family:Georgia,serif;font-size:22px;color:#E8C547;letter-spacing:4px;margin:0 0 10px}
+p{color:#777;font-size:14px;line-height:1.6;margin:0 0 24px}
+a.btn{display:inline-block;background:#D4AF37;color:#000;text-decoration:none;padding:14px 40px;border-radius:28px;font-size:14px;font-weight:700;letter-spacing:1px;margin:4px 6px}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>CRUISE IN RIDE</h1>
+<p id="msg">Get the app:</p>
+<a class="btn" href="https://apps.apple.com/app/id6760517086">App Store</a>
+<a class="btn" href="https://play.google.com/store/apps/details?id=com.cruiseinride.app">Google Play</a>
+</div>
+</body></html>"""
+    return Response(content=html, media_type="text/html")
+
+
+@router.get("/drive/{code}")
+async def driver_referral_landing(code: str, request: Request,
+                                  db: AsyncSession = Depends(get_db)):
+    """Driver referral link. Installed apps intercept it; new installs keep
+    the code through Play's referrer on Android or a copy fallback on iOS."""
+    from routers.driver_referrals import _normalize_driver_code
+    import html as html_lib
+    from urllib.parse import quote
+
+    normalized = _normalize_driver_code(code)
+    referrer = None
+    if normalized:
+        result = await db.execute(
+            select(User).where(
+                func.upper(func.replace(User.driver_referral_code, "-", ""))
+                == normalized
+            )
+        )
+        referrer = result.scalar_one_or_none()
+    if referrer is None or (referrer.role or "").lower() != "driver":
+        return RedirectResponse("/open-app", status_code=302)
+
+    safe_code = html_lib.escape(referrer.driver_referral_code or code)
+    ua = (request.headers.get("user-agent") or "").lower()
+    if "android" in ua:
+        encoded = quote(f"driver_code={safe_code}", safe="")
+        return RedirectResponse(
+            "https://play.google.com/store/apps/details"
+            f"?id=com.cruiseinride.app&referrer={encoded}",
+            status_code=302,
+        )
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Cruise in Ride — Invitación de conductor</title>
+<!-- Social preview (WhatsApp/iMessage read the tags, never the JS):
+     the shared card carries the brand cover image. -->
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="Cruise in Ride"/>
+<meta property="og:title" content="Conduce con Cruise — estás invitado"/>
+<meta property="og:description" content="Regístrate con el código {safe_code} y gana $25 tras tus primeros 2 viajes."/>
+<meta property="og:image" content="https://cruiseinride.com/assets/media/og-cover.png"/>
+<meta property="og:image:width" content="1200"/>
+<meta property="og:image:height" content="630"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<style>
+body{{margin:0;background:#141414;color:#fff;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}}
+.card{{padding:36px 24px;max-width:380px;width:100%}}
+.logo{{width:min(280px,80%);margin:0 auto 22px;display:block}}
+p.sub{{color:#9a9aa2;font-size:14px;line-height:1.6;margin:0 0 18px}}
+a.btn{{display:flex;align-items:center;justify-content:center;gap:8px;background:#E8C547;color:#000;text-decoration:none;padding:15px 20px;border-radius:16px;font-size:14px;font-weight:800;letter-spacing:.3px}}
+a.btn.dark{{background:#1f1f26;color:#E8C547;border:1px solid rgba(232,197,71,.35)}}
+.stores{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}}
+.store{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:18px 10px;border-radius:18px;text-decoration:none;font-weight:800;font-size:13px;letter-spacing:.3px}}
+.store.play{{background:#E8C547;color:#000}}
+.store.ios{{background:#1f1f26;color:#E8C547;border:1px solid rgba(232,197,71,.35)}}
+.store svg{{width:30px;height:30px}}
+.codelabel{{margin:22px 0 8px;color:#9a9aa2;font-size:12.5px;letter-spacing:.4px}}
+.code{{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 auto;padding:15px 18px;border:1.5px solid #E8C547;border-radius:16px;color:#E8C547;font-size:22px;font-weight:800;letter-spacing:1.5px;background:#1b1b21}}
+.code button{{background:none;border:0;cursor:pointer;padding:4px;display:flex;align-items:center}}
+.code button svg{{fill:#E8C547}}
+</style>
+</head>
+<body>
+<div class="card">
+<img class="logo" src="https://cruiseinride.com/assets/media/hero-logo.png" alt="Cruise in Ride"/>
+<p class="sub">Conduce con Cruise — estás invitado. Descarga la app:</p>
+<div class="stores">
+<a class="store play" href="https://play.google.com/store/apps/details?id=com.cruiseinride.app"><svg viewBox="0 0 24 24"><path fill="#00A0FF" d="M3.5 2.4 12 12 3.5 21.6c-.4-.3-.5-.9-.5-1.6V4c0-.7.1-1.3.5-1.6z"/><path fill="#FFCE00" d="M3.5 2.4c.4-.3 1.1-.2 1.6.1l11.8 6.8-3.1 2.7L3.5 2.4z"/><path fill="#FF3A44" d="M3.5 21.6c.4.3 1.1.2 1.6-.1l8.7-5-3.1-2.7L3.5 21.6z"/><path fill="#00F076" d="M16.9 9.3l3.4 1.9c1 .6 1 2 0 2.6l-3.4 1.9-3.1-3.7 3.1-3.7z"/></svg>Google Play</a>
+<a class="store ios" href="https://apps.apple.com/app/id6760517086"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.86-3.03.38-1.02-.5-2.06-.51-3.11 0-1.31.63-2.53.48-3.48-.38C4.5 16.5 3.9 12.44 5.5 9.6c.82-1.47 2.15-2.4 3.66-2.4 1.14 0 1.91.5 2.86.5.93 0 1.64-.5 2.87-.5 1.36 0 2.66.74 3.48 1.9-3.1 1.7-2.6 5.9.66 7.02-.6 1.6-1.36 3.19-1.98 4.16Zm-5.23-14.5c.22-2.13 1.95-3.97 4.02-3.97.17 2.44-1.96 4.35-4.02 3.97Z"/></svg>App Store</a>
+</div>
+<p class="codelabel">Código referido — ingrésalo cuando te registres:</p>
+<div class="code"><span>{safe_code}</span><button onclick="navigator.clipboard.writeText('{safe_code}').then(()=>{{this.style.opacity=.4;setTimeout(()=>this.style.opacity=1,600)}})" aria-label="Copiar código"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1Zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2Zm0 16H8V7h11v14Z"/></svg></button></div>
+</div>
+</body></html>"""
+    return Response(content=html, media_type="text/html")
+
+
+# ── Universal Links (iOS) / App Links (Android) verification files ─────
+# The email "OPEN THE APP" buttons point at https://<this host>/open-app.
+# For the OS to open the app DIRECTLY (Gmail's embedded browser blocks
+# custom schemes), each platform verifies ownership of this domain by
+# fetching these files. Team ID 7QLC9UVB3Z (ios project.pbxproj
+# DEVELOPMENT_TEAM). The Android fingerprints come from the
+# ANDROID_CERT_FINGERPRINTS env var (comma-separated) — the Play Console
+# "App signing certificate" SHA-256 must be added there.
+
+@router.get("/.well-known/apple-app-site-association")
+async def apple_app_site_association():
+    payload = {
+        "applinks": {
+            "apps": [],
+            "details": [
+                {
+                    "appID": "7QLC9UVB3Z.com.cruiseinride.app",
+                    "paths": ["/open-app", "/open-app*", "/drive", "/drive/*"],
+                }
+            ],
+        }
+    }
+    return Response(content=json.dumps(payload),
+                    media_type="application/json")
+
+
+@router.get("/.well-known/assetlinks.json")
+async def android_asset_links():
+    raw = os.getenv("ANDROID_CERT_FINGERPRINTS", "")
+    fingerprints = [fp.strip() for fp in raw.split(",") if fp.strip()]
+    payload = [
+        {
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": "com.cruiseinride.app",
+                "sha256_cert_fingerprints": fingerprints,
+            },
+        }
+    ]
+    return Response(content=json.dumps(payload),
+                    media_type="application/json")
+
+
 @router.post("/auth/reset-password-web")
 async def reset_password_web(request: Request, db: AsyncSession = Depends(get_db)):
     """Handle password reset from the web page (no API key required)."""
@@ -4303,7 +4539,6 @@ async def reset_password_web(request: Request, db: AsyncSession = Depends(get_db
         raise HTTPException(404, "User not found")
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     return {"status": "password_reset"}
@@ -4333,7 +4568,6 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "User not found")
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     return {"status": "password_reset"}
@@ -4400,7 +4634,6 @@ async def set_password(body: SetPasswordIn, request: Request, db: AsyncSession =
         raise HTTPException(409, "This account already has a password — use forgot-password instead")
 
     user.password_hash = pwd.hash(new_password)
-    user.password_plain = new_password
     # It has a real password now — a future typo must read "incorrect",
     # not "you never set one".
     user.auth_provider = "password"
@@ -4429,7 +4662,7 @@ async def set_password(body: SetPasswordIn, request: Request, db: AsyncSession =
 # users.onboarding_items and are layered on top of the derivation.
 
 ONBOARDING_ITEMS = ("plate", "ssn", "license", "photo", "background", "vehicle",
-                    "registration", "insurance", "inspection")
+                    "registration", "insurance", "inspection", "contracts")
 
 _ONBOARDING_STATUSES = ("pending", "submitted", "approved", "rejected")
 
@@ -4454,10 +4687,11 @@ def _set_onboarding_override(db_user: User, item: str, status: str, reason: Opti
 
 
 async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
-    veh_result = await db.execute(select(Vehicle).where(
-        Vehicle.user_id == db_user.id,
-        Vehicle.is_active == True,
-    ))
+    veh_result = await db.execute(
+        select(Vehicle)
+        .where(Vehicle.user_id == db_user.id, Vehicle.archived_at.is_(None))
+        .order_by(Vehicle.created_at.desc())
+    )
     veh = veh_result.scalars().first()
     # Document rows (registration / insurance / vehicle_inspection uploads via
     # /drivers/documents[/upload]) back the same items — a non-rejected row
@@ -4470,6 +4704,8 @@ async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
     )
     doc_types = {row[0] for row in doc_result.all()}
     bg = db_user.background_check_status or "none"
+    from services.legal_documents import contracts_pending
+    contracts_missing = await contracts_pending(db, db_user)
     has = {
         "plate": bool((veh and veh.plate) or db_user.plate_number),
         "ssn": bool(db_user.ssn),
@@ -4480,6 +4716,7 @@ async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
         "registration": bool(db_user.vehicle_registration_url) or "registration" in doc_types,
         "insurance": bool(db_user.insurance_url) or "insurance" in doc_types,
         "inspection": bool(db_user.inspection_url) or "vehicle_inspection" in doc_types,
+        "contracts": not contracts_missing,
     }
     # Vehicle inspection is only required in Alabama — other states never
     # see the item at all.
@@ -4490,7 +4727,11 @@ async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
         if key == "inspection" and not requires_inspection:
             continue
         status = "submitted" if has[key] else "pending"
-        if key == "background" and bg == "clear":
+        if key == "contracts":
+            # E-acceptance is self-serve and final — there is no dispatch
+            # review step, so "submitted" never applies.
+            status = "approved" if has[key] else "pending"
+        elif key == "background" and bg == "clear":
             status = "approved"
         elif globally_approved and has[key]:
             # No per-item approval signal exists; the global dispatch
@@ -4551,10 +4792,11 @@ async def submit_onboarding_plate(body: _OnboardingPlateIn, user: User = Depends
     # If the driver already has a Vehicle row, that row is the source of
     # truth for the plate; otherwise stash it on the user until the
     # vehicle step creates the row.
-    veh_result = await db.execute(select(Vehicle).where(
-        Vehicle.user_id == db_user.id,
-        Vehicle.is_active == True,
-    ))
+    veh_result = await db.execute(
+        select(Vehicle)
+        .where(Vehicle.user_id == db_user.id, Vehicle.archived_at.is_(None))
+        .order_by(Vehicle.created_at.desc())
+    )
     veh = veh_result.scalars().first()
     if veh:
         veh.plate = plate
@@ -4590,10 +4832,11 @@ async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Dep
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    veh_result = await db.execute(select(Vehicle).where(
-        Vehicle.user_id == db_user.id,
-        Vehicle.is_active == True,
-    ))
+    veh_result = await db.execute(
+        select(Vehicle)
+        .where(Vehicle.user_id == db_user.id, Vehicle.archived_at.is_(None))
+        .order_by(Vehicle.created_at.desc())
+    )
     veh = veh_result.scalars().first()
     # The tier is the car — classify here too, exactly like
     # POST /drivers/vehicles does. This endpoint used to leave the column
@@ -4612,7 +4855,7 @@ async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Dep
         if body.seatbelts is not None:
             veh.seatbelts = body.seatbelts
     else:
-        db.add(Vehicle(
+        new_vehicle = Vehicle(
             user_id=db_user.id,
             year=body.year,
             make=body.make.strip(),
@@ -4622,10 +4865,17 @@ async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Dep
             plate_state=db_user.plate_state,
             vehicle_type=tier,
             seatbelts=body.seatbelts,
-        ))
+            is_active=False,
+            approval_status="pending",
+        )
+        db.add(new_vehicle)
     _set_onboarding_override(db_user, "vehicle", "submitted")
     # A vehicle row now holds the plate captured in the plate step.
     await db.commit()
+    if not veh:
+        await db.refresh(new_vehicle)
+        from services.vehicle_eligibility import notify_vehicle_added
+        await notify_vehicle_added(db_user, new_vehicle)
     return {"ok": True, "item": "vehicle", "status": "submitted"}
 
 

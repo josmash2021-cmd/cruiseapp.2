@@ -106,7 +106,7 @@ class _HelpScreenState extends State<HelpScreen> {
               '2. Tap on "Manage payment methods"\n'
               '3. Add a new card or select an existing one\n'
               '4. Set your preferred method as default\n\n'
-              'You can use credit cards, debit cards, PayPal, Google Pay, or Cruise Cash.',
+              'You can use credit cards, debit cards, Google Pay, or Cruise Cash.',
         ),
         _HelpTopic(
           icon: Icons.lock_outline_rounded,
@@ -1202,7 +1202,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       final mode = await UserSession.getMode();
       _userRole = mode.isNotEmpty ? mode : 'rider';
 
-      await ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 4));
+      // The boot probe (main.dart) already settled the best URL — awaiting
+      // another one here used to add up to 4 s to every chat open
+      // (2026-10-20, user report: ~10 s to load the chat the first time).
+      unawaited(ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 4)));
       // A different session key than the one we opened last time means this
       // is a new conversation — the server closes the old chat and hands
       // back a clean one. Consumed once (the key is stored as we ask, so a

@@ -1835,7 +1835,24 @@ extension _RideRequestController on _RideRequestScreenState {
                     style: const TextStyle(fontSize: 17))),
               ]),
               content: Text(localizedBody, style: const TextStyle(fontSize: 15)),
-              actions: [TextButton(onPressed: () => Navigator.maybeOf(dialogCtx)?.pop(), child: Text(S.of(context).okBtn))],
+              actions: [
+                TextButton(onPressed: () => Navigator.maybeOf(dialogCtx)?.pop(), child: Text(S.of(context).okBtn)),
+                if (isNoDrivers)
+                  TextButton(
+                    onPressed: () {
+                      Navigator.maybeOf(dialogCtx)?.pop();
+                      // A + agendar (owner spec 2026-10-17): sin drivers, el
+                      // rider puede dejar el viaje agendado para más tarde.
+                      rootNav.push(
+                          slideFromRightRoute(const ScheduleHubScreen()));
+                    },
+                    child: Text(
+                      S.of(context).scheduleForLater,
+                      style: const TextStyle(
+                          color: Color(0xFFE8C547), fontWeight: FontWeight.w700),
+                    ),
+                  ),
+              ],
             ),
           );
         });
@@ -1884,6 +1901,20 @@ extension _RideRequestController on _RideRequestScreenState {
                   onPressed: () => Navigator.maybeOf(dialogCtx)?.pop(),
                   child: Text(S.of(context).ok),
                 ),
+                if (isNoDrivers)
+                  TextButton(
+                    onPressed: () {
+                      Navigator.maybeOf(dialogCtx)?.pop();
+                      // A + agendar (owner spec 2026-10-17).
+                      navRoot.push(
+                          slideFromRightRoute(const ScheduleHubScreen()));
+                    },
+                    child: Text(
+                      S.of(context).scheduleForLater,
+                      style: const TextStyle(
+                          color: Color(0xFFE8C547), fontWeight: FontWeight.w700),
+                    ),
+                  ),
               ],
             ),
           );
@@ -1923,7 +1954,10 @@ extension _RideRequestController on _RideRequestScreenState {
         ? option.priceEstimate * 0.9
         : option.priceEstimate;
     final amountCents = (effectivePrice * 100).round();
-    final label = 'Cruise · ${option.name}';
+    // Label del sheet de pago (Apple Pay / Google Pay / tarjeta): "CRUISE
+    // IN RIDE - {TIER}" canónico en mayúsculas del tier seleccionado
+    // (owner spec 2026-10-18 — Sedan→COMPACT, SUV XL→PREMIUM, Suburban→VIP).
+    final label = 'CRUISE IN RIDE - ${tripTierLabel(option.id)}';
 
     // The backend hard-caps PaymentIntents at $1,000 (payments.py). A fare
     // outside (0, $1,000] means the route estimate is corrupt — fail fast
@@ -2190,6 +2224,7 @@ extension _RideRequestController on _RideRequestScreenState {
   /// Returns true on success, false when the user explicitly cancels.
   /// Rethrows on unexpected errors so the caller shows the declined banner.
   Future<bool> _confirmPayPal(int amountCents) async {
+    if (!FeatureFlags.paypalEnabled) return false;
     late final bool? result;
     try {
       final nav = _nav;
@@ -2691,6 +2726,7 @@ extension _RideRequestController on _RideRequestScreenState {
 
   /// Confirms Tap to Pay payment using Stripe Terminal
   Future<bool> _confirmTapToPay(int amountCents, RideOption option) async {
+    if (!FeatureFlags.tapToPayEnabled) return false;
     try {
       final double amount = amountCents / 100.0;
       
@@ -2887,7 +2923,7 @@ extension _RideRequestController on _RideRequestScreenState {
     
     // Tap to Pay (Stripe Terminal NFC). Only available on Android until
     // Apple approves the proximity-reader entitlement for iOS.
-    if (AppPlatform.isAndroid) {
+    if (AppPlatform.isAndroid && FeatureFlags.tapToPayEnabled) {
       methods.add('tap_to_pay');
     }
     
@@ -2896,8 +2932,7 @@ extension _RideRequestController on _RideRequestScreenState {
       methods.add('credit_card');
     }
     
-    // PayPal is always available as option
-    methods.add('paypal');
+    if (FeatureFlags.paypalEnabled) methods.add('paypal');
     
     return methods;
   }
@@ -2974,7 +3009,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     final methods = [
       if (AppPlatform.isIOS) ('apple_pay', 'Apple Pay', true),
       if (!AppPlatform.isIOS) ('google_pay', 'Google Pay', true),
-      ('tap_to_pay', 'Tap to Pay', true),
+      if (FeatureFlags.tapToPayEnabled) ('tap_to_pay', 'Tap to Pay', true),
       (
         'credit_card',
         _savedCardBrand != null && _savedCardLast4 != null
@@ -2982,7 +3017,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
             : loc.creditOrDebitCard,
         true,
       ),
-      ('paypal', 'PayPal', true),
+      if (FeatureFlags.paypalEnabled) ('paypal', 'PayPal', true),
       if (_testModeAllowed) ('test_mode', 'Test Mode', true),
     ];
 

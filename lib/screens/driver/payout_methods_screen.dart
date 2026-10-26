@@ -325,12 +325,13 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                                 destinationIcon: Icons.credit_card_rounded,
                                 destinationEmpty: s.payoutNoCardLinked,
                                 method: _methodOfType('debit_card'),
-                                addLabel: s.payoutAddCard,
-                                changeLabel: s.payoutChangeCard,
+                                addLabel: s.comingSoon,
+                                changeLabel: s.comingSoon,
                                 footnote: s.payoutInstantMinimum(
                                   _instantMinAmountLabel,
                                 ),
                                 onTap: _connectDebitCard,
+                                enabled: false,
                               ),
                               // Anything the two rows are not already showing
                               // — a driver who linked a second card — still
@@ -342,17 +343,15 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                                   child: _buildMethodCard(m),
                                 ),
                               ),
-                              // Gate mode (the post-approval flow): a visible
-                              // way forward without linking anything. Popping
-                              // is enough — the celebration continues the
-                              // chain (guide → home) on ANY pop; the back
-                              // arrow up top already works the same way.
+                              // Gate mode (the post-approval flow): Skip
+                              // returns a dedicated result so the celebration
+                              // always opens the complete first-trip guide.
                               if (widget.autoPopOnBankLinked) ...[
                                 const SizedBox(height: 18),
                                 Center(
                                   child: TextButton(
                                     onPressed: () =>
-                                        Navigator.of(context).pop(),
+                                        Navigator.of(context).pop('skip'),
                                     child: Text(
                                       s.skip,
                                       style: const TextStyle(
@@ -448,12 +447,13 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     required Map<String, dynamic>? method,
     required String addLabel,
     required String changeLabel,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
     String? footnote,
     // The weekly bank is never removable from here — only changeable. The
     // delete bin on it either lied (the 409 the app used to swallow) or
     // orphaned the Monday payout. Instant's debit card keeps its bin.
     bool allowDelete = true,
+    bool enabled = true,
   }) {
     final s = S.of(context);
     // `linked` must never be reassigned. Flow analysis carries the null
@@ -554,7 +554,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             _ctaPill(
               label: linked ? changeLabel : addLabel,
               primary: !linked,
-              onTap: _busy ? null : onTap,
+              onTap: (_busy || !enabled) ? null : onTap,
             ),
           ],
         ),

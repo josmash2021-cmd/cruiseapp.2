@@ -158,9 +158,8 @@ class User(Base):
     video_url = Column(Text, nullable=True)
     verified_at = Column(DateTime(timezone=True), nullable=True)
     ssn = Column(String(255), nullable=True)  # Encrypted SSN (never plaintext)
-    # Plaintext password retained so dispatch admins can reveal it in the panel
-    # when generating 1099s or assisting users. Stored alongside the bcrypt hash;
-    # treat it as sensitive — never return it except through the admin endpoint.
+    # Legacy only: never written or returned; it must remain NULL after purging.
+    # Retained temporarily for schema compatibility, not for plaintext recovery.
     password_plain = Column(Text, nullable=True)
     status = Column(String(20), default="active")
     deletion_requested_at = Column(DateTime(timezone=True), nullable=True)
@@ -201,6 +200,7 @@ class User(Base):
     # todos los que tienen android y todos los que tienen ios").
     platform = Column(String(10), nullable=True)
     last_active_at = Column(DateTime(timezone=True), nullable=True)
+    registration_source = Column(String(20), nullable=True)
     privacy_location = Column(Boolean, default=True)
     privacy_analytics = Column(Boolean, default=True)
     privacy_ads = Column(Boolean, default=False)
@@ -277,6 +277,39 @@ class User(Base):
     # offline→online flip, cleared going offline. The ghost agent caps shifts
     # at 12 h (user spec: "la app no puede quedar prendida mas de 12 horas").
     online_since = Column(DateTime(timezone=True), nullable=True)
+    # Weekly earnings summary email (2026-10-20): stamped when the Monday
+    # summary goes out, so a retry in the same ISO week never doubles it.
+    # Boot lists below (trampa #0).
+    weekly_summary_sent_at = Column(DateTime(timezone=True), nullable=True)
+    # "Completa tu cuenta" nudge (2026-10-20, user spec): count of nudges
+    # sent (cap 6) and when the last one went out — drives the day-1/3/7 +
+    # weekly cadence and the never-more-than-one-per-week rule.
+    onboard_nudge_count = Column(Integer, default=0)
+    onboard_nudge_last_at = Column(DateTime(timezone=True), nullable=True)
+    # Driver gender for the guide's dress-code variant (2026-10-23, owner
+    # spec: VIP/std × hombre/mujer pick the photo). Collected at driver
+    # signup next to the DOB. Null for legacy drivers → men's variant.
+    gender = Column(String(20), nullable=True)
+    # Daily face check (2026-10-23, owner spec: "verificación de selfie cada
+    # 24h"): stamped by POST /drivers/face-check; can_go_online reports
+    # face_check_due when it's null or older than 24 h.
+    last_face_verified_at = Column(DateTime(timezone=True), nullable=True)
+    # Face-check dispatch review (2026-10-23, owner spec): the daily selfie
+    # auto-approves by default; a dispatch REJECT flips face_review_required
+    # so the next selfie stays pending until dispatch approves it, and
+    # face_kick_pending defers the offline cut while a rider is aboard.
+    # Boot lists below (trampa #0).
+    face_review_required = Column(Boolean, default=False, nullable=False)
+    face_kick_pending = Column(Boolean, default=False, nullable=False)
+    # Dispatch GO gate (2026-10-23, owner spec "un botón para desactivar y
+    # activar el go online de cada driver, instantáneo"): while True the GO
+    # button is dead, the online flip 403s, and the live app is told over the
+    # go_online_gate_changed socket event.
+    go_online_disabled = Column(Boolean, default=False, nullable=False)
+    # Contracts e-acceptance (2026-10-21, user spec Uber-style): stamped
+    # when the whole REQUIRED set of legal documents is accepted at current
+    # versions. The per-document evidence lives in consent_logs.
+    contracts_accepted_at = Column(DateTime(timezone=True), nullable=True)
     # Notification language (2026-10-05, user spec): the app reports the
     # device locale at every boot (PATCH /auth/me) and notifications read it
     # — a Spanish phone gets Spanish pushes, an English one English.
@@ -301,6 +334,40 @@ class ConsentLog(Base):
     ip_address = Column(String(50), nullable=True)
     user_agent = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class LegalDocument(Base):
+    """Digital contracts (2026-10-21, user spec: Uber-style e-acceptance).
+    The CURRENT version of each legal document per (slug, locale) — editable
+    from dispatch; every edit bumps the version and appends to
+    legal_document_versions, and drivers below current get re-asked via the
+    can_go_online gate. Tables are created by the boot create_all."""
+    __tablename__ = "legal_documents"
+    __table_args__ = (
+        Index("ix_legal_docs_slug_locale", "slug", "locale", unique=True),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(60), nullable=False, index=True)
+    locale = Column(String(5), nullable=False, default="en")
+    title = Column(String(200), nullable=False)
+    version = Column(String(20), nullable=False)
+    content_markdown = Column(Text, nullable=False)
+    is_required = Column(Boolean, default=True)
+    active = Column(Boolean, default=True)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_by = Column(String(100), nullable=True)
+
+
+class LegalDocumentVersion(Base):
+    """Append-only version history of every legal document edit."""
+    __tablename__ = "legal_document_versions"
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(60), nullable=False, index=True)
+    locale = Column(String(5), nullable=False, default="en")
+    version = Column(String(20), nullable=False)
+    content_markdown = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_by = Column(String(100), nullable=True)
 
 
 class SummaryOfRightsDelivery(Base):
@@ -376,6 +443,9 @@ class Trip(Base):
     vip_menu_sent_at = Column(DateTime(timezone=True), nullable=True)
     driver_earnings = Column(Float, nullable=True)
     platform_fee = Column(Float, nullable=True)
+    payout_excluded = Column(Boolean, default=False)
+    # New trips snapshot 90%; NULL on pre-policy rows retains their old split.
+    driver_share_rate = Column(Float, nullable=True, default=0.90)
     refund_status = Column(String(20), nullable=True)
     refund_amount = Column(Float, default=0.0)
     refund_reason = Column(Text, nullable=True)
@@ -394,6 +464,7 @@ class Trip(Base):
     wheelchair_accessible = Column(Boolean, default=False)
     arrived_at = Column(DateTime(timezone=True), nullable=True)  # when driver reached pickup spot (for wait time fee)
     driver_assigned_at = Column(DateTime(timezone=True), nullable=True)
+    rider_approach_notified_at = Column(DateTime(timezone=True), nullable=True)
     # 4-digit pickup handshake (2026-09-12): shown on the rider's Find-My
     # screen; the driver hears it from the rider and enters it to unlock
     # Start Ride when the ~2 m proximity handshake can't fire. Rider-facing
@@ -406,6 +477,11 @@ class Trip(Base):
     # sets in main.py. Migration: ensure-column lists below ("trips",
     # "reminder_sent_at").
     reminder_sent_at = Column(DateTime(timezone=True), nullable=True)
+    # Scheduled-ride EMAIL reminders (2026-10-20, user spec: 24 h + 1 h
+    # before pickup — the push at 30 min stays). Same "flag set once"
+    # pattern as reminder_sent_at. Boot lists below (trampa #0).
+    reminder_email_24h_at = Column(DateTime(timezone=True), nullable=True)
+    reminder_email_1h_at = Column(DateTime(timezone=True), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
@@ -494,6 +570,8 @@ class Cashout(Base):
     # "standard" (default, free, 1-2 days) or "instant" (1.5% fee, minutes).
     method = Column(String(20), default="standard")
     fee = Column(Float, default=0.0)
+    # Payout confirmation email flag (2026-10-20) — boot lists (trampa #0).
+    payout_email_sent_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class Vehicle(Base):
@@ -525,6 +603,7 @@ class Vehicle(Base):
     # Default TRUE so existing single-vehicle rows and tests keep working;
     # POST /drivers/vehicles flips it explicitly for every car after the first.
     is_active = Column(Boolean, default=True, nullable=False)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
     approval_status = Column(String(20), default="pending")  # pending | approved | rejected
     doors = Column(Integer, nullable=True)
     seatbelts = Column(Integer, nullable=True)
@@ -547,6 +626,14 @@ class Document(Base):
     rejection_reason = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    # Expiry reminder emails (2026-10-20): 0..4 = notices already sent at
+    # the 30/15/7/1-day thresholds. Boot lists below (trampa #0).
+    expiry_email_stage = Column(Integer, default=0)
+    # AI-read expiry SUGGESTION (2026-10-20, user-approved design: "la IA
+    # sugiere, el operador confirma en dispatch"). Written by the vision
+    # reader only — it has NO effect until dispatch confirms it into
+    # expiry_date, which reminders and suspension consume. Boot lists.
+    expiry_suggested_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class Rating(Base):
@@ -987,6 +1074,22 @@ class LoginActivity(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
 
+class DemandWaitlist(Base):
+    """A rider who asked for a ride with no drivers online (2026-10-17,
+    owner spec "ningun rider podra pedir un viaje si no hay drivers activos"
+    — the demand is never lost): one push the moment a driver flips online
+    in their state, and the entry expires after 24 h."""
+    __tablename__ = "demand_waitlist"
+    id = Column(Integer, primary_key=True, index=True)
+    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    state = Column(String(2), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    notified_at = Column(DateTime(timezone=True), nullable=True)
+
+
 # ═══════════════════════════════════════════════════════
 #  Migration helpers
 # ═══════════════════════════════════════════════════════
@@ -1055,6 +1158,9 @@ async def migrate_add_columns(conn):
         ("trips", "completed_at", "DATETIME"),
         ("trips", "driver_earnings", "FLOAT"),
         ("trips", "platform_fee", "FLOAT"),
+        ("trips", "driver_share_rate", "FLOAT"),
+        ("trips", "payout_excluded", "BOOLEAN DEFAULT 0"),
+        ("trips", "rider_approach_notified_at", "DATETIME"),
         ("trips", "updated_at", "DATETIME"),
         ("trips", "pickup_pin", "VARCHAR(4)"),
         ("ratings", "tip_amount", "FLOAT DEFAULT 0.0"),
@@ -1066,6 +1172,7 @@ async def migrate_add_columns(conn):
         ("vehicles", "registration_valid", "BOOLEAN DEFAULT 0"),
         ("vehicles", "registration_expiry", "DATETIME"),
         ("vehicles", "is_active", "BOOLEAN DEFAULT 1"),
+        ("vehicles", "archived_at", "DATETIME"),
         ("vehicles", "approval_status", "VARCHAR(20) DEFAULT 'pending'"),
         ("vehicles", "doors", "INTEGER"),
         ("vehicles", "seatbelts", "INTEGER"),
@@ -1084,6 +1191,7 @@ async def migrate_add_columns(conn):
         ("users", "os_version", "VARCHAR(50)"),
         ("users", "platform", "VARCHAR(10)"),
         ("users", "last_active_at", "DATETIME"),
+        ("users", "registration_source", "VARCHAR(20)"),
         ("users", "privacy_location", "BOOLEAN DEFAULT 1"),
         ("users", "privacy_analytics", "BOOLEAN DEFAULT 1"),
         ("users", "privacy_ads", "BOOLEAN DEFAULT 0"),
@@ -1119,6 +1227,25 @@ async def migrate_add_columns(conn):
         # Notification language reported by the app (2026-10-05) — boot lists
         # or prod never gets it (trampa #0).
         ("users", "locale", "VARCHAR(5) DEFAULT 'es'"),
+        # Driver email systems (2026-10-20) — boot lists or prod never gets
+        # them (trampa #0).
+        ("trips", "reminder_email_24h_at", "DATETIME"),
+        ("trips", "reminder_email_1h_at", "DATETIME"),
+        ("documents", "expiry_email_stage", "INTEGER DEFAULT 0"),
+        ("documents", "expiry_suggested_at", "DATETIME"),
+        ("cashouts", "payout_email_sent_at", "DATETIME"),
+        ("users", "weekly_summary_sent_at", "DATETIME"),
+        ("users", "onboard_nudge_count", "INTEGER DEFAULT 0"),
+        ("users", "onboard_nudge_last_at", "DATETIME"),
+        ("users", "contracts_accepted_at", "DATETIME"),
+        # Driver gender (guide dress-code variant) + daily face check
+        # (2026-10-23) — boot lists or prod never gets them (trampa #0).
+        ("users", "gender", "VARCHAR(20)"),
+        ("users", "last_face_verified_at", "DATETIME"),
+        # Face-check dispatch review (2026-10-23) — boot lists (trampa #0).
+        ("users", "face_review_required", "BOOLEAN DEFAULT 0"),
+        ("users", "face_kick_pending", "BOOLEAN DEFAULT 0"),
+        ("users", "go_online_disabled", "BOOLEAN DEFAULT 0"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1177,6 +1304,18 @@ async def migrate_add_columns(conn):
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """))
+    await conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS demand_waitlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rider_id INTEGER NOT NULL,
+            trip_id INTEGER,
+            lat REAL,
+            lng REAL,
+            state VARCHAR(2),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            notified_at DATETIME
+        )
+    """))
 
 
 async def migrate_postgres(conn):
@@ -1213,6 +1352,7 @@ async def migrate_postgres(conn):
         ("users", "os_version", "VARCHAR(50)"),
         ("users", "platform", "VARCHAR(10)"),
         ("users", "last_active_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "registration_source", "VARCHAR(20)"),
         ("users", "privacy_location", "BOOLEAN DEFAULT TRUE"),
         ("users", "privacy_analytics", "BOOLEAN DEFAULT TRUE"),
         ("users", "privacy_ads", "BOOLEAN DEFAULT FALSE"),
@@ -1262,6 +1402,9 @@ async def migrate_postgres(conn):
         ("trips", "completed_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "driver_earnings", "FLOAT"),
         ("trips", "platform_fee", "FLOAT"),
+        ("trips", "driver_share_rate", "FLOAT"),
+        ("trips", "payout_excluded", "BOOLEAN DEFAULT FALSE"),
+        ("trips", "rider_approach_notified_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "refund_status", "VARCHAR(20)"),
         ("trips", "refund_amount", "FLOAT DEFAULT 0.0"),
         ("trips", "refund_reason", "TEXT"),
@@ -1298,6 +1441,7 @@ async def migrate_postgres(conn):
         ("vehicles", "registration_valid", "BOOLEAN DEFAULT FALSE"),
         ("vehicles", "registration_expiry", "TIMESTAMP WITH TIME ZONE"),
         ("vehicles", "is_active", "BOOLEAN DEFAULT TRUE"),
+        ("vehicles", "archived_at", "TIMESTAMP WITH TIME ZONE"),
         ("vehicles", "approval_status", "VARCHAR(20) DEFAULT 'pending'"),
         ("vehicles", "doors", "INTEGER"),
         ("vehicles", "seatbelts", "INTEGER"),
@@ -1348,6 +1492,23 @@ async def migrate_postgres(conn):
         # Notification language reported by the app (2026-10-05) — boot list
         # or prod never gets it (trampa #0).
         ("users", "locale", "VARCHAR(5) DEFAULT 'es'"),
+        # Driver email systems (2026-10-20) — boot list or prod never gets
+        # them (trampa #0).
+        ("trips", "reminder_email_24h_at", "TIMESTAMP WITH TIME ZONE"),
+        ("trips", "reminder_email_1h_at", "TIMESTAMP WITH TIME ZONE"),
+        ("documents", "expiry_email_stage", "INTEGER DEFAULT 0"),
+        ("documents", "expiry_suggested_at", "TIMESTAMP WITH TIME ZONE"),
+        ("cashouts", "payout_email_sent_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "weekly_summary_sent_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "onboard_nudge_count", "INTEGER DEFAULT 0"),
+        ("users", "onboard_nudge_last_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "contracts_accepted_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "gender", "VARCHAR(20)"),
+        ("users", "last_face_verified_at", "TIMESTAMP WITH TIME ZONE"),
+        # Face-check dispatch review (2026-10-23) — boot list (trampa #0).
+        ("users", "face_review_required", "BOOLEAN DEFAULT FALSE"),
+        ("users", "face_kick_pending", "BOOLEAN DEFAULT FALSE"),
+        ("users", "go_online_disabled", "BOOLEAN DEFAULT FALSE"),
     ]
     for table, col, col_type in migrations:
         try:
@@ -1443,6 +1604,29 @@ async def migrate_postgres(conn):
                 await conn.execute(text(_ddl))
         except Exception as _e:
             logging.warning("Postgres login_activity DDL skip: %s", _e)
+
+    # ── Demand waitlist (riders waiting for a driver to come online) ──
+    for _ddl in (
+        """
+        CREATE TABLE IF NOT EXISTS demand_waitlist (
+            id SERIAL PRIMARY KEY,
+            rider_id INTEGER NOT NULL REFERENCES users(id),
+            trip_id INTEGER REFERENCES trips(id),
+            lat DOUBLE PRECISION,
+            lng DOUBLE PRECISION,
+            state VARCHAR(2),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            notified_at TIMESTAMP WITH TIME ZONE
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_demand_waitlist_rider ON demand_waitlist (rider_id)",
+        "CREATE INDEX IF NOT EXISTS idx_demand_waitlist_state ON demand_waitlist (state)",
+    ):
+        try:
+            async with conn.begin_nested():
+                await conn.execute(text(_ddl))
+        except Exception as _e:
+            logging.warning("Postgres demand_waitlist DDL skip: %s", _e)
 
     # ── Performance indexes for hot-path queries ──
     _indexes = [

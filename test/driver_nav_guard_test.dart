@@ -23,13 +23,13 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final accept =
       File('lib/screens/driver/driver_trip_accept_screen.dart')
-          .readAsStringSync();
+      .readAsStringSync().replaceAll('\r\n', '\n');
   final nav =
-      File('lib/screens/driver/driver_nav_view.dart').readAsStringSync();
+      File('lib/screens/driver/driver_nav_view.dart').readAsStringSync().replaceAll('\r\n', '\n');
   final riderMap =
-      File('lib/widgets/tracking/tracking_map_view.dart').readAsStringSync();
+      File('lib/widgets/tracking/tracking_map_view.dart').readAsStringSync().replaceAll('\r\n', '\n');
   final l10n =
-      File('lib/l10n/app_localizations.dart').readAsStringSync();
+      File('lib/l10n/app_localizations.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
   /// Extracts [maxLen] chars of [src] starting at [signature].
   ///
@@ -189,7 +189,7 @@ void main() {
           isTrue);
       final chooser =
           bodyOf(accept, 'void _showNavigateChooser({required bool isPickup})',
-              maxLen: 2800);
+          maxLen: 2800);
       expect(chooser.contains('s.navCruiseNav'), isTrue,
           reason: 'Cruise Navigation is the first option');
       expect(chooser.contains('_openGoogleMaps(coords)'), isTrue);
@@ -254,7 +254,7 @@ void main() {
 
     test('the morph overlay animates a snapshot, never a second surface', () {
       final morph =
-          File('lib/widgets/nav_morph_overlay.dart').readAsStringSync();
+          File('lib/widgets/nav_morph_overlay.dart').readAsStringSync().replaceAll('\r\n', '\n');
       expect(morph.contains('Image.memory('), isTrue);
       expect(morph.contains('NavMorphDirection'), isTrue);
       expect(morph.contains('revealRequested'), isTrue,
@@ -279,7 +279,7 @@ void main() {
     });
 
     test('nav fixes pass the 65 m accuracy gate so 25 m cannot false-arm', () {
-      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 500);
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 700);
       expect(body.contains('pos.accuracy > 65'), isTrue,
           reason: 'without the gate, GPS noise at 25 m would fire false '
               'reroutes all day');
@@ -287,7 +287,7 @@ void main() {
 
     test('reroutes fetch on the fast lane (Mapbox alone, 5 s cap)', () {
       final svc = File('lib/services/directions_service.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       expect(svc.contains('bool fast = false'), isTrue);
       expect(
           nav.contains('fast: kind == _RouteFetchKind.reroute'), isTrue,
@@ -565,7 +565,8 @@ void main() {
       'road furniture', () {
     test('the route tangent steers the arrow at EVERY speed on-route', () {
       final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 4200);
-      expect(body.contains('bearing: onRoute ? null'), isTrue,
+      expect(body.contains('bearing: onRoute'), isTrue);
+      expect(body.contains('_roadLockBearing'), isTrue,
           reason: 'user report: GPS headings arrive once a second and the '
               'arrow turned in steps — on-route only the continuous route '
               'tangent speaks');
@@ -590,9 +591,11 @@ void main() {
 
     test('the tangent look-ahead scales with speed — the arrow turns WITH '
         'the car, never off the line', () {
-      final body = bodyOf(nav, 'double? _routeHeadingFor(LatLng pos) {',
-          maxLen: 1400);
-      expect(body.contains('(_speedMps * 0.8).clamp(6.0, 24.0)'), isTrue,
+      final body =
+          bodyOf(nav, 'double? _routeHeadingFor(LatLng pos) {', maxLen: 1400);
+      final roadLock = File('lib/map/driver_road_lock.dart').readAsStringSync().replaceAll('\r\n', '\n');
+      expect(body.contains('_roadLock.project'), isTrue);
+      expect(roadLock.contains('(speedMps * 0.8).clamp(6.0, 24.0)'), isTrue,
           reason: 'user report 2026-09-27: "cuando da la vuelta la flecha se '
               'pasa o se sale de la linea" — the 1.2 s lead pointed the arrow '
               'a full curve ahead mid-turn');
@@ -634,7 +637,7 @@ void main() {
           reason: 'the text regex stays as the fallback for providers with '
               'no exit field — in BOTH languages');
       final dirs = File('lib/services/directions_service.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       expect(dirs.contains("exitNumber: (maneuver['exit'] ?? '').toString(),"),
           isTrue,
           reason: 'NavStep.exitNumber parsed from maneuver.exit');
@@ -708,11 +711,13 @@ void main() {
               'display position is now ALWAYS the route projection, any '
               'distance; only measurements (off-route / arrival / trim) '
               'keep the raw fix');
-      expect(body.contains('RouteSplice.projectOnSegment'), isTrue);
+      expect(body.contains('_roadLock.project'), isTrue);
       final fix = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 2600);
-      expect(fix.contains('_snapToNavRoute(fixLL) ?? fixLL'), isTrue,
-          reason: 'a house driveway is genuinely off the road — the arrow '
-              'rides the line, worst at nav start parked at the pickup');
+      expect(fix.contains('final display = _snapToNavRoute(fixLL);'), isTrue);
+      expect(fix.contains('if (display != null)'), isTrue,
+          reason: 'a house driveway is genuinely off the road — without a '
+              'trusted line the marker must not advance on raw GPS');
+      expect(fix.contains('?? fixLL'), isFalse);
       expect(fix.contains('RouteSplice.distanceToPolylineM(_routePts, fixLL)'),
           isTrue,
           reason: 'off-route detection must read the RAW fix, never the '
@@ -723,6 +728,7 @@ void main() {
           isTrue,
           reason: 'the nav opens with the arrow ON the line, not floating '
               'in the pickup\'s block');
+      expect(seed.contains('if (seed != null)'), isTrue);
     });
   });
 
@@ -730,7 +736,7 @@ void main() {
       'intersections', () {
     test('the directions parser reads traffic_signal and stop_sign', () {
       final svc = File('lib/services/directions_service.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       expect(svc.contains("i['traffic_signal'] == true"), isTrue,
           reason: 'the flags ride the Directions response when steps=true — '
               'the same data the Navigation SDK uses for its icons');
@@ -792,7 +798,7 @@ void main() {
     test('stop signs come from OSM, merged deduped and re-armed per route '
         '(2026-09-25, "no estan apareciendo los stops")', () {
       final svc = File('lib/services/directions_service.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       expect(svc.contains('fetchOsmStops('), isTrue,
           reason: 'Mapbox stop_sign coverage is empty on US routes — the '
               'stops come from Overpass');
@@ -913,7 +919,7 @@ void main() {
           reason: 'the ~2 mph deadband: a stopped car reads 0 the same fix — '
               'the old 0.45 floor left it sitting at 7-10 mph');
       final dot = File('lib/widgets/gold_location_dot.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       expect(dot.contains('double get speedMps => _motion.speedMps;'), isTrue);
     });
 
@@ -943,7 +949,7 @@ void main() {
 
     test('the bar always carries a real distance + big soft-swap icon', () {
       final svc = File('lib/services/directions_service.dart')
-          .readAsStringSync();
+          .readAsStringSync().replaceAll('\r\n', '\n');
       expect(
           svc.contains(
               'Future<({List<NavStep> steps, List<NavFurniture> furniture})?> getSteps('),

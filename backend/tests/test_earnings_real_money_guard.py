@@ -3,7 +3,7 @@
 A driver may ONLY be credited from money that was actually collected:
   - completing a trip whose fare was never captured (test-mode button,
     failed charge) must leave driver_earnings NULL and balances untouched;
-  - completing a PAID trip credits the 60/40 split exactly once;
+  - completing a PAID trip credits the 90/10 split exactly once;
   - a cancellation fee that was assessed but never captured
     (payment_status != "paid") must NOT credit the driver;
   - the split helper is idempotent and skips non-completed / unpaid trips.
@@ -74,7 +74,7 @@ async def test_unpaid_completion_credits_nothing(db, test_rider, test_driver):
 
 
 async def test_paid_completion_credits_split_once(db, test_rider, test_driver):
-    """Real collected fare → 60/40 split, and never twice."""
+    """Real collected fare → 90/10 split, and never twice."""
     from main import User
     from routers.trips import _credit_driver_earnings
 
@@ -84,8 +84,8 @@ async def test_paid_completion_credits_split_once(db, test_rider, test_driver):
 
     assert await _credit_driver_earnings(db, trip) is True
     await db.commit()
-    assert trip.driver_earnings == 12.0  # 60% of $20 comfort
-    assert trip.platform_fee == 8.0
+    assert trip.driver_earnings == 18.0  # 90% of $20 comfort
+    assert trip.platform_fee == 2.0
 
     # Second call (e.g. capture webhook arriving after the charge response)
     # must NOT pay again.
@@ -93,8 +93,8 @@ async def test_paid_completion_credits_split_once(db, test_rider, test_driver):
     await db.commit()
 
     drv = (await db.execute(select(User).where(User.id == driver.id))).scalar_one()
-    assert drv.pending_balance == 12.0
-    assert drv.total_earnings == 12.0
+    assert drv.pending_balance == 18.0
+    assert drv.total_earnings == 18.0
 
 
 async def test_non_completed_trip_never_credits(db, test_rider, test_driver):
@@ -126,7 +126,7 @@ async def test_uncaptured_cancel_fee_credits_nothing(db, test_rider, test_driver
 
 
 async def test_captured_cancel_fee_credits_driver(db, test_rider, test_driver):
-    """Fee actually captured from the rider's hold → 60/40 split."""
+    """Fee actually captured from the rider's hold → 90/10 split."""
     from main import User
     from routers.trips import _credit_driver_cancellation_fee
 
@@ -138,10 +138,10 @@ async def test_captured_cancel_fee_credits_driver(db, test_rider, test_driver):
     driver_share, platform_share = await _credit_driver_cancellation_fee(db, trip)
     await db.commit()
 
-    assert driver_share == 3.00
-    assert platform_share == 2.00
+    assert driver_share == 4.50
+    assert platform_share == 0.50
     drv = (await db.execute(select(User).where(User.id == driver.id))).scalar_one()
-    assert drv.pending_balance == 3.00
+    assert drv.pending_balance == 4.50
 
 
 async def test_unpaid_terminal_trip_displays_zero(db, test_rider, test_driver):
@@ -166,3 +166,37 @@ async def test_unpaid_terminal_trip_displays_zero(db, test_rider, test_driver):
     live = await _make_trip(db, rider, driver, status="in_trip", payment_status="held")
     assert _driver_trip_amounts(live)[1] > 0
     assert _driver_visible_trip_dict(live)["driver_earnings"] > 0
+
+
+async def test_payout_excluded_trip_is_visible_but_never_credits(
+    db, test_rider, test_driver,
+):
+    from main import User
+    from routers.drivers import _driver_trip_amounts, _payable_trip_earnings
+    from routers.trips import _credit_driver_earnings, _driver_visible_trip_dict
+
+    rider, _ = test_rider
+    driver, _ = test_driver
+    trip = await _make_trip(
+        db, rider, driver,
+        status="completed", payment_status="unpaid", fare=108.82,
+    )
+    trip.driver_earnings = 97.94
+    trip.payout_excluded = True
+    trip.distance = 22.6
+    trip.duration = 45
+    await db.commit()
+
+    assert _driver_trip_amounts(trip) == (97.94, 97.94)
+    visible = _driver_visible_trip_dict(trip)
+    assert visible["driver_earnings"] == 97.94
+    assert visible["distance"] == 22.6
+    assert visible["duration"] == 45
+    assert _payable_trip_earnings([trip]) == 0.0
+
+    trip.payment_status = "paid"
+    assert await _credit_driver_earnings(db, trip) is False
+    await db.commit()
+    drv = (await db.execute(select(User).where(User.id == driver.id))).scalar_one()
+    assert (drv.pending_balance or 0.0) == 0.0
+    assert (drv.total_earnings or 0.0) == 0.0

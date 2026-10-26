@@ -1282,7 +1282,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _liveGps = ResilientPositionStream(
       label: 'DriverTripGps',
       settings: driverLocationSettings(
-        distanceFilter: 5,
+        distanceFilter: 0,
         notificationTitle: s.driverLocationNotifTitle,
         notificationText: s.driverLocationNotifOnTrip,
       ),

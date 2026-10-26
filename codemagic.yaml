@@ -936,17 +936,31 @@ workflows:
       - *flutter_pub_get
       - *pod_install
       - *shorebird_setup
-      - name: Publish OTA hotfix 735 (Android)
+      - name: Publish OTA hotfix 735 (Android + iOS)
         script: |
+          set -euo pipefail
           if [ -z "${MAPBOX_ACCESS_TOKEN:-}" ]; then
             echo "MAPBOX_ACCESS_TOKEN vacío; no se publica un mapa sin token"
             exit 1
           fi
-          # Shorebird solo registra 1.1.4+735 para Android; no existe ese
-          # release en iOS. No se apunta a una versión inexistente.
-          # Los PNG nuevos tienen fallback HTTPS y NUNCA se permiten diffs
-          # nativos en Android.
+          # iOS 735 comparte los nativos verificados de iOS 734. Solo si la
+          # base no está registrada se crea, sin exportar ni subir a la tienda.
+          set +e
+          shorebird --json releases list | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("status") == "success"; releases=d["data"]["releases"]; sys.exit(0 if any(r["version"] == "1.1.4+735" and r.get("platform_statuses", {}).get("ios") == "active" for r in releases) else 2)'
+          release_check=$?
+          set -e
+          case "$release_check" in
+            0) echo "Base iOS 735 ya registrada" ;;
+            2)
+              echo "Registrando la base iOS 735 para habilitar el hotfix"
+              shorebird release ios --flutter-version 3.38.9 --build-name 1.1.4 --build-number 735 --no-codesign --export-method development --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN
+              ;;
+            *) echo "No se pudo verificar la base iOS 735"; exit 1 ;;
+          esac
+          # Los PNG nuevos tienen fallback HTTPS. Android NUNCA permite
+          # diferencias nativas; iOS solo tolera el churn de Podfile.lock.
           shorebird patch android --release-version 1.1.4+735 --allow-asset-diffs --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN
+          shorebird patch ios --release-version 1.1.4+735 --no-codesign --allow-asset-diffs --allow-native-diffs --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN
     publishing:
       email:
         recipients:

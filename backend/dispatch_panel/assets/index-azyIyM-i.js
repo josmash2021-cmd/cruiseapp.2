@@ -289,7 +289,7 @@ function BankPayoutCard({detail:t,onSaved:s}){
   const [err,setErr]=m.useState(null);
   const [form,setForm]=m.useState({holder:`${t?.first_name??""} ${t?.last_name??""}`.trim(),routing:"",account:"",confirm:"",day:"",month:"",year:"",line1:"",city:"",state:"",zip:"",tos:!1});
   const set=(k,v)=>setForm(cur=>({...cur,[k]:v}));
-  const input=(label,key,props={})=>e.jsx(F,{label,value:form[key],onChange:v=>set(key,v.target.value),...props});
+  const input=(label,key,props={})=>e.jsx(L,{label,value:form[key],onChange:v=>set(key,v.target.value),...props});
   const submit=async()=>{
     const routing=form.routing.replace(/\D/g,""),account=form.account.replace(/\D/g,"");
     if(routing.length!==9){setErr("El routing number debe tener 9 dígitos.");return}
@@ -301,14 +301,14 @@ function BankPayoutCard({detail:t,onSaved:s}){
     setBusy(!0),setErr(null);
     try{
       await attachPayoutBank(t.id,{routing_number:routing,account_number:account,account_holder_name:form.holder.trim(),set_default:!0,replace:rows.length>0,tos_accepted:!0,dob:{day:Number(form.day),month:Number(form.month),year:Number(form.year)},address:{line1:form.line1.trim(),city:form.city.trim(),state:form.state.trim().toUpperCase(),postal_code:form.zip.trim()},first_name:t.first_name,last_name:t.last_name});
-      U.success("Banco vinculado — el driver ya puede recibir sus ganancias");
+      O.success("Banco vinculado — el driver ya puede recibir sus ganancias");
       setOpen(!1),s();
     }catch(err){setErr(err?.message??"No se pudo vincular el banco. Reintenta.")}finally{setBusy(!1)}
   };
   return e.jsxs("div",{className:"flex flex-col gap-3",children:[
     rows.length===0?e.jsx(B,{icon:X,title:"Sin banco conectado — puedes vincularlo aquí"}):rows.map(row=>e.jsxs("div",{className:"flex items-center justify-between gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2",children:[e.jsxs("div",{children:[e.jsx("p",{className:"text-sm font-bold text-success",children:row.display_name}),e.jsxs("p",{className:"text-[11px] text-textHint",children:[row.is_default?"Predeterminado para el ACH semanal":"Guardado",row.created_at?` · ${String(row.created_at).slice(0,10)}`:""]})]}),e.jsx("span",{className:"rounded-chip bg-success/15 px-2 py-0.5 text-[10px] font-bold text-success",children:"Conectado"})]},row.id)),
     e.jsx("p",{className:"text-[12px] leading-relaxed text-textSecondary",children:"El banco del driver se tokeniza en el servidor (los dígitos no se guardan ni se loguean); solo verás banco + últimos 4. Sirve para el ACH semanal y el instant payout."}),
-    e.jsx(M,{size:"sm",variant:open?"ghost":"primary",onClick:()=>setOpen(!open),children:open?"Cancelar":rows.length===0?"Conectar banco":"Cambiar banco"}),
+    e.jsx(F,{size:"sm",variant:open?"ghost":"primary",onClick:()=>setOpen(!open),children:open?"Cancelar":rows.length===0?"Conectar banco":"Cambiar banco"}),
     open&&e.jsxs("div",{className:"flex flex-col gap-2 rounded-lg border border-white/5 bg-surfaceHigh p-3",children:[
       input("Titular de la cuenta","holder"),
       input("Routing number (9 dígitos)","routing",{inputMode:"numeric",maxLength:9}),
@@ -319,7 +319,7 @@ function BankPayoutCard({detail:t,onSaved:s}){
       e.jsxs("div",{className:"grid grid-cols-3 gap-2",children:[input("Ciudad","city"),input("Estado (FL, AL…)","state",{maxLength:2}),input("ZIP","zip",{inputMode:"numeric",maxLength:10})]}),
       e.jsxs("label",{className:"flex items-start gap-2 text-[12px] text-textSecondary",children:[e.jsx("input",{type:"checkbox",checked:form.tos,onChange:v=>set("tos",v.target.checked)}),e.jsx("span",{children:"Confirmo que el driver aceptó el Acuerdo de Cuenta Conectada de Stripe."})]}),
       err!==null&&e.jsx("p",{role:"alert",className:"text-[12px] text-error",children:err}),
-      e.jsx(M,{size:"sm",loading:busy,onClick:()=>void submit(),children:rows.length===0?"Vincular banco":"Reemplazar banco"})
+      e.jsx(F,{size:"sm",loading:busy,onClick:()=>void submit(),children:rows.length===0?"Vincular banco":"Reemplazar banco"})
     ]})
   ]})
 }

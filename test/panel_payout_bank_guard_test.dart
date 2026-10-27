@@ -45,4 +45,13 @@ void main() {
     expect(detail.contains('has_connect'), isFalse,
         reason: 'the card reads the display only; no raw digits in UI');
   });
+
+  test('the card only uses real components of this chunk (React #130 regression)', () {
+    // F = the button, L = the text input, O = the toast helper in THIS chunk.
+    // M is NOT a component here and crashed the whole ficha on first render.
+    expect(detail, isNot(contains('e.jsx(M,')));
+    expect(detail, contains('e.jsx(F,{size:"sm"'));
+    expect(detail, contains('e.jsx(L,{label,value:form[key]'));
+    expect(detail, contains('O.success("Banco vinculado'));
+  });
 }

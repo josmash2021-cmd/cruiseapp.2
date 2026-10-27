@@ -23,7 +23,8 @@ class FirebaseStorageService {
   /// Upload a profile photo and return its permanent download URL.
   /// Uses role-specific paths so rider and driver photos never collide.
   /// Path: photos/{role}s/{userId}/profile.jpg (riders/123, drivers/456, etc.)
-  static Future<String> uploadProfilePhoto(String filePath, int userId, String role) async {
+  static Future<String> uploadProfilePhoto(
+      String filePath, int userId, String role) async {
     await _ensureAuth();
     final storagePath = 'photos/${role}s/$userId/profile.jpg';
     final ref = _storage.ref(storagePath);
@@ -67,13 +68,10 @@ class FirebaseStorageService {
         await snap.docs.first.reference.update({'photoUrl': photoUrl});
       }
       // Also save to 'users' collection (keyed by sqliteId) for cross-device sync
-      await _firestore
-          .collection('users')
-          .doc('sql_$userId')
-          .set({
-            'photoUrl': photoUrl,
-            'photoUpdatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+      await _firestore.collection('users').doc('sql_$userId').set({
+        'photoUrl': photoUrl,
+        'photoUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('[FirebaseStorageService] updateFirestorePhotoUrl error: $e');
     }
@@ -84,14 +82,22 @@ class FirebaseStorageService {
   static Future<void> saveVerificationPhoto(
     int userId,
     String docType,
-    String photoUrl,
-  ) async {
+    String photoUrl, {
+    int? vehicleId,
+  }) async {
     try {
       final fieldName = _docTypeToField(docType);
+      final payload = vehicleId == null
+          ? {fieldName: photoUrl}
+          : {
+              'vehicleDocumentUrls': {
+                '$vehicleId': {fieldName: photoUrl},
+              },
+            };
       await _firestore
           .collection('verifications')
           .doc('sql_$userId')
-          .set({fieldName: photoUrl}, SetOptions(merge: true));
+          .set(payload, SetOptions(merge: true));
     } catch (e) {
       debugPrint('[FirebaseStorageService] saveVerificationPhoto error: $e');
     }
@@ -150,8 +156,7 @@ class FirebaseStorageService {
       if (authPhotoUrl == null || authPhotoUrl.isEmpty) return;
 
       // Check if Firestore already has it
-      final doc =
-          await _firestore.collection('users').doc('sql_$userId').get();
+      final doc = await _firestore.collection('users').doc('sql_$userId').get();
       final firestoreUrl = doc.data()?['photoUrl'] as String?;
 
       // Only sync if Firestore is missing it

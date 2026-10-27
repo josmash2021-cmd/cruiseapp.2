@@ -7,23 +7,20 @@ import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
 import '../../widgets/neu_style.dart';
 
-/// Change the plate on file.
-///
-/// Typed twice on purpose. A plate is copied off a metal strip in a car
-/// park and a single wrong character means the registration will not
-/// match — and the cost of that mistake is a driver offline until
-/// dispatch sorts it out, so it is worth the second field.
-///
-/// The consequence is stated before they type, not after they save.
+/// Change the plate on one vehicle, typed twice to catch mistakes.
 class DriverLicensePlateScreen extends StatefulWidget {
   const DriverLicensePlateScreen({
     super.key,
     this.currentPlate = '',
     this.currentState,
+    this.vehicleId,
+    this.isActiveVehicle = true,
   });
 
   final String currentPlate;
   final String? currentState;
+  final int? vehicleId;
+  final bool isActiveVehicle;
 
   @override
   State<DriverLicensePlateScreen> createState() =>
@@ -80,13 +77,18 @@ class _DriverLicensePlateScreenState extends State<DriverLicensePlateScreen> {
         plate: plate,
         confirmPlate: confirm,
         state: _state,
+        vehicleId: widget.vehicleId,
       );
       if (!mounted) return;
       final changed = res['plate_changed'] == true;
       Navigator.pop(context, changed);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(changed ? s.plateChangePendingBody : s.plateSaved),
+          content: Text(
+            changed && widget.isActiveVehicle
+                ? s.plateChangePendingBody
+                : s.plateSaved,
+          ),
           duration: Duration(seconds: changed ? 6 : 3),
         ),
       );
@@ -150,11 +152,7 @@ class _DriverLicensePlateScreenState extends State<DriverLicensePlateScreen> {
             _field(s.confirmLicensePlate, _confirm),
             const SizedBox(height: 12),
             _statePicker(s),
-
-            // Said before they type, not after they save. Changing a plate
-            // costs a driver their shift, and nobody should learn that
-            // from a snackbar once it has already happened.
-            if (_isChange) ...[
+            if (_isChange && widget.isActiveVehicle) ...[
               const SizedBox(height: 18),
               Container(
                 padding: const EdgeInsets.all(14),
@@ -179,7 +177,6 @@ class _DriverLicensePlateScreenState extends State<DriverLicensePlateScreen> {
                 ),
               ),
             ],
-
             if (_error != null) ...[
               const SizedBox(height: 14),
               Text(
@@ -187,7 +184,6 @@ class _DriverLicensePlateScreenState extends State<DriverLicensePlateScreen> {
                 style: const TextStyle(color: Color(0xFFE05C5C), fontSize: 13),
               ),
             ],
-
             const SizedBox(height: 26),
             GestureDetector(
               onTap: _saving

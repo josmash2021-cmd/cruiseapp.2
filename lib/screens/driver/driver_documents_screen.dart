@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/firebase_storage_service.dart';
+import '../../services/socket_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/feathered_image.dart';
 import '../../widgets/neu_style.dart';
@@ -45,6 +47,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   // calls carry its id.
   List<Map<String, dynamic>> _vehicles = const [];
   int? _selectedVehicleId;
+  StreamSubscription<Map<String, dynamic>>? _reviewSub;
+  Timer? _reviewPoll;
+  bool _refreshing = false;
+  bool _refreshQueued = false;
 
   // All required doc types for drivers
   static const _requiredDocs = [
@@ -88,7 +94,39 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   void initState() {
     super.initState();
     _selectedVehicleId = widget.vehicleId;
-    _fetchVehicles().then((_) => _fetchDocuments());
+    _refreshAll(showLoader: true);
+    _reviewSub = SocketService.onboardingItemStream.listen(
+      (_) => _refreshAll(),
+    );
+    _reviewPoll = Timer.periodic(
+      const Duration(seconds: 25),
+      (_) => _refreshAll(),
+    );
+  }
+
+  Future<void> _refreshAll({bool showLoader = false}) async {
+    if (_refreshing) {
+      _refreshQueued = true;
+      return;
+    }
+    _refreshing = true;
+    try {
+      do {
+        _refreshQueued = false;
+        await _fetchVehicles();
+        if (!mounted) return;
+        await _fetchDocuments(showLoader: showLoader);
+      } while (_refreshQueued);
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _reviewSub?.cancel();
+    _reviewPoll?.cancel();
+    super.dispose();
   }
 
   Future<void> _fetchVehicles() async {
@@ -106,8 +144,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     } catch (_) {}
   }
 
-  Future<void> _fetchDocuments() async {
-    setState(() => _loading = true);
+  Future<void> _fetchDocuments({bool showLoader = true}) async {
+    if (!mounted) return;
+    if (showLoader) setState(() => _loading = true);
     try {
       final vehicle = _vehicles.firstWhere(
         (v) => v['id'] == _selectedVehicleId,
@@ -122,8 +161,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
 
       final docs = results[0] as List<Map<String, dynamic>>;
       final me = results[1] as Map<String, dynamic>?;
-      final onboarding =
-          (results[2] as Map<String, dynamic>?)?['items']
+      final onboarding = (results[2] as Map<String, dynamic>?)?['items']
               as Map<String, dynamic>? ??
           <String, dynamic>{};
 
@@ -141,12 +179,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       for (final req in _requiredDocs) {
         final docType = req['doc_type'] as String;
 
-        // The plate is read off the vehicle, not the documents table.
-        // "Pending" here means the driver changed it and dispatch has
-        // not approved the new registration yet.
         if (docType == 'license_plate') {
           final plate = (vehicle['plate'] ?? '').toString().trim();
-          final pending = vehicle['plate_pending_review'] == true;
+          final pending = vehicle['plate_pending_review'] == true ||
+              (vehicle['approval_status'] ?? 'pending') != 'approved';
           merged.add({
             'doc_type': docType,
             'title': req['title'],
@@ -167,9 +203,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           String bgStatus;
           if (isVerified || bgCheckStatus == 'clear') {
             bgStatus = 'approved';
-          } else if (bgCheckStatus == 'pending' || bgCheckStatus == 'processing') {
+          } else if (bgCheckStatus == 'pending' ||
+              bgCheckStatus == 'processing') {
             bgStatus = 'pending';
-          } else if (bgCheckStatus == 'consider' || bgCheckStatus == 'suspended') {
+          } else if (bgCheckStatus == 'consider' ||
+              bgCheckStatus == 'suspended') {
             bgStatus = 'rejected';
           } else {
             bgStatus = 'not_uploaded';
@@ -183,25 +221,19 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           continue;
         }
 
-        // Insurance/Registration — check vehicle-level validity. These are
-        // about THIS car: a verified driver with a brand-new second vehicle
-        // has still uploaded nothing for it, so the driver-level approval
-        // must not mark them approved (user spec 2026-08-29).
         if (docType == 'insurance' || docType == 'registration') {
-          final vehicleOk = docType == 'insurance' ? insuranceValid : registrationValid;
+          final vehicleOk =
+              docType == 'insurance' ? insuranceValid : registrationValid;
           final existing = docs.firstWhere(
             (d) => d['doc_type'] == docType,
             orElse: () => <String, dynamic>{},
           );
 
-          String status;
-          if (vehicleOk) {
-            status = 'approved';
-          } else if (existing.isNotEmpty) {
-            status = existing['status'] as String? ?? 'pending';
-          } else {
-            status = 'not_uploaded';
-          }
+          final status = existing.isNotEmpty
+              ? existing['status'] as String? ?? 'pending'
+              : vehicleOk
+                  ? 'approved'
+                  : 'not_uploaded';
 
           merged.add({
             if (existing.isNotEmpty) ...existing,
@@ -249,8 +281,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         if (obKey == null) continue;
         if (m['status'] != 'not_uploaded') continue;
         final obStatus =
-            (onboarding[obKey] as Map<String, dynamic>?)?['status']
-                as String?;
+            (onboarding[obKey] as Map<String, dynamic>?)?['status'] as String?;
         if (obStatus == 'approved' || obStatus == 'rejected') {
           m['status'] = obStatus;
         } else if (obStatus == 'submitted') {
@@ -322,7 +353,6 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     return plate.isEmpty ? parts : '$parts (${plate.toUpperCase()})';
   }
 
-
   IconData _iconForDoc(Map<String, dynamic> doc) {
     if (doc['icon'] != null && doc['icon'] is IconData) {
       return doc['icon'] as IconData;
@@ -381,8 +411,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     'vehicle_inspection',
   };
 
-  /// Open the plate editor and reload if it actually changed anything.
   Future<void> _editPlate(Map<String, dynamic> doc) async {
+    final vehicle = _vehicles.firstWhere(
+      (v) => v['id'] == _selectedVehicleId,
+      orElse: () => <String, dynamic>{},
+    );
     final changed = await Navigator.of(context).push<bool>(
       slideFromRightRoute(
         DriverLicensePlateScreen(
@@ -390,13 +423,13 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           currentState: (doc['plate_state'] ?? '').toString().isEmpty
               ? null
               : (doc['plate_state'] ?? '').toString(),
+          vehicleId: _selectedVehicleId,
+          isActiveVehicle: vehicle['is_active'] == true,
         ),
       ),
     );
     if (!mounted) return;
-    // Reload either way: even an unchanged save can have corrected the
-    // state, and the registration row below may have just been rejected.
-    await _fetchDocuments();
+    await _refreshAll();
     if (changed == true && mounted) {
       setState(() => _submittedOpen = true);
     }
@@ -450,14 +483,12 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     final s = S.of(context);
 
     // Action items first; everything else keeps its canonical order.
-    final docs = [..._documents]
-      ..sort((a, b) {
+    final docs = [..._documents]..sort((a, b) {
         final na = _needsAction(a) ? 0 : 1;
         final nb = _needsAction(b) ? 0 : 1;
         return na.compareTo(nb);
       });
-    final approvedCount =
-        docs.where((d) => d['status'] == 'approved').length;
+    final approvedCount = docs.where((d) => d['status'] == 'approved').length;
     // "You're all set" is a lie while any row still asks for an upload —
     // a freshly added car has insurance/registration(/inspection) to do.
     final allSet = docs.isNotEmpty && !docs.any(_needsAction);
@@ -468,48 +499,49 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         children: [
           const Positioned.fill(child: NeuDotsBackdrop()),
           _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
-            )
-          : Stack(
-              children: [
-                SafeArea(
-                  bottom: false,
-                  child: ListView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
-                    children: [
-                      _closeRow(s),
-                      const SizedBox(height: 18),
-                      _hero(s, allSet),
-                      const SizedBox(height: 22),
-                      if (_vehicleLabel.isNotEmpty) ...[
-                        _vehicleCard(s),
-                        const SizedBox(height: 22),
-                      ],
-                      if (docs.isNotEmpty)
-                        _section(
-                          title: s.docsSubmitted,
-                          open: _submittedOpen,
-                          onToggle: () =>
-                              setState(() => _submittedOpen = !_submittedOpen),
-                          chips: [
-                            if (approvedCount > 0)
-                              _countChip(
-                                Icons.check_circle_rounded,
-                                approvedCount,
-                                const Color(0xFF4CAF50),
-                              ),
+              ? const Center(
+                  child:
+                      CircularProgressIndicator(color: _gold, strokeWidth: 2),
+                )
+              : Stack(
+                  children: [
+                    SafeArea(
+                      bottom: false,
+                      child: ListView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+                        children: [
+                          _closeRow(s),
+                          const SizedBox(height: 18),
+                          _hero(s, allSet),
+                          const SizedBox(height: 22),
+                          if (_vehicleLabel.isNotEmpty) ...[
+                            _vehicleCard(s),
+                            const SizedBox(height: 22),
                           ],
-                          children: docs.map(_documentCard).toList(),
-                        ),
-                      const SizedBox(height: 20),
-                      _lockedNote(s),
-                    ],
-                  ),
+                          if (docs.isNotEmpty)
+                            _section(
+                              title: s.docsSubmitted,
+                              open: _submittedOpen,
+                              onToggle: () => setState(
+                                  () => _submittedOpen = !_submittedOpen),
+                              chips: [
+                                if (approvedCount > 0)
+                                  _countChip(
+                                    Icons.check_circle_rounded,
+                                    approvedCount,
+                                    const Color(0xFF4CAF50),
+                                  ),
+                              ],
+                              children: docs.map(_documentCard).toList(),
+                            ),
+                          const SizedBox(height: 20),
+                          _lockedNote(s),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
         ],
       ),
     );
@@ -821,7 +853,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       return;
     }
     await Navigator.of(context).push(onboardingFadeSlideRoute(page));
-    if (mounted) _fetchDocuments();
+    if (mounted) _refreshAll();
   }
 
   /// Opens the registration GUIDE page for this document (user spec
@@ -863,7 +895,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         ),
       ),
     );
-    if (mounted) _fetchDocuments();
+    if (mounted) _refreshAll();
   }
 
   Widget _documentCard(Map<String, dynamic> doc) {
@@ -1059,13 +1091,13 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     final expiry = (doc['expiry_date'] ?? doc['expiry'] ?? 'N/A') as String;
     final status = (doc['status'] ?? 'not_uploaded') as String;
     final createdAt = (doc['created_at'] ?? 'N/A') as String;
-    
+
     // Special handling for background_check
     if (docType == 'background_check') {
       _showBackgroundCheckSheet(doc);
       return;
     }
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1122,35 +1154,37 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
               Row(
                 children: [
                   if (_canReupload(doc)) ...[
-                  Expanded(
-                    child: SizedBox(
-                      height: 52,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _openCaptureFor(doc);
-                        },
-                        icon: const Icon(Icons.refresh_rounded, size: 18),
-                        label: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            s.updateBtn,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _openCaptureFor(doc);
+                          },
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              s.updateBtn,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _gold,
-                          side: BorderSide(color: _gold.withValues(alpha: 0.3)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _gold,
+                            side:
+                                BorderSide(color: _gold.withValues(alpha: 0.3)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
+                    const SizedBox(width: 12),
                   ],
                   Expanded(
                     child: SizedBox(
@@ -1219,31 +1253,34 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     final isApproved = status == 'approved';
     final isPending = status == 'pending';
     final isNotStarted = status == 'not_uploaded';
-    
+
     String statusText;
     Color statusColor;
     IconData statusIcon;
     String description;
-    
+
     if (isApproved) {
       statusText = s.approved;
       statusColor = const Color(0xFF4CAF50);
       statusIcon = Icons.verified_user_rounded;
-      description = 'Your background check has been approved. You\'re all set to drive!';
+      description =
+          'Your background check has been approved. You\'re all set to drive!';
     } else if (isPending) {
       statusText = 'In Progress';
       statusColor = _gold;
       statusIcon = Icons.hourglass_top_rounded;
-      description = 'Your background check is being processed. This typically takes 2-5 business days. We\'ll notify you when it\'s complete.';
+      description =
+          'Your background check is being processed. This typically takes 2-5 business days. We\'ll notify you when it\'s complete.';
     } else {
       statusText = 'Not Started';
       statusColor = Colors.white.withValues(alpha: 0.4);
       statusIcon = Icons.privacy_tip_rounded;
-      description = 'A background check is required before you can start driving. Tap below to initiate your Checkr background check.';
+      description =
+          'A background check is required before you can start driving. Tap below to initiate your Checkr background check.';
     }
-    
+
     final loadingNotifier = ValueNotifier<bool>(false);
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1290,7 +1327,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                     decoration: BoxDecoration(
                       color: statusColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(20),
@@ -1345,35 +1383,43 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                       width: double.infinity,
                       height: 54,
                       child: ElevatedButton.icon(
-                        onPressed: isLoading ? null : () async {
-                          Navigator.pop(ctx);
-                          final result = await Navigator.push<Map<String, dynamic>>(
-                            context,
-                            slideFromRightRoute<Map<String, dynamic>>(const BackgroundCheckConsentScreen()),
-                          );
-                          if (result != null) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(S.of(context).backgroundCheckInitiated),
-                                backgroundColor: _gold,
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            );
-                            _fetchDocuments(); // Refresh status
-                          }
-                        },
-                        icon: isLoading 
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                color: Colors.black,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Icon(Icons.play_arrow_rounded, size: 22),
+                        onPressed: isLoading
+                            ? null
+                            : () async {
+                                Navigator.pop(ctx);
+                                final result =
+                                    await Navigator.push<Map<String, dynamic>>(
+                                  context,
+                                  slideFromRightRoute<Map<String, dynamic>>(
+                                      const BackgroundCheckConsentScreen()),
+                                );
+                                if (result != null) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(S
+                                          .of(context)
+                                          .backgroundCheckInitiated),
+                                      backgroundColor: _gold,
+                                      behavior: SnackBarBehavior.floating,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12)),
+                                    ),
+                                  );
+                                  _fetchDocuments(); // Refresh status
+                                }
+                              },
+                        icon: isLoading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  color: Colors.black,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.play_arrow_rounded, size: 22),
                         label: Text(
                           isLoading ? 'Starting...' : 'Start Background Check',
                           style: const TextStyle(
@@ -1519,14 +1565,20 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     try {
       // Upload to Firebase Storage for permanent URL visible in Dispatch
       try {
-        final me = await ApiService.getMe().timeout(const Duration(seconds: 15));
+        final me =
+            await ApiService.getMe().timeout(const Duration(seconds: 15));
         final userId = int.tryParse(me?['id']?.toString() ?? '') ?? 0;
         final url = await FirebaseStorageService.uploadDocumentPhoto(
           path,
           userId,
           docType,
         );
-        await FirebaseStorageService.saveVerificationPhoto(userId, docType, url);
+        await FirebaseStorageService.saveVerificationPhoto(
+          userId,
+          docType,
+          url,
+          vehicleId: _selectedVehicleId,
+        );
       } catch (e) {
         debugPrint('[Documents] Firebase Storage upload failed: $e');
       }
@@ -1549,7 +1601,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           ),
         ),
       );
-      _fetchDocuments();
+      _refreshAll();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

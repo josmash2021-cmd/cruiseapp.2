@@ -28,8 +28,8 @@ void main() {
       .where((f) => f.path.contains('index-') && f.path.endsWith('.js'))
       .map((f) => f.readAsStringSync().replaceAll('\r\n', '\n'))
       .toList();
-  final personPage = chunks.firstWhere((s) => s.contains('replaceDocPhoto'),
-      orElse: () => '');
+  final personPage =
+      chunks.firstWhere((s) => s.contains('replaceDocPhoto'), orElse: () => '');
   final verifPage = chunks.firstWhere(
       (s) => s.contains('Selfies de conductor pendientes'),
       orElse: () => '');
@@ -52,7 +52,8 @@ void main() {
         reason: 'both helpers are exported for the person page chunk');
   });
 
-  test('the selfie_check document card carries Aprobar / Rechazar y desconectar',
+  test(
+      'the selfie_check document card carries Aprobar / Rechazar y desconectar',
       () {
     expect(personPage, isNotEmpty,
         reason: 'person page chunk not found — resolve it via index.html');
@@ -60,8 +61,10 @@ void main() {
     expect(personPage, contains('"selfie_check"'),
         reason: 'the gate is the doc_type — only selfie_check cards get the '
             'face-check buttons');
-    expect(personPage,
-        contains('isSelfie?selfieBtns(d.id):reviewBtns("document",d.id)'),
+    expect(
+        personPage,
+        contains(
+            'isSelfie?selfieBtns(d.id):reviewBtns("document",d.id,d.vehicleId)'),
         reason: 'selfie_check cards replace the generic approve/reject row; '
             'account/vehicle/background cards never reach docCard');
     expect(personPage, contains('children:"Aprobar"'));
@@ -74,10 +77,11 @@ void main() {
     expect(personPage, contains('rejectFC'), reason: 'POST …/reject');
   });
 
-  test('the backend exposes the three dispatch-gated face-check endpoints',
-      () {
-    expect(adminPy,
-        contains('@router.get("/admin/face-checks/pending", dependencies=[Depends(_require_dispatch_auth)])'));
+  test('the backend exposes the three dispatch-gated face-check endpoints', () {
+    expect(
+        adminPy,
+        contains(
+            '@router.get("/admin/face-checks/pending", dependencies=[Depends(_require_dispatch_auth)])'));
     expect(adminPy,
         contains('@router.post("/admin/face-checks/{document_id}/approve"'));
     expect(adminPy,

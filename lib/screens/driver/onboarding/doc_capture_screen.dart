@@ -19,13 +19,13 @@ import 'onboarding_widgets.dart';
 /// Big title, "Learn more" link to the shared [DocGuidelinesView], a large
 /// upload area ("Upload photo" → camera or gallery), the picked image shown
 /// full-bleed at its own aspect ratio, per-document requirement bullets and
-/// a gold Save button. Saving uploads through the existing documents
-/// mechanism (`/drivers/documents/upload`) and mirrors the URL onto the user
-/// column via `POST /auth/onboarding-items/{item}/doc`, then pops `true`.
+/// a gold Save button. Saving uploads through `/drivers/documents/upload`;
+/// the legacy single-vehicle flow also mirrors onto its onboarding item.
 class DocCaptureScreen extends StatefulWidget {
   const DocCaptureScreen({super.key, required this.entry, this.vehicleId});
 
   final OnboardingItemEntry entry;
+
   /// Multi-vehicle (2026-08-29): insurance/registration/inspection belong to
   /// a specific car; the upload carries its id.
   final int? vehicleId;
@@ -42,38 +42,38 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
 
   /// doc_type of the legacy documents endpoint backing each item.
   String get _docType => switch (_item) {
-    OnboardingItem.registration => 'registration',
-    OnboardingItem.insurance => 'insurance',
-    OnboardingItem.inspection => 'vehicle_inspection',
-    _ => 'registration',
-  };
+        OnboardingItem.registration => 'registration',
+        OnboardingItem.insurance => 'insurance',
+        OnboardingItem.inspection => 'vehicle_inspection',
+        _ => 'registration',
+      };
 
   String _title(S s) => switch (_item) {
-    OnboardingItem.registration => s.obItemRegistrationTitle,
-    OnboardingItem.insurance => s.obItemInsuranceTitle,
-    OnboardingItem.inspection => s.obItemInspectionTitle,
-    _ => s.obItemRegistrationTitle,
-  };
+        OnboardingItem.registration => s.obItemRegistrationTitle,
+        OnboardingItem.insurance => s.obItemInsuranceTitle,
+        OnboardingItem.inspection => s.obItemInspectionTitle,
+        _ => s.obItemRegistrationTitle,
+      };
 
   List<String> _bullets(S s) => switch (_item) {
-    OnboardingItem.insurance => [
-        s.obDocBulletValid,
-        s.obDocBulletNameOnPolicy,
-        s.obDocBulletNotBlurry,
-        s.obDocBulletCorners,
-      ],
-    OnboardingItem.inspection => [
-        s.obDocBulletValid,
-        s.obDocBulletNotBlurry,
-        s.obDocBulletCorners,
-      ],
-    _ => [
-        s.obDocBulletValid,
-        s.obDocBulletMatch,
-        s.obDocBulletNotBlurry,
-        s.obDocBulletCorners,
-      ],
-  };
+        OnboardingItem.insurance => [
+            s.obDocBulletValid,
+            s.obDocBulletNameOnPolicy,
+            s.obDocBulletNotBlurry,
+            s.obDocBulletCorners,
+          ],
+        OnboardingItem.inspection => [
+            s.obDocBulletValid,
+            s.obDocBulletNotBlurry,
+            s.obDocBulletCorners,
+          ],
+        _ => [
+            s.obDocBulletValid,
+            s.obDocBulletMatch,
+            s.obDocBulletNotBlurry,
+            s.obDocBulletCorners,
+          ],
+      };
 
   Future<void> _pick(ImageSource source) async {
     try {
@@ -183,7 +183,8 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
       // also serves re-uploads from Documents, so both surfaces must see
       // the photo).
       try {
-        final me = await ApiService.getMe().timeout(const Duration(seconds: 15));
+        final me =
+            await ApiService.getMe().timeout(const Duration(seconds: 15));
         final userId = int.tryParse(me?['id']?.toString() ?? '') ?? 0;
         final mirrorUrl = await FirebaseStorageService.uploadDocumentPhoto(
           path,
@@ -191,7 +192,11 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
           _docType,
         );
         await FirebaseStorageService.saveVerificationPhoto(
-            userId, _docType, mirrorUrl);
+          userId,
+          _docType,
+          mirrorUrl,
+          vehicleId: widget.vehicleId,
+        );
       } catch (e) {
         debugPrint('[DocCapture] Firebase Storage mirror failed: $e');
       }
@@ -201,7 +206,7 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
         vehicleId: widget.vehicleId,
       );
       final url = uploaded['file_path'] as String?;
-      if (url != null && url.isNotEmpty) {
+      if (widget.vehicleId == null && url != null && url.isNotEmpty) {
         await ApiService.submitOnboardingDoc(item: _item.key, url: url);
       }
       if (!mounted) return;

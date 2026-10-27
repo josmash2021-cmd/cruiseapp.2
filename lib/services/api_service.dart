@@ -163,7 +163,7 @@ class ApiService {
   // ── In-memory response cache for GET requests ────────────────────────
   static final Map<String, _CacheEntry> _responseCache = {};
   static final Map<String, Future<http.Response>> _inFlightRequests = {};
-  
+
   /// Clear the response cache - call when user logs out or data changes
   static void clearCache() {
     _responseCache.clear();
@@ -193,7 +193,7 @@ class ApiService {
   static bool isCircuitOpenError(Object err) => err is _CircuitOpenException;
 
   /// SMART CACHE for GET requests.
-  /// 
+  ///
   /// - If [useCache] is false (default): ALWAYS hits the backend (safe for critical data)
   /// - If [useCache] is true AND we have a fresh cached entry: return cached response
   /// - If [useCache] is true AND cache expired: hit backend, then cache result
@@ -221,8 +221,8 @@ class ApiService {
       if (cached != null && !cached.isExpired) {
         debugPrint('[ApiService] CACHE HIT: ${url.path}');
         // Return a synthetic Response with cached body
-        final cachedBody = cached.data is String 
-            ? cached.data as String 
+        final cachedBody = cached.data is String
+            ? cached.data as String
             : jsonEncode(cached.data);
         return http.Response(cachedBody, 200, headers: {
           'content-type': 'application/json',
@@ -244,14 +244,14 @@ class ApiService {
 
     try {
       final response = await future;
-      
+
       // ── 4. Cache successful responses ──────────────────────────────
       if (useCache && cacheTtl > Duration.zero && response.statusCode == 200) {
         _responseCache[cacheKey] = _CacheEntry(response.body, cacheTtl);
         debugPrint(
             '[ApiService] CACHE SET: ${url.path} (TTL=${cacheTtl.inSeconds}s)');
       }
-      
+
       return response;
     } finally {
       _inFlightRequests.remove(cacheKey);
@@ -382,7 +382,7 @@ class ApiService {
 
       if (doc != null && doc.exists) {
         final raw = doc.data()?['tunnel_url'] as String? ??
-                    doc.data()?['url'] as String?;
+            doc.data()?['url'] as String?;
         if (raw != null && raw.isNotEmpty && raw.startsWith('http')) {
           _dynamicTunnelUrl = raw;
           _activeUrl = raw.trimRight().replaceAll(RegExp(r'/+$'), '');
@@ -432,8 +432,8 @@ class ApiService {
     // Build the full list of URLs to try — all at once, in parallel.
     final allCandidates = candidates ??
         (_dynamicTunnelUrl != null
-        ? [_dynamicTunnelUrl!]
-        : [_productionUrl, _activeUrl]);
+            ? [_dynamicTunnelUrl!]
+            : [_productionUrl, _activeUrl]);
     final urls = allCandidates.where((u) => u.isNotEmpty).toSet().toList();
 
     if (urls.isNotEmpty) {
@@ -1062,9 +1062,9 @@ class ApiService {
       if (role != null) payload['role'] = role;
       final res = await _client
           .post(
-        Uri.parse('$_baseUrl/auth/check-exists'),
-        headers: _jsonHeaders(),
-        body: jsonEncode(payload),
+            Uri.parse('$_baseUrl/auth/check-exists'),
+            headers: _jsonHeaders(),
+            body: jsonEncode(payload),
           )
           .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
@@ -1268,7 +1268,7 @@ class ApiService {
 
   /// Get the current user's profile (requires valid JWT).
   /// Returns user map or `null` if the token is invalid/expired.
-  /// 
+  ///
   /// Uses 10s smart cache — profile data is non-critical and rarely changes
   /// within a single session. Cache is invalidated on profile updates.
   static Future<Map<String, dynamic>?> getMe() async {
@@ -1454,7 +1454,7 @@ class ApiService {
         return _dashboardCache;
       }
     }
-    
+
     final token = await getToken();
     if (token == null) return null;
 
@@ -2007,13 +2007,13 @@ class ApiService {
     required int seatbelts,
   }) =>
       _postOnboardingItem('vehicle', {
-    'year': year,
-    'make': make,
-    'model': model,
-    'color': color,
-    'seats': seats,
-    'seatbelts': seatbelts,
-  });
+        'year': year,
+        'make': make,
+        'model': model,
+        'color': color,
+        'seats': seats,
+        'seatbelts': seatbelts,
+      });
 
   static Future<Map<String, dynamic>> submitOnboardingBackground() =>
       _postOnboardingItem('background', {'accepted': true});
@@ -2113,19 +2113,19 @@ class ApiService {
       final role = (me?['role']?.toString() ?? 'rider').toLowerCase();
       final url = await FirebaseStorageService.uploadProfilePhoto(
           filePath, userId, role);
-      
+
       // Update Firestore so Dispatch shows the photo immediately
       unawaited(
         FirebaseStorageService.updateFirestorePhotoUrl(userId, url, role),
       );
-      
+
       // Also update Firebase Auth photoURL for cross-device consistency
       unawaited(Future(() async {
         try {
           await FirebaseAuth.instance.currentUser?.updatePhotoURL(url);
         } catch (_) {}
       }));
-      
+
       // Sync URL back to backend DB so /auth/me returns the correct photo_url
       // MUST await — fire-and-forget causes race conditions where photo_url stays NULL
       try {
@@ -2135,15 +2135,15 @@ class ApiService {
         unawaited(
             _syncPhotoUrlToBackend(url, token)); // one retry, fire-and-forget
       }
-      
+
       // Save to all 4 tiers: SharedPreferences, Firebase Auth, Firestore, Storage
       // This ensures photos survive logouts, app updates, and device changes
       // Include role to prevent rider/driver photo cross-contamination
       unawaited(PhotoRecoveryService.savePhotoEveryWhere(userUid, role, url));
-      
+
       // Legacy: also save through UserSession
       unawaited(UserSession.savePhotoUrl(url));
-      
+
       return url;
     } catch (e) {
       debugPrint(
@@ -3889,11 +3889,11 @@ class ApiService {
     try {
       final uri =
           Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
-            'origin': '$originLat,$originLng',
-            'destination': '$destLat,$destLng',
-            'key': Env.mapsServicesKey,
-            'mode': 'driving',
-          });
+        'origin': '$originLat,$originLng',
+        'destination': '$destLat,$destLng',
+        'key': Env.mapsServicesKey,
+        'mode': 'driving',
+      });
       final res = await _client.get(uri).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -3937,7 +3937,7 @@ class ApiService {
       final res = await _client
           .get(uri, headers: h)
           .timeout(const Duration(seconds: 15));
-      
+
       if (res.statusCode >= 200 && res.statusCode < 300) {
         return jsonDecode(res.body) as Map<String, dynamic>;
       }
@@ -4026,15 +4026,12 @@ class ApiService {
   // ═══════════════════════════════════════════════════════
 
   /// Get the driver's vehicle info.
-  /// Change the plate on the driver's vehicle.
-  ///
-  /// A real change invalidates the registration on file and takes the
-  /// driver offline until dispatch approves a new one — the response says
-  /// which of those happened in `plate_changed`.
+  /// Change the plate on the selected vehicle.
   static Future<Map<String, dynamic>> changeLicensePlate({
     required String plate,
     required String confirmPlate,
     String? state,
+    int? vehicleId,
   }) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
@@ -4046,6 +4043,7 @@ class ApiService {
             'plate': plate,
             'confirm_plate': confirmPlate,
             if (state != null && state.isNotEmpty) 'state': state,
+            if (vehicleId != null) 'vehicle_id': vehicleId,
           }),
         )
         .timeout(const Duration(seconds: 20));

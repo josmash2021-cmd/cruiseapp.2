@@ -74,7 +74,7 @@ async def _vehicle(driver, db):
 
 async def test_multipart_upload_syncs_panel(client, db, test_driver, panel_sync):
     driver, token = test_driver
-    await _vehicle(driver, db)
+    vehicle = await _vehicle(driver, db)
     resp = await client.post(
         "/drivers/documents/upload",
         data={"doc_type": "insurance"},
@@ -88,11 +88,12 @@ async def test_multipart_upload_syncs_panel(client, db, test_driver, panel_sync)
     assert args[1] == "insurance"
     assert args[2].startswith("https://storage.test/documents/")
     assert kwargs.get("side", "front") == "front"
+    assert kwargs["vehicle_id"] == vehicle.id
 
 
 async def test_json_upload_syncs_panel(client, db, test_driver, panel_sync):
     driver, token = test_driver
-    await _vehicle(driver, db)
+    vehicle = await _vehicle(driver, db)
     resp = await client.post(
         "/drivers/documents",
         json={"doc_type": "registration",
@@ -101,10 +102,11 @@ async def test_json_upload_syncs_panel(client, db, test_driver, panel_sync):
     )
     assert resp.status_code == 200, resp.text
     assert len(panel_sync) == 1
-    args, _ = panel_sync[0]
+    args, kwargs = panel_sync[0]
     assert args[0] == driver.id
     assert args[1] == "registration"
     assert args[2].startswith("https://storage.test/documents/")
+    assert kwargs["vehicle_id"] == vehicle.id
 
 
 # ── 2. Field mapping + non-fatal ────────────────────────────────────────────
@@ -125,6 +127,13 @@ def test_doc_url_maps_exact_panel_fields(monkeypatch):
 
     firestore_sync.sync_verification_doc_url(7, "drivers_license", "https://x/back.jpg", side="back")
     setter.assert_called_with({"licenseBackUrl": "https://x/back.jpg"}, merge=True)
+
+    firestore_sync.sync_verification_doc_url(
+        7, "insurance", "https://x/ins-42.jpg", vehicle_id=42)
+    setter.assert_called_with(
+        {"vehicleDocumentUrls": {"42": {"insuranceUrl": "https://x/ins-42.jpg"}}},
+        merge=True,
+    )
 
     setter.reset_mock()
     # Unknown doc types and empty URLs write nothing (background_check, etc.).

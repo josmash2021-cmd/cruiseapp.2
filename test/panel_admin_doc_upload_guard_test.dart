@@ -17,8 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// and the person page gets an "Actualizar" button on every document card
 /// (never on the account/vehicle/background cards).
 void main() {
-  final adminPy =
-      File('backend/routers/admin.py').readAsStringSync();
+  final adminPy = File('backend/routers/admin.py').readAsStringSync();
   final html = File('backend/dispatch_panel/index.html')
       .readAsStringSync()
       .replaceAll('\r\n', '\n');
@@ -28,12 +27,10 @@ void main() {
       ? ''
       : File('backend/dispatch_panel/assets/${match.group(1)}')
           .readAsStringSync();
-  final personPage =
-      File('backend/dispatch_panel/assets/index-azyIyM-i.js')
-          .readAsStringSync();
+  final personPage = File('backend/dispatch_panel/assets/index-azyIyM-i.js')
+      .readAsStringSync();
 
-  test('backend endpoint exists with the shared pipeline + dispatch auth',
-      () {
+  test('backend endpoint exists with the shared pipeline + dispatch auth', () {
     expect(
         adminPy,
         contains(
@@ -57,6 +54,8 @@ void main() {
             'type would corrupt the multipart body');
     expect(entry, contains('adminUploadDocPhoto as panelUploadDocPhoto'),
         reason: 'exported for the person page chunk');
+    expect(entry, contains('fd.append("vehicle_id",String(vehicleId))'),
+        reason: 'a vehicle document upload must name its own car');
   });
 
   test('every document card carries the Actualizar button', () {
@@ -66,5 +65,8 @@ void main() {
     expect(personPage, contains('canUploadDoc(kind)'),
         reason: 'account/vehicle/background cards never get the button');
     expect(personPage, contains('children:"Actualizar"'));
+    expect(personPage, contains('replaceDocPhoto(kind,vehicleId)'));
+    expect(personPage, contains('reviewBtns("document",d.id,d.vehicleId)'),
+        reason: 'the id travels from the selected vehicle card to the upload');
   });
 }

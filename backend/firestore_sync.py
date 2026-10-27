@@ -833,17 +833,9 @@ _VERIFICATION_DOC_URL_FIELDS = {
 
 
 def sync_verification_doc_url(user_id: int, doc_type: str, url: str,
-                              side: str = "front"):
-    """Merge ONE document-photo URL into the driver's verifications doc.
-
-    /drivers/documents* uploads create the Document row but must NOT call
-    sync_verification (it resets status/reviewedAt and would wipe a review
-    decision). Without this merge, insurance/registration uploaded from the
-    onboarding to-do hub stored fine in Postgres yet never reached the
-    review panel (prod 2026-10: new drivers showing only license + profile
-    photo). Non-fatal by design: a Firestore failure must not fail an
-    upload that already committed.
-    """
+                              side: str = "front",
+                              vehicle_id: int | None = None):
+    """Merge one document URL without resetting the review decision."""
     if doc_type == "drivers_license":
         field = "licenseBackUrl" if side == "back" else "licenseFrontUrl"
     else:
@@ -853,9 +845,12 @@ def sync_verification_doc_url(user_id: int, doc_type: str, url: str,
     _ensure_init()
     if _db is None:
         return
+    payload = ({
+        "vehicleDocumentUrls": {str(vehicle_id): {field: url}},
+    } if vehicle_id is not None else {field: url})
     try:
         _db.collection("verifications").document(f"sql_{user_id}").set(
-            {field: url}, merge=True)
+            payload, merge=True)
     except Exception as e:
         log.error("❌ Verification doc-url sync failed for %s (%s): %s",
                   user_id, field, e)

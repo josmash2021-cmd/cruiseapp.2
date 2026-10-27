@@ -275,6 +275,108 @@ async def test_archive_without_replacement_takes_driver_offline_and_expires(
     assert (await db.get(DispatchOffer, offer_id)).status == "expired"
 
 
+async def test_add_second_vehicle_preserves_active_car_and_online_shift(
+        client, db, test_driver):
+    driver, token = test_driver
+    driver.is_online = True
+    active = await _add_vehicle(
+        db, driver, active=True, approval="approved", plate="OLD123")
+    await db.commit()
+
+    resp = await client.post(
+        "/drivers/vehicles",
+        headers=_headers(token),
+        json={"make": "Hyundai", "model": "Tucson", "year": 2025,
+              "color": "White", "plate": "NEW456"},
+    )
+    assert resp.status_code == 200, resp.text
+    added_id = resp.json()["vehicle"]["id"]
+
+    await db.refresh(driver)
+    await db.refresh(active)
+    added = await db.get(Vehicle, added_id)
+    assert driver.is_online is True
+    assert active.is_active is True
+    assert added.is_active is False
+
+
+async def test_multi_vehicle_document_upload_requires_id_and_stays_separate(
+        client, db, test_driver, monkeypatch):
+    driver, token = test_driver
+    active = await _add_vehicle(db, driver, active=True, plate="OLD123")
+    added = await _add_vehicle(db, driver, plate="NEW456")
+
+    from utils import helpers
+    monkeypatch.setattr(
+        helpers, "_safe_create_task",
+        lambda coro, **kw: (coro.close(), None)[1],
+    )
+    resp = await client.post(
+        "/drivers/documents", headers=_headers(token),
+        json={"doc_type": "registration"},
+    )
+    assert resp.status_code == 400
+    assert "vehicle_id is required" in resp.text
+
+    for vehicle in (active, added):
+        resp = await client.post(
+            "/drivers/documents", headers=_headers(token),
+            json={"doc_type": "registration", "vehicle_id": vehicle.id},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["vehicle_id"] == vehicle.id
+
+    rows = (await db.execute(select(Document).where(
+        Document.user_id == driver.id,
+        Document.doc_type == "registration",
+    ))).scalars().all()
+    assert {row.vehicle_id for row in rows} == {active.id, added.id}
+
+
+async def test_inactive_vehicle_plate_does_not_touch_active_car_or_shift(
+        client, db, test_driver):
+    driver, token = test_driver
+    driver.is_online = True
+    active = await _add_vehicle(db, driver, active=True, plate="OLD123")
+    added = await _add_vehicle(db, driver, plate="NEW456")
+    active_reg = await _add_doc(db, driver, active, "registration")
+    added_reg = await _add_doc(db, driver, added, "registration")
+    await db.commit()
+
+    resp = await client.post(
+        "/drivers/vehicle/plate", headers=_headers(token),
+        json={"plate": "NEW789", "confirm_plate": "NEW789",
+              "state": "FL", "vehicle_id": added.id},
+    )
+    assert resp.status_code == 200, resp.text
+
+    await db.refresh(driver)
+    await db.refresh(active)
+    await db.refresh(active_reg)
+    await db.refresh(added_reg)
+    assert driver.is_online is True
+    assert active.is_active is True
+    assert active_reg.status == "approved"
+    assert added_reg.status == "rejected"
+
+
+async def test_duplicate_active_flags_do_not_crash_can_go_online(
+        client, db, test_driver):
+    driver, token = test_driver
+    driver.verification_status = "approved"
+    active = await _add_vehicle(
+        db, driver, active=True, approval="approved", plate="OLD123")
+    await _mark_fully_ready(db, driver, active)
+    await _add_vehicle(db, driver, active=True, plate="NEW456")
+    await db.commit()
+
+    resp = await client.get("/drivers/can-go-online", headers=_headers(token))
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["has_vehicle"] is True
+    assert payload["missing_vehicle_docs"] == []
+
+
 async def test_archived_at_is_in_the_model_and_both_migration_lists():
     source = (Path(__file__).resolve().parents[1] /
               "models" / "database.py").read_text(encoding="utf-8")

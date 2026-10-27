@@ -3037,14 +3037,7 @@ async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
     remove seats from a car. Driver standing is handled where it belongs,
     by cruise_level_agent and by the suspension rules in rating_engine.
     """
-    result = await db.execute(
-        select(Vehicle).where(
-            Vehicle.user_id == driver_id,
-            Vehicle.is_active == True,
-            Vehicle.archived_at.is_(None),
-        )
-    )
-    vehicle = result.scalar_one_or_none()
+    vehicle = await _get_active_vehicle(db, driver_id)
     if not vehicle:
         return
 
@@ -3095,12 +3088,7 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     # vehicle under an approved account counts as reviewed. A SECOND car
     # must be approved outright (use_vehicle already refuses the switch
     # until it is).
-    v_result = await db.execute(select(Vehicle).where(
-        Vehicle.user_id == user.id,
-        Vehicle.is_active == True,
-        Vehicle.archived_at.is_(None),
-    ))
-    vehicle = v_result.scalar_one_or_none()
+    vehicle = await _get_active_vehicle(db, user.id)
     n_vehicles = await db.scalar(
         select(func.count(Vehicle.id)).where(
             Vehicle.user_id == user.id,
@@ -3276,18 +3264,7 @@ async def change_license_plate(
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Change the plate on the driver's vehicle.
-
-    A plate change invalidates the registration. The document on file
-    names the old plate, so it no longer proves anything about the car
-    this driver is now driving — it has to be uploaded again and approved
-    again before they can take rides.
-
-    The driver is knocked offline immediately rather than at the end of
-    whatever they are doing: an unverified plate is exactly the state
-    that should not be carrying passengers. Any trip already in progress
-    is untouched — this only stops them going online again.
-    """
+    """Change one vehicle's plate and invalidate only its registration."""
     if user.role != "driver":
         raise HTTPException(403, "Only drivers have a plate")
 
@@ -3300,19 +3277,23 @@ async def change_license_plate(
         raise HTTPException(400, "License plate is required")
     if len(plate) > 15:
         raise HTTPException(400, "That plate is too long")
-    # Letters, digits, spaces and dashes. Plates vary by state, so this is
-    # deliberately loose — it rejects nonsense, not unusual formats.
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9 \-]{0,14}", plate):
         raise HTTPException(400, "That does not look like a license plate")
     if confirm and confirm != plate:
         raise HTTPException(400, "The two plate numbers do not match")
 
-    result = await db.execute(select(Vehicle).where(
-        Vehicle.user_id == user.id,
-        Vehicle.is_active == True,
-        Vehicle.archived_at.is_(None),
-    ))
-    vehicle = result.scalar_one_or_none()
+    vehicle_id = body.get("vehicle_id")
+    if vehicle_id is not None:
+        if isinstance(vehicle_id, bool) or not isinstance(vehicle_id, int):
+            raise HTTPException(400, "vehicle_id must be an integer")
+        result = await db.execute(select(Vehicle).where(
+            Vehicle.id == vehicle_id,
+            Vehicle.user_id == user.id,
+            Vehicle.archived_at.is_(None),
+        ))
+        vehicle = result.scalar_one_or_none()
+    else:
+        vehicle = await _get_active_vehicle(db, user.id)
     if not vehicle:
         raise HTTPException(404, "No vehicle on file")
 
@@ -3323,35 +3304,32 @@ async def change_license_plate(
     if state:
         vehicle.plate_state = state
 
-    # Nothing else happens when the plate did not actually change. Saving
-    # the same plate should not cost a driver their shift.
     if not unchanged:
         vehicle.plate_pending_review = True
         vehicle.plate_changed_at = utc_now()
         vehicle.registration_valid = False
 
-        # The registration on file described the old plate. Send it back
-        # so the driver is asked for a new one.
         doc_r = await db.execute(
             select(Document).where(
                 Document.user_id == user.id,
                 Document.doc_type == "registration",
+                Document.vehicle_id == vehicle.id,
             )
         )
         for doc in doc_r.scalars().all():
             doc.status = "rejected"
             doc.rejection_reason = "License plate changed — upload the new registration"
 
-        # Off the road until dispatch says otherwise.
-        user.is_online = False
+        if vehicle.is_active:
+            user.is_online = False
 
     await db.commit()
     await db.refresh(vehicle)
 
     if not unchanged:
         logging.info(
-            "[Plate] driver %s: %s -> %s (%s), registration invalidated",
-            user.id, old_plate or "(none)", plate, state or "??",
+            "[Plate] driver %s vehicle %s: %s -> %s (%s), registration invalidated",
+            user.id, vehicle.id, old_plate or "(none)", plate, state or "??",
         )
         try:
             if user.fcm_token:
@@ -3434,15 +3412,15 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
 
 
 async def _get_active_vehicle(db: AsyncSession, user_id: int) -> Vehicle | None:
-    """The driver's currently selected, unarchived vehicle."""
+    """The driver's selected vehicle, tolerant of legacy duplicate flags."""
     result = await db.execute(
         select(Vehicle).where(
             Vehicle.user_id == user_id,
             Vehicle.is_active == True,
             Vehicle.archived_at.is_(None),
-        )
+        ).order_by(Vehicle.created_at.asc(), Vehicle.id.asc())
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 @router.get("/drivers/vehicles", dependencies=[Depends(_verify_api_key)])
@@ -3603,12 +3581,7 @@ async def delete_vehicle(vehicle_id: int, user: User = Depends(_get_current_user
 async def _resolve_doc_vehicle(
     db: AsyncSession, user_id: int, vehicle_id: Optional[int]
 ) -> int:
-    """Attach a vehicle-level doc (insurance/registration/inspection) to a
-    car. When the client omits vehicle_id — the onboarding doc-capture flow
-    never had one to send (prod 2026-08-29: "vehicle_id is required for
-    this document type" blocked new-driver uploads) — fall back to the
-    driver's active vehicle, else their most recent one. Only a driver
-    with NO vehicle at all still gets a 400, with a actionable message."""
+    """Attach a vehicle document without ever guessing between cars."""
     if vehicle_id is not None:
         result = await db.execute(
             select(Vehicle).where(
@@ -3621,14 +3594,17 @@ async def _resolve_doc_vehicle(
             raise HTTPException(404, "Vehicle not found")
         return vehicle_id
     result = await db.execute(
-        select(Vehicle)
-        .where(Vehicle.user_id == user_id, Vehicle.archived_at.is_(None))
-        .order_by(Vehicle.is_active.desc(), Vehicle.created_at.desc())
+        select(Vehicle).where(
+            Vehicle.user_id == user_id,
+            Vehicle.archived_at.is_(None),
+        ).order_by(Vehicle.created_at.asc(), Vehicle.id.asc())
     )
-    vehicle = result.scalars().first()
-    if vehicle is None:
+    vehicles = result.scalars().all()
+    if not vehicles:
         raise HTTPException(400, "Add your vehicle first, then upload this document")
-    return vehicle.id
+    if len(vehicles) > 1:
+        raise HTTPException(400, "vehicle_id is required for this document type")
+    return vehicles[0].id
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -3658,10 +3634,8 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     if doc_type not in allowed_types:
         raise HTTPException(400, f"Invalid document type. Allowed: {', '.join(allowed_types)}")
 
-    # Multi-vehicle (2026-08-29): vehicle-level docs (insurance/registration/
-    # inspection) carry the vehicle they belong to. Driver-level docs stay
-    # vehicle_id = NULL. Clients that don't send a vehicle (onboarding)
-    # fall back to the active/most-recent vehicle inside the resolver.
+    # Vehicle-level docs carry their car. Driver-level docs stay NULL;
+    # only the single-vehicle onboarding flow may omit vehicle_id.
     vehicle_id = body.get("vehicle_id")
     vehicle_level = {"insurance", "registration", "vehicle_inspection"}
     if doc_type in vehicle_level:
@@ -3740,7 +3714,8 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     await db.refresh(doc)
     # Same panel sync as the multipart path (see _store_driver_document).
     if _HAS_FIRESTORE and firestore_sync and doc.file_path:
-        firestore_sync.sync_verification_doc_url(user.id, doc_type, doc.file_path)
+        firestore_sync.sync_verification_doc_url(
+            user.id, doc_type, doc.file_path, vehicle_id=doc.vehicle_id)
     # AI expiry suggestion (2026-10-20, user-approved design) — background,
     # suggestion-only; the operator confirms the real expiry_date.
     from utils.helpers import _safe_create_task
@@ -3782,9 +3757,8 @@ async def _store_driver_document(
     if ct.startswith("image/"):
         validate_image_bytes(data)
 
-    # Multi-vehicle (2026-08-29): vehicle-level docs carry the vehicle they
-    # belong to; driver-level docs stay vehicle_id = NULL. Same onboarding
-    # fallback as the JSON endpoint — resolve inside the helper.
+    # Vehicle-level docs carry their car; driver-level docs stay NULL.
+    # The resolver accepts an omitted id only for a single-vehicle driver.
     vehicle_level = {"insurance", "registration", "vehicle_inspection"}
     if doc_type in vehicle_level:
         vehicle_id = await _resolve_doc_vehicle(db, user.id, vehicle_id)
@@ -3846,7 +3820,8 @@ async def _store_driver_document(
     # uploaded from the onboarding to-do hub never reach the panel.
     if _HAS_FIRESTORE and firestore_sync and doc.file_path:
         firestore_sync.sync_verification_doc_url(
-            user.id, doc_type, doc.file_path, side=side)
+            user.id, doc_type, doc.file_path, side=side,
+            vehicle_id=doc.vehicle_id)
     # AI expiry suggestion (2026-10-20, user-approved design: "la IA lee,
     # yo confirmo en dispatch"): the vision reader writes ONLY a suggestion
     # in the background — reminders and suspension wait for the operator's

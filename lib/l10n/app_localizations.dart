@@ -4040,6 +4040,11 @@ class S {
   String get routingNumberInvalid => _es
       ? 'Ese routing number no es válido'
       : "That routing number isn't valid";
+  String get bankFormAddressRequired => _es
+      ? 'Dirección completa (calle, ciudad, estado y ZIP)'
+      : 'Full address (street, city, state and ZIP)';
+  String bankFormMissing(String field) =>
+      _es ? 'Te falta: $field' : 'Missing: $field';
   String get bankAccountNumber =>
       _es ? 'Número de cuenta' : 'Bank account number';
   String get reenterAccountNumber =>

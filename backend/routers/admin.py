@@ -1251,7 +1251,88 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     # SSN is encrypted on backend, never exposed to admin (compliance)
     ud["ssn_provided"] = is_ssn_provided(user.ssn)  # Just indicate if SSN was collected
     ud["ssn_masked"] = get_ssn_masked(user.ssn)  # ***-**-1234, safe to display
+    # Dispatch bank card (2026-10-27, owner spec): the ficha must show the
+    # driver's weekly-ACH bank (or its absence) — display_name only ever has
+    # bank + last4, never full numbers.
+    if (user.role or "").lower() == "driver":
+        pm_result = await db.execute(
+            select(PayoutMethod).where(PayoutMethod.user_id == user_id)
+        )
+        ud["payout_methods"] = [
+            {
+                "id": p.id,
+                "method_type": p.method_type,
+                "display_name": p.display_name,
+                "is_default": bool(p.is_default),
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in pm_result.scalars().all()
+        ]
+        ud["has_connect"] = bool(user.stripe_connect_id)
     return ud
+
+
+@router.post("/admin/users/{user_id}/payout-bank", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_attach_payout_bank(
+    user_id: int, request: Request, db: AsyncSession = Depends(get_db),
+):
+    """Dispatch-assisted bank link (2026-10-27, owner spec): attach or REPLACE
+    the driver's weekly-ACH bank from the ficha, reusing the exact pipeline
+    the app uses (server-side tokenization in routers.drivers). The operator
+    types the numbers over TLS; they are never logged and never stored —
+    only the Stripe external account and the bank+last4 display survive.
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(404, "User not found")
+    if (user.role or "").lower() != "driver":
+        raise HTTPException(400, "Only drivers have payout banks")
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Body must be an object")
+    body.setdefault("set_default", True)
+
+    if body.get("replace"):
+        # One bank at a time, same rule as the app: detach the old external
+        # account (its id rides in display_name as [ext:ba_...]) and drop the
+        # local row BEFORE the new attach, so no duplicate banks linger.
+        import stripe as _stripe
+        from config import STRIPE_SECRET
+        _stripe.api_key = STRIPE_SECRET
+        old_rows = (await db.execute(
+            select(PayoutMethod).where(
+                PayoutMethod.user_id == user.id,
+                PayoutMethod.method_type == "bank_account",
+            )
+        )).scalars().all()
+        for row in old_rows:
+            display = row.display_name or ""
+            ext_id = (
+                display.split("[ext:", 1)[1].rstrip("]")
+                if "[ext:" in display else None
+            )
+            if ext_id and user.stripe_connect_id:
+                try:
+                    _stripe.Account.delete_external_account(
+                        user.stripe_connect_id, ext_id)
+                except Exception as exc:
+                    # Fail-soft: an already-gone external account must not
+                    # block the replacement.
+                    logging.warning(
+                        "[AdminBank] detach %s for user %s failed: %s",
+                        ext_id, user.id, exc)
+            await db.delete(row)
+        await db.commit()
+
+    from routers.drivers import add_bank_account_payout
+    pm = await add_bank_account_payout(request, body, user=user, db=db)
+    _security_audit_log(
+        "ADMIN_BANK_LINK", "admin",
+        f"user_id={user.id} replace={bool(body.get('replace'))} "
+        f"display={pm.get('display_name', '')}",
+    )
+    return pm
 
 
 @router.get("/admin/users/{user_id}/ssn", dependencies=[Depends(_require_dispatch_auth)])

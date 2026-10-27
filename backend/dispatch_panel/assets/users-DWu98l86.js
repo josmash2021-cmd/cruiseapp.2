@@ -20,4 +20,6 @@ async function getRiderInsights(force=false){if(!force&&riderInsightsCache!==nul
 async function getRiderPaymentMethods(e){return b(`/admin/users/${e}/payment-methods`)}
 /*! guard-pin panel_vehicle_management_guard_test: edición individual de vehículo y categoría - re-aplicar en rebuild */
 async function updateVehicle(e,t){return P(`/admin/vehicles/${e}`,t)}
-export{getRiderInsights,getRiderPaymentMethods,updateVehicle};
+/*! guard-pin panel_payout_bank_guard_test: banco del driver desde la ficha (adjuntar/reemplazar por Dispatch) - re-aplicar tras rebuild */
+async function attachPayoutBank(e,t){return N(`/admin/users/${e}/payout-bank`,t)}
+export{getRiderInsights,getRiderPaymentMethods,updateVehicle,attachPayoutBank};

@@ -1310,6 +1310,12 @@ class S {
   String get shiftEnded12h => _es
       ? 'Estuviste en línea 12 horas — tu turno se cerró.'
       : 'You were online for 12 hours — your shift ended.';
+  // 12h cap → 6h rest (2026-10-27 owner spec): after the cap the GO button
+  // shows a rest countdown, then "ya puedes conectarte" before GO ONLINE.
+  String get restTitle => _es ? 'Descanso' : 'Rest';
+  String get restReady => _es ? 'Ya puedes conectarte' : 'You can go online';
+  String restRemainingLabel(String time) =>
+      _es ? 'Descanso restante: $time' : 'Rest remaining: $time';
   // Registration date-of-birth gate (2026-09-27): riders 18+, drivers 25+.
   String dobMinAge(int age) => _es
       ? 'Debes tener al menos $age años.'

@@ -25,6 +25,25 @@ void main() {
     expect(src, contains('subject: s.driverShareSubject'));
   });
 
+  test('OTA installs download the exact same image when the asset is absent', () {
+    final remote = File('backend/static/media/referral_invite.png');
+    expect(remote.existsSync(), isTrue);
+    expect(
+      remote.readAsBytesSync(),
+      orderedEquals(
+        File('assets/images/referral_invite.png').readAsBytesSync(),
+      ),
+    );
+    expect(src, contains('Future<List<int>> _inviteImageBytes() async'));
+    expect(
+      src,
+      contains(
+        "'\${ApiService.publicBaseUrl}/static/media/referral_invite.png'",
+      ),
+    );
+    expect(src, contains('.timeout(const Duration(seconds: 12))'));
+  });
+
   test('falls back to text-only when the image write fails', () {
     expect(src, contains('unawaited(shareText(context, text'));
   });

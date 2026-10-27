@@ -937,6 +937,11 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   void _onGoTap() async {
     // The mode flip dedups itself; two taps must not run the gates twice.
     if (_enteringOnline || _driverOnline) return;
+    final restRemaining = _restUntil?.difference(DateTime.now());
+    if (restRemaining != null && restRemaining > Duration.zero) {
+      _showRestRemaining(restRemaining);
+      return;
+    }
     // Dispatch GO switch (2026-10-23, owner spec — instant): a paused GO
     // never even starts the gates — the tap only explains.
     if (_goOnlineDisabled) {
@@ -1470,6 +1475,72 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     });
   }
 
+  void _setRestUntil(DateTime when) {
+    if (!mounted) return;
+    _restUntil = when;
+    _restJustFinishedAt = null;
+    PrefsCache.instance.then(
+        (p) => p.setInt('driver_rest_until', when.millisecondsSinceEpoch));
+    _restTickTimer?.cancel();
+    _restTickTimer =
+        Timer.periodic(const Duration(seconds: 1), (_) => _onRestTick());
+    _setState(() {});
+  }
+
+  void _restoreRestUntil() {
+    PrefsCache.instance.then((p) {
+      if (!mounted) return;
+      final ms = p.getInt('driver_rest_until') ?? 0;
+      if (ms <= 0) return;
+      final when = DateTime.fromMillisecondsSinceEpoch(ms);
+      if (when.isAfter(DateTime.now())) {
+        _setRestUntil(when);
+      } else {
+        p.setInt('driver_rest_until', 0);
+      }
+    });
+  }
+
+  void _onRestTick() {
+    if (!mounted) return;
+    final now = DateTime.now();
+    if (_restUntil != null) {
+      if (now.isBefore(_restUntil!)) {
+        _setState(() {});
+        return;
+      }
+      _restJustFinishedAt = now;
+      _restUntil = null;
+      PrefsCache.instance.then((p) => p.setInt('driver_rest_until', 0));
+      _setState(() {});
+      return;
+    }
+    final finishedAt = _restJustFinishedAt;
+    if (finishedAt != null) {
+      if (now.difference(finishedAt) < const Duration(milliseconds: 2500)) {
+        return;
+      }
+      _restJustFinishedAt = null;
+      _setState(() {});
+    }
+    _restTickTimer?.cancel();
+    _restTickTimer = null;
+  }
+
+  static String _fmtRest(Duration d) {
+    final h = d.inHours.toString().padLeft(2, '0');
+    final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$h:$m:$s';
+  }
+
+  void _showRestRemaining(Duration remaining) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(S.of(context).restRemainingLabel(_fmtRest(remaining))),
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
+
   /// Collapsed height of the sheet the closed GO disc floats above — home's
   /// `_panelBaseH` (grab handle + status row, 52, plus the home-indicator
   /// inset). The merged panel's own collapsed geometry lives with the
@@ -1489,12 +1560,20 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   // ═══════════════════════════════════════════════════
   Widget _buildGoButton({double radius = 16.0, double morph = 1.0}) {
     final faceState = _faceGateState;
+    final now = DateTime.now();
+    final restRemaining = _restUntil?.difference(now);
+    final resting = restRemaining != null && restRemaining > Duration.zero;
+    final readyRecently = _restJustFinishedAt != null &&
+        now.difference(_restJustFinishedAt!) <
+            const Duration(milliseconds: 2500);
     return GestureDetector(
       // Dispatch GO switch (2026-10-23 owner spec): paused = the tap ONLY
       // explains, never flips — and it outranks even the face gate.
       // Face gate (2026-10-23 owner spec): pending review = dead button;
       // verify = the red "Verificar" runs the liveness flow, not the flip.
-      onTap: _goOnlineDisabled
+      onTap: resting
+          ? () => _showRestRemaining(restRemaining)
+          : _goOnlineDisabled
           ? _showGoOnlineDisabledDialog
           : faceState == 2
               ? null
@@ -1555,16 +1634,20 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // será gris y no tendrá animación — la animación es solo para GO
           // ONLINE") — the gold stays for the normal state. The dispatch GO
           // switch paints the same dead grey and outranks both.
-          final topPaint = _goOnlineDisabled
+          final topPaint = resting
               ? const Color(0xFF6B6B70)
-              : faceState != 0
+              : _goOnlineDisabled
                   ? const Color(0xFF6B6B70)
-                  : topColor;
-          final botPaint = _goOnlineDisabled
+                  : faceState != 0
+                      ? const Color(0xFF6B6B70)
+                      : topColor;
+          final botPaint = resting
               ? const Color(0xFF4A4A4F)
-              : faceState != 0
+              : _goOnlineDisabled
                   ? const Color(0xFF4A4A4F)
-                  : botColor;
+                  : faceState != 0
+                      ? const Color(0xFF4A4A4F)
+                      : botColor;
           const glowColor = Color(0xFFE8C547);
 
           // Black on gold — muted while dimmed.
@@ -1592,19 +1675,23 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // zone picked the button names the task; verification and docs
           // keep gating the TAP (they route to the fix), never the paint
           // (2026-10-11 spec).
-          final pillLabel = _enteringOnline
-              ? 'GOING ONLINE...'
-              : faceState == 1
-                  ? S.of(context).goVerify
-                  : faceState == 2
-                      ? S.of(context).faceReviewPending
-                      : dimmed
-                          ? S.of(context).zoneSelectAction
-                          : !docsOk
-                              ? S.of(context).viewIssue
-                              : _goShowsResume
-                                  ? S.of(context).resumeOnline
-                                  : S.of(context).goOnline;
+          final pillLabel = resting
+              ? '${S.of(context).restTitle} ${_fmtRest(restRemaining)}'
+              : readyRecently
+                  ? S.of(context).restReady
+                  : _enteringOnline
+                      ? 'GOING ONLINE...'
+                      : faceState == 1
+                          ? S.of(context).goVerify
+                          : faceState == 2
+                              ? S.of(context).faceReviewPending
+                              : dimmed
+                                  ? S.of(context).zoneSelectAction
+                                  : !docsOk
+                                      ? S.of(context).viewIssue
+                                      : _goShowsResume
+                                          ? S.of(context).resumeOnline
+                                          : S.of(context).goOnline;
 
           return Transform.scale(
             scale: igniteScale * throb,
@@ -1766,14 +1853,22 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                               child: FittedBox(
                                 fit: BoxFit.scaleDown,
                                 child: Text(
-                                  _goShowsResume
-                                      ? S.of(context).resumeOnline
-                                      : 'GO',
+                                  resting
+                                      ? _fmtRest(restRemaining)
+                                      : readyRecently
+                                          ? S.of(context).restReady
+                                          : _goShowsResume
+                                              ? S.of(context).resumeOnline
+                                              : 'GO',
                                   maxLines: 1,
                                   style: TextStyle(
                                     color: fgColor,
                                     fontSize: ui.lerpDouble(
-                                        _goShowsResume ? 15 : 22, 14, morph),
+                                        _goShowsResume || readyRecently
+                                            ? 15
+                                            : 22,
+                                        14,
+                                        morph),
                                     fontWeight: FontWeight.w900,
                                     letterSpacing: 1.2,
                                   ),
@@ -1804,7 +1899,11 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                                   ),
                                   child: Text(
                                     pillLabel,
-                                    key: ValueKey<String>(pillLabel),
+                                    key: ValueKey<String>(resting
+                                        ? 'resting'
+                                        : readyRecently
+                                            ? 'ready'
+                                            : pillLabel),
                                     maxLines: 1,
                                     style: TextStyle(
                                       color: fgColor,
@@ -1832,6 +1931,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     !dimmed &&
                     morph > 0.5 &&
                     faceState == 0 &&
+                    !resting &&
                     !_goOnlineDisabled)
                   Positioned.fill(
                     child: IgnorePointer(
@@ -1870,6 +1970,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     !dimmed &&
                     morph <= 0.5 &&
                     faceState == 0 &&
+                    !resting &&
                     !_goOnlineDisabled)
                   Positioned.fill(
                     child: IgnorePointer(

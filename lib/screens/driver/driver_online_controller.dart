@@ -1085,6 +1085,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         if (DateTime.now().difference(started) >= const Duration(hours: 12)) {
           unawaited(_exitOnlineMode().then((_) {
             if (!mounted) return;
+            // 2026-10-27 owner spec: after the 12h cap the GO button shows a
+            // 6h rest countdown instead of just the offline home.
+            _setRestUntil(DateTime.now().add(const Duration(hours: 6)));
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(
                 S.of(context).shiftEnded12h,
@@ -1292,6 +1295,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (!mounted || !_driverOnline) return;
     unawaited(_exitOnlineMode().then((_) {
       if (!mounted) return;
+      // 2026-10-27 owner spec: after the 12h cap the GO button shows a 6h
+      // rest countdown instead of just the offline home.
+      _setRestUntil(DateTime.now().add(const Duration(hours: 6)));
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           S.of(context).shiftEnded12h,

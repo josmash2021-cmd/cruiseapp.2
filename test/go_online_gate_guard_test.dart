@@ -55,23 +55,33 @@ void main() {
             '      _showGoOnlineDisabledDialog();\n'
             '      return;\n'
             '    }'));
-    // The button tap routes to the dialog, outranking the face gate.
+    final compactOffline = offline.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-        offline,
-        contains('onTap: _goOnlineDisabled\n'
-            '          ? _showGoOnlineDisabledDialog'));
+      compactOffline,
+      contains(
+        'onTap: resting ? () => _showRestRemaining(restRemaining) '
+        ': _goOnlineDisabled ? _showGoOnlineDisabledDialog',
+      ),
+    );
     expect(offline, contains('void _showGoOnlineDisabledDialog()'));
   });
 
   test('the paused GO paints dead grey, outranking the face gate', () {
+    final compactOffline = offline.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-        offline,
-        contains('final topPaint = _goOnlineDisabled\n'
-            '              ? const Color(0xFF6B6B70)'));
+      compactOffline,
+      contains(
+        'final topPaint = resting ? const Color(0xFF6B6B70) '
+        ': _goOnlineDisabled ? const Color(0xFF6B6B70)',
+      ),
+    );
     expect(
-        offline,
-        contains('final botPaint = _goOnlineDisabled\n'
-            '              ? const Color(0xFF4A4A4F)'));
+      compactOffline,
+      contains(
+        'final botPaint = resting ? const Color(0xFF4A4A4F) '
+        ': _goOnlineDisabled ? const Color(0xFF4A4A4F)',
+      ),
+    );
   });
 
   test('socket: stream + live subscription + dispose cancel', () {

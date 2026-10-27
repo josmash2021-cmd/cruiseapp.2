@@ -66,32 +66,33 @@ void main() {
         reason: 'the RED verify died by owner spec 2026-10-23');
     expect(offline, isNot(contains("const Color(0xFF9A1B1B)")),
         reason: 'the red gradient bottom died with it');
-    expect(offline,
-        contains('faceState != 0\n                  ? const Color(0xFF6B6B70)'),
+    final compactOffline = offline.replaceAll(RegExp(r'\s+'), ' ');
+    expect(compactOffline,
+        contains('faceState != 0 ? const Color(0xFF6B6B70)'),
         reason: 'verify AND pending paint the same dead grey');
-    expect(offline,
-        contains('faceState != 0\n                  ? const Color(0xFF4A4A4F)'),
+    expect(compactOffline,
+        contains('faceState != 0 ? const Color(0xFF4A4A4F)'),
         reason: 'grey gradient bottom too');
     expect(offline, contains('? _onFaceVerifyTap'),
         reason: 'verify routes to the selfie flow, never the flip');
   });
 
   test('animation belongs to GO ONLINE only (owner spec 2026-10-23)', () {
+    final compactOffline = offline.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-        offline,
-        contains('final igniteScale = faceState == 0 && !_goOnlineDisabled\n'
-            '              ? (_goIgniteAnim?.value ?? 1.0)\n'
-            '              : 1.0;'),
+        compactOffline,
+        contains('final igniteScale = faceState == 0 && !_goOnlineDisabled '
+            '? (_goIgniteAnim?.value ?? 1.0) : 1.0;'),
         reason: 'no ignite pop in verify/pending/paused');
     expect(
-        offline,
+        compactOffline,
         contains(
-            'morph > 0.5 &&\n                    faceState == 0 &&\n                    !_goOnlineDisabled'),
+            'morph > 0.5 && faceState == 0 && !resting && !_goOnlineDisabled'),
         reason: 'no gloss sweep on a grey face-gated GO');
     expect(
-        offline,
+        compactOffline,
         contains(
-            'morph <= 0.5 &&\n                    faceState == 0 &&\n                    !_goOnlineDisabled'),
+            'morph <= 0.5 && faceState == 0 && !resting && !_goOnlineDisabled'),
         reason: 'no radar sweep on a grey face-gated GO');
     expect(offline, contains('(faceState != 0 ? 0.25 : 1.0)'),
         reason: 'the glow dims in BOTH non-normal face states');

@@ -899,6 +899,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   DateTime? _nextOfferRevealAt;
   bool _offerGateEffectsPending = false;
 
+  DateTime? _restUntil;
+  DateTime? _restJustFinishedAt;
+  Timer? _restTickTimer;
+
   // -- Driver profile photo --
   String? _driverPhotoUrl;
 
@@ -1052,6 +1056,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     DriverOnlineScreen.mountedCount++;
     _enforceDriverRole();
     _enforceAccountApproval();
+    _restoreRestUntil();
     unawaited(_ensureAirportState());
     WidgetsBinding.instance.addObserver(this);
     _startMotionDiag();
@@ -1827,6 +1832,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     DriverOnlineScreen.shiftEndedNotifier.removeListener(_onShiftEndedPush);
     DriverOnlineScreen.faceReviewNotifier.removeListener(_onFaceReviewPush);
     _faceReviewTimer?.cancel();
+    _restTickTimer?.cancel();
     _introTimer?.cancel();
     _shiftCapTimer?.cancel();
     if (_networkListener != null) {

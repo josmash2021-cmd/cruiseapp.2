@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/haptic_service.dart';
@@ -102,6 +103,25 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
 
   String _dollars(int cents) => '\$${(cents / 100).toStringAsFixed(0)}';
 
+  Future<List<int>> _inviteImageBytes() async {
+    try {
+      final data = await rootBundle.load('assets/images/referral_invite.png');
+      return data.buffer
+          .asUint8List(data.offsetInBytes, data.lengthInBytes);
+    } catch (e) {
+      debugPrint('[Referral] bundled image unavailable, downloading: $e');
+    }
+    final url =
+        '${ApiService.publicBaseUrl}/static/media/referral_invite.png';
+    final response = await http
+        .get(Uri.parse(url))
+        .timeout(const Duration(seconds: 12));
+    if (response.statusCode != 200 || response.bodyBytes.length < 10000) {
+      throw Exception('invite image HTTP ${response.statusCode}');
+    }
+    return response.bodyBytes;
+  }
+
   Future<void> _shareInvite() async {
     if (_code.isEmpty) return;
     HapticService.mediumImpact();
@@ -129,8 +149,8 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     try {
       final dir = await getTemporaryDirectory();
       final f = File('${dir.path}/cruise_referral_invite.png');
-      final data = await rootBundle.load('assets/images/referral_invite.png');
-      await f.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      final bytes = await _inviteImageBytes();
+      await f.writeAsBytes(bytes, flush: true);
       if (!mounted) return;
       await Share.shareXFiles(
         [XFile(f.path)],
@@ -139,6 +159,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
       );
     } catch (e) {
       debugPrint('[Referral] image share failed, falling back to text: $e');
+      if (!mounted) return;
       unawaited(shareText(context, text, subject: s.driverShareSubject));
     }
   }

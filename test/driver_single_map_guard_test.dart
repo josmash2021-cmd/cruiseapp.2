@@ -175,6 +175,27 @@ void main() {
           reason: 'a mount whose style never loads remounts itself, once per '
               'mount');
     });
+
+    test('the boot veil absorbs gestures only until the first real render', () {
+      final widgets = File('lib/screens/driver/driver_online_widgets.dart')
+          .readAsStringSync();
+      final start = widgets.indexOf('child: AbsorbPointer(');
+      final end = widgets.indexOf('// The marker, painted by Flutter', start);
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+      final veil = widgets.substring(start, end);
+      expect(
+        veil,
+        contains('absorbing: !(_mapStyleLoaded && _firstRenderDone)'),
+        reason: 'a drag over the startup still must not move only the arrow',
+      );
+      expect(
+        veil,
+        contains('opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0'),
+        reason: 'gestures return exactly when the live map replaces the veil',
+      );
+      expect(veil, isNot(contains('child: IgnorePointer(')));
+    });
   });
 
   group('offline header — smooth alternating status + subtitle + wheel', () {

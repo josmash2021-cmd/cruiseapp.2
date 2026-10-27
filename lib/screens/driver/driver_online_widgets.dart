@@ -140,7 +140,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // that navy (2026-08-29): at 0.30 the still itself read grey.
               if (!kIsWeb)
                 Positioned.fill(
-                  child: IgnorePointer(
+                  child: AbsorbPointer(
+                    absorbing: !(_mapStyleLoaded && _firstRenderDone),
                     child: AnimatedOpacity(
                       opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0,
                       duration: const Duration(milliseconds: 200),

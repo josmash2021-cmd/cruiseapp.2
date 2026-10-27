@@ -37,4 +37,26 @@ void main() {
     expect(controller, contains('One card per TRIP, newest offer wins'));
     expect(controller, contains('filtered = newestByTrip.values.toList();'));
   });
+
+  group('sequential queue with 10s gap after dismiss (2026-10-27 user spec)', () {
+    test('the next card waits 10s after reject AND after expire', () {
+      expect(
+        controller,
+        contains('_nextOfferRevealAt = DateTime.now().add(const Duration(seconds: 10));'),
+        reason: 'both dismiss paths must arm the 10s gate',
+      );
+      expect(controller, contains('_offerGateEffectsPending = true;'));
+    });
+
+    test('the display shows at most one card and nothing during the gap', () {
+      expect(widgets, contains('List<Map<String, dynamic>> get _visibleOffers'));
+      expect(widgets, contains('_pendingOffers.take(1).toList()'));
+      expect(widgets, contains('itemCount: _visibleOffers.length'));
+    });
+
+    test('the reveal effects fire when the gate opens, not on arrival', () {
+      expect(controller, contains('final fireGateReveal ='));
+      expect(controller, contains('if ((isNewFirstOffer || fireGateReveal) && !gatePending)'));
+    });
+  });
 }

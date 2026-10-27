@@ -1356,7 +1356,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     );
   }
 
-  // â”€â”€ STACKED RIDE OFFER CARDS (Spark-style — persistent, no timeout) â”€â”€
+  /// The offers the driver may actually see right now (2026-10-27 user spec):
+  /// at most ONE card, and nothing while the 10s post-dismiss gate is open.
+  /// Demand itself stays in _pendingOffers; this is just the display gate.
+  List<Map<String, dynamic>> get _visibleOffers {
+    final gate = _nextOfferRevealAt;
+    if (gate != null && DateTime.now().isBefore(gate)) {
+      return const <Map<String, dynamic>>[];
+    }
+    return _pendingOffers.take(1).toList();
+  }
+
+
   Widget _rideOfferCards(
     bool isDark,
     Color card,
@@ -1434,9 +1445,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             padding: EdgeInsets.zero,
-            itemCount: _pendingOffers.length,
+            itemCount: _visibleOffers.length,
             itemBuilder: (ctx, i) {
-              final offer = _pendingOffers[i];
+              final offer = _visibleOffers[i];
               final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
               final isAnimating = _animatingOfferId == oid;
               final isRejecting = _rejectingOfferId == oid;

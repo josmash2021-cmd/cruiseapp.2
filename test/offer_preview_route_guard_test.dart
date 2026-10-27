@@ -62,7 +62,7 @@ void main() {
               'race within seconds');
       final rej = ctrl.indexOf('Future<void> _rejectOffer(');
       expect(rej, isNonNegative);
-      final rejBody = ctrl.substring(rej, rej + 2600);
+      final rejBody = ctrl.substring(rej, rej + 3400);
       expect(rejBody.contains('_sweepPreviewOrphans()'), isTrue,
           reason: 'reject sweeps immediately — the route must not outlive '
               'the card by even a frame');

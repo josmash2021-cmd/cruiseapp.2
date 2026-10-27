@@ -2965,7 +2965,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         : null;
     final isNewFirstOffer = nextFirstId != null && nextFirstId != prevFirstId;
 
-    if (isNewFirstOffer) {
+    // 2026-10-27 user spec: while the 10s post-dismiss gate is open, hold the
+    // reveal effects (sound/pop) for the next card too — they fire on the
+    // first applyOffers tick after the gate opens, when it actually shows.
+    final gatePending = _nextOfferRevealAt != null &&
+        DateTime.now().isBefore(_nextOfferRevealAt!);
+    final fireGateReveal =
+        _offerGateEffectsPending && !gatePending && filtered.isNotEmpty;
+    if (fireGateReveal) _offerGateEffectsPending = false;
+
+    if ((isNewFirstOffer || fireGateReveal) && !gatePending) {
       // A new offer pulls the driver back to this screen (2026-08-25):
       // before, an offer arriving while the scheduled-rides page (or any
       // other) sat on top played the sound but drew the card UNDERNEATH —
@@ -3067,6 +3076,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // was not the visible page, so its clock never ran) is rejected here
     // the same way the ring would have — otherwise the next update that
     // mentions it again would resurrect the card with a fresh countdown.
+    if (expired.isNotEmpty) {
+      // Same 10s gate as a manual skip (2026-10-27 user spec): the next
+      // offer in the queue only appears after the beat, never instantly.
+      _nextOfferRevealAt = DateTime.now().add(const Duration(seconds: 10));
+      _offerGateEffectsPending = true;
+    }
     for (final o in expired) {
       final id = idOf(o);
       _offerFirstSeenAt.remove(id);
@@ -4490,6 +4505,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _setState(() {
           _rejectingOfferId = null;
           _pendingOffers.removeWhere((o) => o['offer_id'] == offerId);
+          // 2026-10-27 user spec: the NEXT offer may only appear 10s after a
+          // dismiss — the sequential queue keeps a beat between cards.
+          _nextOfferRevealAt = DateTime.now().add(const Duration(seconds: 10));
+          _offerGateEffectsPending = true;
           if (_pendingOffers.isEmpty) {
             _hideFindingBar = false;
             // FIX: Reset PageController to index 0 when no offers remain.

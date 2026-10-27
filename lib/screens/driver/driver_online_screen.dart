@@ -894,6 +894,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   int _currentOfferIndex = 0;
   final Set<String> _expandedOfferIds = {};
 
+  // Sequential offer queue (2026-10-27 user spec): after a dismiss the next
+  // card only appears 10s later, in a chain while there is demand.
+  DateTime? _nextOfferRevealAt;
+  bool _offerGateEffectsPending = false;
+
   // -- Driver profile photo --
   String? _driverPhotoUrl;
 

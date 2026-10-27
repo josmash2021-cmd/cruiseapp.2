@@ -235,9 +235,12 @@ async def test_drive_link_ios_gets_copyable_code_page(client, db):
     )
     assert res.status_code == 200
     assert "LUIS-GH78" in res.text
-    # 2026-10-23 branded redesign (owner spec): #141414, logo + store buttons,
-    # code below with a copy icon — the copy runs on a click handler.
+    # Minimal invite (owner spec): #141414, no card/panel, Premium Rideshare,
+    # store buttons and a copyable code with no boxed background.
     assert 'background:#141414' in res.text
+    assert 'background:transparent;border:0;box-shadow:none' in res.text
+    assert 'border-bottom:1px solid #E8C547' in res.text
+    assert "Premium Rideshare" in res.text
     assert "hero-logo.png" in res.text
     assert "navigator.clipboard.writeText" in res.text
     assert "apps.apple.com" in res.text

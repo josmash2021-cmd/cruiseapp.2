@@ -4445,18 +4445,18 @@ async def driver_referral_landing(code: str, request: Request,
 <meta name="twitter:card" content="summary_large_image"/>
 <style>
 body{{margin:0;background:#141414;color:#fff;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}}
-.card{{padding:36px 24px;max-width:380px;width:100%}}
+.card{{padding:36px 24px;max-width:380px;width:100%;background:transparent;border:0;box-shadow:none}}
 .logo{{width:min(280px,80%);margin:0 auto 22px;display:block}}
 p.sub{{color:#9a9aa2;font-size:14px;line-height:1.6;margin:0 0 18px}}
-a.btn{{display:flex;align-items:center;justify-content:center;gap:8px;background:#E8C547;color:#000;text-decoration:none;padding:15px 20px;border-radius:16px;font-size:14px;font-weight:800;letter-spacing:.3px}}
-a.btn.dark{{background:#1f1f26;color:#E8C547;border:1px solid rgba(232,197,71,.35)}}
+a.btn{{display:flex;align-items:center;justify-content:center;gap:8px;background:#E8C547;color:#000;text-decoration:none;padding:15px 20px;border-radius:12px;font-size:14px;font-weight:800;letter-spacing:.3px}}
+a.btn.dark{{background:transparent;color:#E8C547;border:1px solid rgba(232,197,71,.35)}}
 .stores{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}}
-.store{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:18px 10px;border-radius:18px;text-decoration:none;font-weight:800;font-size:13px;letter-spacing:.3px}}
+.store{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:18px 10px;border-radius:12px;text-decoration:none;font-weight:800;font-size:13px;letter-spacing:.3px}}
 .store.play{{background:#E8C547;color:#000}}
-.store.ios{{background:#1f1f26;color:#E8C547;border:1px solid rgba(232,197,71,.35)}}
+.store.ios{{background:transparent;color:#E8C547;border:1px solid rgba(232,197,71,.35)}}
 .store svg{{width:30px;height:30px}}
 .codelabel{{margin:22px 0 8px;color:#9a9aa2;font-size:12.5px;letter-spacing:.4px}}
-.code{{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 auto;padding:15px 18px;border:1.5px solid #E8C547;border-radius:16px;color:#E8C547;font-size:22px;font-weight:800;letter-spacing:1.5px;background:#1b1b21}}
+.code{{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 auto;padding:12px 4px;border:0;border-bottom:1px solid #E8C547;color:#E8C547;font-size:22px;font-weight:800;letter-spacing:1.5px;background:transparent}}
 .code button{{background:none;border:0;cursor:pointer;padding:4px;display:flex;align-items:center}}
 .code button svg{{fill:#E8C547}}
 </style>
@@ -4464,7 +4464,7 @@ a.btn.dark{{background:#1f1f26;color:#E8C547;border:1px solid rgba(232,197,71,.3
 <body>
 <div class="card">
 <img class="logo" src="https://cruiseinride.com/assets/media/hero-logo.png" alt="Cruise in Ride"/>
-<p class="sub">Conduce con Cruise — estás invitado. Descarga la app:</p>
+<p class="sub">Premium Rideshare — estás invitado. Descarga la app:</p>
 <div class="stores">
 <a class="store play" href="https://play.google.com/store/apps/details?id=com.cruiseinride.app"><svg viewBox="0 0 24 24"><path fill="#00A0FF" d="M3.5 2.4 12 12 3.5 21.6c-.4-.3-.5-.9-.5-1.6V4c0-.7.1-1.3.5-1.6z"/><path fill="#FFCE00" d="M3.5 2.4c.4-.3 1.1-.2 1.6.1l11.8 6.8-3.1 2.7L3.5 2.4z"/><path fill="#FF3A44" d="M3.5 21.6c.4.3 1.1.2 1.6-.1l8.7-5-3.1-2.7L3.5 21.6z"/><path fill="#00F076" d="M16.9 9.3l3.4 1.9c1 .6 1 2 0 2.6l-3.4 1.9-3.1-3.7 3.1-3.7z"/></svg>Google Play</a>
 <a class="store ios" href="https://apps.apple.com/app/id6760517086"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.86-3.03.38-1.02-.5-2.06-.51-3.11 0-1.31.63-2.53.48-3.48-.38C4.5 16.5 3.9 12.44 5.5 9.6c.82-1.47 2.15-2.4 3.66-2.4 1.14 0 1.91.5 2.86.5.93 0 1.64-.5 2.87-.5 1.36 0 2.66.74 3.48 1.9-3.1 1.7-2.6 5.9.66 7.02-.6 1.6-1.36 3.19-1.98 4.16Zm-5.23-14.5c.22-2.13 1.95-3.97 4.02-3.97.17 2.44-1.96 4.35-4.02 3.97Z"/></svg>App Store</a>

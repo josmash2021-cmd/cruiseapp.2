@@ -644,6 +644,58 @@ def _eta_cell(lat: float, lng: float) -> tuple[int, int]:
     return (int(lat / 0.005), int(lng / 0.005))
 
 
+async def _fetch_etas_osrm(
+    drivers: list, pickup_lat: float, pickup_lng: float,
+) -> dict[int, float] | None:
+    """Driving seconds driver -> pickup for every candidate, from ONE OSRM
+    /table request (batch: many sources, one destination). No api key, no
+    console enablement — this is what lets the ETA ranking work in prod
+    (2026-10-27). Same fail-open contract as the Google path: None when the
+    provider cannot answer for EVERY candidate.
+    """
+    import urllib.request
+
+    n = len(drivers)
+    if n == 0:
+        return {}
+    coords = ";".join(f"{d.lng},{d.lat}" for d in drivers) + f";{pickup_lng},{pickup_lat}"
+    sources = ";".join(str(i) for i in range(n))
+    url = (
+        f"https://router.project-osrm.org/table/v1/driving/{coords}"
+        f"?sources={sources}&destinations={n}&annotations=duration"
+    )
+
+    def _fetch():
+        with urllib.request.urlopen(url, timeout=_ETA_TOTAL_TIMEOUT_S) as resp:
+            return json.loads(resp.read().decode())
+
+    try:
+        data = await asyncio.wait_for(
+            asyncio.get_running_loop().run_in_executor(None, _fetch),
+            timeout=_ETA_TOTAL_TIMEOUT_S + 0.5,
+        )
+    except Exception as exc:
+        logging.warning("[Dispatch] OSRM ETA table failed: %s", exc)
+        return None
+
+    if not isinstance(data, dict) or data.get("code") != "Ok":
+        logging.warning("[Dispatch] OSRM ETA table answered code=%s",
+                        data.get("code") if isinstance(data, dict) else "no-payload")
+        return None
+    matrix = data.get("durations")
+    if not isinstance(matrix, list) or len(matrix) != n:
+        logging.warning("[Dispatch] OSRM ETA table returned no full matrix")
+        return None
+    etas: dict[int, float] = {}
+    for i, d in enumerate(drivers):
+        row = matrix[i]
+        if not isinstance(row, list) or not row or not isinstance(row[0], (int, float)):
+            logging.info("[Dispatch] OSRM ETA element not routable for driver %s", d.id)
+            return None
+        etas[d.id] = float(row[0])
+    return etas
+
+
 async def _fetch_etas_to_pickup(
     drivers: list, pickup_lat: float, pickup_lng: float,
 ) -> dict[int, float] | None:
@@ -654,6 +706,15 @@ async def _fetch_etas_to_pickup(
     answer for EVERY candidate — a partial ranking is worse than none, so
     the caller then keeps the haversine order. Never raises.
     """
+    # OSRM /table FIRST (2026-10-27, owner spec "que llegue antes el que
+    # tarda menos"): it returns the same driving-seconds matrix as Google's
+    # Distance Matrix but needs NO api key and NO console enablement. The
+    # old Google-only path was answering REQUEST_DENIED in prod, so the ETA
+    # ranking was silently degrading to straight-line distance. Google stays
+    # as the fallback when OSRM cannot answer.
+    osrm_etas = await _fetch_etas_osrm(drivers, pickup_lat, pickup_lng)
+    if osrm_etas is not None:
+        return osrm_etas
     if not GOOGLE_MAPS_API_KEY:
         return None
 

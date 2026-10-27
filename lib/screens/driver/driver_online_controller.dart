@@ -2934,6 +2934,24 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       return true;
     }).toList();
 
+    // One card per TRIP, newest offer wins (2026-10-27 user report "tarjetas
+    // duplicadas"): a retry/cascade can create two DispatchOffer rows for the
+    // same trip, and the offer_id dedup alone let the same ride show twice.
+    final newestByTrip = <String, Map<String, dynamic>>{};
+    for (final o in filtered) {
+      final tid = (o['trip_id'] ?? '').toString();
+      if (tid.isEmpty) {
+        newestByTrip['__no_trip_${newestByTrip.length}'] = o;
+        continue;
+      }
+      final prev = newestByTrip[tid];
+      if (prev == null ||
+          (toInt(o['offer_id']) ?? 0) > (toInt(prev['offer_id']) ?? 0)) {
+        newestByTrip[tid] = o;
+      }
+    }
+    filtered = newestByTrip.values.toList();
+
     final hadOffers = _pendingOffers.isNotEmpty;
 
     // Detect whether the leading offer has changed — covers both the 0→N transition

@@ -1378,16 +1378,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final cBorderC = Colors.white.withValues(alpha: 0.06);
     final acceptBg = _gold;
 
-    final safeIdx =
-        _currentOfferIndex.clamp(0, (_pendingOffers.length - 1).clamp(0, 999));
-    final currentOid = _pendingOffers.isNotEmpty
-        ? (_pendingOffers[safeIdx]['offer_id'] ??
-                _pendingOffers[safeIdx]['id'] ??
-                '')
-            .toString()
-        : '';
-    final isCardExpanded = _expandedOfferIds.contains(currentOid);
-
     return Padding(
       // A minimal gap from the screen edge — down from half the home
       // indicator's inset, which put 17 points of air under the card on a
@@ -1437,144 +1427,94 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               ],
             ),
           ),
-          // ── Horizontal swipeable offer cards (responsive) ──
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
-            // Exact as soon as the card reports its real height; the
-            // estimate below only ever covers the first frame.
-            height: _currentOfferCardHeight(context),
-            child: PageView.builder(
-              controller: _offerPageCtrl,
-              onPageChanged: (index) {
-                _setState(() => _currentOfferIndex = index);
-                HapticService.selectionClick();
-                // Swiping between offers browses them; it does not draw.
-                // Only an explicit tap on a card builds its route and pins.
-              },
-              itemCount: _pendingOffers.length,
-              itemBuilder: (ctx, i) {
-                final offer = _pendingOffers[i];
-                final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
-                final isAnimating = _animatingOfferId == oid;
-                final isRejecting = _rejectingOfferId == oid;
-                Widget card = _offerCard(
-                  offer,
-                  true,
-                  cCardBg,
-                  cCardBorder,
-                  cTextPrimary,
-                  cTextMuted,
-                  cRejectBg,
-                  cRejectText,
-                  acceptBg,
-                  cBorderC,
-                  // Only the page the driver is on runs its countdown. The
-                  // PageView builds its neighbour too, and a clock ticking
-                  // on an offer nobody has seen expires it for them.
-                  isVisible: i == _currentOfferIndex,
+          // ── Offer list: one card per trip, vertical (2026-10-27 user spec
+          // "tarjeta por tarjeta, no carrusel"). No PageView, no dots, no
+          // shared accept button — each card owns its accept action.
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            itemCount: _pendingOffers.length,
+            itemBuilder: (ctx, i) {
+              final offer = _pendingOffers[i];
+              final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+              final isAnimating = _animatingOfferId == oid;
+              final isRejecting = _rejectingOfferId == oid;
+              Widget card = _offerCard(
+                offer,
+                true,
+                cCardBg,
+                cCardBorder,
+                cTextPrimary,
+                cTextMuted,
+                cRejectBg,
+                cRejectText,
+                acceptBg,
+                cBorderC,
+                // Every card in the list is visible, so each runs its own
+                // countdown (the old PageView only ticked the current page).
+                isVisible: true,
+              );
+              // Pulse scale on tap-down/tap-up
+              if (isAnimating && _pulseAnim != null) {
+                card = AnimatedBuilder(
+                  animation: _pulseAnim!,
+                  builder: (_, child) => Transform.scale(
+                    scale: _pulseAnim!.value,
+                    child: child,
+                  ),
+                  child: card,
                 );
-                // Pulse scale on tap-down/tap-up
-                if (isAnimating && _pulseAnim != null) {
-                  card = AnimatedBuilder(
-                    animation: _pulseAnim!,
-                    builder: (_, child) => Transform.scale(
-                      scale: _pulseAnim!.value,
+              }
+              // Reject slide-down animation
+              if (isRejecting && _rejectSlideCtrl != null) {
+                card = AnimatedBuilder(
+                  animation: _rejectSlideCtrl!,
+                  builder: (_, child) => Transform.translate(
+                    offset: Offset(0, _rejectSlideCtrl!.value * 400),
+                    child: Opacity(
+                      opacity:
+                          (1.0 - _rejectSlideCtrl!.value).clamp(0.0, 1.0),
                       child: child,
                     ),
-                    child: card,
-                  );
-                }
-                // Reject slide-down animation
-                if (isRejecting && _rejectSlideCtrl != null) {
-                  card = AnimatedBuilder(
-                    animation: _rejectSlideCtrl!,
-                    builder: (_, child) => Transform.translate(
-                      offset: Offset(0, _rejectSlideCtrl!.value * 400),
-                      child: Opacity(
-                        opacity:
-                            (1.0 - _rejectSlideCtrl!.value).clamp(0.0, 1.0),
-                        child: child,
-                      ),
-                    ),
-                    child: card,
-                  );
-                }
-                return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapDown: (_) {
-                    _setState(() => _animatingOfferId = oid);
-                    _pulseCtrl?.forward();
-                  },
-                  // A tap does nothing but release the press animation.
-                  // The route draws itself when the card arrives; making
-                  // the tap draw it again meant a driver reading the
-                  // addresses restarted the camera under their own finger.
-                  onTap: () => _pulseCtrl?.reverse(),
-                  onTapCancel: () {
-                    _pulseCtrl?.reverse();
-                  },
-                  // Anchored to the bottom of the height it was given.
-                  //
-                  // The container starts at the _offerCardHeight estimate,
-                  // which reads a little high on purpose. Aligned to the
-                  // top, that slack sat under the Accept button and pushed
-                  // the whole card up the screen — the card floated with a
-                  // band of map beneath it. Aligned to the bottom, the same
-                  // slack lands above the card, where the map already is,
-                  // and the card keeps its small gap from the screen edge.
-                  // A frame later the measured height replaces the estimate
-                  // and the slack animates away.
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: _SizeReporter(
-                      onChanged: (size) => _onOfferCardMeasured(oid, size),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 4),
-                        child: card,
-                      ),
+                  ),
+                  child: card,
+                );
+              }
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (_) {
+                      _setState(() => _animatingOfferId = oid);
+                      _pulseCtrl?.forward();
+                    },
+                    // A tap does nothing but release the press animation.
+                    // The route draws itself when the card arrives; making
+                    // the tap draw it again meant a driver reading the
+                    // addresses restarted the camera under their own finger.
+                    onTap: () => _pulseCtrl?.reverse(),
+                    onTapCancel: () {
+                      _pulseCtrl?.reverse();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 4),
+                      child: card,
                     ),
                   ),
-                );
-              },
-            ),
+                  // Each card owns its accept pill (2026-10-27): with several
+                  // offers on screen, the old shared pill only acted on the
+                  // page the driver was looking at.
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                    child: _buildAcceptButton(offer, oid),
+                  ),
+                ],
+              );
+            },
           ),
-          // ── Page indicator dots ──
-          if (_pendingOffers.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(_pendingOffers.length, (i) {
-                  final active = i == _currentOfferIndex;
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    width: active ? 18 : 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color:
-                          active ? _gold : Colors.white.withValues(alpha: 0.25),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  );
-                }),
-              ),
-            ),
-          // ── Accept — flat gold pill floating on the map, OUTSIDE the
-          // card (driver spec 2026-08-22, Uber's Reserve pill style: no
-          // dark box behind it). It acts on the page the driver is
-          // looking at, so it lives here where the current index is
-          // known, not inside any one card.
-          if (_pendingOffers.isNotEmpty)
-            Padding(
-              // Same horizontal inset as the offer card (16 parent + 4 wrapper)
-              // — the pill aligns exactly with the card's edges, never
-              // wider than it (user spec 2026-08-24).
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
-              child: _buildAcceptButton(_pendingOffers[safeIdx], currentOid),
-            ),
           // â”€â”€ Scrollable card list (hidden when collapsed) â”€â”€
 
           // ── Destination filter chip ("heading to …") ──
@@ -5413,47 +5353,6 @@ class _ShimmerBadgeState extends State<_ShimmerBadge>
     return (1.0 - dist * 2.0).clamp(0.0, 1.0);
   }
 }
-
-/// Reports its child's laid-out size after every change.
-///
-/// The offer-card PageView needs a height up front but the card's real
-/// height depends on the font the platform actually renders (web runs a
-/// few points taller per row than the Roboto the estimate was tuned
-/// for). Wrapping the card in this lets the container start at the
-/// estimate and animate to the measured height a frame later — the end
-/// of hand-tuned constants painting overflow stripes.
-class _SizeReporter extends StatefulWidget {
-  const _SizeReporter({required this.onChanged, required this.child});
-
-  final ValueChanged<Size> onChanged;
-  final Widget child;
-
-  @override
-  State<_SizeReporter> createState() => _SizeReporterState();
-}
-
-class _SizeReporterState extends State<_SizeReporter> {
-  Size? _reported;
-
-  @override
-  Widget build(BuildContext context) {
-    return NotificationListener<SizeChangedLayoutNotification>(
-      onNotification: (_) {
-        // The notification carries no size — read it after the frame.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          final size = context.size;
-          if (size == null || size == _reported) return;
-          _reported = size;
-          widget.onChanged(size);
-        });
-        return true;
-      },
-      child: SizeChangedLayoutNotifier(child: widget.child),
-    );
-  }
-}
-
 
 /// Sequential label swap: the current line fades out completely, the child
 /// is rebuilt with the new text, then it fades back in. Unlike

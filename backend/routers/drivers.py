@@ -2343,9 +2343,15 @@ async def add_bank_account_payout(
     """Attach a bank account as an external_account on the driver's Stripe
     Connect account so the weekly Monday ACH payout has a destination.
 
-    The client tokenizes the typed numbers with the Stripe SDK and sends
-    only the resulting ``bank_token`` (``btok_...``) — account and routing
-    numbers never reach our servers. On our Custom-style accounts
+    Two input paths (2026-10-26):
+      * iOS — the client tokenizes the typed numbers with the Stripe SDK and
+        sends only the resulting ``bank_token`` (``btok_...``).
+      * Android — the SDK fails to mint tokens on real devices, so the app
+        posts ``routing_number`` + ``account_number`` over TLS and THIS
+        endpoint mints the token with the secret key. The digits are never
+        logged and never stored; only the token id and the last4 survive.
+
+    On our Custom-style accounts
     (``requirement_collection == 'application'``) the platform also owns
     KYC collection, so the body carries the driver's identity fields
     (first/last name, dob, address) and ``tos_accepted``; they are pushed
@@ -2364,6 +2370,37 @@ async def add_bank_account_payout(
 
     bank_token = (body.get("bank_token") or "").strip()
     set_default = bool(body.get("set_default", False))
+    # Server-side tokenization (2026-10-26, owner spec): on Android the Stripe
+    # SDK fails to mint bank tokens on real devices and the driver only gets
+    # the generic "error al agregar método". The app may now post the digits
+    # over TLS and the backend mints the token with the secret key. Digits are
+    # NEVER logged and NEVER stored — only the token id and the last4 survive.
+    if not bank_token:
+        routing = re.sub(r"\D", "", str(body.get("routing_number") or ""))
+        account = re.sub(r"\D", "", str(body.get("account_number") or ""))
+        if len(routing) != 9 or not (4 <= len(account) <= 17):
+            raise HTTPException(400, "bank_token required (collect it client-side)")
+        holder = (body.get("account_holder_name") or "").strip() or (
+            f"{user.first_name or ''} {user.last_name or ''}".strip())
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_SECRET
+            tok = _stripe.Token.create(bank_account={
+                "country": "US",
+                "currency": "usd",
+                "account_holder_name": holder,
+                "account_holder_type": "individual",
+                "routing_number": routing,
+                "account_number": account,
+            })
+            bank_token = str(tok["id"])
+        except Exception as e:
+            # Log the type only — never the digits (they are the driver's
+            # bank numbers, not something that belongs in our logs).
+            logging.warning(
+                "[StripeBankAccount] server tokenize rejected for user %s (%s)",
+                user.id, type(e).__name__)
+            raise HTTPException(400, f"The bank details were rejected: {str(e)[:200]}")
     if not bank_token:
         raise HTTPException(400, "bank_token required (collect it client-side)")
 

@@ -22,10 +22,11 @@ import {
 import { m as getMapboxToken } from "./mapboxToken-DDoCRQix.js";
 
 /*! guard-pin panel_verification_order_guard_test: submittedAt:_(e.created_at)??_(e.verified_at) — la regla real está en src/models/verification.ts (no borrar) */
-/*! guard-pin panel_live_map_guard_test: /mapa usa SOLO la sesión Dispatch (W): drivers/online + trips/active cada 20 s con pestaña visible, AbortController y secuencia; active-trip latest-wins al enfocar un driver; rutas EXCLUSIVAMENTE del GeoJSON real (nunca línea recta de respaldo); riders en pickup, zonas admin/zones/sectors debajo de markers; foco/Mostrar todos restaura cámara; fits FL/AL/Ambos solo al iniciar o por acción explícita. Re-aplicar tras rebuild del source React fuera del repo. */
+/*! guard-pin panel_live_map_guard_test: /mapa usa SOLO la sesión Dispatch (W): drivers/online cada 2 s + trips/active cada 20 s con pestaña visible, AbortController y secuencia; marcadores interpolados por rAF entre fixes reales, sin extrapolar ni reencuadrar; active-trip latest-wins al enfocar; rutas EXCLUSIVAMENTE del GeoJSON real; riders en pickup, zonas debajo de markers; foco/Mostrar todos restaura cámara; fits FL/AL/Ambos solo al iniciar o acción explícita. Re-aplicar tras rebuild del source React fuera del repo. */
 
 const GOLD = "#E8C547";
 const POLL_INTERVAL_MS = 20000;
+const DRIVER_POLL_INTERVAL_MS = 2000;
 const ZONES_SOURCE = "mapa-zones";
 const ZONES_FILL_LAYER = "mapa-zones-fill";
 const ZONES_LINE_LAYER = "mapa-zones-line";
@@ -327,9 +328,12 @@ function useLiveMapData(refreshKey) {
   React.useEffect(() => {
     let disposed = false;
     let pollTimer = null;
+    let driverPollTimer = null;
     let liveController = null;
+    let driverController = null;
     let zoneController = null;
     let requestSequence = 0;
+    let driverSequence = 0;
     let zoneSequence = 0;
     let zonesLoaded = false;
     let zonesFailed = false;
@@ -341,6 +345,40 @@ function useLiveMapData(refreshKey) {
       error: null,
       zonesError: null,
     }));
+
+    async function loadDrivers() {
+      if (disposed || document.visibilityState !== "visible") return;
+      driverController?.abort();
+      const controller = new AbortController();
+      driverController = controller;
+      const sequence = ++driverSequence;
+      try {
+        const payload = await apiGet("/admin/drivers/online", {
+          signal: controller.signal,
+        });
+        if (disposed || sequence !== driverSequence) return;
+        const drivers = normalizeDrivers(payload);
+        setSnapshot((previous) => ({ ...previous, drivers }));
+      } catch (error) {
+        if (
+          disposed ||
+          sequence !== driverSequence ||
+          controller.signal.aborted ||
+          isAbortError(error)
+        ) {
+          return;
+        }
+        console.warn("No se pudieron actualizar los conductores.", error);
+      } finally {
+        if (
+          !disposed &&
+          sequence === driverSequence &&
+          document.visibilityState === "visible"
+        ) {
+          driverPollTimer = setTimeout(loadDrivers, DRIVER_POLL_INTERVAL_MS);
+        }
+      }
+    }
 
     async function loadLive() {
       if (disposed || document.visibilityState !== "visible") return;
@@ -435,32 +473,44 @@ function useLiveMapData(refreshKey) {
     function handleVisibilityChange() {
       if (document.visibilityState !== "visible") {
         if (pollTimer !== null) clearTimeout(pollTimer);
+        if (driverPollTimer !== null) clearTimeout(driverPollTimer);
         pollTimer = null;
+        driverPollTimer = null;
         requestSequence += 1;
+        driverSequence += 1;
         zoneSequence += 1;
         liveController?.abort();
+        driverController?.abort();
         zoneController?.abort();
         liveController = null;
+        driverController = null;
         zoneController = null;
         zonesInFlight = false;
         return;
       }
       if (pollTimer !== null) clearTimeout(pollTimer);
+      if (driverPollTimer !== null) clearTimeout(driverPollTimer);
       pollTimer = null;
+      driverPollTimer = null;
       void loadLive();
+      driverPollTimer = setTimeout(loadDrivers, DRIVER_POLL_INTERVAL_MS);
       void loadZones();
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     void loadLive();
+    driverPollTimer = setTimeout(loadDrivers, DRIVER_POLL_INTERVAL_MS);
     void loadZones();
 
     return () => {
       disposed = true;
       requestSequence += 1;
+      driverSequence += 1;
       zoneSequence += 1;
       if (pollTimer !== null) clearTimeout(pollTimer);
+      if (driverPollTimer !== null) clearTimeout(driverPollTimer);
       liveController?.abort();
+      driverController?.abort();
       zoneController?.abort();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
@@ -487,6 +537,40 @@ function riderMarkerColor(trip) {
   if (trip.phase.key === "waiting") return "#9CA3AF";
   if (trip.phase.key === "arrived") return "#F5D990";
   return GOLD;
+}
+
+function samePosition(first, second) {
+  return (
+    Array.isArray(first) &&
+    Array.isArray(second) &&
+    first[0] === second[0] &&
+    first[1] === second[1]
+  );
+}
+
+function motionPosition(motion, now) {
+  if (!motion) return null;
+  const progress = Math.min(
+    1,
+    Math.max(0, (now - motion.startedAt) / DRIVER_POLL_INTERVAL_MS),
+  );
+  return [
+    motion.from[0] + (motion.target[0] - motion.from[0]) * progress,
+    motion.from[1] + (motion.target[1] - motion.from[1]) * progress,
+  ];
+}
+
+function nextDriverMotion(previous, target, now) {
+  if (!validCoordinatePair(target)) return previous ?? null;
+  if (previous && samePosition(previous.target, target)) return previous;
+  const from = previous ? motionPosition(previous, now) : target.slice(0, 2);
+  return { from, target: target.slice(0, 2), startedAt: now };
+}
+
+function isStaleDriverUpdate(previousTimestamp, nextTimestamp) {
+  const previous = Date.parse(previousTimestamp);
+  const next = Date.parse(nextTimestamp);
+  return Number.isFinite(previous) && Number.isFinite(next) && next < previous;
 }
 
 function updateDriverElement(element, driver, selected) {
@@ -1099,7 +1183,14 @@ function FleetMap({ token }) {
       const selected = driver.id === selectedDriverId;
       const existing = driverMarkersRef.current.get(driver.id);
       if (existing) {
-        existing.marker.setLngLat(driver.position);
+        if (!isStaleDriverUpdate(existing.lastUpdated, driver.lastUpdated)) {
+          existing.motion = nextDriverMotion(
+            existing.motion,
+            driver.position,
+            performance.now(),
+          );
+          existing.lastUpdated = driver.lastUpdated;
+        }
         updateDriverElement(existing.element, driver, selected);
       } else {
         const { element, clickHandler } = createDriverElement(
@@ -1114,6 +1205,8 @@ function FleetMap({ token }) {
           marker,
           element,
           clickHandler,
+          motion: nextDriverMotion(null, driver.position, performance.now()),
+          lastUpdated: driver.lastUpdated,
         });
       }
     }
@@ -1160,6 +1253,40 @@ function FleetMap({ token }) {
     showRiders,
     closePopup,
   ]);
+
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    let frameId = null;
+
+    function animate(now) {
+      if (mapRef.current !== map || document.visibilityState !== "visible") {
+        frameId = null;
+        return;
+      }
+      for (const entry of driverMarkersRef.current.values()) {
+        const position = motionPosition(entry.motion, now);
+        if (position) entry.marker.setLngLat(position);
+      }
+      frameId = requestAnimationFrame(animate);
+    }
+
+    function handleAnimationVisibility() {
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      frameId = null;
+      if (document.visibilityState === "visible") {
+        frameId = requestAnimationFrame(animate);
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleAnimationVisibility);
+    handleAnimationVisibility();
+    return () => {
+      document.removeEventListener("visibilitychange", handleAnimationVisibility);
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      frameId = null;
+    };
+  }, [mapReady]);
 
   React.useEffect(() => {
     const map = mapRef.current;

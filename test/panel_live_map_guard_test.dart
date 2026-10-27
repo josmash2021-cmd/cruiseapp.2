@@ -70,6 +70,82 @@ void main() {
         reason: 'the visible error state has a real retry action');
   });
 
+  test('driver-only polling stays at 2s and does not refresh trip detail', () {
+    expect(chunk, contains('const DRIVER_POLL_INTERVAL_MS = 2000'));
+    expect(chunk, contains('setTimeout(loadDrivers, DRIVER_POLL_INTERVAL_MS)'));
+    expect(chunk, contains('driverController?.abort()'));
+    expect(chunk, contains('sequence !== driverSequence'));
+    expect(chunk, contains('clearTimeout(driverPollTimer)'));
+    final start = chunk.indexOf('async function loadDrivers()');
+    final end = chunk.indexOf('async function loadLive()', start);
+    final loader = chunk.substring(start, end);
+    expect(loader, contains('setSnapshot((previous) => ({ ...previous, drivers }))'));
+    expect(loader, isNot(contains('revision')),
+        reason: 'a GPS refresh must not re-request the selected active trip');
+    expect(chunk, isNot(contains('setInterval(')));
+  });
+
+  test('driver markers interpolate per frame and accept only fresh targets', () {
+    for (final needle in [
+      'function nextDriverMotion(',
+      'function motionPosition(',
+      'function isStaleDriverUpdate(',
+      'existing.motion = nextDriverMotion(',
+      'requestAnimationFrame(animate)',
+      'cancelAnimationFrame(frameId)',
+      'performance.now()',
+      'document.addEventListener("visibilitychange", handleAnimationVisibility)',
+      'document.removeEventListener("visibilitychange", handleAnimationVisibility)',
+    ]) {
+      expect(chunk, contains(needle), reason: '$needle missing');
+    }
+    expect(chunk, isNot(contains('existing.marker.setLngLat(driver.position)')),
+        reason: 'existing markers move through their motion state, never teleport');
+    final signature = chunk.substring(
+      chunk.indexOf('const fitSignature = ['),
+      chunk.indexOf('].join("|");', chunk.indexOf('const fitSignature = [')),
+    );
+    expect(signature, isNot(contains('selectedDriver.position')));
+  });
+
+  test('real motion helpers land exactly and never jerk or overshoot', () async {
+    final helpers = chunk.substring(
+      chunk.indexOf('function samePosition'),
+      chunk.indexOf('function updateDriverElement'),
+    );
+    final result = await Process.run('node', ['-e', '''
+const DRIVER_POLL_INTERVAL_MS = 2000;
+function validCoordinatePair(value) {
+  return Array.isArray(value) && value.length >= 2 &&
+    Number.isFinite(value[0]) && Number.isFinite(value[1]);
+}
+$helpers
+const assert = require('node:assert/strict');
+function assertClose(actual, expected) {
+  assert.equal(actual.length, expected.length);
+  actual.forEach((value, index) => {
+    assert.ok(Math.abs(value - expected[index]) < 1e-9);
+  });
+}
+const idle = nextDriverMotion(null, [-80, 25], 0);
+assert.deepEqual(motionPosition(idle, 0), [-80, 25]);
+const moving = nextDriverMotion(idle, [-79.99, 25.01], 0);
+assertClose(motionPosition(moving, 1000), [-79.995, 25.005]);
+assert.deepEqual(motionPosition(moving, 2000), [-79.99, 25.01]);
+assert.deepEqual(motionPosition(moving, 4000), [-79.99, 25.01]);
+const middle = motionPosition(moving, 1000);
+const retargeted = nextDriverMotion(moving, [-79.98, 25.02], 1000);
+assert.deepEqual(retargeted.from, middle);
+assert.deepEqual(motionPosition(retargeted, 1000), middle);
+assert.equal(nextDriverMotion(retargeted, retargeted.target, 2000), retargeted);
+assert.equal(isStaleDriverUpdate('2026-10-27T10:00:02Z', '2026-10-27T10:00:01Z'), true);
+assert.equal(isStaleDriverUpdate('2026-10-27T10:00:01Z', '2026-10-27T10:00:02Z'), false);
+console.log('motion helpers ok');
+''']);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('motion helpers ok'));
+  });
+
   test('riders come only from active trips and markers stay at pickup', () {
     expect(chunk, contains('function normalizeTrips(payload)'));
     expect(chunk, contains('INACTIVE_TRIP_STATUSES'));

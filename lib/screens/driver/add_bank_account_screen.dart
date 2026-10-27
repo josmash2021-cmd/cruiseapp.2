@@ -196,8 +196,35 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
       _zip.text.trim().length >= 5 &&
       _tosAccepted;
 
-  Future<void> _submit() async {
-    if (!_canSubmit) return;
+  /// Why the submit button is inert, in one line (2026-10-26, Rolando 325 /
+  /// Yudel 255: "no me deja enviar, me sale error de cuenta"). The grey button
+  /// used to say NOTHING — the driver had to guess which field blocked him.
+  String? get _missingHint {
+    final s = S.of(context);
+    if (_holder.text.trim().isEmpty) return s.accountHolderName;
+    if (!_routingValid) {
+      return _routing.text.length == 9
+          ? s.routingNumberInvalid
+          : s.routingNumber;
+    }
+    if (_account.text.trim().length < 4) return s.bankAccountNumber;
+    if (_account.text.trim() != _confirm.text.trim()) {
+      return s.accountNumbersDoNotMatch;
+    }
+    if (_dobDay == null || _dobMonth == null || _dobYear == null) {
+      return s.dateOfBirth;
+    }
+    if (_address.text.trim().isEmpty ||
+        _city.text.trim().isEmpty ||
+        _stateCode == null ||
+        _zip.text.trim().length < 5) {
+      return s.bankFormAddressRequired;
+    }
+    if (!_tosAccepted) return s.agreeToStripeAgreement;
+    return null;
+  }
+
+  Future<void> _submit() async {    if (!_canSubmit) return;
     HapticService.mediumImpact();
     setState(() {
       _busy = true;
@@ -629,6 +656,19 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
                       ),
               ),
             ),
+            // The grey button alone told the driver nothing (2026-10-26
+            // "no me deja enviar"). Name the first missing/invalid field so
+            // the form explains itself instead of looking broken.
+            if (!_canSubmit && _missingHint != null) ...[
+              const SizedBox(height: 10),
+              Center(
+                child: Text(
+                  s.bankFormMissing(_missingHint!),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: _gold, fontSize: 12.5),
+                ),
+              ),
+            ],
           ],
         ),
       ),

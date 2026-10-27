@@ -1074,11 +1074,21 @@ async def web_quote(request: Request, db: AsyncSession = Depends(get_db)):
     # expire with it, or the page could create a Stripe hold against a quote
     # the booking endpoint already considers gone.
     token_exp = now + QUOTE_TTL_SECONDS
+    token_iat = now
     if quote_record is not None:
         expires_at = quote_record.expires_at
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         token_exp = int(expires_at.timestamp())
+        # iat must be the quote's own creation time, not the request's start:
+        # the route fetch and rider lookup sit between `now` and
+        # create_web_ride_quote, so using `now` let exp-iat drift past the TTL
+        # by the request latency (601s > 600 on slow runs).
+        created_at = quote_record.created_at
+        if created_at is not None:
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            token_iat = int(created_at.timestamp())
         out["expires_in"] = max(0, token_exp - now)
 
     for tier in tiers:
@@ -1107,7 +1117,7 @@ async def web_quote(request: Request, db: AsyncSession = Depends(get_db)):
                 "cents": final_cents, "tier": tier, "mode": "ride",
                 "mi": round(meters / web_pricing.METERS_PER_MILE, 2),
                 "min": round(seconds / 60.0),
-                "iat": now, "exp": token_exp,
+                "iat": token_iat, "exp": token_exp,
             }),
             **promo_fields,
         }

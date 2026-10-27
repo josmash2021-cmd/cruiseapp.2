@@ -36,6 +36,7 @@ from utils.helpers import (
     _user_dict, _trip_dict, _doc_dict, _vehicle_dict, _haversine, _resolve_rider_display, _safe_create_task,
     _abs_photo_url, user_lang,
     SETTABLE_ACCOUNT_STATUSES, ACTIVE_ACCOUNT_STATUSES, normalise_account_status,
+    _strip_accents,
 )
 from utils.ssn_encryption import is_ssn_provided, decrypt_ssn, get_ssn_masked, format_ssn_for_display
 from services.fcm_service import _send_fcm_push_async
@@ -1386,7 +1387,10 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
                     )
                 user.status = normalised
                 continue
-            setattr(user, key, body[key])
+            if key in ("first_name", "last_name"):
+                setattr(user, key, _strip_accents(str(body[key])))
+            else:
+                setattr(user, key, body[key])
     # Handle password reset — requires explicit confirmation flag
     # to prevent accidental or malicious password changes
     if "password" in body and body["password"]:

@@ -108,11 +108,14 @@ def _resolve_rider_display(trip, rider=None) -> tuple[str, str]:
 #  Rider ID name matching (OCR auto-verification)
 # ═══════════════════════════════════════════════════════
 
+def _strip_accents(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text or "")
+    return "".join(c for c in normalized if not unicodedata.combining(c))
+
+
 def _name_tokens(text: str) -> set:
     """Lowercase, strip accents and punctuation, split into tokens."""
-    normalized = unicodedata.normalize("NFKD", (text or "").lower())
-    ascii_only = "".join(c for c in normalized if not unicodedata.combining(c))
-    return set(re.findall(r"[a-z0-9]+", ascii_only))
+    return set(re.findall(r"[a-z0-9]+", _strip_accents((text or "").lower())))
 
 
 def _name_matches(account_name: str, ocr_text: str) -> bool:

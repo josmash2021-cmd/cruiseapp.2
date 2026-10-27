@@ -81,6 +81,14 @@ class RegisterIn(BaseModel):
             validate_rider_minimum_age(self.date_of_birth)
         return self
 
+    @model_validator(mode='after')
+    def normalize_dispatch_names(self):
+        if self.registration_source == 'dispatch':
+            from utils.helpers import _strip_accents
+            self.first_name = _strip_accents(self.first_name)
+            self.last_name = _strip_accents(self.last_name)
+        return self
+
 
 class CheckExistsIn(BaseModel):
     identifier: str

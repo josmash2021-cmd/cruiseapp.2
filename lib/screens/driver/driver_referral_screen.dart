@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../services/haptic_service.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -98,7 +102,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
 
   String _dollars(int cents) => '\$${(cents / 100).toStringAsFixed(0)}';
 
-  void _shareInvite() {
+  Future<void> _shareInvite() async {
     if (_code.isEmpty) return;
     HapticService.mediumImpact();
     final s = S.of(context);
@@ -119,7 +123,24 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
         '${s.driverShareWelcome(_dollars(_refereeBonusCents), _refereeBonusRides)}\n\n'
         '${s.driverShareCodeLine(_code)}\n'
         '$link';
-    unawaited(shareText(context, text, subject: s.driverShareSubject));
+    // The invite goes out as an IMAGE + the code + the link (owner spec
+    // 2026-10-27): not a bare text message. The asset is written to a temp
+    // file because shareXFiles needs a real filesystem path on device.
+    try {
+      final dir = await getTemporaryDirectory();
+      final f = File('${dir.path}/cruise_referral_invite.png');
+      final data = await rootBundle.load('assets/images/referral_invite.png');
+      await f.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      if (!mounted) return;
+      await Share.shareXFiles(
+        [XFile(f.path)],
+        text: text,
+        subject: s.driverShareSubject,
+      );
+    } catch (e) {
+      debugPrint('[Referral] image share failed, falling back to text: $e');
+      unawaited(shareText(context, text, subject: s.driverShareSubject));
+    }
   }
 
   @override

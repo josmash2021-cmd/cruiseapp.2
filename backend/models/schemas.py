@@ -1,5 +1,6 @@
 """Cruise App — Pydantic request/response schemas."""
 
+from datetime import datetime
 from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -221,6 +222,9 @@ class DriverLocationIn(BaseModel):
     lng: float
     is_online: bool = True
     eta_seconds: int | None = Field(default=None, ge=0)
+    heading: float | None = Field(default=None, ge=0, le=360)
+    speed: float | None = Field(default=None, ge=0)
+    captured_at: datetime | None = None
 
 
 class DriverDestinationIn(BaseModel):

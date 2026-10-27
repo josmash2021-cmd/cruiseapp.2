@@ -2,7 +2,7 @@ import os, time, math, secrets, logging, json, re, base64, asyncio, collections,
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, Form, File
-from fastapi.responses import JSONResponse, FileResponse, Response
+from fastapi.responses import JSONResponse, FileResponse, Response, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import select, func, and_, or_, text, case, cast, Date, String, delete, update
 from sqlalchemy.orm import aliased
@@ -41,6 +41,7 @@ from utils.ssn_encryption import is_ssn_provided, decrypt_ssn, get_ssn_masked, f
 from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import send_sms_async
 from services.socketio_service import notify_user, emit_trip_status, sio
+from services.event_bus import event_bus
 from services.rider_pricing import (
     PricingConfigPatch, get_pricing_config, update_pricing_config,
 )
@@ -1635,8 +1636,7 @@ _LIVE_MAP_TRIP_STATUSES = (
 )
 
 
-@router.get("/admin/drivers/online", dependencies=[Depends(_require_dispatch_auth)])
-async def get_online_drivers(db: AsyncSession = Depends(get_db)):
+async def _online_drivers_snapshot(db: AsyncSession):
     rows = (await db.execute(
         select(User, Vehicle).outerjoin(
             Vehicle, and_(
@@ -1695,6 +1695,51 @@ async def get_online_drivers(db: AsyncSession = Depends(get_db)):
             ),
         })
     return {"drivers": drivers}
+
+
+@router.get("/admin/drivers/online", dependencies=[Depends(_require_dispatch_auth)])
+async def get_online_drivers(db: AsyncSession = Depends(get_db)):
+    return await _online_drivers_snapshot(db)
+
+
+@router.get("/admin/drivers/live", dependencies=[Depends(_require_dispatch_auth)])
+async def stream_live_drivers(
+    request: Request, db: AsyncSession = Depends(get_db),
+):
+    queue = event_bus.subscribe_dispatch()
+    try:
+        snapshot = await _online_drivers_snapshot(db)
+    except Exception:
+        event_bus.unsubscribe_dispatch(queue)
+        raise
+
+    async def _generate():
+        try:
+            yield f"event: snapshot\ndata: {json.dumps(snapshot)}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=10.0)
+                    event_bus.mark_active(queue)
+                    evt_type = event.get("type", "message")
+                    evt_data = event.get("data", event)
+                    yield f"event: {evt_type}\ndata: {json.dumps(evt_data)}\n\n"
+                except asyncio.TimeoutError:
+                    yield f"event: ping\ndata: {{\"ts\": {time.time()}}}\n\n"
+        finally:
+            event_bus.unsubscribe_dispatch(queue)
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 
 def _live_trip_payload(trip: Trip, rider: User | None,
                        driver: User | None) -> dict:

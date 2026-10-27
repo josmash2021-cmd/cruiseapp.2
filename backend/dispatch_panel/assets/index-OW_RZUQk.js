@@ -22,7 +22,7 @@ import {
 import { m as getMapboxToken } from "./mapboxToken-DDoCRQix.js";
 
 /*! guard-pin panel_verification_order_guard_test: submittedAt:_(e.created_at)??_(e.verified_at) — la regla real está en src/models/verification.ts (no borrar) */
-/*! guard-pin panel_live_map_guard_test: /mapa usa SOLO la sesión Dispatch (W): drivers/online cada 2 s + trips/active cada 20 s con pestaña visible, AbortController y secuencia; marcadores interpolados por rAF entre fixes reales, sin extrapolar ni reencuadrar; active-trip latest-wins al enfocar; rutas EXCLUSIVAMENTE del GeoJSON real; riders en pickup, zonas debajo de markers; foco/Mostrar todos restaura cámara; fits FL/AL/Ambos solo al iniciar o acción explícita. Re-aplicar tras rebuild del source React fuera del repo. */
+/*! guard-pin panel_live_map_guard_test: /mapa usa sesión Dispatch: SSE /admin/drivers/live (snapshot + driver_location) como canal principal y poll 2 s SOLO fallback; trips/active cada 20 s con AbortController/latest-wins. DispatchRoadLock: ruta activa cacheada o queryRenderedFeatures, umbral 35/55 m, motionFrame por vértices con tangente/flecha, sin extrapolar ni reencuadrar; riders en pickup, zonas debajo de markers; foco/Mostrar todos restaura cámara; fits FL/AL/Ambos solo al iniciar o acción explícita. Re-aplicar tras rebuild del source React fuera del repo. */
 
 const GOLD = "#E8C547";
 const POLL_INTERVAL_MS = 20000;
@@ -156,6 +156,9 @@ function normalizeDriver(raw) {
     onTrip: raw?.on_trip === true,
     tripId: raw?.trip_id ?? null,
     lastUpdated: asText(raw?.last_updated),
+    speed: numberOrNull(raw?.speed),
+    heading: numberOrNull(raw?.heading),
+    capturedAt: asText(raw?.captured_at),
   };
 }
 
@@ -338,6 +341,9 @@ function useLiveMapData(refreshKey) {
     let zonesLoaded = false;
     let zonesFailed = false;
     let zonesInFlight = false;
+    let liveConnected = false;
+    let liveSource = null;
+    let liveReconnectTimer = null;
 
     setSnapshot((previous) => ({
       ...previous,
@@ -346,7 +352,75 @@ function useLiveMapData(refreshKey) {
       zonesError: null,
     }));
 
+    function applyLiveDriver(raw) {
+      const driverId = asText(raw?.id).trim();
+      if (driverId === "") return;
+      if (raw.is_online === false) {
+        setSnapshot((previous) => ({
+          ...previous,
+          drivers: previous.drivers.filter((driver) => driver.id !== driverId),
+        }));
+        return;
+      }
+      setSnapshot((previous) => {
+        const current = previous.drivers.find((driver) => driver.id === driverId);
+        const normalized = normalizeDriver({
+          ...current,
+          ...raw,
+          on_trip: current?.onTrip,
+          trip_id: current?.tripId,
+          last_updated: raw.captured_at ??
+            (raw.ts ? new Date(raw.ts * 1000).toISOString() : current?.lastUpdated),
+        });
+        return {
+          ...previous,
+          drivers: [
+            ...previous.drivers.filter((driver) => driver.id !== driverId),
+            normalized,
+          ],
+        };
+      });
+    }
+
+    function connectLiveDrivers() {
+      if (disposed || document.visibilityState !== "visible" ||
+          typeof EventSource === "undefined") {
+        return;
+      }
+      liveSource?.close();
+      liveReconnectTimer = null;
+      liveSource = new EventSource("/admin/drivers/live");
+      liveSource.addEventListener("snapshot", (event) => {
+        if (disposed) return;
+        const payload = JSON.parse(event.data);
+        liveConnected = true;
+        if (driverPollTimer !== null) clearTimeout(driverPollTimer);
+        driverPollTimer = null;
+        setSnapshot((previous) => ({
+          ...previous,
+          drivers: normalizeDrivers(payload),
+        }));
+      });
+      liveSource.addEventListener("driver_location", (event) => {
+        if (disposed) return;
+        applyLiveDriver(JSON.parse(event.data));
+      });
+      liveSource.onerror = () => {
+        liveConnected = false;
+        liveSource?.close();
+        liveSource = null;
+        if (disposed || document.visibilityState !== "visible") return;
+        if (liveReconnectTimer === null) {
+          liveReconnectTimer = setTimeout(connectLiveDrivers, 2000);
+        }
+        if (driverPollTimer === null) {
+          driverPollTimer = setTimeout(loadDrivers, 0);
+        }
+      };
+    }
+
     async function loadDrivers() {
+      if (liveConnected) return;
       if (disposed || document.visibilityState !== "visible") return;
       driverController?.abort();
       const controller = new AbortController();
@@ -479,6 +553,11 @@ function useLiveMapData(refreshKey) {
         requestSequence += 1;
         driverSequence += 1;
         zoneSequence += 1;
+        liveConnected = false;
+        liveSource?.close();
+        liveSource = null;
+        if (liveReconnectTimer !== null) clearTimeout(liveReconnectTimer);
+        liveReconnectTimer = null;
         liveController?.abort();
         driverController?.abort();
         zoneController?.abort();
@@ -493,12 +572,14 @@ function useLiveMapData(refreshKey) {
       pollTimer = null;
       driverPollTimer = null;
       void loadLive();
+      connectLiveDrivers();
       driverPollTimer = setTimeout(loadDrivers, DRIVER_POLL_INTERVAL_MS);
       void loadZones();
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     void loadLive();
+    connectLiveDrivers();
     driverPollTimer = setTimeout(loadDrivers, DRIVER_POLL_INTERVAL_MS);
     void loadZones();
 
@@ -509,6 +590,11 @@ function useLiveMapData(refreshKey) {
       zoneSequence += 1;
       if (pollTimer !== null) clearTimeout(pollTimer);
       if (driverPollTimer !== null) clearTimeout(driverPollTimer);
+      liveConnected = false;
+      liveSource?.close();
+      liveSource = null;
+      if (liveReconnectTimer !== null) clearTimeout(liveReconnectTimer);
+      liveReconnectTimer = null;
       liveController?.abort();
       driverController?.abort();
       zoneController?.abort();
@@ -548,23 +634,175 @@ function samePosition(first, second) {
   );
 }
 
-function motionPosition(motion, now) {
-  if (!motion) return null;
-  const progress = Math.min(
-    1,
-    Math.max(0, (now - motion.startedAt) / DRIVER_POLL_INTERVAL_MS),
-  );
-  return [
-    motion.from[0] + (motion.target[0] - motion.from[0]) * progress,
-    motion.from[1] + (motion.target[1] - motion.from[1]) * progress,
-  ];
+function haversineM(first, second) {
+  const radius = 6371000;
+  const dLat = (second[1] - first[1]) * Math.PI / 180;
+  const dLng = (second[0] - first[0]) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(first[1] * Math.PI / 180) *
+      Math.cos(second[1] * Math.PI / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return 2 * radius * Math.asin(Math.sqrt(a));
 }
 
-function nextDriverMotion(previous, target, now) {
+function projectOnSegment(raw, first, second) {
+  const x = (second[0] - first[0]) * Math.cos(raw[1] * Math.PI / 180);
+  const y = second[1] - first[1];
+  const lengthSquared = x * x + y * y;
+  const progress = lengthSquared === 0
+    ? 0
+    : Math.min(
+        1,
+        Math.max(
+          0,
+          ((raw[0] - first[0]) * Math.cos(raw[1] * Math.PI / 180) * x +
+            (raw[1] - first[1]) * y) / lengthSquared,
+        ),
+      );
+  return [first[0] + x * progress, first[1] + y * progress];
+}
+
+function closestOnLine(raw, line, from = 0, to = line.length - 2) {
+  let best = null;
+  for (let index = Math.max(0, from); index <= Math.min(line.length - 2, to); index++) {
+    const point = projectOnSegment(raw, line[index], line[index + 1]);
+    const distance = haversineM(raw, point);
+    if (!best || distance < best.distance) best = { point, distance, index };
+  }
+  return best ?? { point: raw, distance: Infinity, index: -1 };
+}
+
+function roadBearing(first, second) {
+  const x = (second[0] - first[0]) * Math.cos((first[1] + second[1]) * Math.PI / 360);
+  const y = second[1] - first[1];
+  return (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+}
+
+function angleDelta(first, second) {
+  const difference = Math.abs(first - second) % 360;
+  return difference > 180 ? 360 - difference : difference;
+}
+
+function headingOnLine(point, segment, line, speedMps = 0) {
+  let remaining = Math.min(24, Math.max(6, speedMps * 0.8));
+  let from = point;
+  for (let index = segment; index < line.length - 1; index++) {
+    const first = line[index];
+    const second = line[index + 1];
+    if (haversineM(first, second) < 0.001) continue;
+    const current = roadBearing(first, second);
+    const distanceFrom = haversineM(from, second);
+    if (index + 2 < line.length) {
+      const next = roadBearing(second, line[index + 2]);
+      if (angleDelta(current, next) > 25 && distanceFrom < remaining) {
+        return current;
+      }
+    }
+    if (distanceFrom >= remaining) return roadBearing(from, second);
+    remaining -= distanceFrom;
+    from = second;
+    if (remaining <= 0.001) return current;
+  }
+  for (let index = line.length - 2; index >= 0; index--) {
+    if (haversineM(line[index], line[index + 1]) > 0.001) {
+      return roadBearing(line[index], line[index + 1]);
+    }
+  }
+  return 0;
+}
+
+function pathBetween(current, target, line) {
+  if (line.length < 2) return [current, target];
+  const start = closestOnLine(current, line);
+  const end = closestOnLine(target, line);
+  if (start.index === end.index) return [current, target];
+  const path = [current];
+  if (end.index > start.index) {
+    for (let index = start.index + 1; index <= end.index; index++) {
+      path.push(line[index]);
+    }
+  } else {
+    for (let index = start.index; index > end.index; index--) {
+      path.push(line[index]);
+    }
+  }
+  path.push(target);
+  return path;
+}
+
+function motionPathLength(path) {
+  let total = 0;
+  for (let index = 0; index < path.length - 1; index++) {
+    total += haversineM(path[index], path[index + 1]);
+  }
+  return total;
+}
+
+function pointAlongPath(path, distance) {
+  if (path.length === 0) return { point: null, bearing: 0 };
+  if (path.length === 1) return { point: path[0], bearing: 0 };
+  let remaining = Math.max(0, distance);
+  for (let index = 0; index < path.length - 1; index++) {
+    const first = path[index];
+    const second = path[index + 1];
+    const length = haversineM(first, second);
+    if (remaining + 1e-9 < length ||
+        (remaining === length && index === path.length - 2)) {
+      const progress = length === 0 ? 0 : remaining / length;
+      return {
+        point: [
+          first[0] + (second[0] - first[0]) * progress,
+          first[1] + (second[1] - first[1]) * progress,
+        ],
+        bearing: roadBearing(first, second),
+      };
+    }
+    remaining -= length;
+  }
+  return {
+    point: path[path.length - 1],
+    bearing: roadBearing(path[path.length - 2], path[path.length - 1]),
+  };
+}
+
+function motionFrame(motion, now) {
+  if (!motion) return { position: null, bearing: 0 };
+  const progress = Math.min(
+    1,
+    Math.max(0, (now - motion.startedAt) /
+      (motion.durationMs ?? DRIVER_POLL_INTERVAL_MS)),
+  );
+  const frame = pointAlongPath(
+    motion.path,
+    motionPathLength(motion.path) * progress,
+  );
+  return { position: frame.point, bearing: frame.bearing };
+}
+
+function motionPosition(motion, now) {
+  return motionFrame(motion, now).position;
+}
+
+function nextDriverMotion(
+  previous, target, now, line = null, durationMs = DRIVER_POLL_INTERVAL_MS,
+) {
   if (!validCoordinatePair(target)) return previous ?? null;
-  if (previous && samePosition(previous.target, target)) return previous;
+  if (previous && samePosition(previous.target, target) &&
+      (line === null || line === previous.line)) {
+    return previous;
+  }
   const from = previous ? motionPosition(previous, now) : target.slice(0, 2);
-  return { from, target: target.slice(0, 2), startedAt: now };
+  const roadLine = line ?? previous?.line ?? [];
+  return {
+    from,
+    target: target.slice(0, 2),
+    startedAt: now,
+    durationMs,
+    line: roadLine,
+    path: roadLine.length >= 2
+      ? pathBetween(from, target, roadLine)
+      : [from, target.slice(0, 2)],
+  };
 }
 
 function isStaleDriverUpdate(previousTimestamp, nextTimestamp) {
@@ -573,14 +811,217 @@ function isStaleDriverUpdate(previousTimestamp, nextTimestamp) {
   return Number.isFinite(previous) && Number.isFinite(next) && next < previous;
 }
 
+function isImpossibleDriverJump(previousPosition, nextPosition, previousTimestamp, nextTimestamp) {
+  if (!validCoordinatePair(previousPosition) || !validCoordinatePair(nextPosition)) {
+    return false;
+  }
+  const elapsedSeconds = (Date.parse(nextTimestamp) - Date.parse(previousTimestamp)) / 1000;
+  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) return false;
+  return haversineM(previousPosition, nextPosition) / elapsedSeconds > 45;
+}
+
+class DispatchRoadLock {
+  constructor() {
+    this.lineRef = null;
+    this.line = [];
+    this.segmentIndex = -1;
+    this.trustedLine = false;
+    this.lastPoint = null;
+    this.lastBearing = 0;
+  }
+
+  setLine(line) {
+    if (this.lineRef === line) return;
+    this.lineRef = line;
+    this.line = line;
+    this.segmentIndex = -1;
+    this.trustedLine = false;
+  }
+
+  project(raw, line, speedMps = 0) {
+    this.setLine(line);
+    if (this.line.length < 2 || !validCoordinatePair(raw)) {
+      return {
+        point: this.lastPoint,
+        bearing: this.lastBearing,
+        trusted: false,
+        segmentIndex: -1,
+        distanceM: Infinity,
+        line: this.line,
+      };
+    }
+    let best;
+    if (this.segmentIndex < 0 || this.segmentIndex >= this.line.length - 1) {
+      best = closestOnLine(raw, this.line);
+    } else {
+      const from = Math.max(0, this.segmentIndex - 5);
+      const to = Math.min(this.line.length - 2, this.segmentIndex + 5);
+      best = closestOnLine(raw, this.line, from, to);
+      if (best.distance > 40) best = closestOnLine(raw, this.line);
+      const previous = closestOnLine(
+        raw,
+        this.line,
+        this.segmentIndex,
+        this.segmentIndex,
+      );
+      if (previous.distance <= best.distance + 8) best = previous;
+    }
+    const threshold = this.trustedLine ? 55 : 35;
+    const trusted = best.distance <= threshold;
+    this.trustedLine = trusted;
+    if (!trusted) {
+      return {
+        point: this.lastPoint,
+        bearing: this.lastBearing,
+        trusted: false,
+        segmentIndex: -1,
+        distanceM: best.distance,
+        line: this.line,
+      };
+    }
+    this.segmentIndex = best.index;
+    this.lastPoint = best.point;
+    this.lastBearing = headingOnLine(best.point, best.index, this.line, speedMps);
+    return {
+      point: best.point,
+      bearing: this.lastBearing,
+      trusted: true,
+      segmentIndex: best.index,
+      distanceM: best.distance,
+      line: this.line,
+    };
+  }
+}
+
+const DRIVABLE_ROAD_CLASSES = new Set([
+  "motorway",
+  "trunk",
+  "primary",
+  "secondary",
+  "tertiary",
+  "street",
+  "street_limited",
+  "service",
+]);
+
+function roadLinesNear(map, raw) {
+  const lines = [];
+  try {
+    const center = map.project(raw);
+    const radius = 64;
+    const features = map.queryRenderedFeatures([
+      [center.x - radius, center.y - radius],
+      [center.x + radius, center.y + radius],
+    ]) ?? [];
+    for (const feature of features) {
+      if (!DRIVABLE_ROAD_CLASSES.has(feature.properties?.class)) continue;
+      const geometry = feature.geometry;
+      if (geometry?.type === "LineString" &&
+          validCoordinatePair(geometry.coordinates?.[0])) {
+        lines.push(geometry.coordinates);
+      } else if (geometry?.type === "MultiLineString") {
+        for (const line of geometry.coordinates) {
+          if (validCoordinatePair(line?.[0])) lines.push(line);
+        }
+      }
+    }
+  } catch (_) {
+    return [];
+  }
+  return lines;
+}
+
+function projectDriverOnRoad(map, lock, raw, tripLine, speedMps) {
+  if (tripLine.length >= 2) {
+    const projected = lock.project(raw, tripLine, speedMps);
+    return projected.trusted ? projected : lock.project(raw, [], speedMps);
+  }
+  let best = null;
+  for (const line of roadLinesNear(map, raw)) {
+    if (line.length < 2) continue;
+    const closest = closestOnLine(raw, line);
+    if (!best || closest.distance < best.distance) {
+      best = { ...closest, line };
+    }
+  }
+  if (best && best.distance <= (lock.trustedLine ? 55 : 35)) {
+    return lock.project(raw, best.line, speedMps);
+  }
+  return lock.project(raw, [], speedMps);
+}
+
+function ensureDriverRoute(driver, routeCache) {
+  if (!driver.onTrip || driver.tripId === null) return Promise.resolve([]);
+  const existing = routeCache.get(driver.id);
+  if (existing?.tripId === driver.tripId &&
+      Date.now() - existing.fetchedAt < POLL_INTERVAL_MS) {
+    return existing.line ?? existing.promise;
+  }
+  const fetchedAt = Date.now();
+  const promise = apiGet(
+    `/admin/drivers/${encodeURIComponent(driver.id)}/active-trip`,
+  ).then((payload) => {
+    const route = sanitizeRoute(payload.route);
+    const tripLegs = (route?.features ?? []).filter(
+      (feature) => feature.properties.leg === "trip",
+    );
+    const line = routeCoordinates(
+      IN_TRIP_STATUSES.has(asText(payload.trip?.status).toLowerCase()) &&
+          tripLegs.length > 0
+        ? { ...route, features: tripLegs }
+        : route,
+    );
+    if (routeCache.get(driver.id)?.promise === promise) {
+      routeCache.set(driver.id, { tripId: driver.tripId, line, fetchedAt });
+    }
+    return line;
+  }).catch(() => {
+    if (routeCache.get(driver.id)?.promise === promise) {
+      routeCache.set(driver.id, { tripId: driver.tripId, line: [], fetchedAt });
+    }
+    return [];
+  });
+  routeCache.set(driver.id, { tripId: driver.tripId, promise, fetchedAt });
+  return promise;
+}
+
+async function retargetDriverMotion(map, driver, entry, routeCache) {
+  const sequence = ++entry.roadSeq;
+  const tripLine = await ensureDriverRoute(driver, routeCache);
+  if (sequence !== entry.roadSeq || mapRef.current !== map) return;
+  const projected = projectDriverOnRoad(
+    map,
+    entry.roadLock,
+    driver.position,
+    tripLine,
+    driver.speed ?? 0,
+  );
+  const elapsedMs = Date.parse(driver.lastUpdated) -
+    Date.parse(entry.lastUpdated);
+  const durationMs = Number.isFinite(elapsedMs) && elapsedMs > 0
+    ? Math.min(6000, Math.max(1500, elapsedMs))
+    : entry.motion?.durationMs ?? DRIVER_POLL_INTERVAL_MS;
+  entry.motion = nextDriverMotion(
+    entry.motion,
+    projected.trusted ? projected.point : driver.position,
+    performance.now(),
+    projected.trusted ? projected.line : [],
+    durationMs,
+  );
+  entry.lastUpdated = driver.lastUpdated;
+  entry.rawPosition = driver.position;
+}
+
 function updateDriverElement(element, driver, selected) {
   const dot = element.children[0];
   const size = selected ? 22 : 18;
   Object.assign(dot.style, {
     width: `${size}px`,
     height: `${size}px`,
-    borderRadius: "50%",
-    border: selected ? `3px solid ${GOLD}` : "2px solid rgba(255,255,255,0.85)",
+    borderRadius: "3px",
+    clipPath: "polygon(50% 0%, 100% 100%, 50% 74%, 0% 100%)",
+    transformOrigin: "50% 55%",
+    border: "0",
     boxShadow: selected
       ? "0 0 0 4px rgba(232,197,71,0.22), 0 2px 8px rgba(0,0,0,0.65)"
       : "0 2px 6px rgba(0,0,0,0.5)",
@@ -920,6 +1361,7 @@ function FleetMap({ token }) {
   const popupRef = React.useRef(null);
   const popupOwnerRef = React.useRef(null);
   const driverMarkersRef = React.useRef(new Map());
+  const driverRoutesRef = React.useRef(new Map());
   const riderMarkersRef = React.useRef(new Map());
   const pickupPinRef = React.useRef(null);
   const dropoffPinRef = React.useRef(null);
@@ -1177,19 +1619,23 @@ function FleetMap({ token }) {
       if (!desiredDriverIds.has(driverId)) {
         removeMarkerEntry(entry);
         driverMarkersRef.current.delete(driverId);
+        driverRoutesRef.current.delete(driverId);
       }
     }
     for (const driver of visibleDrivers) {
       const selected = driver.id === selectedDriverId;
       const existing = driverMarkersRef.current.get(driver.id);
       if (existing) {
-        if (!isStaleDriverUpdate(existing.lastUpdated, driver.lastUpdated)) {
-          existing.motion = nextDriverMotion(
-            existing.motion,
-            driver.position,
-            performance.now(),
-          );
-          existing.lastUpdated = driver.lastUpdated;
+        if (!isStaleDriverUpdate(existing.lastUpdated, driver.lastUpdated) &&
+            !isImpossibleDriverJump(
+              existing.rawPosition,
+              driver.position,
+              existing.lastUpdated,
+              driver.lastUpdated,
+            )) {
+          existing.roadLock ??= new DispatchRoadLock();
+          existing.roadSeq ??= 0;
+          void retargetDriverMotion(map, driver, existing, driverRoutesRef.current);
         }
         updateDriverElement(existing.element, driver, selected);
       } else {
@@ -1201,13 +1647,18 @@ function FleetMap({ token }) {
         const marker = new mapboxgl.Marker({ element, anchor: "center" })
           .setLngLat(driver.position)
           .addTo(map);
-        driverMarkersRef.current.set(driver.id, {
+        const entry = {
           marker,
           element,
           clickHandler,
           motion: nextDriverMotion(null, driver.position, performance.now()),
           lastUpdated: driver.lastUpdated,
-        });
+          rawPosition: driver.position,
+          roadLock: new DispatchRoadLock(),
+          roadSeq: 0,
+        };
+        driverMarkersRef.current.set(driver.id, entry);
+        void retargetDriverMotion(map, driver, entry, driverRoutesRef.current);
       }
     }
 
@@ -1265,8 +1716,9 @@ function FleetMap({ token }) {
         return;
       }
       for (const entry of driverMarkersRef.current.values()) {
-        const position = motionPosition(entry.motion, now);
-        if (position) entry.marker.setLngLat(position);
+        const frame = motionFrame(entry.motion, now);
+        if (frame.position) entry.marker.setLngLat(frame.position);
+        entry.element.children[0].style.transform = `rotate(${frame.bearing}deg)`;
       }
       frameId = requestAnimationFrame(animate);
     }

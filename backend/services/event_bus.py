@@ -42,6 +42,8 @@ class EventBus:
         self._driver_queues: Dict[int, Set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
         # trip_id -> set of asyncio.Queue
         self._trip_queues: Dict[int, Set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
+        # Dispatch live map streams
+        self._dispatch_queues: Set[asyncio.Queue[dict[str, Any]]] = set()
         # Track last activity time per queue for stale detection
         self._queue_last_active: Dict[int, float] = {}  # id(queue) -> timestamp
         # Stats
@@ -112,6 +114,8 @@ class EventBus:
                             payload["trip_id"], payload["driver_id"],
                             payload["lat"], payload["lng"],
                         )
+                    elif kind == "dispatch_loc":
+                        self._deliver_dispatch_driver_location(payload["data"])
                 except Exception as e:
                     logger.error("[SSE] bridge dispatch error: %s", e)
         except asyncio.CancelledError:
@@ -184,6 +188,20 @@ class EventBus:
                         logger.info("[SSE] Cleaned stale trip queue (trip %d)", trip_id)
                     if not self._trip_queues[trip_id]:
                         del self._trip_queues[trip_id]
+
+                # Clean stale Dispatch queues
+                for q in list(self._dispatch_queues):
+                    last = self._queue_last_active.get(id(q), now)
+                    if now - last > _STALE_TIMEOUT:
+                        self._dispatch_queues.discard(q)
+                        self._queue_last_active.pop(id(q), None)
+                        logger.info("[SSE] Cleaned stale Dispatch queue")
+                    else:
+                        try:
+                            q.put_nowait(heartbeat)
+                        except asyncio.QueueFull:
+                            self._dispatch_queues.discard(q)
+                            self._queue_last_active.pop(id(q), None)
 
             except asyncio.CancelledError:
                 break
@@ -296,10 +314,58 @@ class EventBus:
             "lat": lat, "lng": lng,
         })
 
+    # ── Dispatch live map streams ─────────────────────────────
+
+    def subscribe_dispatch(self) -> "asyncio.Queue[dict[str, Any]]":
+        q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=50)
+        self._dispatch_queues.add(q)
+        self._queue_last_active[id(q)] = time.time()
+        self._total_connections += 1
+        return q
+
+    def unsubscribe_dispatch(self, queue: "asyncio.Queue[dict[str, Any]]"):
+        self._dispatch_queues.discard(queue)
+        self._queue_last_active.pop(id(queue), None)
+
+    def _deliver_dispatch_driver_location(self, data: dict[str, Any]) -> None:
+        event = {"type": "driver_location", "data": data, "ts": data["ts"]}
+        dead: list[asyncio.Queue[dict[str, Any]]] = []
+        for q in self._dispatch_queues:
+            try:
+                q.put_nowait(event)
+                self._total_events += 1
+            except asyncio.QueueFull:
+                dead.append(q)
+        for q in dead:
+            self._dispatch_queues.discard(q)
+            self._queue_last_active.pop(id(q), None)
+
+    async def push_dispatch_driver_location(
+        self, driver_id: int, lat: float, lng: float, is_online: bool,
+        heading: float | None = None, speed: float | None = None,
+        captured_at: str | None = None,
+    ):
+        data: dict[str, Any] = {
+            "id": driver_id,
+            "lat": lat,
+            "lng": lng,
+            "is_online": is_online,
+            "ts": time.time(),
+        }
+        if heading is not None:
+            data["heading"] = heading
+        if speed is not None:
+            data["speed"] = speed
+        if captured_at is not None:
+            data["captured_at"] = captured_at
+        self._deliver_dispatch_driver_location(data)
+        await self._publish({"kind": "dispatch_loc", "data": data})
+
     def get_stats(self) -> dict[str, int]:
         return {
             "active_driver_streams": sum(len(v) for v in self._driver_queues.values()),
             "active_trip_streams": sum(len(v) for v in self._trip_queues.values()),
+            "active_dispatch_streams": len(self._dispatch_queues),
             "total_events_pushed": self._total_events,
             "total_connections": self._total_connections,
         }

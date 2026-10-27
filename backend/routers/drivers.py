@@ -403,7 +403,6 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         # the fan-out (geocoder + pushes).
         if _online_flipped and body.is_online:
             from services.demand_waitlist import notify_waiting_riders
-            from utils.helpers import _safe_create_task
             _safe_create_task(notify_waiting_riders(body.lat, body.lng),
                               name=f"demand_notify_{driver_id}")
 
@@ -474,6 +473,16 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         #
         # Bonus hazard removed: `from firebase_admin import db` rebound the
         # `db: AsyncSession` parameter for the rest of this function.
+
+    _safe_create_task(
+        event_bus.push_dispatch_driver_location(
+            driver_id, body.lat, body.lng, body.is_online,
+            heading=body.heading,
+            speed=body.speed,
+            captured_at=body.captured_at.isoformat() if body.captured_at else None,
+        ),
+        name=f"dispatch_loc_{driver_id}",
+    )
 
     # Update Redis Geo for fast nearby queries
     try:

@@ -1815,6 +1815,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             lat: pos.latitude,
             lng: pos.longitude,
             etaSeconds: _navEta > 0 ? _navEta * 60 : null,
+            heading: pos.heading >= 0 && pos.heading <= 360
+                ? pos.heading
+                : null,
+            speedMps: pos.speed >= 0 ? pos.speed : null,
+            capturedAt: pos.timestamp.toUtc(),
           ).catchError((e) {
             // face_review_required 403 (2026-10-23, owner report): this 5 s
             // stream used to UNDO the dispatch selfie-reject kick — it is

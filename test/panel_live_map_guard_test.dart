@@ -85,12 +85,44 @@ void main() {
     expect(chunk, isNot(contains('setInterval(')));
   });
 
+  test('SSE is primary with polling fallback and metadata-preserving updates', () {
+    expect(chunk, contains('new EventSource("/admin/drivers/live")'));
+    expect(chunk, contains('liveSource.addEventListener("snapshot"'));
+    expect(chunk, contains('liveSource.addEventListener("driver_location"'));
+    expect(chunk, contains('if (liveConnected) return;'));
+    expect(chunk, contains('setTimeout(connectLiveDrivers, 2000)'));
+    expect(chunk, contains('on_trip: current?.onTrip'));
+    expect(chunk, contains('trip_id: current?.tripId'));
+    expect(chunk, contains('raw.is_online === false'));
+    expect(chunk, contains('liveSource?.close()'));
+    expect(chunk, contains('liveConnected = false'));
+    expect(chunk, contains('speed: numberOrNull(raw?.speed)'));
+    expect(chunk, contains('heading: numberOrNull(raw?.heading)'));
+    expect(chunk, contains('capturedAt: asText(raw?.captured_at)'));
+  });
+
+  test('app forwards real GPS heading speed and capture timestamp', () {
+    final api = File('lib/services/api_service.dart').readAsStringSync();
+    expect(api, contains('double? heading'));
+    expect(api, contains('double? speedMps'));
+    expect(api, contains('capturedAt'));
+    expect(api, contains("'heading': heading"));
+    expect(api, contains("'speed': speedMps"));
+    expect(api, contains("'captured_at': capturedAt.toUtc().toIso8601String()"));
+    final controller =
+        File('lib/screens/driver/driver_online_controller.dart').readAsStringSync();
+    expect(controller, contains('heading: pos.heading >= 0'));
+    expect(controller, contains('speedMps: pos.speed >= 0'));
+    expect(controller, contains('capturedAt: pos.timestamp.toUtc()'));
+  });
+
   test('driver markers interpolate per frame and accept only fresh targets', () {
     for (final needle in [
       'function nextDriverMotion(',
       'function motionPosition(',
       'function isStaleDriverUpdate(',
-      'existing.motion = nextDriverMotion(',
+      'function isImpossibleDriverJump(',
+      'entry.motion = nextDriverMotion(',
       'requestAnimationFrame(animate)',
       'cancelAnimationFrame(frameId)',
       'performance.now()',
@@ -140,10 +172,164 @@ assert.deepEqual(motionPosition(retargeted, 1000), middle);
 assert.equal(nextDriverMotion(retargeted, retargeted.target, 2000), retargeted);
 assert.equal(isStaleDriverUpdate('2026-10-27T10:00:02Z', '2026-10-27T10:00:01Z'), true);
 assert.equal(isStaleDriverUpdate('2026-10-27T10:00:01Z', '2026-10-27T10:00:02Z'), false);
+assert.equal(isImpossibleDriverJump([-80, 25], [-79.9, 25], '2026-10-27T10:00:00Z', '2026-10-27T10:00:01Z'), true);
+assert.equal(isImpossibleDriverJump([-80, 25], [-79.999, 25], '2026-10-27T10:00:00Z', '2026-10-27T10:00:10Z'), false);
 console.log('motion helpers ok');
 ''']);
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     expect(result.stdout, contains('motion helpers ok'));
+  });
+
+  test('road lock follows a 90-degree corner and keeps its tangent', () async {
+    final helpers = chunk.substring(
+      chunk.indexOf('function samePosition'),
+      chunk.indexOf('function updateDriverElement'),
+    );
+    final result = await Process.run('node', ['-e', '''
+const DRIVER_POLL_INTERVAL_MS = 2000;
+function validCoordinatePair(value) {
+  return Array.isArray(value) && value.length >= 2 &&
+    Number.isFinite(value[0]) && Number.isFinite(value[1]);
+}
+$helpers
+const assert = require('node:assert/strict');
+const corner = [[-80, 25], [-80, 25.001], [-79.999, 25.001]];
+const lock = new DispatchRoadLock();
+assert.equal(lock.project(corner[0], corner, 10).trusted, true);
+assert.equal(lock.project(corner[2], corner, 10).trusted, true);
+const idle = nextDriverMotion(null, corner[0], 0, corner);
+const motion = nextDriverMotion(idle, corner[2], 0, corner);
+assert.equal(motion.path.length, 3);
+assert.deepEqual(motion.path[1], corner[1]);
+const middle = motionFrame(
+  motion,
+  2000 * haversineM(corner[0], corner[1]) / motionPathLength(motion.path),
+);
+assert.ok(Math.abs(middle.position[0] - corner[1][0]) < 1e-9);
+assert.ok(Math.abs(middle.position[1] - corner[1][1]) < 1e-9);
+assert.equal(Math.round(middle.bearing), 90);
+assert.deepEqual(motionFrame(motion, 2000).position, corner[2]);
+assert.deepEqual(motionFrame(motion, 4000).position, corner[2]);
+assert.equal(lock.project([-80.01, 25.01], corner, 0).trusted, false);
+console.log('road corner ok');
+''']);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('road corner ok'));
+  });
+
+  test('active route wins over parallel roads and refreshes after 20s', () async {
+    final helpers = chunk.substring(
+      chunk.indexOf('function samePosition'),
+      chunk.indexOf('function updateDriverElement'),
+    );
+    final result = await Process.run('node', ['-e', '''
+const DRIVER_POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 20000;
+const IN_TRIP_STATUSES = new Set(['in_trip']);
+const asText = (value) => typeof value === 'string' ? value : '';
+const sanitizeRoute = (route) => route;
+const routeCoordinates = (route) =>
+  (route?.features ?? []).flatMap((feature) => feature.geometry.coordinates);
+function validCoordinatePair(value) {
+  return Array.isArray(value) && value.length >= 2 &&
+    Number.isFinite(value[0]) && Number.isFinite(value[1]);
+}
+let activeLine = [[-80, 25.0003], [-79.999, 25.0003]];
+let routeRequests = 0;
+const apiGet = async () => {
+  routeRequests += 1;
+  return {
+    trip: { status: 'in_trip' },
+    route: { type: 'FeatureCollection', features: [
+      { properties: { leg: 'approach' }, geometry: {
+        type: 'LineString', coordinates: [[-83, 28], [-82, 28]],
+      }},
+      { properties: { leg: 'trip' }, geometry: {
+        type: 'LineString', coordinates: activeLine,
+      }},
+    ]},
+  };
+};
+$helpers
+const assert = require('node:assert/strict');
+(async () => {
+  const cache = new Map();
+  const driver = { id: 'driver-1', onTrip: true, tripId: 91 };
+  const first = await ensureDriverRoute(driver, cache);
+  assert.deepEqual(first, activeLine);
+  assert.equal(routeRequests, 1);
+  await ensureDriverRoute(driver, cache);
+  assert.equal(routeRequests, 1);
+  const lock = new DispatchRoadLock();
+  const projected = projectDriverOnRoad(
+    { queryRenderedFeatures: () => { throw new Error('route must win'); } },
+    lock, [-80, 25.0001], first, 5,
+  );
+  assert.equal(projected.trusted, true);
+  assert.equal(projected.line, first);
+  assert.ok(Math.abs(projected.point[1] - 25.0003) < 1e-9);
+  activeLine = [[-80, 25.0004], [-79.999, 25.0004], [-79.999, 25.001]];
+  const realNow = Date.now;
+  Date.now = () => realNow() + 21000;
+  const refreshed = await ensureDriverRoute(driver, cache);
+  Date.now = realNow;
+  assert.equal(routeRequests, 2);
+  assert.deepEqual(refreshed, activeLine);
+  console.log('active route refresh ok');
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+''']);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('active route refresh ok'));
+  });
+
+  test('motion follows the real GPS cadence without a 2-second freeze', () async {
+    final helpers = chunk.substring(
+      chunk.indexOf('function samePosition'),
+      chunk.indexOf('function updateDriverElement'),
+    );
+    final result = await Process.run('node', ['-e', '''
+const DRIVER_POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 20000;
+function validCoordinatePair(value) {
+  return Array.isArray(value) && value.length >= 2 &&
+    Number.isFinite(value[0]) && Number.isFinite(value[1]);
+}
+$helpers
+const assert = require('node:assert/strict');
+(async () => {
+  const map = {
+    project: () => ({ x: 0, y: 0 }),
+    queryRenderedFeatures: () => [],
+  };
+  globalThis.mapRef = { current: map };
+  const driver = {
+    id: 'driver-1', position: [-79.999, 25], speed: 8,
+    onTrip: false, tripId: null, lastUpdated: '2026-10-27T10:00:05Z',
+  };
+  const entry = {
+    motion: nextDriverMotion(null, [-80, 25], 0),
+    lastUpdated: '2026-10-27T10:00:00Z',
+    rawPosition: [-80, 25], roadLock: new DispatchRoadLock(), roadSeq: 0,
+  };
+  await retargetDriverMotion(map, driver, entry, new Map());
+  assert.equal(entry.motion.durationMs, 5000);
+  const startedAt = entry.motion.startedAt;
+  assert.notDeepEqual(motionPosition(entry.motion, startedAt + 2000), driver.position);
+  const middle = motionPosition(entry.motion, startedAt + 2500);
+  assert.ok(Math.abs(middle[0] + 79.9995) < 1e-9);
+  assert.deepEqual(motionPosition(entry.motion, startedAt + 5000), driver.position);
+  assert.deepEqual(motionPosition(entry.motion, startedAt + 9000), driver.position);
+  console.log('real GPS cadence ok');
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+''']);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('real GPS cadence ok'));
   });
 
   test('riders come only from active trips and markers stay at pickup', () {

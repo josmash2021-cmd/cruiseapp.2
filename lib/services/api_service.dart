@@ -2579,6 +2579,9 @@ class ApiService {
     required double lng,
     bool isOnline = true,
     int? etaSeconds,
+    double? heading,
+    double? speedMps,
+    DateTime? capturedAt,
   }) async {
     final h = await _authHeaders();
     final res = await _client
@@ -2590,6 +2593,10 @@ class ApiService {
             'lng': lng,
             'is_online': isOnline,
             if (etaSeconds != null) 'eta_seconds': etaSeconds,
+            if (heading != null) 'heading': heading,
+            if (speedMps != null) 'speed': speedMps,
+            if (capturedAt != null)
+              'captured_at': capturedAt.toUtc().toIso8601String(),
           }),
         )
         .timeout(const Duration(seconds: 3));

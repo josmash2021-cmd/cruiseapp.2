@@ -1735,6 +1735,7 @@ async def stream_live_drivers(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
+            "Content-Encoding": "identity",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },

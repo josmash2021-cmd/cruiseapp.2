@@ -232,6 +232,7 @@ async def test_live_stream_snapshot_live_event_and_disconnect(
     request = _Request()
     response = await admin.stream_live_drivers(request, db)
     assert response.media_type == "text/event-stream"
+    assert response.headers["Content-Encoding"] == "identity"
     assert response.headers["X-Accel-Buffering"] == "no"
     assert event_bus.get_stats()["active_dispatch_streams"] == active_before + 1
 

@@ -3252,7 +3252,13 @@ class ApiService {
   /// Tuesday ACH payout. Only the `btok_...` reaches us, never the
   /// account/routing numbers.
   static Future<Map<String, dynamic>> addBankAccountPayout({
-    required String bankToken,
+    String bankToken = '',
+    // Server-side tokenization (2026-10-26): on Android the Stripe SDK fails
+    // to mint bank tokens on real devices — the backend mints it instead.
+    // Digits travel over TLS only; they are never stored or logged there.
+    String? routingNumber,
+    String? accountNumber,
+    String? accountHolderName,
     bool setDefault = false,
     String? firstName,
     String? lastName,
@@ -3267,7 +3273,11 @@ class ApiService {
           Uri.parse('$_baseUrl/drivers/payout-methods/bank-account'),
           headers: _jsonHeaders(token),
           body: jsonEncode({
-            'bank_token': bankToken,
+            if (bankToken.isNotEmpty) 'bank_token': bankToken,
+            if (routingNumber != null) 'routing_number': routingNumber,
+            if (accountNumber != null) 'account_number': accountNumber,
+            if (accountHolderName != null)
+              'account_holder_name': accountHolderName,
             'set_default': setDefault,
             // KYC + TOS for platform-collected (Custom-style) accounts —
             // the backend pushes these before attaching the bank, because

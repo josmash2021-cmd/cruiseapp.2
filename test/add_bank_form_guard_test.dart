@@ -40,4 +40,30 @@ void main() {
     expect(l10n, contains('String bankFormMissing(String field)'));
     expect(l10n, contains("'Te falta: \$field'"));
   });
+
+  group('Android tokenizes server-side (2026-10-26)', () {
+    // On Android the Stripe SDK failed to mint bank tokens on real devices
+    // (generic "error al agregar método"). iOS keeps the SDK path; Android
+    // posts the digits over TLS and the backend mints the token.
+    test('the SDK tokenize call is iOS-only; Android sends digits', () {
+      expect(screen, contains('if (!Platform.isAndroid)'));
+      expect(
+          screen,
+          contains(
+              'routingNumber: Platform.isAndroid ? _routing.text.trim() : null'));
+      expect(
+          screen,
+          contains(
+              'accountNumber: Platform.isAndroid ? _account.text.trim() : null'));
+    });
+
+    test('ApiService sends digits only when present and token only when set', () {
+      final api = File('lib/services/api_service.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+      expect(api, contains("if (bankToken.isNotEmpty) 'bank_token': bankToken"));
+      expect(api, contains("if (routingNumber != null) 'routing_number': routingNumber"));
+      expect(api, contains("if (accountNumber != null) 'account_number': accountNumber"));
+    });
+  });
 }

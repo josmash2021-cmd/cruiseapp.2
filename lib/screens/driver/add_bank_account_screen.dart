@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -232,24 +233,31 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
     });
     final s = S.of(context);
     try {
-      // The digits go SDK → Stripe. What comes back is a token.
-      final token = await stripe.Stripe.instance.createToken(
-        stripe.CreateTokenParams.bankAccount(
-          params: stripe.BankAccountTokenParams(
-            accountNumber: _account.text.trim(),
-            routingNumber: _routing.text.trim(),
-            accountHolderName: _holder.text.trim(),
-            accountHolderType: stripe.BankAccountHolderType.Individual,
-            country: 'US',
-            currency: 'usd',
+      // 2026-10-26: on Android the SDK's bank tokenization fails on real
+      // devices with the generic "error al agregar método" — the backend
+      // mints the token for them (digits over TLS, never stored or logged).
+      // iOS keeps the SDK path, which has always worked there.
+      String btok = '';
+      if (!Platform.isAndroid) {
+        // The digits go SDK → Stripe. What comes back is a token.
+        final token = await stripe.Stripe.instance.createToken(
+          stripe.CreateTokenParams.bankAccount(
+            params: stripe.BankAccountTokenParams(
+              accountNumber: _account.text.trim(),
+              routingNumber: _routing.text.trim(),
+              accountHolderName: _holder.text.trim(),
+              accountHolderType: stripe.BankAccountHolderType.Individual,
+              country: 'US',
+              currency: 'usd',
+            ),
           ),
-        ),
-      );
-      if (!mounted) return;
-      final btok = token.id;
-      if (btok.isEmpty) {
-        setState(() => _error = s.failedToAddMethod);
-        return;
+        );
+        if (!mounted) return;
+        btok = token.id;
+        if (btok.isEmpty) {
+          setState(() => _error = s.failedToAddMethod);
+          return;
+        }
       }
       // Holder name as typed goes on the token; the account's KYC name comes
       // from the signup session (that is the legal identity Stripe checks).
@@ -263,6 +271,9 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
       if (!mounted) return;
       await ApiService.addBankAccountPayout(
         bankToken: btok,
+        routingNumber: Platform.isAndroid ? _routing.text.trim() : null,
+        accountNumber: Platform.isAndroid ? _account.text.trim() : null,
+        accountHolderName: Platform.isAndroid ? _holder.text.trim() : null,
         setDefault: true,
         firstName: firstName?.isNotEmpty == true ? firstName : null,
         lastName: lastName?.isNotEmpty == true ? lastName : null,

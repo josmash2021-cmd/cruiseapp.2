@@ -109,6 +109,37 @@ async def test_over_12h_is_flipped_offline(db, fcm_spy):
     assert "6 horas" in fcm_spy[0]["body"]
 
 
+async def test_cap_uses_the_drivers_local_day(db, fcm_spy, monkeypatch):
+    class FakeDateTime(datetime):
+        current = datetime(2026, 10, 27, 4, 30, tzinfo=timezone.utc)
+
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return cls.current.replace(tzinfo=None)
+            return cls.current.astimezone(tz)
+
+    monkeypatch.setattr("ghost_driver_agent.datetime", FakeDateTime)
+    d = await _online_driver(db, email="daily@test.com", online_hours=20)
+    d.drive_state = "FL"
+    d.online_since = datetime(2026, 10, 26, 20, 0, tzinfo=timezone.utc)
+    d.last_active_at = FakeDateTime.current
+    await db.commit()
+
+    await _scan()
+    fresh = await _fresh(db, d)
+    assert fresh.is_online is True
+    assert fresh.rest_until is None
+
+    FakeDateTime.current = datetime(2026, 10, 27, 16, 30, tzinfo=timezone.utc)
+    fresh.last_active_at = FakeDateTime.current
+    await db.commit()
+    await _scan()
+    fresh = await _fresh(db, d)
+    assert fresh.is_online is False
+    assert fresh.rest_until is not None
+
+
 async def test_under_12h_stays_online(db, fcm_spy):
     d = await _online_driver(db, email="ok@test.com",
                              online_hours=SHIFT_CAP_HOURS - 1)

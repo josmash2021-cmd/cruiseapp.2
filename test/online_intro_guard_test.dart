@@ -80,7 +80,9 @@ void main() {
     expect(tapRegion.contains('_maybeShowOnlineIntro()'), isFalse,
         reason: 'the tap no longer triggers it — the 10 s timer does');
     final fn = controller.indexOf('Future<void> _enterOnlineMode');
-    final region = controller.substring(fn, fn + 5500);
+    final end = controller.indexOf('Future<void> _exitOnlineMode', fn);
+    expect(end, greaterThan(fn));
+    final region = controller.substring(fn, end);
     expect(region, contains('Timer.periodic(const Duration(seconds: 1)'));
     expect(region, contains('timer.tick < 10'));
     expect(region, contains('_introEpoch++'));

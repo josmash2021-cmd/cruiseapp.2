@@ -63,6 +63,20 @@ async def test_scheduled_ride_browse_and_claim(client, db, test_rider, test_driv
     cards = resp.json()
     assert any(c["id"] == trip.id for c in cards), cards
 
+    driver.rest_until = datetime.now(timezone.utc) + timedelta(hours=6)
+    await db.commit()
+    resp = await client.post(f"/scheduled-trips/{trip.id}/claim", headers=headers())
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "shift_rest_required"
+    await db.refresh(trip)
+    assert trip.driver_id is None
+    resp = await client.get("/scheduled-trips/available", headers=headers())
+    assert resp.status_code == 200
+    assert any(c["id"] == trip.id for c in resp.json())
+
+    driver.rest_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await db.commit()
+
     # 3. The driver claims it.
     resp = await client.post(f"/scheduled-trips/{trip.id}/claim", headers=headers())
     assert resp.status_code == 200, resp.text

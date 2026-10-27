@@ -24,6 +24,7 @@ import '../../services/haptic_service.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/neu_style.dart';
+import 'driver_rest_gate_mixin.dart';
 import 'scheduled_rides_screen.dart';
 
 /// Full-screen map marketplace for scheduled rides (Lyft structure, Cruise
@@ -50,7 +51,7 @@ enum _DateFilter { all, today, tomorrow }
 enum _TimeFilter { all, morning, afternoon, night }
 
 class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, DriverRestGate {
   static const _gold = Color(0xFFE8C547);
   static const _airport = Color(0xFF4285F4);
   static const _cacheKey = 'sched_avail_cache';
@@ -147,6 +148,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   @override
   void initState() {
     super.initState();
+    initDriverRestGate();
     _pendingSelectTripId = widget.initialTripId;
     _seedInitialCenter();
     _loadAvailable();
@@ -160,6 +162,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   @override
   void dispose() {
+    disposeDriverRestGate();
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _countdownTimer?.cancel();
     _bubbleTap?.cancel();
@@ -342,6 +345,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   // ─────────────────────────────────────────────
 
   Future<void> _claimTrip(int tripId) async {
+    if (driverIsResting) {
+      showDriverRestRemaining();
+      return;
+    }
     setState(() => _claimingId = tripId);
     try {
       final result = await ApiService.claimScheduledTrip(tripId);
@@ -362,6 +369,12 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       _loadMyRidesCount();
     } catch (e) {
       if (!mounted) return;
+      if (e is ApiException &&
+          e.statusCode == 403 &&
+          e.message == 'shift_rest_required') {
+        syncDriverRestRefusal();
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         // The one refusal the driver can act on gets its own sentence.
         // Everything else keeps the raw server reason.
@@ -1423,10 +1436,14 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       width: double.infinity,
       height: 52,
       child: ElevatedButton(
-        onPressed: claiming ? null : () => _claimTrip(tripId),
+        onPressed: claiming
+            ? null
+            : driverIsResting
+                ? showDriverRestRemaining
+                : () => _claimTrip(tripId),
         style: ElevatedButton.styleFrom(
-          backgroundColor: _gold,
-          foregroundColor: Colors.black,
+          backgroundColor: driverIsResting ? const Color(0xFF6B6B70) : _gold,
+          foregroundColor: driverIsResting ? Colors.white : Colors.black,
           disabledBackgroundColor: _gold.withValues(alpha: 0.4),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(26),
@@ -1442,7 +1459,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
                     strokeWidth: 2.5, color: Colors.black87),
               )
             : Text(
-                s.schedMapReserve,
+                driverIsResting ? driverRestLabel : s.schedMapReserve,
                 style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 15,

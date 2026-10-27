@@ -261,19 +261,18 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       final serverRest = serverRestRaw == null || serverRestRaw.isEmpty
           ? null
           : DateTime.tryParse(serverRestRaw);
-      if (serverRest != null) {
-        if (serverRest.isAfter(DateTime.now())) {
-          if (_restUntil?.millisecondsSinceEpoch !=
-              serverRest.millisecondsSinceEpoch) {
-            _setRestUntil(serverRest);
-          }
-        } else if (_restUntil != null) {
-          _restUntil = null;
-          _restJustFinishedAt = null;
-          _restTickTimer?.cancel();
-          _restTickTimer = null;
-          PrefsCache.instance.then((p) => p.setInt('driver_rest_until', 0));
+      if (serverRest != null && serverRest.isAfter(DateTime.now())) {
+        if (_restUntil?.millisecondsSinceEpoch !=
+            serverRest.millisecondsSinceEpoch) {
+          _setRestUntil(serverRest);
         }
+      } else if (_serverRestResponseKnown && _restUntil != null) {
+        _restUntil = null;
+        _restJustFinishedAt = null;
+        _restTickTimer?.cancel();
+        _restTickTimer = null;
+        PrefsCache.instance.then((p) => p.setInt('driver_rest_until', 0));
+        unawaited(DriverRestService.set(null));
       }
 
       // Sync approval status locally
@@ -1500,8 +1499,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     if (!mounted) return;
     _restUntil = when;
     _restJustFinishedAt = null;
+    _restSyncTicks = 0;
     PrefsCache.instance.then(
         (p) => p.setInt('driver_rest_until', when.millisecondsSinceEpoch));
+    unawaited(DriverRestService.set(when));
     _restTickTimer?.cancel();
     _restTickTimer =
         Timer.periodic(const Duration(seconds: 1), (_) => _onRestTick());
@@ -1518,12 +1519,18 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         _setRestUntil(when);
       } else {
         p.setInt('driver_rest_until', 0);
+        unawaited(DriverRestService.set(null));
       }
     });
   }
 
   void _onRestTick() {
     if (!mounted) return;
+    _restSyncTicks++;
+    if (_restSyncTicks >= 15) {
+      _restSyncTicks = 0;
+      unawaited(_checkVehicleDocStatus());
+    }
     final now = DateTime.now();
     if (_restUntil != null) {
       if (now.isBefore(_restUntil!)) {
@@ -1533,6 +1540,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       _restJustFinishedAt = now;
       _restUntil = null;
       PrefsCache.instance.then((p) => p.setInt('driver_rest_until', 0));
+      unawaited(DriverRestService.set(null));
       _setState(() {});
       return;
     }

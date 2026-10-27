@@ -25,6 +25,7 @@ import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
 import '../../widgets/tier_badge.dart';
+import 'driver_rest_gate_mixin.dart';
 import 'scheduled_ride_details_screen.dart';
 
 /// Unified scheduled rides screen with two tabs:
@@ -41,7 +42,7 @@ class ScheduledRidesScreen extends StatefulWidget {
 }
 
 class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, DriverRestGate {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFFBE47A);
   static const _airport = Color(0xFF4285F4);
@@ -85,6 +86,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   @override
   void initState() {
     super.initState();
+    initDriverRestGate();
     _tabCtrl = TabController(
       length: 2,
       vsync: this,
@@ -100,6 +102,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 
   @override
   void dispose() {
+    disposeDriverRestGate();
     _tabCtrl.dispose();
     _countdownTimer?.cancel();
     super.dispose();
@@ -276,6 +279,10 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   }
 
   Future<void> _claimTrip(int tripId) async {
+    if (driverIsResting) {
+      showDriverRestRemaining();
+      return;
+    }
     setState(() => _claimingId = tripId);
     try {
       final result = await ApiService.claimScheduledTrip(tripId);
@@ -299,6 +306,12 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       _loadAvailable(force: true);
     } catch (e) {
       if (!mounted) return;
+      if (e is ApiException &&
+          e.statusCode == 403 &&
+          e.message == 'shift_rest_required') {
+        syncDriverRestRefusal();
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         // The one refusal the driver can act on gets its own sentence.
         // Everything else keeps the raw server reason.
@@ -673,10 +686,15 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
             width: double.infinity,
             height: 48,
             child: ElevatedButton(
-              onPressed: isClaiming ? null : () => _claimTrip(tripId),
+              onPressed: isClaiming
+                  ? null
+                  : driverIsResting
+                      ? showDriverRestRemaining
+                      : () => _claimTrip(tripId),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: Colors.black,
+                backgroundColor:
+                    driverIsResting ? const Color(0xFF6B6B70) : _gold,
+                foregroundColor: driverIsResting ? Colors.white : Colors.black,
                 disabledBackgroundColor: _gold.withValues(alpha: 0.4),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(13),
@@ -691,7 +709,9 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                           strokeWidth: 2.5, color: Colors.black87),
                     )
                   : Text(
-                      S.of(context).acceptRideButton,
+                      driverIsResting
+                          ? driverRestLabel
+                          : S.of(context).acceptRideButton,
                       style: const TextStyle(
                           fontWeight: FontWeight.w800, fontSize: 15),
                     ),

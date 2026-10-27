@@ -146,7 +146,6 @@ class GhostDriverAgent:
         now = datetime.now(timezone.utc)
         warn_cutoff = now - timedelta(minutes=WARN_AFTER_MINUTES)
         offline_cutoff = now - timedelta(minutes=OFFLINE_AFTER_MINUTES)
-        shift_cap_cutoff = now - timedelta(hours=SHIFT_CAP_HOURS)
 
         from models.database import User, Trip
 
@@ -189,8 +188,8 @@ class GhostDriverAgent:
             for driver in online_drivers:
                 # ── 12 H SHIFT CAP (user spec 2026-09-27) ─────────────
                 # "La app no puede quedar prendida mas de 12 horas": a shift
-                # never runs past 12 h of continuous online time, however
-                # active the driver is — that is the point of a cap, and it
+                # never runs past 12 h of the driver's local day; midnight
+                # starts a fresh daily clock instead of carrying yesterday.
                 # also retires the "forgot to disconnect" ghost that keeps
                 # heartbeating from a parked phone. Never mid-trip: the cap
                 # lands on the next scan once the trip closes.
@@ -204,7 +203,14 @@ class GhostDriverAgent:
                 if since.tzinfo is None:
                     # SQLite drops tzinfo — read as UTC.
                     since = since.replace(tzinfo=timezone.utc)
-                if since < shift_cap_cutoff:
+                state_code = (driver.drive_state or "").strip().upper() or None
+                if driver.lat is not None and driver.lng is not None:
+                    from routers.dispatch import _state_for
+                    state_code = await _state_for(
+                        driver.lat, driver.lng) or state_code
+                from services.shift_clock import effective_shift_start
+                since = effective_shift_start(since, now, state_code)
+                if now - since >= timedelta(hours=SHIFT_CAP_HOURS):
                     if driver.id in drivers_on_active_trip:
                         continue  # never yank a driver with a rider aboard
                     driver.is_online = False

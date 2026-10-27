@@ -20,18 +20,18 @@ void main() {
   final main_ = File('lib/main.dart').readAsStringSync();
 
   group('backend: the ghost agent caps shifts at 12 h', () {
-    test('cap constant + cutoff + branch', () {
+    test('cap constant + local-day clock + branch', () {
       expect(ghost, contains('SHIFT_CAP_HOURS = 12'));
+      expect(ghost, contains('effective_shift_start(since, now, state_code)'));
       expect(
-          ghost,
-          contains(
-              'shift_cap_cutoff = now - timedelta(hours=SHIFT_CAP_HOURS)'));
+          ghost, contains('now - since >= timedelta(hours=SHIFT_CAP_HOURS)'));
       expect(ghost, contains('since = driver.online_since'));
       expect(ghost, contains('driver.online_since = None'));
     });
 
     test('never mid-trip, offers retire, driver is pushed', () {
-      final idx = ghost.indexOf('since < shift_cap_cutoff');
+      final idx =
+          ghost.indexOf('now - since >= timedelta(hours=SHIFT_CAP_HOURS)');
       final block = ghost.substring(idx, idx + 1800);
       expect(block.contains('if driver.id in drivers_on_active_trip:'), isTrue,
           reason: 'a rider aboard beats the clock — the cap lands on the '
@@ -101,10 +101,10 @@ void main() {
           contains('shiftEnded12h'));
     });
 
-    test('the RESUME label expires at the cap', () {
-      expect(ctrl, contains('const Duration(hours: 12).inMilliseconds'),
-          reason: 'past 12 h the GO button reads GO, not RESUME — even if '
-              'the app died mid-shift');
+    test('the RESUME label expires at the local-day cap', () {
+      expect(ctrl, contains('shiftNow.difference(_dailyShiftStart('));
+      expect(ctrl, contains('const Duration(hours: 12)'));
+      expect(ctrl, contains('ZoneService.stateOfPoint(_pos!)'));
     });
 
     test('resume preserves the original start instead of restarting 12 h', () {

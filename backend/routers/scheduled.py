@@ -318,6 +318,11 @@ async def claim_scheduled_trip(
     # Checked here as well as in the browse: a trip id survives a stale
     # list, and hiding a card is a courtesy while this is the rule.
     _require_approved_driver(user)
+    rest_until = user.rest_until
+    if rest_until is not None and rest_until.tzinfo is None:
+        rest_until = rest_until.replace(tzinfo=timezone.utc)
+    if rest_until is not None and rest_until > utc_now():
+        raise HTTPException(403, "shift_rest_required")
 
     # Fetch trip with row-level lock
     result = await db.execute(

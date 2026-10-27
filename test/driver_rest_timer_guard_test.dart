@@ -94,6 +94,13 @@ void main() {
     expect(offline, contains("r == 'shift_rest_required'"));
   });
 
+  test('rest clears live when the server removes or expires the deadline', () {
+    expect(offline, contains('_restSyncTicks >= 15'));
+    expect(offline, contains('unawaited(_checkVehicleDocStatus())'));
+    expect(offline,
+        contains('else if (_serverRestResponseKnown && _restUntil != null)'));
+  });
+
   test('every online writer treats the rest 403 as terminal', () {
     expect(
         compactController.split("e.message == 'shift_rest_required'").length -

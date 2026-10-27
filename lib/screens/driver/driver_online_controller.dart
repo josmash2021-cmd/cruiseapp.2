@@ -29,6 +29,12 @@ const String _kMapSurfaceOwner = 'DriverOnline';
 const int _kRecenterFlightMs = 600;
 
 extension _DriverOnlineController on _DriverOnlineScreenState {
+  DateTime _dailyShiftStart(DateTime start, DateTime now) {
+    final state = (_pos == null ? null : ZoneService.stateOfPoint(_pos!)) ??
+        _driveStateCode;
+    return DriverShiftClock.effectiveShiftStart(start, now, state);
+  }
+
   String _normalizePhotoUrl(dynamic rawUrl) {
     final raw = (rawUrl ?? '').toString().replaceAll('"', '').trim();
     if (raw.isEmpty) return '';
@@ -82,10 +88,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // A "live shift" only lives 12 h (user spec 2026-09-27): past the cap
       // the GO button reads GO, not RESUME — even if the app died mid-shift
       // and nobody cleared the pref.
+      final shiftNow = DateTime.now();
       final shiftAlive = wasOnline &&
           wentOnlineAt != null &&
-          DateTime.now().millisecondsSinceEpoch - wentOnlineAt <
-              const Duration(hours: 12).inMilliseconds;
+          shiftNow.difference(_dailyShiftStart(
+                DateTime.fromMillisecondsSinceEpoch(wentOnlineAt),
+                shiftNow,
+              )) <
+              const Duration(hours: 12);
       if (!mounted) return;
       _driverWasOnlineAtBoot = shiftAlive;
       // ¿Entrar online de una? SOLO por una entrada de trabajo real:
@@ -1102,7 +1112,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         ));
       }
 
-      if (now.difference(started) >= const Duration(hours: 12) &&
+      if (now.difference(_dailyShiftStart(started, now)) >=
+              const Duration(hours: 12) &&
           _tripId == null &&
           _activeTripData == null) {
         await closeShift();
@@ -1112,7 +1123,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _shiftCapTimer = Timer.periodic(const Duration(minutes: 1), (_) {
         final started = _shiftStartedAt;
         if (started == null || !mounted || !_driverOnline) return;
-        if (DateTime.now().difference(started) >= const Duration(hours: 12) &&
+        final tickNow = DateTime.now();
+        if (tickNow.difference(_dailyShiftStart(started, tickNow)) >=
+                const Duration(hours: 12) &&
             _tripId == null &&
             _activeTripData == null) {
           unawaited(closeShift());

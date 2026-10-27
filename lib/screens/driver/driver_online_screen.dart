@@ -63,8 +63,10 @@ import '../../map/driver_road_lock.dart';
 import '../../map/map_gesture_guard.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../services/resilient_position_stream.dart';
+import '../../services/driver_rest_service.dart';
 import '../../services/places_service.dart';
 import '../../utils/driver_location_settings.dart';
+import '../../utils/driver_shift_clock.dart';
 import '../../utils/gps_fix_policy.dart';
 import '../chat_screen.dart';
 import '../safety_screen.dart';
@@ -902,6 +904,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   DateTime? _restUntil;
   DateTime? _restJustFinishedAt;
   Timer? _restTickTimer;
+  int _restSyncTicks = 0;
   bool _serverRestResponseKnown = false;
 
   // -- Driver profile photo --

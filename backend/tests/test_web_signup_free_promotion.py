@@ -179,7 +179,7 @@ async def test_web_social_grants_only_for_a_new_rider_account(
     assert len(await _recipients(db)) == 1
 
 
-async def test_app_system_and_driver_accounts_get_nothing(
+async def test_app_gets_template_but_system_and_driver_accounts_get_nothing(
         client: AsyncClient, db, monkeypatch):
     from services.web_signup_promotion import grant_web_signup_promotion
 
@@ -191,7 +191,13 @@ async def test_app_system_and_driver_accounts_get_nothing(
         "role": "rider",
     }, headers=_make_auth_headers())
     assert app_resp.status_code == 200, app_resp.text
-    assert await _grants(db) == []
+    grants = await _grants(db)
+    assert len(grants) == 1
+    assert grants[0].uses_per_rider == 2
+    recipients = await _recipients(db)
+    assert [(row.grant_id, row.rider_id) for row in recipients] == [
+        (grants[0].id, app_resp.json()["user"]["id"])
+    ]
 
     shared = User(
         first_name="Web", last_name="Booking",
@@ -208,8 +214,105 @@ async def test_app_system_and_driver_accounts_get_nothing(
     await grant_web_signup_promotion(db, shared)
     await grant_web_signup_promotion(db, driver)
     await db.commit()
-    assert await _grants(db) == []
-    assert await _recipients(db) == []
+    assert len(await _grants(db)) == 1
+    assert len(await _recipients(db)) == 1
+
+
+async def test_phone_signup_grants_the_same_welcome_template(
+        client: AsyncClient, db):
+    phone = "+15550009901"
+    db.add(OTPCode(
+        identifier=phone,
+        channel="sms",
+        code_hash=hashlib.sha256(b"123456").hexdigest(),
+        expires_at=time.time() + 300,
+    ))
+    await db.commit()
+
+    response = await client.post("/auth/phone-login", json={
+        "phone": phone, "code": "123456", "role": "rider",
+    }, headers=_make_auth_headers())
+
+    assert response.status_code == 200, response.text
+    grants = await _grants(db)
+    assert len(grants) == 1
+    assert grants[0].kind == "free"
+    assert grants[0].max_miles == 5.0
+    assert grants[0].uses_per_rider == 2
+    recipients = await _recipients(db)
+    assert [(row.grant_id, row.rider_id) for row in recipients] == [
+        (grants[0].id, response.json()["user"]["id"])
+    ]
+
+
+async def test_social_signup_grants_once_and_login_does_not_duplicate(
+        client: AsyncClient, db, monkeypatch):
+    from google.oauth2 import id_token as google_id_token
+
+    email = "promo-app-social@test.com"
+    monkeypatch.setenv("GOOGLE_CLIENT_IDS", "")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "")
+    monkeypatch.setattr(
+        google_id_token,
+        "verify_oauth2_token",
+        lambda token, request: {
+            "email": email, "given_name": "App", "family_name": "Social",
+        },
+    )
+    payload = {"provider": "google", "id_token": "valid", "role": "rider"}
+
+    created = await client.post(
+        "/auth/social", json=payload, headers=_make_auth_headers())
+    assert created.status_code == 200, created.text
+    grants = await _grants(db)
+    assert len(grants) == 1
+    recipients = await _recipients(db)
+    assert len(recipients) == 1
+    assert recipients[0].rider_id == created.json()["user"]["id"]
+
+    login = await client.post(
+        "/auth/social", json=payload, headers=_make_auth_headers())
+    assert login.status_code == 200, login.text
+    assert len(await _grants(db)) == 1
+    assert len(await _recipients(db)) == 1
+
+
+async def test_app_signup_gets_free_quote_up_to_five_miles(
+        client: AsyncClient, db, monkeypatch):
+    app_resp = await client.post("/auth/register", json={
+        "first_name": "App",
+        "last_name": "Quote",
+        "email": "promo-app-quote@test.com",
+        "password": "Secret1!",
+        "role": "rider",
+    }, headers=_make_auth_headers())
+    assert app_resp.status_code == 200, app_resp.text
+
+    async def fake_route(request):
+        return {
+            "distance_miles": 5.0,
+            "duration_minutes": 20,
+            "polyline": "",
+            "routing_source": "test",
+        }
+
+    monkeypatch.setattr("services.rider_pricing.route_metrics", fake_route)
+    token = app_resp.json()["access_token"]
+    response = await client.post("/pricing/quote", json={
+        "pickup_lat": 33.5,
+        "pickup_lng": -86.8,
+        "dropoff_lat": 33.55,
+        "dropoff_lng": -86.85,
+    }, headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200, response.text
+    quotes = response.json()["quotes"]
+    standard = next(item for item in quotes if item["tier"] == "standard")
+    assert standard["is_free"] is True
+    assert standard["promo_total_cents"] == 0
+    vip = next(item for item in quotes if item["tier"] == "vip")
+    assert vip["is_free"] is False
+    assert vip["promo_total_cents"] == vip["original_total_cents"]
 
 
 # ── Quoting ───────────────────────────────────────────────────────────────

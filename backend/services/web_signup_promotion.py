@@ -1,13 +1,13 @@
-"""Welcome promotion for riders who sign up on the website.
+"""Welcome promotion for riders who sign up on the website or the app.
 
-Every brand-new rider account created via /auth/web/register or
-/auth/web/social gets 2 free rides of up to 5 miles each; longer rides fall
-back to 30% off without consuming a free use (rider_pricing._select_promotion
-returns promotion_grant_id=None for that fallback, so no redemption is ever
-reserved for it). A single template RiderPromotionGrant is shared by all
-recipients; its id lives in AppConfig so restarts and concurrent signups
-never duplicate it, and each rider is linked with an on-conflict-do-nothing
-upsert on the existing (grant_id, rider_id) constraint.
+Every brand-new rider account created through those two channels gets 2 free
+rides of up to 5 miles each; longer rides fall back to 30% off without
+consuming a free use (rider_pricing._select_promotion returns
+promotion_grant_id=None for that fallback, so no redemption is ever reserved
+for it). A single template RiderPromotionGrant is shared by all recipients;
+its id lives in AppConfig so restarts and concurrent signups never duplicate
+it, and each rider is linked with an on-conflict-do-nothing upsert on the
+existing (grant_id, rider_id) constraint.
 """
 
 import json
@@ -95,14 +95,14 @@ async def _template_grant(db) -> RiderPromotionGrant:
     return grant
 
 
-async def grant_web_signup_promotion(db, user: User) -> None:
-    """Link a brand-new web rider to the welcome promotion.
+async def grant_signup_promotion(db, user: User) -> None:
+    """Link a brand-new app or web rider to the welcome promotion.
 
     Raises on failure: the signup transaction must roll back rather than
-    leave a new web rider without the benefit. Never commits — the caller
-    owns the transaction.
+    leave a new rider without the benefit. Never commits — the caller owns
+    the transaction.
     """
-    if user.role != "rider" or user.registration_source != "web":
+    if user.role != "rider" or user.registration_source not in ("app", "web"):
         return
     if (user.email or "").lower() == "web@cruiseinride.com":
         return
@@ -113,6 +113,10 @@ async def grant_web_signup_promotion(db, user: User) -> None:
     ).on_conflict_do_nothing(index_elements=["grant_id", "rider_id"])
     await db.execute(statement)
     await db.flush()
+
+
+async def grant_web_signup_promotion(db, user: User) -> None:
+    await grant_signup_promotion(db, user)
 
 
 async def create_web_ride_quote(

@@ -277,6 +277,9 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     try:
+        await db.flush()
+        from services.web_signup_promotion import grant_signup_promotion
+        await grant_signup_promotion(db, user)
         await db.commit()
         await db.refresh(user)
     except IntegrityError as ie:
@@ -1135,6 +1138,9 @@ async def phone_login(body: PhoneLoginIn, request: Request, db: AsyncSession = D
             registration_source="app",
         )
         db.add(user)
+        await db.flush()
+        from services.web_signup_promotion import grant_signup_promotion
+        await grant_signup_promotion(db, user)
         await db.commit()
         await db.refresh(user)
 
@@ -1384,6 +1390,9 @@ async def social_auth(body: SocialAuthIn, request: Request, db: AsyncSession = D
             registration_source="app",
         )
         db.add(user)
+        await db.flush()
+        from services.web_signup_promotion import grant_signup_promotion
+        await grant_signup_promotion(db, user)
         await db.commit()
         await db.refresh(user)
 

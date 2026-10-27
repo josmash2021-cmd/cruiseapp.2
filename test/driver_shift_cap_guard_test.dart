@@ -106,5 +106,37 @@ void main() {
           reason: 'past 12 h the GO button reads GO, not RESUME — even if '
               'the app died mid-shift');
     });
+
+    test('resume preserves the original start instead of restarting 12 h', () {
+      final enter = ctrl.indexOf('Future<void> _enterOnlineMode');
+      final region = ctrl.substring(enter, enter + 6500);
+      expect(region, contains('resuming && savedStartMs != null'));
+      expect(region, contains("shiftPrefs.getInt('driver_went_online_at')"));
+      expect(region.contains('_shiftStartedAt = DateTime.now()'), isFalse);
+      expect(region, contains('await closeShift();'));
+    });
+
+    test('foreground push reaches the live shutdown before suppression', () {
+      final listener = main_.indexOf('FirebaseMessaging.onMessage.listen');
+      final branch =
+          main_.indexOf("if (type == 'driver_shift_ended')", listener);
+      final suppression = main_.indexOf('if (!isAllowedInApp)', listener);
+      expect(branch, greaterThan(listener));
+      expect(branch, lessThan(suppression));
+      expect(main_.substring(branch, branch + 180),
+          contains('DriverOnlineScreen.shiftEndedNotifier.value++'));
+    });
+
+    test('server stores and enforces the six-hour rest', () {
+      expect(ghost, contains('SHIFT_REST_HOURS = 6'));
+      expect(ghost, contains('driver.rest_until = now + timedelta'));
+      expect(
+          drivers, contains('raise HTTPException(403, "shift_rest_required")'));
+      expect(drivers, contains('"rest_until": rest_until.isoformat()'));
+      expect(model, contains('rest_until = Column(DateTime(timezone=True)'));
+      expect(model, contains('("users", "rest_until", "DATETIME")'));
+      expect(model,
+          contains('("users", "rest_until", "TIMESTAMP WITH TIME ZONE")'));
+    });
   });
 }

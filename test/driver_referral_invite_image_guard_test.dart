@@ -2,10 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guardian for the referral invite share (2026-10-27 owner spec): the share
-/// must attach the golden invite image alongside the code+link, not a bare
-/// text message. Uses a temp file (shareXFiles needs a real path on device)
-/// and falls back to text-only if the image write fails.
+/// Guardian for the referral invite share: text + link lets WhatsApp render
+/// the golden artwork from the static landing's Open Graph metadata. The
+/// artwork and its byte-identical backend copy remain available.
 void main() {
   final src = File('lib/screens/driver/driver_referral_screen.dart')
       .readAsStringSync()
@@ -18,14 +17,17 @@ void main() {
     expect(f.lengthSync(), greaterThan(10000));
   });
 
-  test('_shareInvite shares the image as an attachment plus code and link', () {
-    expect(src, contains("rootBundle.load('assets/images/referral_invite.png')"));
-    expect(src, contains('Share.shareXFiles('));
-    expect(src, contains('text: text,'));
-    expect(src, contains('subject: s.driverShareSubject'));
+  test('_shareInvite shares text and the OTA-safe path without an attachment', () {
+    expect(src, contains("'\${ApiService.publicBaseUrl}/drive/\$_code'"));
+    expect(
+      src,
+      contains('await shareText(context, text, subject: s.driverShareSubject)'),
+    );
+    expect(src, contains('driverShareCodeLine'));
+    expect(src.contains('Share.shareXFiles('), isFalse);
   });
 
-  test('OTA installs download the exact same image when the asset is absent', () {
+  test('the backend copy is byte-identical to the golden invite asset', () {
     final remote = File('backend/static/media/referral_invite.png');
     expect(remote.existsSync(), isTrue);
     expect(
@@ -34,17 +36,14 @@ void main() {
         File('assets/images/referral_invite.png').readAsBytesSync(),
       ),
     );
-    expect(src, contains('Future<List<int>> _inviteImageBytes() async'));
-    expect(
-      src,
-      contains(
-        "'\${ApiService.publicBaseUrl}/static/media/referral_invite.png'",
-      ),
-    );
-    expect(src, contains('.timeout(const Duration(seconds: 12))'));
   });
 
-  test('falls back to text-only when the image write fails', () {
-    expect(src, contains('unawaited(shareText(context, text'));
+  test('no image attachment or download helper remains in the share flow', () {
+    expect(src.contains('_inviteImageBytes'), isFalse);
+    expect(src.contains('getTemporaryDirectory'), isFalse);
+    expect(
+      src.contains("rootBundle.load('assets/images/referral_invite.png')"),
+      isFalse,
+    );
   });
 }

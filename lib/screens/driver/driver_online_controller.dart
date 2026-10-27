@@ -1071,35 +1071,51 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         }
       }
       PrefsCache.instance.then((p) => p.setBool('driver_was_online', true));
-      // 12 h shift cap (user spec 2026-09-27): the ghost agent caps the
-      // shift server-side off online_since even with the app dead; this
-      // 1-min check is the live half — it also stamps when the shift
-      // started so the boot's RESUME label expires at the cap too.
-      _shiftStartedAt = DateTime.now();
-      PrefsCache.instance.then((p) => p.setInt(
-          'driver_went_online_at', _shiftStartedAt!.millisecondsSinceEpoch));
+      // A resume keeps the original start; replacing it here used to give
+      // every app restart another twelve hours.
+      final shiftPrefs = await PrefsCache.instance;
+      if (!mounted || !_driverOnline) return;
+      final now = DateTime.now();
+      final savedStartMs = shiftPrefs.getInt('driver_went_online_at');
+      final started = resuming && savedStartMs != null
+          ? DateTime.fromMillisecondsSinceEpoch(savedStartMs)
+          : now;
+      _shiftStartedAt = started;
+      if (savedStartMs != started.millisecondsSinceEpoch) {
+        await shiftPrefs.setInt(
+            'driver_went_online_at', started.millisecondsSinceEpoch);
+      }
+      Future<void> closeShift() async {
+        await _exitOnlineMode();
+        if (!mounted) return;
+        _setRestUntil(DateTime.now().add(const Duration(hours: 6)));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            S.of(context).shiftEnded12h,
+            style: const TextStyle(
+                color: Colors.black, fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: const Color(0xFFE8C547),
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+
+      if (now.difference(started) >= const Duration(hours: 12) &&
+          _tripId == null &&
+          _activeTripData == null) {
+        await closeShift();
+        return;
+      }
       _shiftCapTimer?.cancel();
       _shiftCapTimer = Timer.periodic(const Duration(minutes: 1), (_) {
         final started = _shiftStartedAt;
         if (started == null || !mounted || !_driverOnline) return;
-        if (DateTime.now().difference(started) >= const Duration(hours: 12)) {
-          unawaited(_exitOnlineMode().then((_) {
-            if (!mounted) return;
-            // 2026-10-27 owner spec: after the 12h cap the GO button shows a
-            // 6h rest countdown instead of just the offline home.
-            _setRestUntil(DateTime.now().add(const Duration(hours: 6)));
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(
-                S.of(context).shiftEnded12h,
-                style: const TextStyle(
-                    color: Colors.black, fontWeight: FontWeight.w600),
-              ),
-              backgroundColor: const Color(0xFFE8C547),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ));
-          }));
+        if (DateTime.now().difference(started) >= const Duration(hours: 12) &&
+            _tripId == null &&
+            _activeTripData == null) {
+          unawaited(closeShift());
         }
       });
       // Chime solo en un GO fresco (los resumes ya saben) — la transición
@@ -1293,11 +1309,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// pushed — close the local turn the same way a manual offline would.
   void _onShiftEndedPush() {
     if (!mounted || !_driverOnline) return;
-    unawaited(_exitOnlineMode().then((_) {
+    unawaited(() async {
+      await _exitOnlineMode();
       if (!mounted) return;
-      // 2026-10-27 owner spec: after the 12h cap the GO button shows a 6h
-      // rest countdown instead of just the offline home.
-      _setRestUntil(DateTime.now().add(const Duration(hours: 6)));
+      await _checkVehicleDocStatus();
+      if (!mounted) return;
+      // Older backends have no rest field; keep the local fallback there.
+      if (_restUntil == null && !_serverRestResponseKnown) {
+        _setRestUntil(DateTime.now().add(const Duration(hours: 6)));
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           S.of(context).shiftEnded12h,
@@ -1308,7 +1328,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
-    }));
+    }());
+  }
+
+  void _onShiftRestKick() {
+    if (!mounted) return;
+    unawaited(_exitOnlineMode().then((_) => _checkVehicleDocStatus()));
   }
 
   /// The face-check 403 (2026-10-23, owner report: "rechazar no desconecta
@@ -1499,6 +1524,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         if (mounted) _showGoOnlineDisabledDialog();
         return;
       }
+      if (e is ApiException && e.message == 'shift_rest_required') {
+        _onShiftRestKick();
+        return;
+      }
       // face_review_required is terminal too (2026-10-23, owner report):
       // dispatch rejected the dress-code selfie mid-flip — roll back and
       // let the fresh gate read paint the red "Verificar" GO.
@@ -1578,6 +1607,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         debugPrint('[DriverOnline] Background heartbeat failed: $e');
         // The face-check 403 means dispatch kicked this driver — the
         // heartbeat must not re-online them (owner report 2026-10-23).
+        if (e is ApiException && e.message == 'shift_rest_required') {
+          _onShiftRestKick();
+        }
         if (e is ApiException && e.message == 'face_review_required') {
           _onFaceReviewKick();
         }
@@ -1787,6 +1819,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             // face_review_required 403 (2026-10-23, owner report): this 5 s
             // stream used to UNDO the dispatch selfie-reject kick — it is
             // terminal now, never swallowed back online.
+            if (e is ApiException && e.message == 'shift_rest_required') {
+              _onShiftRestKick();
+            }
             if (e is ApiException && e.message == 'face_review_required') {
               _onFaceReviewKick();
             }
@@ -3214,6 +3249,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         lng: _pos!.longitude,
       ).catchError((e) {
         // Same terminal face-check 403 as the 5 s GPS stream (2026-10-23).
+        if (e is ApiException && e.message == 'shift_rest_required') {
+          _onShiftRestKick();
+        }
         if (e is ApiException && e.message == 'face_review_required') {
           _onFaceReviewKick();
         }

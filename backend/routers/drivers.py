@@ -333,6 +333,16 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         _driver_locations.pop(driver_id, None)
         raise HTTPException(403, "face_review_required")
 
+    # The post-cap rest is server-side: a reinstall, another device or an old
+    # app must not be able to flip online before the six hours have elapsed.
+    if body.is_online:
+        rest_until = user.rest_until
+        if rest_until is not None and rest_until.tzinfo is None:
+            rest_until = rest_until.replace(tzinfo=timezone.utc)
+        if rest_until is not None and rest_until > utc_now():
+            _driver_locations.pop(driver_id, None)
+            raise HTTPException(403, "shift_rest_required")
+
     # Sector connect gate (2026-10-14, user spec: "dentro del cuadro podrá
     # conectarse" — Florida AND Alabama sectors, one dataset, the one the
     # panel edits): connecting is refused inside the sector coverage region
@@ -370,7 +380,11 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     # offline must not look "active" to the last_active_at filters either.
     _last_write = _driver_last_db_write.get(driver_id, 0.0)
     _online_flipped = bool(body.is_online) != bool(user.is_online)
-    if _online_flipped or (_now - _last_write) >= _DB_WRITE_THROTTLE:
+    _repair_shift_clock = body.is_online and user.online_since is None
+    if _repair_shift_clock:
+        user.online_since = utc_now()
+    if (_online_flipped or _repair_shift_clock
+            or (_now - _last_write) >= _DB_WRITE_THROTTLE):
         user.lat = body.lat
         user.lng = body.lng
         user.is_online = body.is_online
@@ -3160,6 +3174,13 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     if go_disabled:
         reasons.append("go_online_disabled")
 
+    rest_until = user.rest_until
+    if rest_until is not None and rest_until.tzinfo is None:
+        rest_until = rest_until.replace(tzinfo=timezone.utc)
+    rest_required = rest_until is not None and rest_until > utc_now()
+    if rest_required:
+        reasons.append("shift_rest_required")
+
     can_go = (
         approved
         and vehicle_ok
@@ -3168,6 +3189,7 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         and not plate_pending
         and not pending_contracts
         and not go_disabled
+        and not rest_required
     )
 
     # Daily face check (2026-10-23, owner spec: "verificación de selfie cada
@@ -3207,6 +3229,7 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         "face_review_required": bool(user.face_review_required),
         "face_check_pending": face_pending,
         "go_online_disabled": go_disabled,
+        "rest_until": rest_until.isoformat() if rest_until is not None else None,
         "reasons": reasons,
     }
 

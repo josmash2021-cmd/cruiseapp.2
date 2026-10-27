@@ -39,7 +39,7 @@ void main() {
     test('enter/exit exist and own the channels and the backend', () {
       final enter = ctrl.indexOf('Future<void> _enterOnlineMode(');
       expect(enter, isNonNegative);
-      final enterBody = ctrl.substring(enter, enter + 5000);
+      final enterBody = ctrl.substring(enter, enter + 7000);
       expect(enterBody.contains('_goOnlineBackend()'), isTrue);
       expect(
           enterBody.contains('_connectSse()') ||

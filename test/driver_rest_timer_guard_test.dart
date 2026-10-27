@@ -84,4 +84,23 @@ void main() {
     expect(l10n, contains('String restRemainingLabel(String time)'));
     expect(l10n, contains("'Rest remaining: \$time'"));
   });
+
+  test('server rest synchronizes the countdown and expires stale local rest',
+      () {
+    expect(offline, contains("result.containsKey('rest_until')"));
+    expect(offline, contains('DateTime.tryParse(serverRestRaw)'));
+    expect(offline, contains('serverRest.isAfter(DateTime.now())'));
+    expect(offline, contains("p.setInt('driver_rest_until', 0)"));
+    expect(offline, contains("r == 'shift_rest_required'"));
+  });
+
+  test('every online writer treats the rest 403 as terminal', () {
+    expect(
+        compactController.split("e.message == 'shift_rest_required'").length -
+            1,
+        4);
+    expect(controller, contains('void _onShiftRestKick()'));
+    expect(controller, contains('_onShiftRestKick();'));
+    expect(controller, contains('await _checkVehicleDocStatus();'));
+  });
 }

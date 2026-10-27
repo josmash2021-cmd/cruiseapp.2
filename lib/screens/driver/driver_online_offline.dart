@@ -234,11 +234,12 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
               ?.map((e) => e.toString())
               .toList() ??
           const <String>[];
-      // Contracts have their own gate: they must not masquerade as a
-      // vehicle-document failure when they are the only remaining blocker.
+      // Contracts and rest have their own gates: neither is a vehicle-document
+      // failure or the GO tap would open the wrong screen.
       final vehicleDocsApproved = canGo ||
           (reasons.isNotEmpty &&
-              reasons.every((r) => r == 'contracts_not_accepted'));
+              reasons.every((r) =>
+                  r == 'contracts_not_accepted' || r == 'shift_rest_required'));
       // Unsigned required contracts (e-acceptance gate, 2026-10-21): the GO
       // tap opens the contracts hub before the mode flips.
       final pending = (result['contracts_pending'] as List?)
@@ -254,6 +255,26 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       final facePending = result['face_check_pending'] == true;
       // Dispatch GO switch (2026-10-23): a blocker, unlike the face signals.
       final goDisabled = result['go_online_disabled'] == true;
+
+      _serverRestResponseKnown = result.containsKey('rest_until');
+      final serverRestRaw = result['rest_until']?.toString();
+      final serverRest = serverRestRaw == null || serverRestRaw.isEmpty
+          ? null
+          : DateTime.tryParse(serverRestRaw);
+      if (serverRest != null) {
+        if (serverRest.isAfter(DateTime.now())) {
+          if (_restUntil?.millisecondsSinceEpoch !=
+              serverRest.millisecondsSinceEpoch) {
+            _setRestUntil(serverRest);
+          }
+        } else if (_restUntil != null) {
+          _restUntil = null;
+          _restJustFinishedAt = null;
+          _restTickTimer?.cancel();
+          _restTickTimer = null;
+          PrefsCache.instance.then((p) => p.setInt('driver_rest_until', 0));
+        }
+      }
 
       // Sync approval status locally
       if (result['approved'] == true) {

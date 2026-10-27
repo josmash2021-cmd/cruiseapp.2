@@ -902,6 +902,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   DateTime? _restUntil;
   DateTime? _restJustFinishedAt;
   Timer? _restTickTimer;
+  bool _serverRestResponseKnown = false;
 
   // -- Driver profile photo --
   String? _driverPhotoUrl;

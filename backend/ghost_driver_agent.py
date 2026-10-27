@@ -55,6 +55,7 @@ async def _ghost_offline_push_enabled(db) -> bool:
     return _flag_cache["value"]
 STALE_LOCATION_HOURS = 24      # Ignore drivers with location older than this
 SHIFT_CAP_HOURS = 12           # User spec 2026-09-27: no shift runs past 12 h online
+SHIFT_REST_HOURS = 6           # Server-enforced rest after the cap
 
 # ── Ghost recovery phases (driver has an ACTIVE trip) ─────────────────
 RECOVERY_WARN_MINUTES = 10     # Phase 1: send "are you still there?" push
@@ -183,6 +184,7 @@ class GhostDriverAgent:
             warned_count = 0
             offlined_count = 0
             shift_capped_count = 0
+            shift_clock_repaired_count = 0
 
             for driver in online_drivers:
                 # ── 12 H SHIFT CAP (user spec 2026-09-27) ─────────────
@@ -193,37 +195,43 @@ class GhostDriverAgent:
                 # heartbeating from a parked phone. Never mid-trip: the cap
                 # lands on the next scan once the trip closes.
                 since = driver.online_since
-                if since is not None:
-                    if since.tzinfo is None:
-                        # SQLite drops tzinfo — read as UTC.
-                        since = since.replace(tzinfo=timezone.utc)
-                    if since < shift_cap_cutoff:
-                        if driver.id in drivers_on_active_trip:
-                            continue  # never yank a driver with a rider aboard
-                        driver.is_online = False
-                        driver.online_since = None
-                        shift_capped_count += 1
-                        _warned_drivers.pop(driver.id, None)
-                        _recovery_phase.pop(driver.id, None)
+                if since is None:
+                    # Legacy online rows predate the clock. Start it once
+                    # instead of leaving those drivers exempt forever.
+                    since = now
+                    driver.online_since = now
+                    shift_clock_repaired_count += 1
+                if since.tzinfo is None:
+                    # SQLite drops tzinfo — read as UTC.
+                    since = since.replace(tzinfo=timezone.utc)
+                if since < shift_cap_cutoff:
+                    if driver.id in drivers_on_active_trip:
+                        continue  # never yank a driver with a rider aboard
+                    driver.is_online = False
+                    driver.online_since = None
+                    driver.rest_until = now + timedelta(hours=SHIFT_REST_HOURS)
+                    shift_capped_count += 1
+                    _warned_drivers.pop(driver.id, None)
+                    _recovery_phase.pop(driver.id, None)
+                    logger.warning(
+                        "[ShiftCap] OFFLINE driver #%d (%s) — shift hit "
+                        "%d h (online since %s)",
+                        driver.id, driver.first_name, SHIFT_CAP_HOURS,
+                        since.isoformat(),
+                    )
+                    if driver.fcm_token:
+                        self._send_shift_ended_push(driver)
+                    # Same retirement as a manual offline: no pending
+                    # offer outlives the flip.
+                    try:
+                        from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+                        await expire_pending_offers_for_driver(db, driver.id, "12h shift cap")
+                    except Exception as _ee:
                         logger.warning(
-                            "[ShiftCap] OFFLINE driver #%d (%s) — shift hit "
-                            "%d h (online since %s)",
-                            driver.id, driver.first_name, SHIFT_CAP_HOURS,
-                            since.isoformat(),
-                        )
-                        if driver.fcm_token:
-                            self._send_shift_ended_push(driver)
-                        # Same retirement as a manual offline: no pending
-                        # offer outlives the flip.
-                        try:
-                            from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
-                            await expire_pending_offers_for_driver(db, driver.id, "12h shift cap")
-                        except Exception as _ee:
-                            logger.warning(
-                                "[ShiftCap] offer expiry failed for #%d: %s",
-                                driver.id, _ee)
-                        await self._sync_driver_offline(driver)
-                        continue
+                            "[ShiftCap] offer expiry failed for #%d: %s",
+                            driver.id, _ee)
+                    await self._sync_driver_offline(driver)
+                    continue
 
                 last_active = driver.last_active_at
                 if not last_active:
@@ -269,6 +277,7 @@ class GhostDriverAgent:
                         continue
 
                     driver.is_online = False
+                    driver.online_since = None
                     offlined_count += 1
                     _warned_drivers.pop(driver.id, None)
 
@@ -320,7 +329,8 @@ class GhostDriverAgent:
                     _warned_drivers.pop(driver.id, None)
                     _recovery_phase.pop(driver.id, None)
 
-            if offlined_count > 0 or shift_capped_count > 0:
+            if (offlined_count > 0 or shift_capped_count > 0
+                    or shift_clock_repaired_count > 0):
                 await db.commit()
 
                 # Alert admin about mass ghost cleanup
@@ -592,14 +602,18 @@ class GhostDriverAgent:
                 driver.fcm_token,
                 title="Te desconectamos",
                 body="Estuviste en línea 12 horas seguidas. "
-                     "Vuelve a conectarte cuando estés listo.",
+                     "Podrás volver a conectarte en 6 horas.",
                 title_en="Your shift has ended",
                 body_en="You were online for 12 hours straight. "
-                        "Go back online whenever you're ready.",
+                        "You can go back online in 6 hours.",
                 locale=user_lang(driver),
                 data={
                     "type": "driver_shift_ended",
                     "driver_id": str(driver.id),
+                    "rest_until": (
+                        driver.rest_until.isoformat()
+                        if driver.rest_until is not None else ""
+                    ),
                 },
             )
         except Exception as e:

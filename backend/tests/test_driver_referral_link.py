@@ -209,6 +209,24 @@ async def test_drive_link_android_gets_play_referrer(client, db):
 
 
 @pytest.mark.asyncio
+async def test_drive_link_whatsapp_android_gets_og_preview_not_play_redirect(
+    client, db,
+):
+    await _mk_driver(db, "wa@test.com", code="LUIS-WA99")
+    res = await client.get(
+        "/drive/LUIS-WA99",
+        headers={"user-agent": "WhatsApp/2.24.20.0 (Linux; Android 14)"},
+        follow_redirects=False,
+    )
+    assert res.status_code == 200
+    assert "LUIS-WA99" in res.text
+    assert "/static/media/referral_invite.png" in res.text
+    assert 'property="og:image:width" content="948"' in res.text
+    assert 'property="og:image:height" content="524"' in res.text
+    assert 'name="twitter:card" content="summary_large_image"' in res.text
+
+
+@pytest.mark.asyncio
 async def test_drive_link_ios_gets_copyable_code_page(client, db):
     await _mk_driver(db, "ref9@test.com", code="LUIS-GH78")
     res = await client.get(

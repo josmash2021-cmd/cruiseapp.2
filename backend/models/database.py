@@ -277,6 +277,8 @@ class User(Base):
     # offline→online flip, cleared going offline. The ghost agent caps shifts
     # at 12 h (user spec: "la app no puede quedar prendida mas de 12 horas").
     online_since = Column(DateTime(timezone=True), nullable=True)
+    # Server-enforced rest after the 12 h cap; survives reinstall/device changes.
+    rest_until = Column(DateTime(timezone=True), nullable=True)
     # Weekly earnings summary email (2026-10-20): stamped when the Monday
     # summary goes out, so a retry in the same ISO week never doubles it.
     # Boot lists below (trampa #0).
@@ -1329,6 +1331,7 @@ async def migrate_add_columns(conn):
         # gets it (trampa #0).
         ("users", "date_of_birth", "DATE"),
         ("users", "online_since", "DATETIME"),
+        ("users", "rest_until", "DATETIME"),
         # Notification language reported by the app (2026-10-05) — boot lists
         # or prod never gets it (trampa #0).
         ("users", "locale", "VARCHAR(5) DEFAULT 'es'"),
@@ -1616,6 +1619,7 @@ async def migrate_postgres(conn):
         # (trampa #0).
         ("users", "date_of_birth", "DATE"),
         ("users", "online_since", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "rest_until", "TIMESTAMP WITH TIME ZONE"),
         # Notification language reported by the app (2026-10-05) — boot list
         # or prod never gets it (trampa #0).
         ("users", "locale", "VARCHAR(5) DEFAULT 'es'"),

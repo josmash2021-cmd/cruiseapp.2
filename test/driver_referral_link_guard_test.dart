@@ -40,11 +40,10 @@ void main() {
 
   group('share link host', () {
     test('the shared URL is /drive/{code} on a host that serves the route', () {
-      // Interim: the backend host serves /drive today; the brand domain
-      // joins once its hosting serves .well-known/* + the /drive redirect
-      // (flip _shareLinkHost — native already accepts both).
+      // The existing native parsers already understand this backend path,
+      // so the OG preview fix does not depend on a store build.
       expect(screen, contains('/drive/\$_code'));
-      expect(screen, contains('shareHost'));
+      expect(screen, contains('ApiService.publicBaseUrl'));
       // The message is invitee-centered: the "I earn $50 when you…" line
       // (what the REFERRER earns) must never be in a shared invite.
       expect(screen.contains('driverShareMilestones'), isFalse,

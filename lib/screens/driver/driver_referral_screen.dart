@@ -1,10 +1,4 @@
-import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../services/haptic_service.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -103,25 +97,6 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
 
   String _dollars(int cents) => '\$${(cents / 100).toStringAsFixed(0)}';
 
-  Future<List<int>> _inviteImageBytes() async {
-    try {
-      final data = await rootBundle.load('assets/images/referral_invite.png');
-      return data.buffer
-          .asUint8List(data.offsetInBytes, data.lengthInBytes);
-    } catch (e) {
-      debugPrint('[Referral] bundled image unavailable, downloading: $e');
-    }
-    final url =
-        '${ApiService.publicBaseUrl}/static/media/referral_invite.png';
-    final response = await http
-        .get(Uri.parse(url))
-        .timeout(const Duration(seconds: 12));
-    if (response.statusCode != 200 || response.bodyBytes.length < 10000) {
-      throw Exception('invite image HTTP ${response.statusCode}');
-    }
-    return response.bodyBytes;
-  }
-
   Future<void> _shareInvite() async {
     if (_code.isEmpty) return;
     HapticService.mediumImpact();
@@ -130,38 +105,14 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     // ($25 after 2 rides). What the referrer earns is never the invitee's
     // business — the old "I earn $50 when you…" line died 2026-10-22.
     //
-    // HOST: the brand domain (owner spec 2026-10-23). Its hosting (GitHub
-    // Pages, repo cruisewebsite branch gh-pages) serves
-    // /.well-known/apple-app-site-association + assetlinks.json (the OS
-    // opens an installed app directly) and its 404.html handles /drive/*:
-    // Android without the app bounces to the backend (which 302s to Play
-    // with the code in the install referrer), iOS/desktop see the branded
-    // invite card with the copyable code without leaving the domain.
-    const shareHost = 'https://cruiseinride.com';
-    final link = '$shareHost/drive/$_code';
+    // The backend path keeps referral capture compatible with the native
+    // parsers already installed, so the preview fix can ship over OTA.
+    final link = '${ApiService.publicBaseUrl}/drive/$_code';
     final text =
         '${s.driverShareWelcome(_dollars(_refereeBonusCents), _refereeBonusRides)}\n\n'
         '${s.driverShareCodeLine(_code)}\n'
         '$link';
-    // The invite goes out as an IMAGE + the code + the link (owner spec
-    // 2026-10-27): not a bare text message. The asset is written to a temp
-    // file because shareXFiles needs a real filesystem path on device.
-    try {
-      final dir = await getTemporaryDirectory();
-      final f = File('${dir.path}/cruise_referral_invite.png');
-      final bytes = await _inviteImageBytes();
-      await f.writeAsBytes(bytes, flush: true);
-      if (!mounted) return;
-      await Share.shareXFiles(
-        [XFile(f.path)],
-        text: text,
-        subject: s.driverShareSubject,
-      );
-    } catch (e) {
-      debugPrint('[Referral] image share failed, falling back to text: $e');
-      if (!mounted) return;
-      unawaited(shareText(context, text, subject: s.driverShareSubject));
-    }
+    await shareText(context, text, subject: s.driverShareSubject);
   }
 
   @override

@@ -90,6 +90,7 @@ async def _fresh(db, driver):
 
 
 async def test_over_12h_is_flipped_offline(db, fcm_spy):
+    before = datetime.now(timezone.utc)
     d = await _online_driver(db, email="cap@test.com", online_hours=13,
                              token="tok-cap")
     await _scan()
@@ -97,7 +98,15 @@ async def test_over_12h_is_flipped_offline(db, fcm_spy):
     fresh = await _fresh(db, d)
     assert fresh.is_online is False
     assert fresh.online_since is None
+    rest_until = fresh.rest_until
+    assert rest_until is not None
+    if rest_until.tzinfo is None:
+        rest_until = rest_until.replace(tzinfo=timezone.utc)
+    assert (timedelta(hours=5, minutes=59) < rest_until - before
+            < timedelta(hours=6, seconds=1))
     assert [c["data"]["type"] for c in fcm_spy] == ["driver_shift_ended"]
+    assert fcm_spy[0]["data"]["rest_until"]
+    assert "6 horas" in fcm_spy[0]["body"]
 
 
 async def test_under_12h_stays_online(db, fcm_spy):
@@ -107,6 +116,20 @@ async def test_under_12h_stays_online(db, fcm_spy):
 
     fresh = await _fresh(db, d)
     assert fresh.is_online is True
+    assert fcm_spy == []
+
+
+async def test_legacy_online_without_clock_is_repaired_not_exempt(db, fcm_spy):
+    d = await _online_driver(db, email="legacy@test.com", online_hours=1)
+    d.online_since = None
+    await db.commit()
+
+    await _scan()
+
+    fresh = await _fresh(db, d)
+    assert fresh.is_online is True
+    assert fresh.online_since is not None
+    assert fresh.rest_until is None
     assert fcm_spy == []
 
 
@@ -184,3 +207,72 @@ async def test_naive_online_since_reads_as_utc(db, fcm_spy):
 
     fresh = await _fresh(db, d)
     assert fresh.is_online is False
+
+
+def _driver_auth(token):
+    from tests.conftest import _make_auth_headers
+    return {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+
+
+async def test_online_patch_refuses_reentry_during_rest(client, db, test_driver):
+    driver, token = test_driver
+    driver.verification_status = "approved"
+    driver.is_online = False
+    driver.online_since = None
+    driver.rest_until = datetime.now(timezone.utc) + timedelta(hours=6)
+    await db.commit()
+
+    res = await client.patch(
+        f"/drivers/{driver.id}/location",
+        headers=_driver_auth(token),
+        json={"lat": 25.7, "lng": -80.1, "is_online": True},
+    )
+
+    assert res.status_code == 403
+    assert res.json()["detail"] == "shift_rest_required"
+    await db.refresh(driver)
+    assert driver.is_online is False
+    assert driver.online_since is None
+
+
+async def test_online_patch_allows_expired_rest_and_repairs_legacy_clock(
+    client, db, test_driver,
+):
+    driver, token = test_driver
+    driver.verification_status = "approved"
+    driver.is_online = True
+    driver.online_since = None
+    driver.rest_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await db.commit()
+
+    res = await client.patch(
+        f"/drivers/{driver.id}/location",
+        headers=_driver_auth(token),
+        json={"lat": 25.7, "lng": -80.1, "is_online": True},
+    )
+
+    assert res.status_code == 200, res.text
+    await db.refresh(driver)
+    assert driver.is_online is True
+    assert driver.online_since is not None
+
+
+async def test_can_go_online_reports_rest_until_and_expiry(client, db, test_driver):
+    driver, token = test_driver
+    driver.rest_until = datetime.now(timezone.utc) + timedelta(hours=6)
+    await db.commit()
+
+    res = await client.get("/drivers/can-go-online", headers=_driver_auth(token))
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["can_go_online"] is False
+    assert "shift_rest_required" in body["reasons"]
+    assert body["rest_until"] is not None
+
+    driver.rest_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await db.commit()
+    res = await client.get("/drivers/can-go-online", headers=_driver_auth(token))
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert "shift_rest_required" not in body["reasons"]
+    assert body["rest_until"] is not None

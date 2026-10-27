@@ -82,8 +82,8 @@ void main() {
     expect(offline, contains('final completed = await Navigator.of(context).push<bool>('));
     expect(offline, contains('_contractsPending = const []'));
     expect(offline,
-        contains("reasons.every((r) => r == 'contracts_not_accepted')"),
-        reason: 'contracts alone must not look like a vehicle-doc failure');
+        contains("r == 'contracts_not_accepted' || r == 'shift_rest_required'"),
+        reason: 'contracts and rest must not look like vehicle-doc failures');
 
     final goStart =
         offline.indexOf('if (_docStatusLoaded && _contractsPending.isNotEmpty)');

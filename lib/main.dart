@@ -1452,6 +1452,10 @@ Future<void> heavyInit() async {
           unawaited(_fcmOnMessageSub?.cancel());
           _fcmOnMessageSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
             final type = message.data['type'] as String? ?? 'general';
+            if (type == 'driver_shift_ended') {
+              DriverOnlineScreen.shiftEndedNotifier.value++;
+              return;
+            }
             // For driver ride offers: always use clean title/body — never show price or address
             final bool isOffer = type == 'trip_offer' || type == 'new_offer';
             final title = isOffer

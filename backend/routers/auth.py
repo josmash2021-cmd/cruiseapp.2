@@ -4406,7 +4406,10 @@ async def driver_referral_landing(code: str, request: Request,
 
     safe_code = html_lib.escape(referrer.driver_referral_code or code)
     ua = (request.headers.get("user-agent") or "").lower()
-    if "android" in ua:
+    social_crawler = any(
+        bot in ua for bot in ("whatsapp", "facebookexternalhit", "twitterbot")
+    )
+    if "android" in ua and not social_crawler:
         encoded = quote(f"driver_code={safe_code}", safe="")
         return RedirectResponse(
             "https://play.google.com/store/apps/details"
@@ -4420,14 +4423,16 @@ async def driver_referral_landing(code: str, request: Request,
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>Cruise in Ride — Invitación de conductor</title>
 <!-- Social preview (WhatsApp/iMessage read the tags, never the JS):
-     the shared card carries the brand cover image. -->
+     the shared card carries the golden referral artwork. -->
 <meta property="og:type" content="website"/>
 <meta property="og:site_name" content="Cruise in Ride"/>
 <meta property="og:title" content="Conduce con Cruise — estás invitado"/>
 <meta property="og:description" content="Regístrate con el código {safe_code} y gana $25 tras tus primeros 2 viajes."/>
-<meta property="og:image" content="https://cruiseinride.com/assets/media/og-cover.png"/>
-<meta property="og:image:width" content="1200"/>
-<meta property="og:image:height" content="630"/>
+<meta property="og:image" content="https://cruiseapp2-production.up.railway.app/static/media/referral_invite.png"/>
+<meta property="og:image:type" content="image/png"/>
+<meta property="og:image:width" content="948"/>
+<meta property="og:image:height" content="524"/>
+<meta property="og:image:alt" content="Invitación dorada para conducir con Cruise in Ride"/>
 <meta name="twitter:card" content="summary_large_image"/>
 <style>
 body{{margin:0;background:#141414;color:#fff;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}}

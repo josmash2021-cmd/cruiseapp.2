@@ -22,7 +22,7 @@ import {
 import { m as getMapboxToken } from "./mapboxToken-DDoCRQix.js";
 
 /*! guard-pin panel_verification_order_guard_test: submittedAt:_(e.created_at)??_(e.verified_at) — la regla real está en src/models/verification.ts (no borrar) */
-/*! guard-pin panel_live_map_guard_test: /mapa usa sesión Dispatch: SSE /admin/drivers/live (snapshot + driver_location) como canal principal y poll 2 s SOLO fallback; trips/active cada 20 s con AbortController/latest-wins. DispatchRoadLock: ruta activa cacheada o queryRenderedFeatures, umbral 35/55 m, motionFrame por vértices con tangente/flecha, sin extrapolar ni reencuadrar; riders en pickup, zonas debajo de markers; foco/Mostrar todos restaura cámara; fits FL/AL/Ambos solo al iniciar o acción explícita. Re-aplicar tras rebuild del source React fuera del repo. */
+/*! guard-pin panel_live_map_guard_test: /mapa usa sesión Dispatch: SSE /admin/drivers/live (snapshot + driver_location) como canal principal y poll 2 s SOLO fallback; trips/active cada 20 s con AbortController/latest-wins. Círculos en la coordenada GPS recibida, interpolación por frame con la cadencia real del GPS, sin proyección vial ni extrapolar; retargetDriverMotion no depende de mapRef. Riders en pickup, zonas debajo de markers; foco/Mostrar todos restaura cámara; fits FL/AL/Ambos solo al iniciar o acción explícita. Re-aplicar tras rebuild del source React fuera del repo. */
 
 const GOLD = "#E8C547";
 const POLL_INTERVAL_MS = 20000;
@@ -784,24 +784,17 @@ function motionPosition(motion, now) {
 }
 
 function nextDriverMotion(
-  previous, target, now, line = null, durationMs = DRIVER_POLL_INTERVAL_MS,
+  previous, target, now, durationMs = DRIVER_POLL_INTERVAL_MS,
 ) {
   if (!validCoordinatePair(target)) return previous ?? null;
-  if (previous && samePosition(previous.target, target) &&
-      (line === null || line === previous.line)) {
-    return previous;
-  }
+  if (previous && samePosition(previous.target, target)) return previous;
   const from = previous ? motionPosition(previous, now) : target.slice(0, 2);
-  const roadLine = line ?? previous?.line ?? [];
   return {
     from,
     target: target.slice(0, 2),
     startedAt: now,
     durationMs,
-    line: roadLine,
-    path: roadLine.length >= 2
-      ? pathBetween(from, target, roadLine)
-      : [from, target.slice(0, 2)],
+    path: [from, target.slice(0, 2)],
   };
 }
 
@@ -985,17 +978,7 @@ function ensureDriverRoute(driver, routeCache) {
   return promise;
 }
 
-async function retargetDriverMotion(map, driver, entry, routeCache) {
-  const sequence = ++entry.roadSeq;
-  const tripLine = await ensureDriverRoute(driver, routeCache);
-  if (sequence !== entry.roadSeq || mapRef.current !== map) return;
-  const projected = projectDriverOnRoad(
-    map,
-    entry.roadLock,
-    driver.position,
-    tripLine,
-    driver.speed ?? 0,
-  );
+function retargetDriverMotion(driver, entry) {
   const elapsedMs = Date.parse(driver.lastUpdated) -
     Date.parse(entry.lastUpdated);
   const durationMs = Number.isFinite(elapsedMs) && elapsedMs > 0
@@ -1003,9 +986,8 @@ async function retargetDriverMotion(map, driver, entry, routeCache) {
     : entry.motion?.durationMs ?? DRIVER_POLL_INTERVAL_MS;
   entry.motion = nextDriverMotion(
     entry.motion,
-    projected.trusted ? projected.point : driver.position,
+    driver.position,
     performance.now(),
-    projected.trusted ? projected.line : [],
     durationMs,
   );
   entry.lastUpdated = driver.lastUpdated;
@@ -1018,10 +1000,8 @@ function updateDriverElement(element, driver, selected) {
   Object.assign(dot.style, {
     width: `${size}px`,
     height: `${size}px`,
-    borderRadius: "3px",
-    clipPath: "polygon(50% 0%, 100% 100%, 50% 74%, 0% 100%)",
-    transformOrigin: "50% 55%",
-    border: "0",
+    borderRadius: "50%",
+    border: selected ? `3px solid ${GOLD}` : "2px solid rgba(255,255,255,0.85)",
     boxShadow: selected
       ? "0 0 0 4px rgba(232,197,71,0.22), 0 2px 8px rgba(0,0,0,0.65)"
       : "0 2px 6px rgba(0,0,0,0.5)",
@@ -1361,7 +1341,6 @@ function FleetMap({ token }) {
   const popupRef = React.useRef(null);
   const popupOwnerRef = React.useRef(null);
   const driverMarkersRef = React.useRef(new Map());
-  const driverRoutesRef = React.useRef(new Map());
   const riderMarkersRef = React.useRef(new Map());
   const pickupPinRef = React.useRef(null);
   const dropoffPinRef = React.useRef(null);
@@ -1619,7 +1598,6 @@ function FleetMap({ token }) {
       if (!desiredDriverIds.has(driverId)) {
         removeMarkerEntry(entry);
         driverMarkersRef.current.delete(driverId);
-        driverRoutesRef.current.delete(driverId);
       }
     }
     for (const driver of visibleDrivers) {
@@ -1633,9 +1611,7 @@ function FleetMap({ token }) {
               existing.lastUpdated,
               driver.lastUpdated,
             )) {
-          existing.roadLock ??= new DispatchRoadLock();
-          existing.roadSeq ??= 0;
-          void retargetDriverMotion(map, driver, existing, driverRoutesRef.current);
+          retargetDriverMotion(driver, existing);
         }
         updateDriverElement(existing.element, driver, selected);
       } else {
@@ -1654,11 +1630,8 @@ function FleetMap({ token }) {
           motion: nextDriverMotion(null, driver.position, performance.now()),
           lastUpdated: driver.lastUpdated,
           rawPosition: driver.position,
-          roadLock: new DispatchRoadLock(),
-          roadSeq: 0,
         };
         driverMarkersRef.current.set(driver.id, entry);
-        void retargetDriverMotion(map, driver, entry, driverRoutesRef.current);
       }
     }
 
@@ -1718,7 +1691,6 @@ function FleetMap({ token }) {
       for (const entry of driverMarkersRef.current.values()) {
         const frame = motionFrame(entry.motion, now);
         if (frame.position) entry.marker.setLngLat(frame.position);
-        entry.element.children[0].style.transform = `rotate(${frame.bearing}deg)`;
       }
       frameId = requestAnimationFrame(animate);
     }

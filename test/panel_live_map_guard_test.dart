@@ -180,7 +180,16 @@ console.log('motion helpers ok');
     expect(result.stdout, contains('motion helpers ok'));
   });
 
-  test('road lock follows a 90-degree corner and keeps its tangent', () async {
+  test('live retarget applies exact GPS without mapRef or road snapping', () async {
+    final retarget = chunk.substring(
+      chunk.indexOf('function retargetDriverMotion'),
+      chunk.indexOf('function updateDriverElement'),
+    );
+    expect(retarget, isNot(contains('mapRef')));
+    expect(retarget, isNot(contains('projectDriverOnRoad')));
+    expect(retarget, isNot(contains('ensureDriverRoute')));
+    expect(chunk, isNot(contains('new DispatchRoadLock()')));
+    expect(chunk, isNot(contains('driverRoutesRef')));
     final helpers = chunk.substring(
       chunk.indexOf('function samePosition'),
       chunk.indexOf('function updateDriverElement'),
@@ -193,96 +202,46 @@ function validCoordinatePair(value) {
 }
 $helpers
 const assert = require('node:assert/strict');
-const corner = [[-80, 25], [-80, 25.001], [-79.999, 25.001]];
-const lock = new DispatchRoadLock();
-assert.equal(lock.project(corner[0], corner, 10).trusted, true);
-assert.equal(lock.project(corner[2], corner, 10).trusted, true);
-const idle = nextDriverMotion(null, corner[0], 0, corner);
-const motion = nextDriverMotion(idle, corner[2], 0, corner);
-assert.equal(motion.path.length, 3);
-assert.deepEqual(motion.path[1], corner[1]);
-const middle = motionFrame(
-  motion,
-  2000 * haversineM(corner[0], corner[1]) / motionPathLength(motion.path),
-);
-assert.ok(Math.abs(middle.position[0] - corner[1][0]) < 1e-9);
-assert.ok(Math.abs(middle.position[1] - corner[1][1]) < 1e-9);
-assert.equal(Math.round(middle.bearing), 90);
-assert.deepEqual(motionFrame(motion, 2000).position, corner[2]);
-assert.deepEqual(motionFrame(motion, 4000).position, corner[2]);
-assert.equal(lock.project([-80.01, 25.01], corner, 0).trusted, false);
-console.log('road corner ok');
+const driver = {
+  position: [-79.999, 25.001], speed: 8,
+  lastUpdated: '2026-10-27T10:00:05Z',
+};
+const entry = {
+  motion: nextDriverMotion(null, [-80, 25], 0),
+  lastUpdated: '2026-10-27T10:00:00Z', rawPosition: [-80, 25],
+};
+retargetDriverMotion(driver, entry);
+assert.deepEqual(entry.motion.target, driver.position);
+assert.deepEqual(entry.rawPosition, driver.position);
+const startedAt = entry.motion.startedAt;
+assert.deepEqual(motionPosition(entry.motion, startedAt + 5000), driver.position);
+assert.deepEqual(motionPosition(entry.motion, startedAt + 9000), driver.position);
+console.log('exact live GPS ok');
 ''']);
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-    expect(result.stdout, contains('road corner ok'));
+    expect(result.stdout, contains('exact live GPS ok'));
   });
 
-  test('active route wins over parallel roads and refreshes after 20s', () async {
-    final helpers = chunk.substring(
-      chunk.indexOf('function samePosition'),
+  test('driver markers stay circular and never rotate into arrows', () {
+    final style = chunk.substring(
       chunk.indexOf('function updateDriverElement'),
+      chunk.indexOf('function createDriverElement'),
     );
-    final result = await Process.run('node', ['-e', '''
-const DRIVER_POLL_INTERVAL_MS = 2000;
-const POLL_INTERVAL_MS = 20000;
-const IN_TRIP_STATUSES = new Set(['in_trip']);
-const asText = (value) => typeof value === 'string' ? value : '';
-const sanitizeRoute = (route) => route;
-const routeCoordinates = (route) =>
-  (route?.features ?? []).flatMap((feature) => feature.geometry.coordinates);
-function validCoordinatePair(value) {
-  return Array.isArray(value) && value.length >= 2 &&
-    Number.isFinite(value[0]) && Number.isFinite(value[1]);
-}
-let activeLine = [[-80, 25.0003], [-79.999, 25.0003]];
-let routeRequests = 0;
-const apiGet = async () => {
-  routeRequests += 1;
-  return {
-    trip: { status: 'in_trip' },
-    route: { type: 'FeatureCollection', features: [
-      { properties: { leg: 'approach' }, geometry: {
-        type: 'LineString', coordinates: [[-83, 28], [-82, 28]],
-      }},
-      { properties: { leg: 'trip' }, geometry: {
-        type: 'LineString', coordinates: activeLine,
-      }},
-    ]},
-  };
-};
-$helpers
-const assert = require('node:assert/strict');
-(async () => {
-  const cache = new Map();
-  const driver = { id: 'driver-1', onTrip: true, tripId: 91 };
-  const first = await ensureDriverRoute(driver, cache);
-  assert.deepEqual(first, activeLine);
-  assert.equal(routeRequests, 1);
-  await ensureDriverRoute(driver, cache);
-  assert.equal(routeRequests, 1);
-  const lock = new DispatchRoadLock();
-  const projected = projectDriverOnRoad(
-    { queryRenderedFeatures: () => { throw new Error('route must win'); } },
-    lock, [-80, 25.0001], first, 5,
-  );
-  assert.equal(projected.trusted, true);
-  assert.equal(projected.line, first);
-  assert.ok(Math.abs(projected.point[1] - 25.0003) < 1e-9);
-  activeLine = [[-80, 25.0004], [-79.999, 25.0004], [-79.999, 25.001]];
-  const realNow = Date.now;
-  Date.now = () => realNow() + 21000;
-  const refreshed = await ensureDriverRoute(driver, cache);
-  Date.now = realNow;
-  assert.equal(routeRequests, 2);
-  assert.deepEqual(refreshed, activeLine);
-  console.log('active route refresh ok');
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
-''']);
-    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-    expect(result.stdout, contains('active route refresh ok'));
+    expect(style, contains('borderRadius: "50%"'));
+    expect(style, isNot(contains('clipPath')));
+    expect(style, isNot(contains('polygon')));
+    expect(
+      style,
+      contains(
+        'border: selected ? `3px solid \${GOLD}` : "2px solid rgba(255,255,255,0.85)"',
+      ),
+    );
+    final animate = chunk.substring(
+      chunk.indexOf('function animate(now)'),
+      chunk.indexOf('function handleAnimationVisibility'),
+    );
+    expect(animate, isNot(contains('style.transform')));
+    expect(animate, isNot(contains('frame.bearing')));
   });
 
   test('motion follows the real GPS cadence without a 2-second freeze', () async {
@@ -300,21 +259,15 @@ function validCoordinatePair(value) {
 $helpers
 const assert = require('node:assert/strict');
 (async () => {
-  const map = {
-    project: () => ({ x: 0, y: 0 }),
-    queryRenderedFeatures: () => [],
-  };
-  globalThis.mapRef = { current: map };
   const driver = {
     id: 'driver-1', position: [-79.999, 25], speed: 8,
     onTrip: false, tripId: null, lastUpdated: '2026-10-27T10:00:05Z',
   };
   const entry = {
     motion: nextDriverMotion(null, [-80, 25], 0),
-    lastUpdated: '2026-10-27T10:00:00Z',
-    rawPosition: [-80, 25], roadLock: new DispatchRoadLock(), roadSeq: 0,
+    lastUpdated: '2026-10-27T10:00:00Z', rawPosition: [-80, 25],
   };
-  await retargetDriverMotion(map, driver, entry, new Map());
+  retargetDriverMotion(driver, entry);
   assert.equal(entry.motion.durationMs, 5000);
   const startedAt = entry.motion.startedAt;
   assert.notDeepEqual(motionPosition(entry.motion, startedAt + 2000), driver.position);

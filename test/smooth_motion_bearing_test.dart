@@ -94,7 +94,10 @@ void main() {
       final m = SmoothMotion()..snapTo(33.328, -86.788, bearing: 0);
       m.setTarget(33.3285, -86.7875);
 
-      run(m, 4);
+      // ~72 m of residual with no velocity: the correction floor is 6 m/s
+      // now (audit D9, 2026-10-28 — it was 30 m/s), so convergence takes
+      // ~12 s of ticks. The assertion is about CONVERGING, not about speed.
+      run(m, 16);
 
       expect(m.lat, closeTo(33.3285, 1e-5),
           reason: 'a NaN step never converges — it just stops being a number');
@@ -180,7 +183,11 @@ void main() {
         m.setTarget(north(6.0 * i), startLng, accuracyM: 40);
         run(m, 0.2);
       }
-      expect(movedM(m), greaterThan(10),
+      // Threshold lowered from 10 m (audit D9, 2026-10-28): the correction
+      // runs at max(6, 1.5×v) m/s instead of a 30 m/s floor, and v ramps at
+      // ≤8 m/s² — a car that appears at 30 m/s out of a standstill is not a
+      // real drive. The assertion is "not HELD": a held marker moves ~0.
+      expect(movedM(m), greaterThan(2),
           reason: 'a car at 30 m/s is not standing still');
     });
   });

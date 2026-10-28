@@ -246,6 +246,17 @@ class GoldLocationDot {
   int minTickIntervalMs = _defaultMinTickIntervalMs;
   DateTime? _lastTickAt;
 
+  /// Cap on one ticker step, seconds — the same 50 ms the driver-online
+  /// controller clamps its own tick to. A long frame (jank, a resume)
+  /// advances the glide by one bounded step instead of a catch-up lurch.
+  static const double maxTickDtSec = 0.05;
+
+  /// The dt (seconds, already capped) the last ticker step advanced the
+  /// motion by. For [onFrame] consumers that animate something else per
+  /// frame — the nav chase camera's zoom glide — so they pace themselves
+  /// on the vsync delta, never on a wall clock read mid-frame.
+  double lastFrameDtSec = 0.0;
+
   /// Interpolated position — use this to place the Mapbox annotation.
   double? get lat => _motion.lat;
   double? get lng => _motion.lng;
@@ -420,10 +431,12 @@ class GoldLocationDot {
     _ticker?.dispose();
     try {
       _ticker = vsync.createTicker((elapsed) {
-        final dtSec = _lastElapsed == Duration.zero
+        final rawDt = _lastElapsed == Duration.zero
             ? 0.0
             : (elapsed - _lastElapsed).inMicroseconds / 1e6;
         _lastElapsed = elapsed;
+        final dtSec = rawDt > maxTickDtSec ? maxTickDtSec : rawDt;
+        lastFrameDtSec = dtSec;
 
         final posChanged = _motion.tick(dtSec);
         if (!posChanged) return;

@@ -64,7 +64,11 @@ void main() {
       await gap();
       run(m, 0.2);
     }
-    expect(movedM(m), greaterThan(12.0),
+    // 10 m, not 12 (audit D9, 2026-10-28): the correction floor dropped
+    // from 30 m/s to max(6, 1.5×v) and the position spring from 10 to
+    // 6 rad/s, so the marker trails these 20 m/s-implied fixes a little
+    // more. Held would be ~0 m; the point is that none of them are held.
+    expect(movedM(m), greaterThan(10.0),
         reason: 'a fix that says "we are moving" must move the marker');
   });
 

@@ -230,6 +230,18 @@ class DriverNavViewState extends State<DriverNavView>
   // the dropoff leg; on the pickup leg it is nobody's business yet.
   mapbox.PointAnnotation? _stopAnnot;
   bool _annotWriteBusy = false;
+  // Every annotation pigeon call is bounded by this (audit D1): a call the
+  // dead PlatformView never answers must not hold the latch above forever.
+  static const _annotIpcTimeout = Duration(milliseconds: 1500);
+  // Audit D2: 2 s watchdog, twin of the online controller's
+  // _startDotWatchdog — late/failed raster, a create that threw.
+  Timer? _arrowWatchdog;
+  // Audit D7: while following, the arrow is the Flutter vector overlay at
+  // the camera focus; the native annotation lives only in freeLook /
+  // overview / recentering. The overlay covers the handoff until the
+  // native one exists (never a frame with no arrow).
+  bool _arrowHandoffPending = false;
+  Timer? _arrowHandoffTimer;
   // Last values actually sent to the native annotation — a parked car pays
   // zero channel writes (same discipline as the accept screen's mini car).
   double? _lastSentLat;
@@ -264,20 +276,26 @@ class DriverNavViewState extends State<DriverNavView>
   int _mapPointers = 0;
   mapbox.CameraOptions? _pendingCamWrite;
   bool _camWriteBusy = false;
+  // Audit D4: recenter is a per-frame blend from the pose the camera had
+  // to the live chase pose (~600 ms, eased), on its own ticker so a parked
+  // car blends too, cancelled by any gesture through the action gate.
+  Ticker? _recenterTicker;
+  mapbox.CameraState? _recenterFrom;
+  Duration? _recenterStartedAt;
+  int _recenterSeq = -1;
+  static const _recenterBlendMs = 600;
 
-  // Dynamic chase zoom: 16.5 at city pace, 16.1 past 20 m/s, 17.4 with a
-  // maneuver under 150 m — lerped at ≤0.5 zoom/sec, never a step.
-  // (User spec 2026-09-27: "un poquito mas de zoom out" — one more step out
-  // from 16.8/16.4/17.7 at the 50° tilt.)
-  double _chaseZoom = 16.5;
-  DateTime? _lastChaseFrameAt;
-  static const _chaseZoomDefault = 16.5;
-  static const _chaseZoomFast = 16.1;
-  static const _chaseZoomManeuver = 17.4;
+  // Dynamic chase zoom: 17.5 at city pace, 17.0 past 20 m/s, 18.0 with a
+  // maneuver under 150 m — lerped at ≤0.5 zoom/sec, never a step. The
+  // chase pose is the one AGENTS.md documents ("tras aceptar, chase por
+  // frame zoom 17.5 / pitch 55") — owner decision 2026-10-28 (audit D6).
+  double _chaseZoom = 17.5;
+  static const _chaseZoomDefault = 17.5;
+  static const _chaseZoomFast = 17.0;
+  static const _chaseZoomManeuver = 18.0;
   static const _zoomLerpPerSec = 0.5;
-  // Chase tilt: 50° (user spec 2026-09-27: "un poco mas de inclinacion" —
-  // 45° still read flat; 55° was the horizon view that hid the streets).
-  static const _chasePitch = 50.0;
+  // Chase tilt: 55° (audit D6, same spec as the zoom above).
+  static const _chasePitch = 55.0;
 
   // ── Route + maneuvers ──
   List<LatLng> _routePts = [];
@@ -328,8 +346,8 @@ class DriverNavViewState extends State<DriverNavView>
   // Off-route rerouting (user spec 2026-09-27: "redireccionar de forma
   // instantanea y agradable"): 25 m off the polyline held for 600 ms of
   // fixes arms the fetch (reset the moment a fix lands back within 20 m),
-  // 4 s between fetches — under the 65 m accuracy gate that keeps GPS noise
-  // from arming it. The landing stays smooth (_flyToChasePose 650 ms).
+  // 4 s between fetches — under the 30 m accuracy gate that keeps GPS noise
+  // from arming it. The landing stays smooth (_flyToChasePose 600 ms).
   static const _offRouteM = 25.0;
   static const _offRouteResetM = 20.0;
   static const _offRouteHoldMs = 600;
@@ -485,6 +503,9 @@ class DriverNavViewState extends State<DriverNavView>
     _riderLocSub?.cancel();
     _riderStaleTimer?.cancel();
     _waitTicker?.cancel();
+    _arrowWatchdog?.cancel();
+    _arrowHandoffTimer?.cancel();
+    _recenterTicker?.dispose();
     _riderTicker?.dispose();
     _dot.dispose();
     _roadLock.reset();
@@ -573,6 +594,20 @@ class DriverNavViewState extends State<DriverNavView>
         _lastSentLat = null;
         _lastSentLng = null;
         _lastSentBearing = null;
+        // The in-flight annotation write died with the channel too — a
+        // latch left true here kept every later tick out of
+        // _updateDriverAnnotation for the life of the view (audit D1).
+        _annotWriteBusy = false;
+        _arrowWatchdog?.cancel();
+        _arrowHandoffTimer?.cancel();
+        _arrowHandoffPending = false;
+        // A recenter blend mid-flight has no camera left to blend.
+        _recenterTicker?.stop();
+        _recenterFrom = null;
+        _recenterStartedAt = null;
+        if (_camState == _CamState.recentering) {
+          _camState = _CamState.following;
+        }
         setState(() => _mapMounted = false);
         await surfaceRemoved();
       },
@@ -645,6 +680,10 @@ class DriverNavViewState extends State<DriverNavView>
     // ticker only fires while the car moves, so a parked driver used to get
     // no annotation at all — the arrow simply never appeared.
     unawaited(_updateDriverAnnotation());
+    // And a 2 s watchdog behind it (audit D2) — late/failed raster, a
+    // create that threw, a surface rebirth: nothing else retries them
+    // while the car is parked.
+    _startArrowWatchdog();
     // The opening camera is the chase pose (tilted, down-route), never a
     // top-down overview (user spec 2026-09-16): the per-frame chase sleeps
     // while the car is parked, so the pose is written explicitly here. The
@@ -765,11 +804,11 @@ class DriverNavViewState extends State<DriverNavView>
       _gpsDown = false;
       _recomputeNavPhase();
     }
-    // Same 65 m accuracy gate as the online stream (2026-09-19): a fix
-    // that declares itself worse must not steer the chase, the trim, the
-    // off-route check or the arrival latch. It is also what lets the
-    // off-route threshold tighten to 30 m without GPS noise rerouting.
-    if (pos.accuracy > 65) return;
+    // 30 m accuracy gate (audit extra; was 65): a fix that declares itself
+    // worse must not steer the chase, the trim, the off-route check or the
+    // arrival latch — with the arrow snapped to the line, a 65 m fix only
+    // yanked the road-lock bearing around at crossings.
+    if (pos.accuracy > 30) return;
     final fixLL = LatLng(pos.latitude, pos.longitude);
     // Display vs measurement (user specs 2026-09-19, "la flecha fuera de
     // las lineas del mapa", y 2026-09-27, "la flecha no puede salirse de
@@ -1231,7 +1270,7 @@ class DriverNavViewState extends State<DriverNavView>
     if (_overview) {
       await _fitRouteOnce();
     } else if (kind == _RouteFetchKind.reroute) {
-      unawaited(_flyToChasePose(650));
+      unawaited(_flyToChasePose(600));
     } else {
       _snapToChasePose();
     }
@@ -1814,13 +1853,9 @@ class DriverNavViewState extends State<DriverNavView>
     final lng = _renderPos?.longitude ?? _dot.lng;
     if (lat == null || lng == null) return;
     // Zoom lerps toward its target at ≤0.5/sec — a speed or maneuver change
-    // is felt as a glide, never as a cut.
-    final now = DateTime.now();
-    var dt = _lastChaseFrameAt == null
-        ? 0.0
-        : now.difference(_lastChaseFrameAt!).inMilliseconds / 1000.0;
-    _lastChaseFrameAt = now;
-    if (dt > 0.1) dt = 0.1; // long frame (resume): no catch-up jump
+    // is felt as a glide, never as a cut. dt is the dot ticker's own vsync
+    // delta (already capped at 50 ms), never a wall clock read mid-frame.
+    final dt = _dot.lastFrameDtSec;
     final target = _zoomTarget();
     final maxStep = _zoomLerpPerSec * dt;
     if ((_chaseZoom - target).abs() <= maxStep) {
@@ -1889,25 +1924,12 @@ class DriverNavViewState extends State<DriverNavView>
       );
       return;
     }
-    final map = _map;
-    if (map == null) return;
-    try {
-      await map.flyTo(
-        mapbox.CameraOptions(
-          center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
-          zoom: _chaseZoom,
-          bearing: _dot.bearing,
-          pitch: _chasePitch,
-          padding:
-              mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
-        ),
-        mapbox.MapAnimationOptions(duration: durationMs),
-      );
-    } catch (e) {
-      // Transient channel refusal — the next chase frame rewrites the
-      // camera, but never swallow it quietly.
-      debugPrint('[Nav] chase flyTo failed: $e');
-    }
+    // Native: nothing to do. While following, _onDotFrame already writes the
+    // full chase pose (centre, zoom, pitch, bearing) every frame, so a flyTo
+    // here only raced it — the next frame's setCamera cancelled the native
+    // animation mid-way and the camera jumped (same mechanism as the old
+    // recenter cut). The frame loop converges on its own, smoothly.
+    assert(topPad >= 0);
   }
 
   /// Coalesced per-frame camera write — one in flight, one pending, ever.
@@ -1963,6 +1985,12 @@ class DriverNavViewState extends State<DriverNavView>
 
   Future<void> _updateDriverAnnotation() async {
     if (!mounted || _annotWriteBusy) return;
+    // Following = the vector overlay IS the arrow (audit D7): the native
+    // one is deleted here, never written.
+    if (_arrowOverlayMode) {
+      if (_driverAnnot != null) _deleteNativeArrow();
+      return;
+    }
     // The arrow's own manager: icon-rotation-alignment 'map' is set per
     // manager — on the shared pins manager it laid the destination pin and
     // the rider figure down whenever the chase camera rotated (user report
@@ -1989,38 +2017,71 @@ class DriverNavViewState extends State<DriverNavView>
     _annotWriteBusy = true;
     try {
       if (_driverAnnot == null) {
-        _driverAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
-          image: img,
-          iconSize: GoldLocationDot.driverAnnotationIconSize(
-            devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-            highRes: _dot.currentBytesHiRes != null,
-            scale: GoldLocationDot.driverIconSize,
-          ),
-          iconAnchor: mapbox.IconAnchor.CENTER,
-          iconRotate: bearing,
-        ));
+        // House rule: deleteAll before create. This manager holds only the
+        // arrow, and a delete that failed silently would leave two of them.
+        try {
+          await mgr.deleteAll().timeout(_annotIpcTimeout);
+        } catch (_) {}
+        if (!mounted || !identical(mgr, _carMgr)) return;
+        final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+        // Every pigeon call is bounded (audit D1): a PlatformView torn down
+        // mid-call never answers, and an unbounded await here left the
+        // latch above true for the life of the view — no arrow, ever.
+        final created = await mgr
+            .create(mapbox.PointAnnotationOptions(
+              geometry: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
+              image: img,
+              iconSize: GoldLocationDot.driverAnnotationIconSize(
+                devicePixelRatio: dpr,
+                highRes: _dot.currentBytesHiRes != null,
+                scale: GoldLocationDot.driverIconSize,
+              ),
+              iconAnchor: mapbox.IconAnchor.CENTER,
+              iconRotate: bearing,
+            ))
+            .timeout(_annotIpcTimeout);
+        if (!mounted || !identical(mgr, _carMgr)) {
+          // The surface changed under the create — the handle is dead.
+          unawaited(mgr.delete(created).catchError((Object _) {}));
+          return;
+        }
+        _driverAnnot = created;
+        if (_arrowOverlayMode) {
+          // The chase re-latched while the create was in flight: the
+          // overlay owns the arrow again, so this one goes straight back.
+          _deleteNativeArrow();
+          return;
+        }
         try {
           await _map?.style
               .setStyleLayerProperty(mgr.id, 'icon-rotation-alignment', 'map');
           // La flecha también se inclina con la cámara (user spec 2026-09-27,
           // "la flecha un poquito inclinada"): pitch-alignment 'map' la
-          // acuesta con el tilt de 50° en vez de dejarla parada como sticker.
+          // acuesta con el tilt de la cámara en vez de dejarla parada como
+          // sticker.
           await _map?.style
               .setStyleLayerProperty(mgr.id, 'icon-pitch-alignment', 'map');
         } catch (_) {}
+        if (!mounted) return;
+        if (_arrowHandoffPending) {
+          // The native arrow exists — the overlay cover can go.
+          _arrowHandoffTimer?.cancel();
+          setState(() => _arrowHandoffPending = false);
+        }
       } else {
         _driverAnnot!.geometry =
             mapbox.Point(coordinates: mapbox.Position(lng, lat));
         _driverAnnot!.iconRotate = bearing;
-        await mgr.update(_driverAnnot!);
+        await mgr.update(_driverAnnot!).timeout(_annotIpcTimeout);
+        if (!mounted) return;
       }
       _lastSentLat = lat;
       _lastSentLng = lng;
       _lastSentBearing = bearing;
-    } catch (_) {
-      // Annotation died with its surface — null it so the next tick
-      // recreates it on the fresh map.
+    } catch (e) {
+      // Timed out, or died with its surface (audit D1/D3): say so, null the
+      // handle so the next tick — or the watchdog — recreates it.
+      debugPrint('[Nav] arrow create/update failed: $e');
       _driverAnnot = null;
       _lastSentLat = null;
       _lastSentLng = null;
@@ -2028,6 +2089,92 @@ class DriverNavViewState extends State<DriverNavView>
     } finally {
       _annotWriteBusy = false;
     }
+  }
+
+  // ─────────────────────────────────────────────
+  //  Arrow ownership: vector overlay (following) vs native annotation
+  // ─────────────────────────────────────────────
+
+  /// While the chase follows, the arrow is the Flutter overlay drawn at the
+  /// camera focus (audit D7) — the same trade the online map made: the map
+  /// slides under a pinned marker, so a per-frame native write buys nothing
+  /// but channel latency and a two-channel jitter against the camera.
+  /// Everywhere the camera is NOT pinned to the car (freeLook, overview,
+  /// the recenter blend) the native annotation marks the spot.
+  bool get _arrowOverlayMode =>
+      !kIsWeb &&
+      _mapMounted &&
+      _camState == _CamState.following &&
+      !_overview;
+
+  /// The overlay stays up through a handoff to the native arrow until that
+  /// one exists (bounded by [_arrowHandoffTimer]) — never a frame with no
+  /// arrow at all.
+  bool get _arrowOverlayVisible => _arrowOverlayMode || _arrowHandoffPending;
+
+  /// Called after every camera-state change: makes the drawn arrow match
+  /// [_arrowOverlayMode]. Overlay mode deletes the native one (handle nulled
+  /// first, delete fire-and-forget); native mode creates it and keeps the
+  /// overlay as cover until the create lands.
+  void _syncArrowOwner() {
+    if (kIsWeb || !mounted) return;
+    if (_arrowOverlayMode) {
+      _arrowHandoffTimer?.cancel();
+      _arrowHandoffPending = false;
+      if (_driverAnnot != null) _deleteNativeArrow();
+      return;
+    }
+    // Leaving follow mode means the camera is about to move away from the
+    // marker (a drag, or the overview fit). An overlay pinned to the screen
+    // centre would then slide across the map as a second, wrongly placed
+    // arrow until the native one landed, so it goes down NOW and the native
+    // arrow comes up on its own IPC round trip (one or two frames with no
+    // arrow is the lesser evil).
+    _arrowHandoffTimer?.cancel();
+    if (_arrowHandoffPending) {
+      _arrowHandoffPending = false;
+      if (mounted) setState(() {});
+    }
+    unawaited(_updateDriverAnnotation());
+  }
+
+  /// Null the handle FIRST, then delete fire-and-forget (house rule: a
+  /// failed delete must never leave a live handle behind — the next create
+  /// runs deleteAll on this single-annotation manager anyway).
+  void _deleteNativeArrow() {
+    final annot = _driverAnnot;
+    final mgr = _carMgr;
+    _driverAnnot = null;
+    _lastSentLat = null;
+    _lastSentLng = null;
+    _lastSentBearing = null;
+    if (annot == null || mgr == null) return;
+    unawaited(
+        mgr.delete(annot).timeout(_annotIpcTimeout).catchError((Object e) {
+      debugPrint('[Nav] arrow delete failed: $e');
+    }));
+  }
+
+  /// Audit D2 — the twin of the online controller's _startDotWatchdog. The
+  /// dot's ticker only fires while the car moves, so a parked driver whose
+  /// bitmap rasterised late (cold start straight into a trip), or whose
+  /// raster failed (GPU lost in background, OOM), or whose create threw,
+  /// never got a second attempt: the arrow simply never appeared.
+  void _startArrowWatchdog() {
+    if (kIsWeb) return;
+    _arrowWatchdog?.cancel();
+    _arrowWatchdog = Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (!mounted || !_mapMounted) return;
+      if (!_dot.isReady) {
+        // build() re-arms the raster AND the ticker (it clears the dispose
+        // latch) — the only way back for a dot whose first raster failed,
+        // since nothing else ever calls build() again.
+        await _dot.build(this, _onDotTick, onFrame: _onDotFrame);
+        if (!mounted) return;
+      }
+      if (_arrowOverlayMode) return;
+      if (_driverAnnot == null) unawaited(_updateDriverAnnotation());
+    });
   }
 
   // ─────────────────────────────────────────────
@@ -2180,31 +2327,45 @@ class DriverNavViewState extends State<DriverNavView>
     HapticService.lightImpact();
     if (_overview) {
       // Leaving overview (user spec 2026-09-17): hand the camera back to the
-      // chase the SMOOTH way — the same flyTo the recenter button uses, not
+      // chase the SMOOTH way — the same blend the recenter button uses, not
       // a state flip that lets the next chase frame snap the camera.
       unawaited(_recenter());
       return;
     }
+    // Audit D5: the fit needs a line and a map. Flipping the state without
+    // them left the button inverted over a camera that never moved.
+    if (_routePts.length < 2 || (!kIsWeb && _map == null)) {
+      debugPrint('[Nav] overview skipped — route pts=${_routePts.length}, '
+          'map=${_map != null}');
+      return;
+    }
+    // A recenter blend in flight yields to the fit.
+    _recenterTicker?.stop();
+    _recenterFrom = null;
+    _recenterStartedAt = null;
     setState(() {
-      _overview = !_overview;
-      _camState = _overview ? _CamState.freeLook : _CamState.following;
+      _overview = true;
+      _camState = _CamState.freeLook;
     });
-    if (_overview) unawaited(_fitRouteOnce());
+    _syncArrowOwner();
+    unawaited(_fitRouteOnce());
   }
 
-  /// Recenter → recentering: a smooth flyTo back to the chase target, then
-  /// following. A drag mid-flight moves the state to freeLook instead.
+  /// Recenter → recentering → following. Audit D4: NOT a flyTo. The
+  /// plugin's flyTo returns the moment the native animation STARTS, so
+  /// "await it, then follow" let the very next chase frame's setCamera
+  /// cancel the flight — the smooth recenter was a cut by construction.
+  /// Now the camera is blended per frame from the pose it had toward the
+  /// LIVE chase pose over [_recenterBlendMs] (eased), on its own ticker so
+  /// a parked car blends too; any gesture supersedes the action-gate
+  /// sequence and the blend yields to freeLook mid-flight.
   Future<void> _recenter() async {
     HapticService.lightImpact();
     final seq = _cameraActionGate.begin();
     final lat = _renderPos?.latitude ?? _dot.lat;
     final lng = _renderPos?.longitude ?? _dot.lng;
-    setState(() {
-      _overview = false;
-      _camState = _CamState.recentering;
-    });
     if (lat == null || lng == null) {
-      setState(() => _camState = _CamState.following);
+      _settleFollowing();
       return;
     }
     if (kIsWeb) {
@@ -2214,37 +2375,116 @@ class DriverNavViewState extends State<DriverNavView>
         zoom: _chaseZoom,
         bearing: _dot.bearing,
         pitch: _chasePitch,
-        durationMs: 1200,
+        durationMs: _recenterBlendMs,
       );
-      if (!mounted) return;
-      setState(() => _camState = _CamState.following);
+      _settleFollowing();
       return;
     }
     final map = _map;
     if (map == null) {
-      setState(() => _camState = _CamState.following);
+      _settleFollowing();
       return;
     }
-    final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 240;
+    mapbox.CameraState? from;
     try {
-      await map.flyTo(
-        mapbox.CameraOptions(
-          center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
-          zoom: _chaseZoom,
-          bearing: _dot.bearing,
-          pitch: _chasePitch,
-          padding:
-              mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
-        ),
-        mapbox.MapAnimationOptions(duration: 1200),
-      );
-    } catch (_) {}
-    if (!mounted) return;
-    // Only close the maneuver if the recenter still owns the camera.
-    if (_cameraActionGate.isCurrent(seq) &&
-        _camState == _CamState.recentering) {
-      setState(() => _camState = _CamState.following);
+      from = await map
+          .getCameraState()
+          .timeout(const Duration(milliseconds: 800));
+    } catch (e) {
+      debugPrint('[Nav] recenter: camera state unavailable: $e');
     }
+    if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
+    if (from == null) {
+      // No pose to blend from — one explicit chase write, then follow.
+      _settleFollowing();
+      _snapToChasePose();
+      return;
+    }
+    _recenterTicker ??= createTicker(_onRecenterTick);
+    _recenterTicker!.stop();
+    _recenterFrom = from;
+    _recenterStartedAt = null;
+    _recenterSeq = seq;
+    setState(() {
+      _overview = false;
+      _camState = _CamState.recentering;
+    });
+    _syncArrowOwner();
+    _recenterTicker!.start();
+  }
+
+  /// following, overview off, arrow owner synced — the common landing.
+  void _settleFollowing() {
+    if (!mounted) return;
+    setState(() {
+      _overview = false;
+      _camState = _CamState.following;
+    });
+    _syncArrowOwner();
+  }
+
+  /// One frame of the recenter blend: eased lerp from [_recenterFrom] to the
+  /// chase pose evaluated NOW (the car keeps moving during the blend), so
+  /// the landing frame is exactly what the next chase frame would write —
+  /// no cut on either end.
+  void _onRecenterTick(Duration elapsed) {
+    if (!mounted) {
+      _recenterTicker?.stop();
+      return;
+    }
+    final from = _recenterFrom;
+    if (from == null ||
+        !_mapMounted ||
+        _camState != _CamState.recentering ||
+        !_cameraActionGate.isCurrent(_recenterSeq)) {
+      // A gesture (or a revoke) took the camera mid-blend: yield.
+      _endRecenterBlend(_CamState.freeLook);
+      return;
+    }
+    final lat = _renderPos?.latitude ?? _dot.lat;
+    final lng = _renderPos?.longitude ?? _dot.lng;
+    if (lat == null || lng == null) {
+      _endRecenterBlend(_CamState.following);
+      return;
+    }
+    _recenterStartedAt ??= elapsed;
+    final t =
+        ((elapsed - _recenterStartedAt!).inMilliseconds / _recenterBlendMs)
+            .clamp(0.0, 1.0);
+    final e = Curves.easeInOutCubic.transform(t);
+    double lerp(double a, double b) => a + (b - a) * e;
+    final fc = from.center.coordinates;
+    var dBrg = (_dot.bearing - from.bearing) % 360;
+    if (dBrg > 180) dBrg -= 360;
+    final bearing = (from.bearing + dBrg * e) % 360;
+    final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 240;
+    final fp = from.padding;
+    _writeCamera(mapbox.CameraOptions(
+      center: mapbox.Point(
+          coordinates: mapbox.Position(
+              lerp(fc.lng.toDouble(), lng), lerp(fc.lat.toDouble(), lat))),
+      zoom: lerp(from.zoom, _chaseZoom),
+      bearing: bearing,
+      pitch: lerp(from.pitch, _chasePitch),
+      padding: mapbox.MbxEdgeInsets(
+        top: lerp(fp.top, topPad),
+        left: lerp(fp.left, 0),
+        right: lerp(fp.right, 0),
+        bottom: lerp(fp.bottom, 0),
+      ),
+    ));
+    if (t >= 1.0) _endRecenterBlend(_CamState.following);
+  }
+
+  void _endRecenterBlend(_CamState to) {
+    _recenterTicker?.stop();
+    _recenterFrom = null;
+    _recenterStartedAt = null;
+    if (!mounted) return;
+    if (_camState == _CamState.recentering) {
+      setState(() => _camState = to);
+    }
+    _syncArrowOwner();
   }
 
   /// Drag / pinch / rotate → freeLook. The map's own gesture callbacks cover
@@ -2255,8 +2495,14 @@ class DriverNavViewState extends State<DriverNavView>
   void _onUserGesture() {
     _cameraActionGate.begin();
     if (_overview) return;
+    if (_camState == _CamState.recentering) {
+      // The blend yields to the finger (audit D4).
+      _endRecenterBlend(_CamState.freeLook);
+      return;
+    }
     if (_camState == _CamState.freeLook) return;
     setState(() => _camState = _CamState.freeLook);
+    _syncArrowOwner();
   }
 
   // ─────────────────────────────────────────────
@@ -2352,6 +2598,48 @@ class DriverNavViewState extends State<DriverNavView>
                     )
                   : const NeuDotsBackdrop(),
         ),
+
+        // ── The driver arrow while the chase follows (audit D7): a Flutter
+        //    vector at the camera focus — the map slides under it, so there
+        //    is nothing to send over the channel, no bitmap to rasterise and
+        //    no manager to be ready. The native annotation exists only in
+        //    freeLook / overview / recentering (see _syncArrowOwner). ──
+        if (_arrowOverlayVisible)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: LayoutBuilder(
+                builder: (ctx, c) {
+                  const sz = GoldLocationDot.driverOverlaySize;
+                  // Same focal point the chase camera writes: Mapbox centres
+                  // the car inside the padded viewport, i.e. topPad/2 below
+                  // the screen centre.
+                  final topPad =
+                      (MediaQuery.maybeOf(ctx)?.padding.top ?? 0) + 240;
+                  final focusY = c.maxHeight / 2 + topPad / 2;
+                  return Stack(
+                    children: [
+                      Positioned(
+                        left: c.maxWidth / 2 - sz / 2,
+                        top: focusY - sz / 2,
+                        child: Transform(
+                          alignment: Alignment.center,
+                          // Laid on the ground like the native arrow
+                          // (icon-pitch-alignment 'map'): foreshortened by
+                          // the chase tilt, with a touch of perspective.
+                          transform: Matrix4.identity()
+                            ..setEntry(3, 2, 0.0015)
+                            ..rotateX(_chasePitch * math.pi / 180),
+                          // Heading-up chase: the camera carries the arrow's
+                          // bearing, so on screen the arrow always points up.
+                          child: const GoldLocationDotOverlay(bearing: 0),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
 
         // ── Maneuver bar + status pills (rerouting / offline) ──
         Positioned(

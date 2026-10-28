@@ -79,7 +79,13 @@ class SmoothMotion {
   /// heading arrive as one continuous motion, not a burst then a plateau.
   /// The constant-velocity leg above stays — that is what keeps the glide
   /// alive between fixes (0% stalled frames).
-  static const double _springOmega = 10.0; // rad/s → ~0.45 s settle to 2%
+  // Position spring: 6 rad/s (~0.75 s settle to 2%). It was 10, and with
+  // the 30 m/s correction floor below every residual — a fix after a hold,
+  // the first fix after pulling away — was eaten in under half a second at
+  // highway speed: the short teleport the driver saw (2026-10-28 audit D9).
+  static const double _posSpringOmega = 6.0;
+  // Bearing spring keeps 10 rad/s: a turn must land, not drift in.
+  static const double _brgSpringOmega = 10.0;
   double _corrVelLat = 0;
   double _corrVelLng = 0;
   double _corrVelBrg = 0;
@@ -381,8 +387,8 @@ class SmoothMotion {
           _stationary = true;
           _vLat = 0;
           _vLng = 0;
-          _corrVelLat = 0;
-          _corrVelLng = 0;
+          // The correction spring keeps running (audit D10): it carries the
+          // marker the last metres to the held target, then rests there.
           _consecutiveHolds = 0;
           _lastTargetAt = now;
           if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
@@ -649,7 +655,12 @@ class SmoothMotion {
   /// the marker BACKWARDS over the lead it had legitimately built up.
   (double, double) _aimPoint() {
     if (_lat == null || _targetLat == null) return (0, 0);
-    if (_stationary) return (_lat!, _lng!);
+    // Stationary (audit D10): aim at the last REAL target with no lead —
+    // the marker glides the remaining metres to where the car actually
+    // stopped and only then holds. Aiming at its own position froze it
+    // wherever the glide happened to be (up to a lead behind the fix),
+    // and that stored error was paid as a jump the moment the car moved.
+    if (_stationary) return (_targetLat!, _targetLng!);
     var ageSec = 0.0;
     if (_lastTargetAt != null) {
       ageSec = _now().difference(_lastTargetAt!).inMilliseconds / 1000.0;
@@ -689,16 +700,20 @@ class SmoothMotion {
     final aim = _aimPoint();
     final residualLat = aim.$1 - _lat!;
     final residualLng = aim.$2 - _lng!;
-    final aLat = _springOmega * _springOmega * residualLat -
-        2 * _springOmega * _corrVelLat;
+    final aLat = _posSpringOmega * _posSpringOmega * residualLat -
+        2 * _posSpringOmega * _corrVelLat;
     _corrVelLat += aLat * dtSec;
-    final aLng = _springOmega * _springOmega * residualLng -
-        2 * _springOmega * _corrVelLng;
+    final aLng = _posSpringOmega * _posSpringOmega * residualLng -
+        2 * _posSpringOmega * _corrVelLng;
     _corrVelLng += aLng * dtSec;
 
     final maxMps = _feedState == MotionFeedState.reacquiring
         ? (speedMps * 1.5).clamp(6.0, 25.0).toDouble()
-        : (speedMps * 1.5).clamp(30.0, 45.0).toDouble();
+        // Floor 6 m/s, not 30 (audit D9): the correction may never run
+        // ten times faster than the car. At 30 m/s a crawling car's 20 m
+        // residual vanished in 0.7 s — a visible jump; at max(6, 1.5×v) it
+        // glides in over ~3 s at a crawl and is still instant at speed.
+        : math.min(45.0, math.max(6.0, speedMps * 1.5));
     final cosLat = math.cos(_targetLat! * math.pi / 180.0);
     final corrMps = math.sqrt(
       math.pow(_corrVelLng * 111320.0 * cosLat, 2) +
@@ -717,7 +732,11 @@ class SmoothMotion {
           math.pow(stepLat * 110540.0, 2),
     );
     final stepM = stepMps * dtSec;
-    final maxStepM = math.min(maxMps * dtSec, 1.0);
+    // 3 m per tick, not 1 (audit D8): the absolute cap was a hidden speed
+    // limit that scaled with the frame rate — at 30 fps the marker could
+    // not exceed 30 m/s (67 mph) and fell behind on the highway, then the
+    // spring dragged it forward in a lurch. maxMps already bounds the step.
+    final maxStepM = math.min(maxMps * dtSec, 3.0);
     if (stepM > maxStepM && stepM > 0) {
       final scale = maxStepM / stepM;
       stepLat *= scale;
@@ -804,8 +823,8 @@ class SmoothMotion {
     while (dBrg < -180) {
       dBrg += 360;
     }
-    final aBrg =
-        _springOmega * _springOmega * dBrg - 2 * _springOmega * _corrVelBrg;
+    final aBrg = _brgSpringOmega * _brgSpringOmega * dBrg -
+        2 * _brgSpringOmega * _corrVelBrg;
     _corrVelBrg += aBrg * dtSec;
     _corrVelBrg =
         _corrVelBrg.clamp(-_maxTurnRateDps, _maxTurnRateDps).toDouble();

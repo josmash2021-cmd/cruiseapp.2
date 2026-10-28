@@ -2383,6 +2383,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         );
       }
     } else if (isNav && _cameraFollowing) {
+      // Unreachable today: _Phase.enRouteToPickup / inTrip are never
+      // assigned — driver_nav_view.dart owns the chase pose (17.5 / 55°).
       _cameraBearing = _heading;
       _lastCamWriteBearing = _heading;
       _writeCamera(

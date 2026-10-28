@@ -278,11 +278,13 @@ void main() {
           isTrue);
     });
 
-    test('nav fixes pass the 65 m accuracy gate so 25 m cannot false-arm', () {
+    test('nav fixes pass a 30 m accuracy gate (audit 2026-10-28; was 65)',
+        () {
       final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 700);
-      expect(body.contains('pos.accuracy > 65'), isTrue,
-          reason: 'without the gate, GPS noise at 25 m would fire false '
-              'reroutes all day');
+      expect(body.contains('pos.accuracy > 30'), isTrue,
+          reason: 'without the gate, GPS noise would fire false reroutes '
+              'and yank the road-lock bearing at crossings');
+      expect(body, isNot(contains('pos.accuracy > 65')));
     });
 
     test('reroutes fetch on the fast lane (Mapbox alone, 5 s cap)', () {
@@ -349,13 +351,13 @@ void main() {
           reason: 'the per-frame chase must be gated on the camera state');
     });
 
-    test('dynamic chase zoom 16.5 / 16.1 / 17.4, lerped never stepped '
-        '(user spec 2026-09-27: "un poquito mas de zoom out")', () {
-      expect(nav.contains('_chaseZoomDefault = 16.5'), isTrue,
-          reason: 'user spec 2026-09-27: one more step out from 16.8 at the '
-              '50° tilt');
-      expect(nav.contains('_chaseZoomFast = 16.1'), isTrue);
-      expect(nav.contains('_chaseZoomManeuver = 17.4'), isTrue);
+    test('dynamic chase zoom 17.5 / 17.0 / 18.0, lerped never stepped '
+        '(owner decision 2026-10-28: the AGENTS.md chase pose 17.5 / 55)',
+        () {
+      expect(nav.contains('_chaseZoomDefault = 17.5'), isTrue,
+          reason: 'audit D6: the documented chase pose is zoom 17.5');
+      expect(nav.contains('_chaseZoomFast = 17.0'), isTrue);
+      expect(nav.contains('_chaseZoomManeuver = 18.0'), isTrue);
       expect(nav.contains('_zoomLerpPerSec = 0.5'), isTrue);
       final frame = bodyOf(nav, 'void _onDotFrame() {', maxLen: 1600);
       expect(frame.contains('+ 240'), isTrue,
@@ -889,13 +891,13 @@ void main() {
 
   group('user spec 2026-09-17: tilted chase, gold call disc, true speed',
       () {
-    test('the chase tilt is 50° (user spec 2026-09-27: "un poco mas de '
-        'inclinacion"), never back at 55 or 25', () {
-      expect(nav.contains('_chasePitch = 50.0'), isTrue,
-          reason: 'user spec 2026-09-27: "un poco mas de inclinacion" — 45° '
-              'still read flat mid-drive');
+    test('the chase tilt is 55° (owner decision 2026-10-28, audit D6), '
+        'never back at 50 or 25', () {
+      expect(nav.contains('_chasePitch = 55.0'), isTrue,
+          reason: 'AGENTS.md: "tras aceptar, chase por frame zoom 17.5 / '
+              'pitch 55"');
       expect(nav, isNot(contains('_chasePitch = 25.0')));
-      expect(nav, isNot(contains('_chasePitch = 55.0')));
+      expect(nav, isNot(contains('_chasePitch = 50.0')));
     });
 
     test('the sheet call disc is the gold-filled one, chat stays dark', () {

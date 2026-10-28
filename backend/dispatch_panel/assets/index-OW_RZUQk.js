@@ -25,6 +25,8 @@ import { m as getMapboxToken } from "./mapboxToken-DDoCRQix.js";
 /*! guard-pin panel_live_map_guard_test: /mapa usa sesión Dispatch: SSE /admin/drivers/live (snapshot + driver_location) como canal principal y poll 2 s SOLO fallback; trips/active cada 20 s con AbortController/latest-wins. Círculos en la coordenada GPS recibida, interpolación por frame con la cadencia real del GPS, sin proyección vial ni extrapolar; retargetDriverMotion no depende de mapRef. Riders en pickup, zonas debajo de markers; foco/Mostrar todos restaura cámara; fits FL/AL/Ambos solo al iniciar o acción explícita. Re-aplicar tras rebuild del source React fuera del repo. */
 
 const GOLD = "#E8C547";
+const RIDER_PRESENCE_COLOR = "#3B82F6";
+const RIDER_PRESENCE_TTL_MS = 120000;
 const POLL_INTERVAL_MS = 20000;
 const DRIVER_POLL_INTERVAL_MS = 2000;
 const ZONES_SOURCE = "mapa-zones";
@@ -165,6 +167,51 @@ function normalizeDriver(raw) {
 function normalizeDrivers(payload) {
   const rows = Array.isArray(payload?.drivers) ? payload.drivers : [];
   return rows.map(normalizeDriver).filter((driver) => driver.id !== "");
+}
+
+function presenceTimestampMs(value) {
+  const numeric = numberOrNull(value);
+  if (numeric !== null) {
+    return Math.abs(numeric) < 1e12 ? numeric * 1000 : numeric;
+  }
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isRiderPresenceCurrent(rider, now = Date.now()) {
+  return (
+    Number.isFinite(rider.lastSeen) &&
+    now - rider.lastSeen <= RIDER_PRESENCE_TTL_MS
+  );
+}
+
+function normalizeRiderPresence(raw, fallbackLastSeen = null) {
+  const id = asText(raw?.id).trim();
+  const position = positionOf(raw);
+  const lastSeen =
+    presenceTimestampMs(raw?.last_seen) ??
+    presenceTimestampMs(fallbackLastSeen);
+  if (id === "" || position === null || lastSeen === null) return null;
+  return {
+    id,
+    name: asText(raw?.name).trim() || "Rider",
+    position,
+    lastSeen,
+  };
+}
+
+function normalizePresenceSnapshot(payload) {
+  const rows = Array.isArray(payload?.riders) ? payload.riders : [];
+  const ridersById = new Map();
+  for (const row of rows) {
+    const rider = normalizeRiderPresence(row);
+    if (rider === null || !isRiderPresenceCurrent(rider)) continue;
+    const existing = ridersById.get(rider.id);
+    if (existing && existing.lastSeen > rider.lastSeen) continue;
+    ridersById.set(rider.id, rider);
+  }
+  return [...ridersById.values()];
 }
 
 function normalizeTrip(raw) {
@@ -320,6 +367,7 @@ function useLiveMapData(refreshKey) {
   const [snapshot, setSnapshot] = React.useState({
     drivers: [],
     trips: [],
+    riders: [],
     zones: emptyFeatureCollection(),
     loading: true,
     loaded: false,
@@ -344,13 +392,91 @@ function useLiveMapData(refreshKey) {
     let liveConnected = false;
     let liveSource = null;
     let liveReconnectTimer = null;
+    let presenceExpiryTimer = null;
 
     setSnapshot((previous) => ({
       ...previous,
+      riders: [],
       loading: !previous.loaded,
       error: null,
       zonesError: null,
     }));
+
+    function clearRiderPresence() {
+      if (disposed) return;
+      setSnapshot((previous) =>
+        previous.riders.length === 0
+          ? previous
+          : { ...previous, riders: [] },
+      );
+    }
+
+    function expireRiderPresence() {
+      if (disposed || document.visibilityState !== "visible") return;
+      const now = Date.now();
+      setSnapshot((previous) => {
+        const riders = previous.riders.filter((rider) =>
+          isRiderPresenceCurrent(rider, now),
+        );
+        return riders.length === previous.riders.length
+          ? previous
+          : { ...previous, riders };
+      });
+    }
+
+    function startPresenceExpiry() {
+      if (
+        presenceExpiryTimer !== null ||
+        disposed ||
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
+      presenceExpiryTimer = setTimeout(() => {
+        presenceExpiryTimer = null;
+        expireRiderPresence();
+        startPresenceExpiry();
+      }, 1000);
+    }
+
+    function stopPresenceExpiry() {
+      if (presenceExpiryTimer !== null) clearTimeout(presenceExpiryTimer);
+      presenceExpiryTimer = null;
+    }
+
+    function applyRiderPresence(raw) {
+      const riderId = asText(raw?.id).trim();
+      if (riderId === "") return;
+      if (raw.active === false) {
+        const lastSeen = presenceTimestampMs(raw.last_seen) ??
+          presenceTimestampMs(raw.ts);
+        setSnapshot((previous) => {
+          const current = previous.riders.find((rider) => rider.id === riderId);
+          if (current && lastSeen !== null && current.lastSeen > lastSeen) {
+            return previous;
+          }
+          return {
+            ...previous,
+            riders: previous.riders.filter((rider) => rider.id !== riderId),
+          };
+        });
+        return;
+      }
+      if (raw.active !== true) return;
+      const rider = normalizeRiderPresence(raw, raw.ts);
+      if (rider === null) return;
+      setSnapshot((previous) => {
+        const current = previous.riders.find((item) => item.id === riderId);
+        if (current && current.lastSeen > rider.lastSeen) return previous;
+        const riders = previous.riders.filter((item) => item.id !== riderId);
+        if (!isRiderPresenceCurrent(rider)) {
+          return riders.length === previous.riders.length
+            ? previous
+            : { ...previous, riders };
+        }
+        return { ...previous, riders: [...riders, rider] };
+      });
+    }
 
     function applyLiveDriver(raw) {
       const driverId = asText(raw?.id).trim();
@@ -387,6 +513,7 @@ function useLiveMapData(refreshKey) {
           typeof EventSource === "undefined") {
         return;
       }
+      clearRiderPresence();
       liveSource?.close();
       liveReconnectTimer = null;
       liveSource = new EventSource("/admin/drivers/live");
@@ -399,16 +526,22 @@ function useLiveMapData(refreshKey) {
         setSnapshot((previous) => ({
           ...previous,
           drivers: normalizeDrivers(payload),
+          riders: normalizePresenceSnapshot(payload),
         }));
       });
       liveSource.addEventListener("driver_location", (event) => {
         if (disposed) return;
         applyLiveDriver(JSON.parse(event.data));
       });
+      liveSource.addEventListener("rider_presence", (event) => {
+        if (disposed) return;
+        applyRiderPresence(JSON.parse(event.data));
+      });
       liveSource.onerror = () => {
         liveConnected = false;
         liveSource?.close();
         liveSource = null;
+        clearRiderPresence();
         if (disposed || document.visibilityState !== "visible") return;
         if (liveReconnectTimer === null) {
           liveReconnectTimer = setTimeout(connectLiveDrivers, 2000);
@@ -565,6 +698,8 @@ function useLiveMapData(refreshKey) {
         driverController = null;
         zoneController = null;
         zonesInFlight = false;
+        stopPresenceExpiry();
+        clearRiderPresence();
         return;
       }
       if (pollTimer !== null) clearTimeout(pollTimer);
@@ -573,6 +708,7 @@ function useLiveMapData(refreshKey) {
       driverPollTimer = null;
       void loadLive();
       connectLiveDrivers();
+      startPresenceExpiry();
       driverPollTimer = setTimeout(loadDrivers, DRIVER_POLL_INTERVAL_MS);
       void loadZones();
     }
@@ -580,6 +716,7 @@ function useLiveMapData(refreshKey) {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     void loadLive();
     connectLiveDrivers();
+    startPresenceExpiry();
     driverPollTimer = setTimeout(loadDrivers, DRIVER_POLL_INTERVAL_MS);
     void loadZones();
 
@@ -590,6 +727,7 @@ function useLiveMapData(refreshKey) {
       zoneSequence += 1;
       if (pollTimer !== null) clearTimeout(pollTimer);
       if (driverPollTimer !== null) clearTimeout(driverPollTimer);
+      stopPresenceExpiry();
       liveConnected = false;
       liveSource?.close();
       liveSource = null;
@@ -1088,6 +1226,70 @@ function createRiderElement(trip, onOpen) {
   return { element, clickHandler };
 }
 
+function updatePresenceElement(element, rider) {
+  const dot = element.children[0];
+  Object.assign(dot.style, {
+    width: "16px",
+    height: "16px",
+    borderRadius: "50%",
+    border: "2px solid #FFFFFF",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.5)",
+    background: RIDER_PRESENCE_COLOR,
+  });
+  element.children[1].textContent = rider.name;
+  element.setAttribute(
+    "aria-label",
+    `Rider ${rider.name}. En línea. Ubicación aproximada`,
+  );
+}
+
+function createPresenceElement(rider, onOpen) {
+  const element = document.createElement("button");
+  element.type = "button";
+  Object.assign(element.style, {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    cursor: "pointer",
+    border: "0",
+    padding: "0",
+    background: "transparent",
+  });
+  const dot = document.createElement("div");
+  const label = document.createElement("div");
+  Object.assign(label.style, {
+    color: "#ffffff",
+    fontSize: "11px",
+    fontWeight: "600",
+    fontFamily: "Inter, system-ui, sans-serif",
+    textShadow: "0 0 3px #0A0A0E, 0 0 3px #0A0A0E",
+    whiteSpace: "nowrap",
+    marginTop: "3px",
+  });
+  element.append(dot, label);
+  updatePresenceElement(element, rider);
+  const clickHandler = () => onOpen(rider.id);
+  element.addEventListener("click", clickHandler);
+  return { element, clickHandler };
+}
+
+function presencePopupOwner(riderId) {
+  return `presence:${riderId}`;
+}
+
+function buildPresencePopup(rider) {
+  const content = document.createElement("div");
+  content.append(
+    popupLine(rider.name, { bold: true, color: "#ffffff" }),
+    popupLine("En línea", { bold: true, color: RIDER_PRESENCE_COLOR }),
+    popupLine(
+      `Última actividad: ${new Date(rider.lastSeen).toLocaleString()}`,
+    ),
+    popupLine("Ubicación aproximada"),
+  );
+  return content;
+}
+
 function removeMarkerEntry(entry) {
   entry.element.removeEventListener("click", entry.clickHandler);
   entry.marker.remove();
@@ -1323,7 +1525,7 @@ function CruiseMapScreen() {
 function FleetMap({ token }) {
   const [refreshKey, setRefreshKey] = React.useState(0);
   const snapshot = useLiveMapData(refreshKey);
-  const { drivers, trips } = snapshot;
+  const { drivers, trips, riders } = snapshot;
   const [mapReady, setMapReady] = React.useState(false);
   const [containerWidth, setContainerWidth] = React.useState(0);
   const [showDrivers, setShowDrivers] = React.useState(true);
@@ -1342,6 +1544,7 @@ function FleetMap({ token }) {
   const popupOwnerRef = React.useRef(null);
   const driverMarkersRef = React.useRef(new Map());
   const riderMarkersRef = React.useRef(new Map());
+  const presenceMarkersRef = React.useRef(new Map());
   const pickupPinRef = React.useRef(null);
   const dropoffPinRef = React.useRef(null);
   const overviewCameraRef = React.useRef(null);
@@ -1350,9 +1553,11 @@ function FleetMap({ token }) {
   const selectedIdRef = React.useRef(null);
   const driversRef = React.useRef(drivers);
   const tripsRef = React.useRef(trips);
+  const ridersRef = React.useRef([]);
   const stateModeRef = React.useRef(stateMode);
   const onDriverSelectRef = React.useRef(() => {});
   const onRiderOpenRef = React.useRef(() => {});
+  const onPresenceOpenRef = React.useRef(() => {});
 
   driversRef.current = drivers;
   tripsRef.current = trips;
@@ -1367,6 +1572,24 @@ function FleetMap({ token }) {
     () => trips.filter((trip) => trip.pickup.position !== null),
     [trips],
   );
+  const activeTripRiderIds = React.useMemo(
+    () =>
+      new Set(
+        trips
+          .map((trip) => asText(trip.rider.id).trim())
+          .filter((riderId) => riderId !== ""),
+      ),
+    [trips],
+  );
+  const positionedRiders = React.useMemo(
+    () =>
+      riders.filter(
+        (rider) =>
+          rider.position !== null && !activeTripRiderIds.has(rider.id),
+      ),
+    [riders, activeTripRiderIds],
+  );
+  ridersRef.current = positionedRiders;
   const selectedDriver =
     drivers.find((driver) => driver.id === selectedDriverId) ??
     selectedDriverSnapshot;
@@ -1444,6 +1667,26 @@ function FleetMap({ token }) {
     [closePopup],
   );
   onRiderOpenRef.current = openRiderPopup;
+
+  const openPresencePopup = React.useCallback(
+    (riderId) => {
+      const map = mapRef.current;
+      const rider = ridersRef.current.find((item) => item.id === riderId);
+      if (!map || !rider || !rider.position) return;
+      closePopup();
+      popupOwnerRef.current = presencePopupOwner(riderId);
+      popupRef.current = new mapboxgl.Popup({
+        className: "mapa-popup",
+        maxWidth: "280px",
+        offset: 14,
+      })
+        .setLngLat(rider.position)
+        .setDOMContent(buildPresencePopup(rider))
+        .addTo(map);
+    },
+    [closePopup],
+  );
+  onPresenceOpenRef.current = openPresencePopup;
 
   React.useEffect(() => {
     if (selectedDriverId === null) {
@@ -1555,6 +1798,7 @@ function FleetMap({ token }) {
       closePopup();
       clearMarkerMap(driverMarkersRef.current);
       clearMarkerMap(riderMarkersRef.current);
+      clearMarkerMap(presenceMarkersRef.current);
       pickupPinRef.current?.remove();
       pickupPinRef.current = null;
       dropoffPinRef.current?.remove();
@@ -1681,6 +1925,47 @@ function FleetMap({ token }) {
   React.useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) return;
+    const visibleRiders = showRiders ? positionedRiders : [];
+    const desiredRiderIds = new Set(visibleRiders.map((rider) => rider.id));
+    for (const [riderId, entry] of [...presenceMarkersRef.current.entries()]) {
+      if (!desiredRiderIds.has(riderId)) {
+        if (popupOwnerRef.current === presencePopupOwner(riderId)) closePopup();
+        removeMarkerEntry(entry);
+        presenceMarkersRef.current.delete(riderId);
+      }
+    }
+    for (const rider of visibleRiders) {
+      const existing = presenceMarkersRef.current.get(rider.id);
+      if (existing) {
+        existing.marker.setLngLat(rider.position);
+        updatePresenceElement(existing.element, rider);
+      } else {
+        const { element, clickHandler } = createPresenceElement(rider, (id) =>
+          onPresenceOpenRef.current(id),
+        );
+        const marker = new mapboxgl.Marker({ element, anchor: "center" })
+          .setLngLat(rider.position)
+          .addTo(map);
+        presenceMarkersRef.current.set(rider.id, {
+          marker,
+          element,
+          clickHandler,
+        });
+      }
+      if (
+        popupOwnerRef.current === presencePopupOwner(rider.id) &&
+        popupRef.current
+      ) {
+        popupRef.current
+          .setLngLat(rider.position)
+          .setDOMContent(buildPresencePopup(rider));
+      }
+    }
+  }, [mapReady, positionedRiders, showRiders, closePopup]);
+
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
     let frameId = null;
 
     function animate(now) {
@@ -1798,7 +2083,8 @@ function FleetMap({ token }) {
     !snapshot.loading &&
     snapshot.error === null &&
     positionedDrivers.length === 0 &&
-    positionedTrips.length === 0;
+    positionedTrips.length === 0 &&
+    positionedRiders.length === 0;
   const routeUnavailable =
     detail.error !== null || detail.routeStatus === "route_unavailable";
   const detailStatus = detail.loading && detail.trip === null
@@ -1850,6 +2136,10 @@ function FleetMap({ token }) {
               jsxRuntime.jsx(StatPill, {
                 dotClass: "bg-primary",
                 label: `${trips.length} riders activos`,
+              }),
+              jsxRuntime.jsx(StatPill, {
+                dotStyle: { background: RIDER_PRESENCE_COLOR },
+                label: `${positionedRiders.length} riders en línea`,
               }),
               jsxRuntime.jsxs("div", {
                 role: "group",
@@ -2128,13 +2418,14 @@ function FleetMap({ token }) {
   });
 }
 
-function StatPill({ dotClass, label }) {
+function StatPill({ dotClass, label, dotStyle }) {
   return jsxRuntime.jsxs("span", {
     className:
       "pointer-events-auto flex items-center gap-1.5 rounded-chip border border-cardBorder bg-[#0A0A0E]/85 px-3 py-1.5 backdrop-blur",
     children: [
       jsxRuntime.jsx("span", {
         className: classNames("h-2 w-2 rounded-full", dotClass),
+        style: dotStyle,
       }),
       jsxRuntime.jsx("span", {
         className: "text-[11px] font-bold text-textPrimary",

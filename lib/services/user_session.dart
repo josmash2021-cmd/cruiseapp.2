@@ -47,6 +47,8 @@ class UserSession {
   /// Deep link to process (fare-split, referral, promo code)
   static Uri? currentDeepLink;
 
+  static Future<void> Function()? onBeforeLogout;
+
   // ── Save / Read local cache ─────────────────────────
 
   /// Save user data locally (cache after API call).
@@ -341,6 +343,12 @@ class UserSession {
   /// Ensures complete isolation between accounts on the same device.
   /// Photos will be re-downloaded from server on next sign-in.
   static Future<void> logout() async {
+    try {
+      await onBeforeLogout?.call();
+    } catch (error) {
+      debugPrint('[UserSession] pre-logout cleanup failed: ${error.runtimeType}');
+    }
+
     final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
 
     // Grab UID before clearing session so we can clean up UID-specific data

@@ -176,6 +176,20 @@ class VerifyRequestOcrIn(BaseModel):
     id_ocr_text: Optional[str] = Field(default=None, max_length=4000)
 
 
+class RiderPresenceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    active: bool
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lng: Optional[float] = Field(default=None, ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def require_coordinates_when_active(self):
+        if self.active and (self.lat is None or self.lng is None):
+            raise ValueError("lat and lng are required when active")
+        return self
+
+
 # ═══════════════════════════════════════════════════════
 #  Trip Schemas
 # ═══════════════════════════════════════════════════════

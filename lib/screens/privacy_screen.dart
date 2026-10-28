@@ -6,6 +6,7 @@ import '../config/page_transitions.dart';
 import '../services/analytics_service.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../services/rider_presence_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import '../widgets/neu_style.dart';
@@ -404,9 +405,18 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                       S.of(context).locationSharing,
                       S.of(context).locationSharingDesc,
                       _locationSharing,
-                      (v) {
+                      (v) async {
                         setState(() => _locationSharing = v);
-                        _toggle('privacy_location', v);
+                        if (!v) await RiderPresenceService.instance.stop();
+                        await _toggle('privacy_location', v);
+                        if (v) {
+                          final prefs = await SharedPreferences.getInstance();
+                          if (prefs.getBool(RiderPresenceService
+                                  .consentPreferenceKey) ==
+                              true) {
+                            await RiderPresenceService.instance.start();
+                          }
+                        }
                       },
                     ),
                     const SizedBox(height: 10),

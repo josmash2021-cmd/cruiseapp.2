@@ -5,6 +5,7 @@ Clients connect via SSE endpoints and receive instant updates when:
 - A new ride offer is dispatched to a driver
 - Trip status changes (rider sees driver_en_route, arrived, etc.)
 - Driver location updates (rider sees driver moving in real-time)
+- Rider presence updates (Dispatch sees approximate active-rider locations)
 """
 
 import asyncio
@@ -116,6 +117,8 @@ class EventBus:
                         )
                     elif kind == "dispatch_loc":
                         self._deliver_dispatch_driver_location(payload["data"])
+                    elif kind == "dispatch_rider_presence":
+                        self._deliver_dispatch_rider_presence(payload["data"])
                 except Exception as e:
                     logger.error("[SSE] bridge dispatch error: %s", e)
         except asyncio.CancelledError:
@@ -360,6 +363,44 @@ class EventBus:
             data["captured_at"] = captured_at
         self._deliver_dispatch_driver_location(data)
         await self._publish({"kind": "dispatch_loc", "data": data})
+
+    def _deliver_dispatch_rider_presence(self, data: dict[str, Any]) -> None:
+        event = {"type": "rider_presence", "data": data, "ts": data["ts"]}
+        dead: list[asyncio.Queue[dict[str, Any]]] = []
+        for q in self._dispatch_queues:
+            try:
+                q.put_nowait(event)
+                self._total_events += 1
+            except asyncio.QueueFull:
+                dead.append(q)
+        for q in dead:
+            self._dispatch_queues.discard(q)
+            self._queue_last_active.pop(id(q), None)
+
+    async def push_dispatch_rider_presence(
+        self, rider_id: int, active: bool, name: str | None = None,
+        lat: float | None = None, lng: float | None = None,
+        last_seen: str | None = None,
+    ):
+        data: dict[str, Any] = {
+            "id": rider_id,
+            "active": active,
+            "ts": time.time(),
+        }
+        if active:
+            if name is None or lat is None or lng is None or last_seen is None:
+                raise ValueError("Active rider presence requires name, coordinates, and last_seen")
+            data = {
+                "id": rider_id,
+                "name": name,
+                "lat": round(lat, 2),
+                "lng": round(lng, 2),
+                "last_seen": last_seen,
+                "active": True,
+                "ts": data["ts"],
+            }
+        self._deliver_dispatch_rider_presence(data)
+        await self._publish({"kind": "dispatch_rider_presence", "data": data})
 
     def get_stats(self) -> dict[str, int]:
         return {

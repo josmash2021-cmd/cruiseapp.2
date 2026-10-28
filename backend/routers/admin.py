@@ -43,6 +43,7 @@ from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import send_sms_async
 from services.socketio_service import notify_user, emit_trip_status, sio
 from services.event_bus import event_bus
+from services import rider_presence_registry
 from services.rider_pricing import (
     PricingConfigPatch, get_pricing_config, update_pricing_config,
 )
@@ -1640,6 +1641,51 @@ _LIVE_MAP_TRIP_STATUSES = (
 )
 
 
+_RIDER_PRESENCE_MAX_AGE = timedelta(seconds=120)
+
+
+def _rider_display_name(user: User) -> str:
+    return f"{user.first_name or ''} {user.last_name or ''}".strip()
+
+
+def _rider_last_seen(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+async def _online_riders_snapshot(db: AsyncSession):
+    now = datetime.now(timezone.utc)
+    rider_ids = await rider_presence_registry.recent_rider_ids(now.timestamp())
+    if not rider_ids:
+        return []
+    rows = (await db.execute(
+        select(User).where(
+            User.id.in_(rider_ids),
+            User.role == "rider",
+            User.status.in_(ACTIVE_ACCOUNT_STATUSES),
+            User.is_online == True,
+            User.privacy_location == True,
+            User.lat.isnot(None),
+            User.lng.isnot(None),
+            User.last_active_at.isnot(None),
+        )
+    )).scalars().all()
+    riders = []
+    for user in rows:
+        last_seen = _rider_last_seen(user.last_active_at)
+        if now - last_seen > _RIDER_PRESENCE_MAX_AGE:
+            continue
+        riders.append({
+            "id": user.id,
+            "name": _rider_display_name(user),
+            "lat": round(user.lat, 2),
+            "lng": round(user.lng, 2),
+            "last_seen": last_seen.isoformat(),
+        })
+    return riders
+
+
 async def _online_drivers_snapshot(db: AsyncSession):
     rows = (await db.execute(
         select(User, Vehicle).outerjoin(
@@ -1713,6 +1759,7 @@ async def stream_live_drivers(
     queue = event_bus.subscribe_dispatch()
     try:
         snapshot = await _online_drivers_snapshot(db)
+        snapshot["riders"] = await _online_riders_snapshot(db)
     except Exception:
         event_bus.unsubscribe_dispatch(queue)
         raise

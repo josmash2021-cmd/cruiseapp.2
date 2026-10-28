@@ -25,13 +25,15 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE, user_lang
+from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE, user_lang, ACTIVE_ACCOUNT_STATUSES
 from utils.image_validation import validate_image_bytes, shrink_image_bytes
 from services import vehicle_tiers
 from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email, send_sms_async
 from services.guest_link_service import link_guest_trips_to_user
 from services.socketio_service import notify_user
+from services.event_bus import event_bus
+from services import rider_presence_registry
 # n8n welcome/driver onboarding email triggers removed from register
 # (2026-08-25) — no emails at signup.
 from config import (
@@ -166,11 +168,19 @@ async def logout(
     # Signing out also releases this phone's push token: after logout the
     # app has no session, and a push that still arrives would open into a
     # signed-out app — or worse, onto the next account that signs in here.
+    rider_went_offline = user.role == "rider" and user.is_online
     try:
         user.fcm_token = None
+        if rider_went_offline:
+            user.is_online = False
         await db.commit()
     except Exception:
+        rider_went_offline = False
         pass  # never block a logout on token cleanup
+    if user.role == "rider":
+        await rider_presence_registry.remove_rider(user.id)
+    if rider_went_offline:
+        await event_bus.push_dispatch_rider_presence(user.id, active=False)
     if not authorization or not authorization.startswith("Bearer "):
         return {"ok": True}
     token = authorization.split(" ")[1]
@@ -1767,15 +1777,61 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
+@router.post("/riders/presence", dependencies=[Depends(_verify_api_key)])
+async def update_rider_presence(
+    body: RiderPresenceIn,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if user.role != "rider":
+        raise HTTPException(403, "Rider access required")
+    if user.status not in ACTIVE_ACCOUNT_STATUSES:
+        raise HTTPException(403, "Account is not active")
+    if not body.active:
+        user.is_online = False
+        await db.commit()
+        await rider_presence_registry.remove_rider(user.id)
+        await event_bus.push_dispatch_rider_presence(user.id, active=False)
+        return {"ok": True}
+    if not user.privacy_location:
+        user.is_online = False
+        await db.commit()
+        await rider_presence_registry.remove_rider(user.id)
+        await event_bus.push_dispatch_rider_presence(user.id, active=False)
+        raise HTTPException(403, "Location privacy is disabled")
+
+    now = datetime.now(timezone.utc)
+    user.lat = round(body.lat, 2)
+    user.lng = round(body.lng, 2)
+    user.last_active_at = now
+    user.is_online = True
+    await db.commit()
+    registered = await rider_presence_registry.mark_rider_active(user.id, now.timestamp())
+    if registered:
+        await event_bus.push_dispatch_rider_presence(
+            user.id,
+            active=True,
+            name=f"{user.first_name or ''} {user.last_name or ''}".strip(),
+            lat=user.lat,
+            lng=user.lng,
+            last_seen=now.isoformat(),
+        )
+    else:
+        await event_bus.push_dispatch_rider_presence(user.id, active=False)
+    return {"ok": True}
+
+
 @router.post("/auth/offline", dependencies=[Depends(_verify_api_key)])
 async def go_offline(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Mark user as offline (called when app goes to background)."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
+    rider_went_offline = False
     if db_user and db_user.is_online:
         db_user.is_online = False
-        db_user.online_since = None  # the 12 h shift clock stops with it
+        rider_went_offline = db_user.role == "rider"
         if db_user.role == "driver":
+            db_user.online_since = None  # the 12 h shift clock stops with it
             # Same retirement the location endpoint does — an offline driver
             # must hold no pending offers (late push taps raise dead cards).
             from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
@@ -1789,6 +1845,10 @@ async def go_offline(user: User = Depends(_get_current_user), db: AsyncSession =
                     firestore_sync.sync_client_online(db_user.id, False)
             except Exception:
                 pass
+    if db_user and db_user.role == "rider":
+        await rider_presence_registry.remove_rider(db_user.id)
+        if rider_went_offline:
+            await event_bus.push_dispatch_rider_presence(db_user.id, active=False)
     return {"status": "ok"}
 
 @router.patch("/auth/me", dependencies=[Depends(_verify_api_key)])
@@ -1910,6 +1970,9 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     db_user.last_active_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(db_user)
+    if privacy_disabled:
+        await rider_presence_registry.remove_rider(db_user.id)
+        await event_bus.push_dispatch_rider_presence(db_user.id, active=False)
 
     # Sync updated profile to Firestore
     if _HAS_FIRESTORE:
@@ -2763,12 +2826,17 @@ async def record_consent(
             db_user.privacy_accepted_at = now if action == "accepted" else None
         elif consent_type == "location":
             db_user.privacy_location = action == "accepted"
+            if privacy_disabled:
+                db_user.is_online = False
         elif consent_type == "analytics":
             db_user.privacy_analytics = action == "accepted"
         elif consent_type == "ads":
             db_user.privacy_ads = action == "accepted"
     
     await db.commit()
+    if privacy_disabled:
+        await rider_presence_registry.remove_rider(db_user.id)
+        await event_bus.push_dispatch_rider_presence(db_user.id, active=False)
     return {"detail": f"Consent '{consent_type}' {action}", "logged_at": datetime.now(timezone.utc).isoformat()}
 
 

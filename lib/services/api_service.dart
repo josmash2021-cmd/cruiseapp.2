@@ -1612,6 +1612,34 @@ class ApiService {
     _cachedUser = null;
   }
 
+  static Future<bool> updateRiderPresence({
+    required bool active,
+    double? lat,
+    double? lng,
+  }) async {
+    final headers = await _authHeaders();
+    if (!headers.containsKey('Authorization')) return false;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/riders/presence'),
+            headers: headers,
+            body: jsonEncode({
+              'active': active,
+              if (active && lat != null && lng != null) ...{
+                'lat': lat,
+                'lng': lng,
+              },
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
+      return res.statusCode >= 200 && res.statusCode < 300;
+    } catch (error) {
+      debugPrint('[ApiService] rider presence failed: ${error.runtimeType}');
+      return false;
+    }
+  }
+
   /// Mark user as offline (called when app goes to background).
   static Future<void> goOffline() async {
     final token = await getToken();

@@ -285,6 +285,79 @@ const assert = require('node:assert/strict');
     expect(result.stdout, contains('real GPS cadence ok'));
   });
 
+  test('rider presence stays fresh and a stale offline cannot hide a newer one', () async {
+    final helpers = chunk.substring(
+      chunk.indexOf('function asText'),
+      chunk.indexOf('function normalizeTrip'),
+    );
+    final applyPresence = chunk.substring(
+      chunk.indexOf('function applyRiderPresence'),
+      chunk.indexOf('function applyLiveDriver'),
+    );
+    final result = await Process.run('node', ['-e', '''
+const RIDER_PRESENCE_TTL_MS = 120000;
+$helpers
+$applyPresence
+const assert = require('node:assert/strict');
+const now = Date.now();
+const rider = normalizeRiderPresence({
+  id: 7, name: 'Ana', lat: 25.76, lng: -80.19,
+  last_seen: new Date(now - 1000).toISOString(),
+});
+assert.equal(rider.name, 'Ana');
+assert.deepEqual(rider.position, [-80.19, 25.76]);
+assert.equal(isRiderPresenceCurrent(rider, now), true);
+assert.equal(
+  isRiderPresenceCurrent({ ...rider, lastSeen: now - 120001 }, now),
+  false,
+);
+const rows = normalizePresenceSnapshot({ riders: [
+  { id: 7, name: 'Old', lat: 25.76, lng: -80.19, last_seen: new Date(now - 10000).toISOString() },
+  { id: 7, name: 'Ana', lat: 25.76, lng: -80.19, last_seen: new Date(now - 1000).toISOString() },
+  { id: 8, name: 'Stale', lat: 25.76, lng: -80.19, last_seen: new Date(now - 120001).toISOString() },
+] });
+assert.equal(rows.length, 1);
+assert.equal(rows[0].name, 'Ana');
+const setSnapshot = (update) => { snapshot = update(snapshot); };
+let snapshot = { riders: [rider] };
+applyRiderPresence({ id: 7, active: false, ts: (now - 10000) / 1000 });
+assert.equal(snapshot.riders.length, 1);
+applyRiderPresence({ id: 7, active: false, ts: (now + 1000) / 1000 });
+assert.equal(snapshot.riders.length, 0);
+console.log('rider presence freshness ok');
+''']);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('rider presence freshness ok'));
+  });
+
+  test('rider presence is blue, separate from trips and cleaned on SSE loss', () {
+    for (final needle in [
+      'const RIDER_PRESENCE_COLOR = "#3B82F6"',
+      'liveSource.addEventListener("rider_presence"',
+      'riders: normalizePresenceSnapshot(payload)',
+      'presenceMarkersRef',
+      'createPresenceElement',
+      'buildPresencePopup',
+      'activeTripRiderIds.has(rider.id)',
+      'positionedRiders.length} riders en línea',
+      'clearRiderPresence()',
+    ]) {
+      expect(chunk, contains(needle), reason: '$needle missing');
+    }
+    final popup = chunk.substring(
+      chunk.indexOf('function buildPresencePopup'),
+      chunk.indexOf('function removeMarkerEntry'),
+    );
+    expect(popup, contains('En línea'));
+    expect(popup, contains('Última actividad'));
+    expect(popup, contains('Ubicación aproximada'));
+    expect(popup, isNot(contains('phone')));
+    expect(popup, isNot(contains('rider.lat')));
+    expect(popup, isNot(contains('rider.lng')));
+    expect(chunk, contains('background: RIDER_PRESENCE_COLOR'));
+    expect(chunk, isNot(contains('setInterval(')));
+  });
+
   test('riders come only from active trips and markers stay at pickup', () {
     expect(chunk, contains('function normalizeTrips(payload)'));
     expect(chunk, contains('INACTIVE_TRIP_STATUSES'));

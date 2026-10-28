@@ -545,8 +545,16 @@ class S {
   String get locationSharing =>
       _es ? 'Compartir Ubicación' : 'Location Sharing';
   String get locationSharingDesc => _es
-      ? 'Comparte tu ubicación con conductores durante viajes para recogidas precisas.'
-      : 'Share your location with drivers during rides for accurate pickups.';
+      ? 'Comparte tu ubicación con conductores durante viajes y tu ubicación aproximada con Dispatch solo mientras la app está abierta.'
+      : 'Share your location with drivers during rides and your approximate location with Dispatch only while the app is open.';
+  String get riderPresenceConsentTitle => _es
+      ? 'Compartir tu ubicación aproximada'
+      : 'Share your approximate location';
+  String get riderPresenceConsentBody => _es
+      ? 'Con tu permiso, Dispatch podrá ver tu ubicación aproximada para coordinar viajes solo mientras la app esté abierta. No se comparte en segundo plano. Puedes desactivarlo en Privacidad.'
+      : 'With your permission, Dispatch can see your approximate location to coordinate rides only while the app is open. It is not shared in the background. You can turn this off in Privacy.';
+  String get riderPresenceConsentAccept => _es ? 'Permitir' : 'Allow';
+  String get riderPresenceConsentDecline => _es ? 'No, gracias' : 'No thanks';
   // Android foreground-service notification shown while the driver's
   // location is being published in the background.
   /// Payment screen: keep this method for future rides.

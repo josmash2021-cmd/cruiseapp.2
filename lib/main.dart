@@ -57,6 +57,7 @@ import 'services/analytics_service.dart';
 import 'services/firebase_auth_recovery.dart';
 import 'services/prefs_cache.dart';
 import 'services/socket_service.dart';
+import 'services/rider_presence_service.dart';
 import 'screens/chat_screen.dart';
 import 'screens/help_screen.dart';
 import 'screens/ride_request_screen.dart';
@@ -77,6 +78,85 @@ final accessibilityNotifier = AccessibilityNotifier();
 
 /// M2: Global navigator key for imperative navigation (auto-logout on 401).
 final _navigatorKey = GlobalKey<NavigatorState>();
+
+bool _riderPresenceSyncScheduled = false;
+bool _riderPresenceConsentPromptOpen = false;
+
+void _requestRiderPresenceSync() {
+  if (_riderPresenceSyncScheduled) return;
+  _riderPresenceSyncScheduled = true;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _riderPresenceSyncScheduled = false;
+    unawaited(_syncRiderPresence());
+  });
+}
+
+Future<void> _syncRiderPresence() async {
+  final token = await ApiService.getToken();
+  if (token == null) return;
+  final me = await ApiService.getMe();
+  if (me?['role']?.toString().toLowerCase() != 'rider') {
+    await RiderPresenceService.instance.stop();
+    return;
+  }
+  if (token != await ApiService.getToken()) return;
+
+  final prefs = await SharedPreferences.getInstance();
+  var consent = prefs.getBool(RiderPresenceService.consentPreferenceKey);
+  if (consent == null) {
+    if (_riderPresenceConsentPromptOpen) return;
+    final context = _navigatorKey.currentContext;
+    if (context == null || !context.mounted) return;
+    _riderPresenceConsentPromptOpen = true;
+    try {
+      final accepted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(S.of(dialogContext).riderPresenceConsentTitle),
+          content: Text(S.of(dialogContext).riderPresenceConsentBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(S.of(dialogContext).riderPresenceConsentDecline),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(S.of(dialogContext).riderPresenceConsentAccept),
+            ),
+          ],
+        ),
+      );
+      consent = accepted == true;
+      await prefs.setBool(
+        RiderPresenceService.consentPreferenceKey,
+        consent,
+      );
+    } finally {
+      _riderPresenceConsentPromptOpen = false;
+    }
+  }
+  if (consent != true) return;
+  if (!(prefs.getBool(RiderPresenceService.privacyPreferenceKey) ?? true)) {
+    await RiderPresenceService.instance.stop();
+    return;
+  }
+
+  final lifecycle = WidgetsBinding.instance.lifecycleState;
+  if (lifecycle == AppLifecycleState.paused ||
+      lifecycle == AppLifecycleState.hidden ||
+      lifecycle == AppLifecycleState.detached) {
+    return;
+  }
+  if (token != await ApiService.getToken()) return;
+  await RiderPresenceService.instance.start();
+}
+
+Future<void> _stopRiderPresenceThenGoOffline() async {
+  await RiderPresenceService.instance.stop();
+  final mode = await UserSession.getMode();
+  if (mode != 'driver') await ApiService.goOffline();
+}
 
 /// Background FCM handler — runs in a separate Dart isolate when the app is
 /// killed or backgrounded. Shows a local offer notification with the distinct
@@ -1701,6 +1781,8 @@ Future<void> heavyInit() async {
       radiusKm: 3.0,
     );
   }
+
+  _requestRiderPresenceSync();
 }
 
 /// Smooth 60 fps scroll everywhere — iOS-style bouncing on all platforms.
@@ -1737,6 +1819,7 @@ class _UberCloneAppState extends State<UberCloneApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    UserSession.onBeforeLogout = RiderPresenceService.instance.stop;
     // M2: auto-logout when JWT is expired and refresh also fails.
     // Guard against re-entry: if already on auth screens, skip.
     ApiService.onUnauthorized = () async {
@@ -1781,6 +1864,7 @@ class _UberCloneAppState extends State<UberCloneApp>
       if (!SocketService.isConnected) {
         unawaited(SocketService.reconnectWithFreshToken());
       }
+      _requestRiderPresenceSync();
     };
 
     // Driver session replaced on another device — show dialog then force logout
@@ -1882,6 +1966,7 @@ class _UberCloneAppState extends State<UberCloneApp>
 
   @override
   void dispose() {
+    unawaited(RiderPresenceService.instance.stop());
     WidgetsBinding.instance.removeObserver(this);
     _appUpdateGateSub?.cancel();
     AccountSessionGuard.dispose();
@@ -1891,19 +1976,16 @@ class _UberCloneAppState extends State<UberCloneApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
-      // Only mark riders offline on pause — drivers control their
-      // online state via the explicit toggle; pausing the app briefly
-      // (phone lock, switching apps) must NOT set is_online=false.
-      UserSession.getMode().then((mode) {
-        if (mode != 'driver') ApiService.goOffline();
-      });
+      unawaited(_stopRiderPresenceThenGoOffline());
       KeepAliveService.instance.stop();
     } else if (state == AppLifecycleState.resumed) {
       // getMe marks user as online on the backend
       ApiService.getMe();
       unawaited(AccountSessionGuard.check());
       KeepAliveService.instance.start();
+      _requestRiderPresenceSync();
     }
   }
 

@@ -3965,7 +3965,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             }
           } catch (verifyErr) {
             debugPrint('[DriverOnline] getTrip verify failed: $verifyErr');
-            verifyFailed = true;
+            // 403/404 is an ANSWER, not an outage: the backend says this
+            // trip is not ours (another driver won the race, or it is
+            // gone). Only a network failure may fall back to optimism —
+            // treating 403 as "cannot tell" kept a phantom trip on screen
+            // for every driver who lost an accept race (2026-10-28).
+            final code = verifyErr is ApiException ? verifyErr.statusCode : 0;
+            verifyFailed = code != 403 && code != 404;
           }
         }
         if (serverHasTrip) {

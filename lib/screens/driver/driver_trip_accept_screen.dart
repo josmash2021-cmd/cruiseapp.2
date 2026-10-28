@@ -1852,13 +1852,19 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         // an external cancel and leave — retrying it every 8 s forever was
         // how a driver got stuck on a dead trip (the sql_453 case, where
         // only an optimistic Firestore doc kept the trip "alive").
-        if (e.statusCode == 404 && mounted && !_tripFinished) {
-          debugPrint('[Driver] Backend poll: trip ${widget.tripId} not found (404) → leaving');
+        // A 403 is just as final: the backend only refuses the read to a
+        // driver who is NOT this trip's driver (and never was offered it),
+        // i.e. it is somebody else's now — dispatch reassigned it, or the
+        // accept race was lost. Leave as "reassigned", not as cancelled.
+        final notOurs = e.statusCode == 403;
+        if ((e.statusCode == 404 || notOurs) && mounted && !_tripFinished) {
+          debugPrint('[Driver] Backend poll: trip ${widget.tripId} '
+              '${notOurs ? "not ours (403)" : "not found (404)"} → leaving');
           _tripFinished = true;
           _statusPollTimer?.cancel();
           _riderConfirmSub?.cancel();
           try {
-            _exitAfterRemoteCancel();
+            _exitAfterRemoteCancel(reassigned: notOurs);
           } catch (navErr) {
             debugPrint('[Driver] 404-navigate failed: $navErr');
           }

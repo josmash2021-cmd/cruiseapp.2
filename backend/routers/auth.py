@@ -15,6 +15,7 @@ from models.database import (
 from models.schemas import (
     RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SetPasswordIn, SocialAuthIn,
     SendOtpIn, VerifyOtpIn, PhoneLoginIn, EmailLoginIn, ApplyReferralIn, VerifyRequestOcrIn,
+    RiderPresenceIn,
 )
 from utils.security import (
     pwd, _create_token, _create_refresh_token, _create_login_token,
@@ -1931,9 +1932,16 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
         _loc = str(updates["locale"]).strip().lower()
         db_user.locale = "es" if _loc.startswith("es") else "en"
     # Update privacy preferences
+    privacy_disabled = (
+        db_user.role == "rider"
+        and "privacy_location" in updates
+        and not updates["privacy_location"]
+    )
     for key in _PRIVACY_FIELDS:
         if key in updates:
             setattr(db_user, key, updates[key])
+    if privacy_disabled:
+        db_user.is_online = False
     # Update driver onboarding fields (only when present — omitted keys
     # never clobber previously stored values)
     for key in _ONBOARDING_FIELDS:
@@ -2818,6 +2826,12 @@ async def record_consent(
     # from terms/ICA acceptance), so it intentionally falls through.
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
+    privacy_disabled = bool(
+        db_user
+        and db_user.role == "rider"
+        and consent_type == "location"
+        and action != "accepted"
+    )
     if db_user:
         now = datetime.now(timezone.utc)
         if consent_type == "terms":

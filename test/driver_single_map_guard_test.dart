@@ -176,26 +176,59 @@ void main() {
               'mount');
     });
 
-    test('the boot veil releases gestures as soon as the surface mounts', () {
+    test('the boot veil never intercepts gestures', () {
       final widgets = File('lib/screens/driver/driver_online_widgets.dart')
           .readAsStringSync();
-      final start = widgets.indexOf('child: AbsorbPointer(');
+      final start = widgets.indexOf('child: IgnorePointer(');
       final end = widgets.indexOf('// The marker, painted by Flutter', start);
       expect(start, isNonNegative);
       expect(end, greaterThan(start));
       final veil = widgets.substring(start, end);
       expect(
         veil,
-        contains('absorbing: !_mapMounted'),
-        reason: 'drag and zone taps must not wait for style/tile flags',
+        contains('ignoring: true'),
+        reason: 'the entire veil subtree is transparent to hit testing',
       );
       expect(
         veil,
         contains('opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0'),
         reason: 'the veil still fades after the first real render',
       );
-      expect(veil, isNot(contains('absorbing: !(_mapStyleLoaded && _firstRenderDone)')));
-      expect(veil, isNot(contains('child: IgnorePointer(')));
+      expect(veil, isNot(contains('AbsorbPointer(')));
+    });
+
+    testWidgets('the visible veil passes taps and drags to the map',
+        (tester) async {
+      var taps = 0;
+      var drag = Offset.zero;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            fit: StackFit.expand,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => taps++,
+                onPanUpdate: (details) => drag += details.delta,
+                child: const SizedBox.expand(),
+              ),
+              IgnorePointer(
+                ignoring: true,
+                child: AnimatedOpacity(
+                  opacity: 1,
+                  duration: Duration.zero,
+                  child: Container(color: const Color(0xFF0A1128)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.tapAt(const Offset(200, 300));
+      await tester.dragFrom(const Offset(200, 300), const Offset(64, 32));
+      expect(taps, 1);
+      expect(drag.dx, greaterThan(0));
+      expect(drag.dy, greaterThan(0));
     });
   });
 

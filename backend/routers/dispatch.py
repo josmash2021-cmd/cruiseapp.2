@@ -2487,6 +2487,12 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
         )
     )
     if existing_accepted.scalar_one_or_none():
+        # The race is lost for good: retire this offer so the card does
+        # not come back on the next poll (it rang again every cycle while
+        # the row stayed pending -- user report 2026-10-28, "sale en bucle").
+        offer.status = "expired"
+        await db.commit()
+        _pending_cache.pop(driver_id, None)
         raise HTTPException(409, "Trip already accepted by another driver")
 
     offer.status = "accepted"

@@ -217,7 +217,7 @@ String _riderNotifBody(String type) {
     'trip_offer' || 'new_offer' => isEs ? 'Un pasajero necesita un viaje — abre Cruise para aceptar.' : 'A rider needs a ride — open Cruise to accept.',
     'rider_cancelled'    => isEs ? 'El pasajero canceló el viaje.' : 'The rider has cancelled the ride.',
     'trip_canceled' || 'trip_cancelled' => isEs ? 'El viaje fue cancelado por dispatch.' : 'The trip has been cancelled by dispatch.',
-    'trip_reassigned'    => isEs ? 'Dispatch asignó este viaje a otro conductor. Sigues en línea.' : 'Dispatch assigned this trip to another driver. You are still online.',
+    'trip_reassigned'    => isEs ? 'Este viaje fue asignado a otro conductor. Sigues en línea.' : 'This trip was assigned to another driver. You are still online.',
     'scheduled_cancelled' => isEs ? 'Un viaje programado ha sido cancelado por el pasajero.' : 'A scheduled ride has been cancelled by the rider.',
     'tip_received'       => isEs ? 'Un pasajero te dejó una propina. ¡Sigue así!' : 'A rider left you a tip. Keep up the great work!',
     'level_up'           => isEs ? '¡Felicidades! Subiste de nivel en Cruise.' : 'Congratulations! You leveled up in Cruise.',

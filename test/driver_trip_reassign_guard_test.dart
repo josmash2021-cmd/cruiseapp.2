@@ -61,7 +61,7 @@ void main() {
     test('the controller consumes the reassigned pop result', () {
       expect(ctrl, contains("result == 'cancelled' || result == 'reassigned'"));
       expect(ctrl, contains("_resetToSearchingOnRemoteCancel(reassigned: result == 'reassigned')"));
-      expect(ctrl, contains('void _showCancelledNotice({bool reassigned = false})'));
+      expect(ctrl, contains('void _showCancelledNotice({bool reassigned = false, bool taken = false})'));
       expect(ctrl, contains('_cancelledNoticeReassigned = reassigned;'));
     });
 

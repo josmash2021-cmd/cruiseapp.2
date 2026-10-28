@@ -3684,6 +3684,126 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         }
       }
 
+      // The server answers first (2026-10-28): the "Aceptado" overlay,
+      // the optimistic Firestore write and the route paint used to go up
+      // before the accept was confirmed, so a lost race flashed Aceptado
+      // and then a cancel notice. Nothing below runs for a refused accept.
+      debugPrint('[DriverOnline] ▶ STEP 2b: awaiting acceptFuture BEFORE any visible change');
+      try {
+        await acceptFuture;
+        debugPrint(
+            '[DriverOnline] ▶ STEP 7a: acceptFuture completed successfully');
+      } catch (e) {
+        // ⚠️ CRITICAL phantom-cancel fix:
+        //
+        // Previously this catch fired _cancel() unconditionally, which sent
+        // a PATCH /trips/{id}/status?status=canceled to the server. The
+        // problem: the acceptFuture failing doesn't mean the server failed
+        // — the 8s HTTP timeout on _client can fire even when the backend
+        // successfully processed the accept and marked the trip
+        // driver_en_route; only the response got lost / was slow. The
+        // driver kept driving to pickup while the rider saw a mysterious
+        // "cancelled by operator" dialog because our own client had
+        // force-cancelled the trip in the background.
+        //
+        // Fix: verify the trip's real state server-side before cancelling.
+        // If the server says the trip has a driver assigned OR is in
+        // driver_en_route/arrived/in_trip, the accept WAS successful —
+        // just log the timeout and continue. Only cancel if the server
+        // confirms the accept actually did not stick.
+        if (!mounted) return;
+        debugPrint(
+            '[DriverOnline] acceptFuture failed: $e — verifying server state before cancelling');
+        bool serverHasTrip = false;
+        bool verifyFailed = false;
+        final verifyTripId = tripId ?? offerId;
+        if (verifyTripId != null) {
+          try {
+            final serverTrip = await ApiService.getTrip(verifyTripId)
+                .timeout(const Duration(seconds: 6));
+            final srvStatus =
+                (serverTrip['status'] ?? '').toString().toLowerCase();
+            final srvDriver = serverTrip['driver_id'];
+            // Accept is "good" if the backend has us as driver OR the trip
+            // has already progressed past 'requested'.
+            const liveStatuses = {
+              'accepted',
+              'driver_en_route',
+              'driver_arriving',
+              'arrived',
+              'driver_arrived',
+              'in_trip',
+              'in_progress',
+            };
+            if (liveStatuses.contains(srvStatus) ||
+                (srvDriver != null &&
+                    srvDriver.toString() == _driverId.toString())) {
+              serverHasTrip = true;
+              debugPrint(
+                '[DriverOnline] accept verified on server (status=$srvStatus driver=$srvDriver) — keeping trip alive',
+              );
+            }
+          } catch (verifyErr) {
+            debugPrint('[DriverOnline] getTrip verify failed: $verifyErr');
+            // 403/404 is an ANSWER, not an outage: the backend says this
+            // trip is not ours (another driver won the race, or it is
+            // gone). Only a network failure may fall back to optimism —
+            // treating 403 as "cannot tell" kept a phantom trip on screen
+            // for every driver who lost an accept race (2026-10-28).
+            final code = verifyErr is ApiException ? verifyErr.statusCode : 0;
+            verifyFailed = code != 403 && code != 404;
+          }
+        }
+        if (serverHasTrip) {
+          // The client lost the accept response but the server is
+          // happily running the trip. Swallow the error, stay on the
+          // trip screen, let the driver continue.
+          // Fall through to the normal result handling below.
+        } else if (verifyFailed) {
+          // getTrip itself failed (timeout/network). We cannot confirm the
+          // accept failed — the original timeout was likely just the response
+          // being slow. Be optimistic: assume the accept succeeded and let
+          // the driver continue to the trip screen. If the accept really
+          // failed, the trip screen will handle that gracefully.
+          debugPrint(
+            '[DriverOnline] verify failed — assuming accept succeeded optimistically',
+          );
+          serverHasTrip = true;
+          // Fall through to normal handling.
+        } else {
+          // Accept genuinely failed — offer is gone. Do NOT cancel the trip
+          // (the driver never owned it anyway), but DO undo the optimistic
+          // Firestore write from STEP 5: it already told the rider a driver
+          // was en route. Left as-is, the rider watches a driver who was
+          // never dispatched while the trip is locked to this app.
+          _hideAcceptedOverlay();
+          if (tripId != null) {
+            // notify: false — the driver already gets the clearer
+            // "trip no longer available" message just below.
+            await _returnTripToDispatch(
+              tripId,
+              reason: 'accept_failed',
+              notify: false,
+            );
+          }
+          // mounted guard required: previous awaits (getTrip, release) mean
+          // context may be defunct if the driver navigated away mid-verify.
+          if (mounted) {
+            _setState(() {
+              _offerAcceptState = _OfferAcceptState.normal;
+              _acceptingCardId = null;
+            });
+            _snack(S.of(context).tripNoLongerAvailable);
+          }
+          _resetToSearchingOnRemoteCancel(taken: true);
+          return;
+        }
+      }
+      // ── STEP 8: let the celebration play out, then hand the trip over ──
+      // The 30s navFuture timeout that used to live here was a bandage for
+      // TripAcceptedScreen crashing on its own map. There is no second route
+      // to time out anymore — the overlay is ours and the handoff below is
+      // a plain push we own end to end.
       debugPrint('[DriverOnline] ▶ STEP 3: populating trip data');
       // Populate active trip data from the accepted offer.
       //
@@ -3908,122 +4028,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       unawaited(_paintAcceptedRoute(preRoutePoints));
       final celebration = Future<void>.delayed(_acceptedOverlayDuration);
 
-      debugPrint('[DriverOnline] ▶ STEP 7: awaiting acceptFuture');
-      try {
-        await acceptFuture;
-        debugPrint(
-            '[DriverOnline] ▶ STEP 7a: acceptFuture completed successfully');
-      } catch (e) {
-        // ⚠️ CRITICAL phantom-cancel fix:
-        //
-        // Previously this catch fired _cancel() unconditionally, which sent
-        // a PATCH /trips/{id}/status?status=canceled to the server. The
-        // problem: the acceptFuture failing doesn't mean the server failed
-        // — the 8s HTTP timeout on _client can fire even when the backend
-        // successfully processed the accept and marked the trip
-        // driver_en_route; only the response got lost / was slow. The
-        // driver kept driving to pickup while the rider saw a mysterious
-        // "cancelled by operator" dialog because our own client had
-        // force-cancelled the trip in the background.
-        //
-        // Fix: verify the trip's real state server-side before cancelling.
-        // If the server says the trip has a driver assigned OR is in
-        // driver_en_route/arrived/in_trip, the accept WAS successful —
-        // just log the timeout and continue. Only cancel if the server
-        // confirms the accept actually did not stick.
-        if (!mounted) return;
-        debugPrint(
-            '[DriverOnline] acceptFuture failed: $e — verifying server state before cancelling');
-        bool serverHasTrip = false;
-        bool verifyFailed = false;
-        final verifyTripId = tripId ?? offerId;
-        if (verifyTripId != null) {
-          try {
-            final serverTrip = await ApiService.getTrip(verifyTripId)
-                .timeout(const Duration(seconds: 6));
-            final srvStatus =
-                (serverTrip['status'] ?? '').toString().toLowerCase();
-            final srvDriver = serverTrip['driver_id'];
-            // Accept is "good" if the backend has us as driver OR the trip
-            // has already progressed past 'requested'.
-            const liveStatuses = {
-              'accepted',
-              'driver_en_route',
-              'driver_arriving',
-              'arrived',
-              'driver_arrived',
-              'in_trip',
-              'in_progress',
-            };
-            if (liveStatuses.contains(srvStatus) ||
-                (srvDriver != null &&
-                    srvDriver.toString() == _driverId.toString())) {
-              serverHasTrip = true;
-              debugPrint(
-                '[DriverOnline] accept verified on server (status=$srvStatus driver=$srvDriver) — keeping trip alive',
-              );
-            }
-          } catch (verifyErr) {
-            debugPrint('[DriverOnline] getTrip verify failed: $verifyErr');
-            // 403/404 is an ANSWER, not an outage: the backend says this
-            // trip is not ours (another driver won the race, or it is
-            // gone). Only a network failure may fall back to optimism —
-            // treating 403 as "cannot tell" kept a phantom trip on screen
-            // for every driver who lost an accept race (2026-10-28).
-            final code = verifyErr is ApiException ? verifyErr.statusCode : 0;
-            verifyFailed = code != 403 && code != 404;
-          }
-        }
-        if (serverHasTrip) {
-          // The client lost the accept response but the server is
-          // happily running the trip. Swallow the error, stay on the
-          // trip screen, let the driver continue.
-          // Fall through to the normal result handling below.
-        } else if (verifyFailed) {
-          // getTrip itself failed (timeout/network). We cannot confirm the
-          // accept failed — the original timeout was likely just the response
-          // being slow. Be optimistic: assume the accept succeeded and let
-          // the driver continue to the trip screen. If the accept really
-          // failed, the trip screen will handle that gracefully.
-          debugPrint(
-            '[DriverOnline] verify failed — assuming accept succeeded optimistically',
-          );
-          serverHasTrip = true;
-          // Fall through to normal handling.
-        } else {
-          // Accept genuinely failed — offer is gone. Do NOT cancel the trip
-          // (the driver never owned it anyway), but DO undo the optimistic
-          // Firestore write from STEP 5: it already told the rider a driver
-          // was en route. Left as-is, the rider watches a driver who was
-          // never dispatched while the trip is locked to this app.
-          _hideAcceptedOverlay();
-          if (tripId != null) {
-            // notify: false — the driver already gets the clearer
-            // "trip no longer available" message just below.
-            await _returnTripToDispatch(
-              tripId,
-              reason: 'accept_failed',
-              notify: false,
-            );
-          }
-          // mounted guard required: previous awaits (getTrip, release) mean
-          // context may be defunct if the driver navigated away mid-verify.
-          if (mounted) {
-            _setState(() {
-              _offerAcceptState = _OfferAcceptState.normal;
-              _acceptingCardId = null;
-            });
-            _snack(S.of(context).tripNoLongerAvailable);
-          }
-          _resetToSearchingOnRemoteCancel();
-          return;
-        }
-      }
-      // ── STEP 8: let the celebration play out, then hand the trip over ──
-      // The 30s navFuture timeout that used to live here was a bandage for
-      // TripAcceptedScreen crashing on its own map. There is no second route
-      // to time out anymore — the overlay is ours and the handoff below is
-      // a plain push we own end to end.
       await celebration;
       if (!mounted) return;
 
@@ -4990,7 +4994,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   ///
   /// [reassigned] swaps the wording to "Viaje reasignado" — dispatch moved
   /// the trip to another driver; this one is still online.
-  void _showCancelledNotice({bool reassigned = false}) {
+  void _showCancelledNotice({bool reassigned = false, bool taken = false}) {
     if (!mounted) return;
     _cancelledNoticeTimer?.cancel();
     _cancelledNoticeCtrl ??= AnimationController(
@@ -5004,6 +5008,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _setState(() {
       _cancelledNoticeVisible = true;
       _cancelledNoticeReassigned = reassigned;
+      _cancelledNoticeTaken = taken;
     });
     _cancelledNoticeCtrl!.forward(from: 0);
     _cancelledNoticeTimer = Timer(const Duration(seconds: 5), () async {
@@ -5014,7 +5019,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
-  void _resetToSearchingOnRemoteCancel({bool reassigned = false}) {
+  void _resetToSearchingOnRemoteCancel({bool reassigned = false, bool taken = false}) {
     // All callers are async-after-await, so the State may already be
     // disposed by the time we land here.
     if (!mounted) return;
@@ -5065,7 +5070,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // The notice replaces the old corner snackbar: a rider cancel is the
     // one event the driver must not miss in their periphery, so it lands
     // centred on a semi-dark wash for ~5 s and then fades out of the way.
-    _showCancelledNotice(reassigned: reassigned);
+    _showCancelledNotice(reassigned: reassigned, taken: taken);
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

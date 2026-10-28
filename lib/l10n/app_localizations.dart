@@ -5718,6 +5718,11 @@ class S {
   String get driverTripReassignedReturning => _es
       ? 'Este viaje fue asignado a otro conductor. Sigues en línea.'
       : 'This trip was assigned to another driver. You are still online.';
+  String get rideTakenByAnotherDriver =>
+      _es ? 'Otro conductor lo tomó' : 'Another driver took it';
+  String get driverRideTakenReturning => _es
+      ? 'Este viaje ya fue asignado a otro conductor. Sigues en línea.'
+      : 'This ride was already assigned to another driver. You are still online.';
 
   // Rider gold-snackbar messages used by the auto-cancel flow.
   String get riderNoDriversFoundTryAgain => _es

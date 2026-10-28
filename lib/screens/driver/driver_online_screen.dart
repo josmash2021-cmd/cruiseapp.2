@@ -553,6 +553,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // true → "Viaje reasignado" wording (dispatch moved the trip to
   // another driver); false → "Viaje cancelado".
   bool _cancelledNoticeReassigned = false;
+  bool _cancelledNoticeTaken = false;
   Timer? _cancelledNoticeTimer;
   AnimationController? _cancelledNoticeCtrl;
   Animation<double>? _cancelledNoticeFade;
@@ -2849,7 +2850,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                                   ),
                                 ),
                                 child: Icon(
-                                  _cancelledNoticeReassigned
+                                  _cancelledNoticeReassigned ||
+                                          _cancelledNoticeTaken
                                       ? Icons.swap_horiz_rounded
                                       : Icons.cancel_outlined,
                                   color: const Color(0xFFE8C547),
@@ -2858,9 +2860,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                               ),
                               const SizedBox(height: 14),
                               Text(
-                                _cancelledNoticeReassigned
-                                    ? S.of(context).tripReassigned
-                                    : S.of(context).tripCancelled,
+                                _cancelledNoticeTaken
+                                    ? S.of(context).rideTakenByAnotherDriver
+                                    : _cancelledNoticeReassigned
+                                        ? S.of(context).tripReassigned
+                                        : S.of(context).tripCancelled,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 20,
@@ -2869,9 +2873,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                _cancelledNoticeReassigned
-                                    ? S.of(context).driverTripReassignedReturning
-                                    : S.of(context).driverTripCancelledReturning,
+                                _cancelledNoticeTaken
+                                    ? S.of(context).driverRideTakenReturning
+                                    : _cancelledNoticeReassigned
+                                        ? S.of(context).driverTripReassignedReturning
+                                        : S.of(context).driverTripCancelledReturning,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.55),

@@ -670,6 +670,13 @@ async def _purge_trips_cascade(db: AsyncSession, trip_ids: list) -> None:
         .where(CruiseCashTransaction.ref_trip_id.in_(trip_ids))
         .values(ref_trip_id=None)
     )
+    # Promotion redemptions and their usage counters keep their history too;
+    # only the trip link goes away (prod: rider_promotion_redemptions_trip_id_fkey).
+    await db.execute(
+        update(RiderPromotionRedemption)
+        .where(RiderPromotionRedemption.trip_id.in_(trip_ids))
+        .values(trip_id=None)
+    )
     # Zero-tolerance audit rows hang off the complaints about these trips.
     complaint_ids = select(ZeroToleranceComplaint.id).where(
         ZeroToleranceComplaint.trip_id.in_(trip_ids)).scalar_subquery()

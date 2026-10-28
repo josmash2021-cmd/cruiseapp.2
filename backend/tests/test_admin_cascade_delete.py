@@ -50,6 +50,62 @@ async def test_admin_delete_trip_removes_dependents(client, test_rider, test_dri
 
 
 @pytest.mark.asyncio
+async def test_admin_delete_trip_unlinks_released_promotion(
+        client, test_rider, test_driver, db):
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select, text
+    from models.database import (
+        RideQuote, RiderPromotionGrant, RiderPromotionRedemption,
+        RiderPromotionUsage, Trip,
+    )
+    from tests.conftest import _make_auth_headers
+
+    rider, _ = test_rider
+    await db.execute(text("PRAGMA foreign_keys=ON"))
+    quote = RideQuote(
+        id="quote-trip-delete", rider_id=rider.id,
+        request_json="{}", quotes_json="[]", pricing_version=1,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    )
+    grant = RiderPromotionGrant(kind="free", allowed_tiers="[]")
+    trip = _trip(rider.id, None)
+    db.add_all([quote, grant, trip])
+    await db.flush()
+    redemption = RiderPromotionRedemption(
+        grant_id=grant.id, rider_id=rider.id, quote_id=quote.id,
+        trip_id=trip.id, status="released", original_fare_cents=1000,
+        rider_fare_cents=0, driver_fare_cents=900, distance_miles=1.0,
+    )
+    usage = RiderPromotionUsage(
+        grant_id=grant.id, rider_id=rider.id, active_count=0, used_count=0,
+    )
+    db.add_all([redemption, usage])
+    await db.flush()
+    trip.pricing_quote_id = quote.id
+    trip.promotion_redemption_id = redemption.id
+    await db.commit()
+
+    try:
+        response = await client.delete(
+            f"/admin/trips/{trip.id}",
+            headers=_make_auth_headers("test-dispatch-key"),
+        )
+        assert response.status_code == 200, response.text
+        assert (await db.execute(
+            select(Trip).where(Trip.id == trip.id),
+        )).scalar_one_or_none() is None
+        await db.refresh(quote)
+        await db.refresh(redemption)
+        await db.refresh(usage)
+        assert redemption.trip_id is None
+        assert redemption.status == "released"
+        assert usage.active_count == 0
+        assert usage.used_count == 0
+    finally:
+        await db.execute(text("PRAGMA foreign_keys=OFF"))
+
+
+@pytest.mark.asyncio
 async def test_admin_delete_active_trip_rejected(client, test_rider, test_driver, db):
     from tests.conftest import _make_auth_headers
 

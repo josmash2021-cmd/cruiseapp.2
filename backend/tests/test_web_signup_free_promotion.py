@@ -2,9 +2,10 @@
 riders created via /auth/web/register or /auth/web/social, with a 30%
 fallback for longer rides that must NOT consume a free use."""
 
+import asyncio
 import hashlib
 import time
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -490,6 +491,38 @@ async def test_web_create_free_ride_without_stripe_and_reuse_conflict(
     assert redemption.status == "released"
     assert usage.active_count == 0
     assert usage.used_count == 0
+
+
+@pytest.mark.parametrize("scheduled", [False, True])
+async def test_web_create_mirror_uses_registered_rider_name(
+        client: AsyncClient, db, web_create_noop, web_route,
+        monkeypatch, scheduled):
+    from routers import payments
+
+    mirrors = []
+    monkeypatch.setattr(payments, "firestore_sync", SimpleNamespace(
+        sync_trip=lambda **kwargs: mirrors.append(kwargs),
+    ))
+    monkeypatch.setattr(payments, "_HAS_FIRESTORE", True)
+    monkeypatch.setattr(
+        "services.scheduled_broadcast.notify_new_scheduled_ride", _noop_async)
+    email = "promo-mirror-scheduled@test.com" if scheduled else "promo-mirror-immediate@test.com"
+    registered = await _register_web_rider(client, db, email)
+    token = registered["access_token"]
+    quote = await _quote(client, token)
+    overrides = {}
+    if scheduled:
+        overrides["scheduled_at"] = (
+            datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+
+    response = await client.post(
+        "/bookings/web/create",
+        json=_booking_payload(token, quote["quote_id"], 0, **overrides),
+    )
+    assert response.status_code == 200, response.text
+    await asyncio.sleep(0)
+    assert len(mirrors) == 1
+    assert mirrors[0]["rider_name"] == "Web Rider"
 
 
 async def test_web_create_free_ride_cancel_after_assignment_consumes_use(

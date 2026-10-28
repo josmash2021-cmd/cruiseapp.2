@@ -2165,6 +2165,11 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
         except Exception as _vip_err:
             logging.warning("[VIP] Failed to send drink menu for trip %s: %s", trip.id, _vip_err)
 
+    _rider_for_mirror = None
+    if trip.rider_id:
+        rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+        _rider_for_mirror = rider_result.scalar_one_or_none()
+
     if is_future_scheduled:
         logging.info(
             "[WebBooking] Created SCHEDULED trip %d for %s (%.2f %s) — marketplace will pick it up",
@@ -2172,7 +2177,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
         )
         # Mirror the rider-app /trips path: sync Firestore and broadcast to drivers
         # so web-scheduled bookings enter the exact same marketplace pipeline.
-        _rn, _rp = _resolve_rider_display(trip, None)
+        _rn, _rp = _resolve_rider_display(trip, _rider_for_mirror)
         _trip_snap = {
             "id": trip.id, "rider_id": trip.rider_id or 0, "rider_name": _rn, "rider_phone": _rp,
             "pickup_address": trip.pickup_address, "pickup_lat": trip.pickup_lat, "pickup_lng": trip.pickup_lng,
@@ -2213,7 +2218,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
         # so the dispatch panel and any other real-time listeners see them
         # appear as soon as they're created — with the guest's real name.
         try:
-            _rn_imm, _rp_imm = _resolve_rider_display(trip, None)
+            _rn_imm, _rp_imm = _resolve_rider_display(trip, _rider_for_mirror)
             _trip_imm_snap = {
                 "id": trip.id, "rider_id": trip.rider_id or 0,
                 "rider_name": _rn_imm, "rider_phone": _rp_imm,

@@ -12,6 +12,7 @@ from models.database import (
     RiderPaymentMethod,
 )
 from models.schemas import OwnerLogin, DispatchRequestIn
+from pydantic import BaseModel, Field
 import jwt
 from utils.security import (
     pwd, _get_current_user, _verify_api_key, _require_dispatch_auth,
@@ -1230,7 +1231,7 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
                     pickup_lng=trip.pickup_lng,
                     exclude_driver_ids=tried_driver_ids,
                     vehicle_type=trip.vehicle_type or "comfort",
-                    radius_km=_LIVE_DISPATCH_RADIUS_KM,
+                    radius_km=_radius_for_trip(trip_id, _LIVE_DISPATCH_RADIUS_KM),
                     limit=5,
                     dropoff_lat=trip.dropoff_lat,
                     dropoff_lng=trip.dropoff_lng,
@@ -2730,7 +2731,7 @@ async def _requeue_trip_to_next_driver(db: AsyncSession, trip: Trip):
         pickup_lng=trip.pickup_lng or 0,
         exclude_driver_ids=tried_ids,
         vehicle_type=trip.vehicle_type or "comfort",
-        radius_km=_LIVE_DISPATCH_RADIUS_KM,
+        radius_km=_radius_for_trip(trip.id, _LIVE_DISPATCH_RADIUS_KM),
         limit=5,
         dropoff_lat=trip.dropoff_lat,
         dropoff_lng=trip.dropoff_lng,
@@ -2939,7 +2940,7 @@ async def _has_other_drivers_nearby(
         pickup_lng=trip.pickup_lng or 0,
         exclude_driver_ids=exclude_driver_ids,
         vehicle_type=trip.vehicle_type or "comfort",
-        radius_km=_REOFFER_RADIUS_KM,
+        radius_km=_radius_for_trip(trip.id, _REOFFER_RADIUS_KM),
         limit=1,
     )
     return bool(others)
@@ -2991,7 +2992,7 @@ async def _reoffer_after_delay(trip_id: int) -> None:
                 pickup_lng=trip.pickup_lng or 0,
                 exclude_driver_ids=set(),
                 vehicle_type=trip.vehicle_type or "comfort",
-                radius_km=_REOFFER_RADIUS_KM,
+                radius_km=_radius_for_trip(trip_id, _REOFFER_RADIUS_KM),
                 limit=5,
                 dropoff_lat=trip.dropoff_lat,
                 dropoff_lng=trip.dropoff_lng,
@@ -3156,6 +3157,341 @@ async def release_trip(
         "status": "released",
         "trip_id": trip_id,
         "requeued": new_offer is not None,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Dispatch-initiated reassign (panel, 2026-10-28)
+# ══════════════════════════════════════════════════════════════════════
+#
+# The operator wants a trip off its current driver: hand it to a driver
+# they pick, or put it back in the queue so it rings the driver with the
+# shortest real driving time to the pickup within a few miles. Both are
+# OFFERS (the trip is assigned only when the driver accepts), and both
+# start by detaching the current driver, who is told at once. The old
+# admin "accept" path offered an assigned trip without detaching anyone,
+# so the second driver's accept quietly stole it and the first kept
+# driving to a pickup that was no longer theirs.
+#
+# The reach the operator asked for sticks to the trip for a while: the
+# cascade and the re-offer rounds that follow this call read the override
+# through _radius_for_trip, so "5 miles" means the whole re-dispatch, not
+# just the first ring. It expires on its own, so a trip accepted and
+# released again much later goes back to the normal reach.
+
+_REASSIGNABLE_STATUSES = ("requested", "accepted", "driver_en_route")
+_REASSIGN_DEFAULT_RADIUS_MILES = 5.0
+_REASSIGN_RADIUS_TTL_SECONDS = 15 * 60
+_MILES_PER_KM = 0.621371
+
+# trip_id -> (radius_km, monotonic deadline)
+_trip_radius_override: dict[int, tuple[float, float]] = {}
+
+
+def _set_trip_radius_override(trip_id: int, radius_km: float) -> None:
+    _trip_radius_override[trip_id] = (
+        float(radius_km), time.monotonic() + _REASSIGN_RADIUS_TTL_SECONDS,
+    )
+
+
+def _radius_for_trip(trip_id: int, default_km: float) -> float:
+    """The reach for this trip's next offers: the operator's override while
+    it lasts (never wider than the default), the default otherwise."""
+    entry = _trip_radius_override.get(trip_id)
+    if entry is None:
+        return default_km
+    radius_km, deadline = entry
+    if time.monotonic() >= deadline:
+        _trip_radius_override.pop(trip_id, None)
+        return default_km
+    return min(float(default_km), radius_km)
+
+
+class AdminReassignIn(BaseModel):
+    mode: str = "nearest"
+    driver_id: Optional[int] = None
+    radius_miles: float = Field(default=_REASSIGN_DEFAULT_RADIUS_MILES, gt=0, le=50)
+    reason: Optional[str] = None
+
+
+def _driver_display_name(driver: User) -> str:
+    name = f"{driver.first_name or ''} {driver.last_name or ''}".strip()
+    return name or f"Driver {driver.id}"
+
+
+@router.post("/admin/trips/{trip_id}/reassign", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_reassign_trip(
+    trip_id: int,
+    body: AdminReassignIn,
+    db: AsyncSession = Depends(get_db),
+):
+    """Take a trip off its current driver and offer it again.
+
+    mode="nearest": the driver with the shortest driving ETA within
+    `radius_miles` of the pickup gets the offer, and the cascade that
+    follows stays inside that radius. Nobody inside it -> the trip stays
+    `requested` (visible in the drivers' available list) and the response
+    says so.
+
+    mode="driver": a priority offer to `driver_id`; if they do not answer,
+    the normal cascade takes over.
+
+    Allowed until the driver reaches the pickup (same rule as the driver's
+    own release). Past that it is a cancel, which has its own endpoint.
+    """
+    mode = (body.mode or "nearest").strip().lower()
+    if mode not in ("nearest", "driver"):
+        raise HTTPException(400, "mode debe ser 'nearest' o 'driver'")
+    radius_km = float(body.radius_miles) / _MILES_PER_KM
+
+    # Canonical lock order (2026-04-11): trips first, then dispatch_offers.
+    trip = (await db.execute(
+        select(Trip).where(Trip.id == trip_id).with_for_update()
+    )).scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.status not in _REASSIGNABLE_STATUSES:
+        raise HTTPException(
+            409,
+            f"No se puede reasignar un viaje en estado '{trip.status}': solo "
+            "antes de que el conductor llegue al punto de recogida.",
+        )
+    has_pickup = trip.pickup_lat is not None and trip.pickup_lng is not None
+    if mode == "nearest" and not has_pickup:
+        raise HTTPException(400, "El viaje no tiene coordenadas de recogida")
+
+    previous_driver_id = trip.driver_id
+    target: User | None = None
+    if mode == "driver":
+        if not body.driver_id:
+            raise HTTPException(400, "driver_id es obligatorio en modo 'driver'")
+        if previous_driver_id is not None and body.driver_id == previous_driver_id:
+            raise HTTPException(400, "Ese conductor ya tiene este viaje")
+        target = (await db.execute(
+            select(User).where(User.id == body.driver_id)
+        )).scalar_one_or_none()
+        if not target or target.role != "driver":
+            raise HTTPException(404, "Driver not found")
+        if (target.status not in ACTIVE_ACCOUNT_STATUSES
+                or target.verification_status != "approved"):
+            raise HTTPException(
+                400, "El conductor no está aprobado o su cuenta no está activa",
+            )
+        if not target.is_online:
+            raise HTTPException(400, "El conductor está desconectado")
+
+    # ── Detach ────────────────────────────────────────────────────────
+    # The old driver's live offer becomes "reassigned", not "rejected":
+    # they did not say no, dispatch decided, and their acceptance rate
+    # must not pay for it. Everyone else's pending offer simply expires.
+    offers = (await db.execute(
+        select(DispatchOffer)
+        .where(
+            DispatchOffer.trip_id == trip_id,
+            DispatchOffer.status.in_(("pending", "accepted")),
+        )
+        .order_by(DispatchOffer.id)
+        .with_for_update()
+    )).scalars().all()
+    for offer in offers:
+        if previous_driver_id is not None and offer.driver_id == previous_driver_id:
+            offer.status = "reassigned"
+        else:
+            offer.status = "expired"
+            await _bump_offer_counter(db, offer.driver_id, "expired")
+        _pending_cache.pop(offer.driver_id, None)
+        _safe_create_task(_clear_live_activity_offer(offer.driver_id))
+
+    trip.driver_id = None
+    trip.driver_assigned_at = None
+    trip.rider_approach_notified_at = None
+    trip.status = "requested"
+    await db.commit()
+
+    # Whatever was still ringing for this trip is superseded.
+    old_task = _cascade_tasks.pop(trip_id, None)
+    if old_task and not old_task.done():
+        old_task.cancel()
+    old_reoffer = _reoffer_tasks.pop(trip_id, None)
+    if old_reoffer and not old_reoffer.done():
+        old_reoffer.cancel()
+    _reoffer_rounds.pop(trip_id, None)
+    _dispatch_status_cache.pop(trip_id, None)
+    _trip_radius_override.pop(trip_id, None)
+
+    logging.warning(
+        "[Reassign] Dispatch took trip %s off driver %s (mode=%s, radius=%.1f mi, reason=%s)",
+        trip_id, previous_driver_id, mode, body.radius_miles, body.reason or "unspecified",
+    )
+
+    # ── Tell the rider first (same path as the driver's own release) ──
+    rider = None
+    if trip.rider_id:
+        rider = (await db.execute(
+            select(User).where(User.id == trip.rider_id)
+        )).scalar_one_or_none()
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_trip_released(trip_id)
+        except Exception as e:
+            logging.error("[Reassign] Firestore sync failed for trip %s: %s", trip_id, e)
+    try:
+        await event_bus.push_trip_update(trip_id, {
+            "status": "requested",
+            "trip_id": trip_id,
+            "driver_id": None,
+            "reassigned_by": "dispatch",
+        })
+    except Exception as e:
+        logging.warning("[Reassign] SSE push failed for trip %s: %s", trip_id, e)
+    if previous_driver_id is not None and rider is not None and rider.fcm_token:
+        _safe_create_task(_send_fcm_push_async(
+            rider.fcm_token,
+            title="Actualización de viaje",
+            body="Estamos asignando un nuevo conductor a tu viaje.",
+            title_en="Ride update",
+            body_en="A new driver is being assigned to your ride.",
+            locale=user_lang(rider),
+            data={"type": "ride_reassigned", "trip_id": str(trip_id)},
+        ))
+
+    # ── Tell the driver who just lost it ──────────────────────────────
+    # The app's trip screen watches the trip (poll + mirror) and leaves on
+    # its own; the push covers a phone in the pocket.
+    if previous_driver_id is not None:
+        old_driver = (await db.execute(
+            select(User).where(User.id == previous_driver_id)
+        )).scalar_one_or_none()
+        if old_driver is not None:
+            try:
+                db.add(Notification(
+                    user_id=old_driver.id,
+                    title="Viaje reasignado",
+                    body="Este viaje fue asignado a otro conductor. Sigues en línea.",
+                    notif_type="trip_reassigned",
+                    data=json.dumps({"trip_id": trip_id}),
+                ))
+                await db.commit()
+            except Exception as e:
+                logging.warning(
+                    "[Reassign] inbox row for driver %s failed: %s", old_driver.id, e,
+                )
+            if old_driver.fcm_token:
+                _safe_create_task(_send_fcm_push_async(
+                    old_driver.fcm_token,
+                    title="Viaje reasignado",
+                    body="Este viaje fue asignado a otro conductor. Sigues en línea.",
+                    title_en="Trip reassigned",
+                    body_en="This trip was assigned to another driver. You are still online.",
+                    locale=user_lang(old_driver),
+                    data={
+                        "type": "trip_reassigned",
+                        "trip_id": str(trip_id),
+                        "reassigned_by": "dispatch",
+                    },
+                ))
+
+    # ── Offer it again ────────────────────────────────────────────────
+    rider_name, rider_phone = _resolve_rider_display(trip, rider)
+    rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+    offered: User | None = None
+    new_offer: DispatchOffer | None = None
+    reoffer_failed = False
+    try:
+        if mode == "driver":
+            offered = target
+        else:
+            exclude = {previous_driver_id} if previous_driver_id is not None else set()
+            candidates = await _find_nearest_drivers(
+                db,
+                pickup_lat=trip.pickup_lat,
+                pickup_lng=trip.pickup_lng,
+                exclude_driver_ids=exclude,
+                vehicle_type=trip.vehicle_type or "comfort",
+                radius_km=radius_km,
+                limit=5,
+                dropoff_lat=trip.dropoff_lat,
+                dropoff_lng=trip.dropoff_lng,
+            )
+            if candidates:
+                # The cascade behind this offer keeps the operator's reach.
+                _set_trip_radius_override(trip_id, radius_km)
+                offered = candidates[0]
+        if offered is not None:
+            new_offer = await _send_offer_to_driver(
+                db, trip, offered, rider_name, rider_phone, rider_photo,
+            )
+            _cascade_tasks[trip_id] = _safe_create_task(
+                _auto_cascade(trip_id, new_offer.id, offered.id)
+            )
+    except Exception as e:
+        # The detach is committed and the rider already knows. Failing to
+        # line up the next driver must not undo it: the trip is back in
+        # `requested` and the normal paths can still find it.
+        logging.error("[Reassign] re-offer failed for trip %s: %s", trip_id, e, exc_info=True)
+        offered = None
+        new_offer = None
+        reoffer_failed = True
+
+    offered_payload = None
+    if offered is not None:
+        distance_mi = None
+        eta_min = None
+        if has_pickup and offered.lat is not None and offered.lng is not None:
+            distance_mi = round(
+                _haversine(trip.pickup_lat, trip.pickup_lng, offered.lat, offered.lng)
+                * _MILES_PER_KM, 1,
+            )
+            eta_secs = _eta_cache.get(
+                (offered.id, _eta_cell(trip.pickup_lat, trip.pickup_lng))
+            )
+            if eta_secs:
+                eta_min = max(1, int(round(float(eta_secs) / 60.0)))
+        offered_payload = {
+            "id": offered.id,
+            "name": _driver_display_name(offered),
+            "distance_mi": distance_mi,
+            "eta_min": eta_min,
+        }
+        details = []
+        if distance_mi is not None:
+            details.append(f"{distance_mi:g} mi")
+        if eta_min is not None:
+            details.append(f"~{eta_min} min")
+        suffix = f" ({', '.join(details)})" if details else ""
+        message = (
+            f"Viaje ofrecido a {offered_payload['name']}{suffix}. "
+            "Queda asignado cuando acepte."
+        )
+    elif reoffer_failed:
+        message = (
+            "No se pudo volver a ofrecer el viaje (error al buscar conductores). "
+            "Quedó disponible sin conductor."
+        )
+    elif mode == "nearest":
+        message = (
+            f"Nadie disponible a {body.radius_miles:g} millas del punto de recogida. "
+            "El viaje quedó disponible sin conductor."
+        )
+    else:
+        message = "No se pudo enviar la oferta. El viaje quedó disponible sin conductor."
+
+    _security_audit_log(
+        "ADMIN_TRIP_REASSIGNED", "admin",
+        f"trip_id={trip_id} mode={mode} from={previous_driver_id} "
+        f"to={offered.id if offered else None} radius_mi={body.radius_miles:g} "
+        f"reason={body.reason or ''}",
+    )
+    return {
+        "status": "offer_sent" if new_offer is not None else "released",
+        "trip_id": trip_id,
+        "previous_driver_id": previous_driver_id,
+        "mode": mode,
+        "radius_miles": float(body.radius_miles),
+        "requeued": new_offer is not None,
+        "offered_driver": offered_payload,
+        "offer_id": new_offer.id if new_offer is not None else None,
+        "message": message,
     }
 
 

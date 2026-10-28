@@ -46,6 +46,7 @@ def push(monkeypatch):
     monkeypatch.setattr("routers.auth.notify_user", _noop)
     monkeypatch.setattr("routers.admin.notify_user", _noop)
     monkeypatch.setattr("services.driver_approval.send_approved_email", _noop)
+    monkeypatch.setattr("services.driver_approval.send_rejected_email", _noop)
     return sent
 
 
@@ -93,6 +94,35 @@ async def test_dispatch_reject_whole_account_fallback_follows_locale(client, db,
     assert res.status_code == 200, res.text
     assert push[1]["title"] == "Actualización de verificación"
     assert "no fue aprobada" in push[1]["body"]
+
+
+async def test_dispatch_reject_email_only_for_whole_account(
+        client, db, push, monkeypatch):
+    emails = []
+
+    async def _fake_email(user, reason=None):
+        emails.append((user.id, reason))
+
+    monkeypatch.setattr(
+        "services.driver_approval.send_rejected_email", _fake_email)
+    u = await _mk_user(db, locale="es")
+    res = await client.post(
+        f"/auth/dispatch-reject/{u.id}",
+        headers=_make_auth_headers("test-dispatch-key"),
+        json={"reason": "Documentos inconsistentes"},
+    )
+    assert res.status_code == 200, res.text
+    assert emails == [(u.id, "Documentos inconsistentes")]
+
+    u2 = await _mk_user(db, locale="en")
+    res = await client.post(
+        f"/auth/dispatch-reject/{u2.id}",
+        headers=_make_auth_headers("test-dispatch-key"),
+        json={"reason": "blurry", "item": "license"},
+    )
+    assert res.status_code == 200, res.text
+    assert emails == [(u.id, "Documentos inconsistentes")], (
+        "un documento rechazado no debe enviar el correo de cuenta rechazada")
 
 
 async def test_dispatch_approve_follows_locale(client, db, push):

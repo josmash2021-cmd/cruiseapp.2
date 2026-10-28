@@ -381,6 +381,126 @@ async def send_document_rejected_email(
         logger.warning("[DocApproval] rejection email failed: %s", e)
 
 
+async def _send_account_review_email(
+    user: User, status: str, reason: str | None = None,
+) -> None:
+    if not user.email:
+        return
+    try:
+        from services.email_sms_service import _send_email
+        es = (getattr(user, "locale", None) or "es").lower().startswith("es")
+        name = _html.escape(user.first_name or ("Conductor" if es else "Driver"))
+        copy = {
+            "waitlist": {
+                "es": (
+                    "CRUISE IN RIDE — Estás en lista de espera",
+                    f"Estás en <strong>lista de espera</strong>, {name}.",
+                    "Tu solicitud está en revisión.<br>Te avisaremos cuando tu cuenta sea aprobada.",
+                    [
+                        ("Solicitud recibida", "Tus documentos están en nuestra cola de revisión"),
+                        ("No necesitas hacer nada más", "No tienes que volver a enviarlos ahora"),
+                        ("Te avisaremos", "Recibirás una notificación cuando tu cuenta sea aprobada"),
+                    ],
+                    "ABRIR LA APP",
+                ),
+                "en": (
+                    "CRUISE IN RIDE — You're on the waitlist",
+                    f"You're on the <strong>waitlist</strong>, {name}.",
+                    "Your application is under review.<br>We'll notify you when your account is approved.",
+                    [
+                        ("Application received", "Your documents are in our review queue"),
+                        ("Nothing else is needed", "You don't need to submit them again right now"),
+                        ("We'll notify you", "You'll hear from us when your account is approved"),
+                    ],
+                    "OPEN THE APP",
+                ),
+            },
+            "rejected": {
+                "es": (
+                    "CRUISE IN RIDE — Solicitud no aprobada",
+                    f"Tu solicitud <strong>no fue aprobada</strong>, {name}.",
+                    "Revisa el motivo de esta decisión y los próximos pasos disponibles.",
+                    [
+                        ("Revisa el motivo", "Consulta los detalles de esta decisión"),
+                        ("Corrige lo necesario", "Actualiza los documentos que requieran atención"),
+                        ("Estamos para ayudarte", "Contacta a soporte si tienes alguna duda"),
+                    ],
+                    "ABRIR LA APP",
+                ),
+                "en": (
+                    "CRUISE IN RIDE — Application not approved",
+                    f"Your application was <strong>not approved</strong>, {name}.",
+                    "Review the reason for this decision and the next steps available.",
+                    [
+                        ("Review the reason", "Check the details behind this decision"),
+                        ("Correct what applies", "Update any documents that need attention"),
+                        ("We're here to help", "Contact support if you have any questions"),
+                    ],
+                    "OPEN THE APP",
+                ),
+            },
+        }
+        subject, headline, intro, steps, button = copy[status]["es" if es else "en"]
+        rows = "".join(
+            f"""
+                        <tr>
+                            <td style="padding: 16px 0; {'border-bottom: 1px solid #111;' if index < len(steps) else ''} width: 36px; vertical-align: top;"><span style="color: #D4AF37; font-size: 12px; font-weight: 600; letter-spacing: 1px;">{index:02d}</span></td>
+                            <td style="padding: 16px 0; {'border-bottom: 1px solid #111;' if index < len(steps) else ''}"><p style="color: #e0e0e0; font-size: 14px; font-weight: 500; margin: 0 0 2px;">{title}</p><p style="color: #555; font-size: 12px; margin: 0;">{detail}</p></td>
+                        </tr>"""
+            for index, (title, detail) in enumerate(steps, start=1)
+        )
+        reason_block = ""
+        if status == "rejected" and reason:
+            reason_block = f"""
+                    <div style="background: #111; border: 1px solid #2a1a1a; border-radius: 10px; padding: 16px 20px; margin: 0 0 28px; text-align: left;">
+                        <p style="color: #555; font-size: 11px; letter-spacing: 2px; margin: 0 0 4px;">{'MOTIVO' if es else 'REASON'}</p>
+                        <p style="color: #e0e0e0; font-size: 14px; margin: 0; line-height: 1.5;">{_html.escape(reason)}</p>
+                    </div>"""
+        logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
+        html_body = f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #050505; border-radius: 16px; overflow: hidden; border: 1px solid #1a1a1a;">
+                <div style="background: linear-gradient(90deg, transparent, #D4AF37, #E8C547, #D4AF37, transparent); height: 2px;"></div>
+                <div style="padding: 48px 40px 40px;">
+                    <div style="text-align: center; margin-bottom: 40px;">
+                        <img src="{logo_url}" alt="CRUISE IN RIDE" width="80" height="80" style="display: block; margin: 0 auto 16px; border-radius: 20px;">
+                        <h2 style="font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 700; color: #E8C547; letter-spacing: 8px; margin: 0; text-indent: 8px;">CRUISE IN RIDE</h2>
+                    </div>
+                    <h1 style="text-align: center; color: #FFFFFF; font-size: 26px; font-weight: 300; margin: 0 0 6px; letter-spacing: -0.3px;">{headline}</h1>
+                    <p style="text-align: center; color: #666; font-size: 14px; margin: 10px 0 0; line-height: 1.6;">{intro}</p>
+                    <div style="width: 36px; height: 1px; background: #D4AF37; margin: 32px auto;"></div>
+                    {reason_block}
+                    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 36px;">{rows}
+                    </table>
+                    <div style="text-align: center;">
+                        <a href="{_OPEN_APP_URL}" style="display: inline-block; background: #D4AF37; color: #000; text-decoration: none; padding: 14px 48px; border-radius: 28px; font-size: 14px; font-weight: 700; letter-spacing: 1px;">{button}</a>
+                    </div>
+                </div>
+                <div style="border-top: 1px solid #111; padding: 24px 40px; text-align: center;">
+                    <p style="color: #333; font-size: 11px; letter-spacing: 2px; margin: 0 0 4px;">CRUISE IN RIDE</p>
+                    <p style="color: #252525; font-size: 10px; margin: 0;">Premium Rides &mdash; cruiseinride.com</p>
+                </div>
+            </div>
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: _send_email(
+                user.email, subject, html_body, skip_emailjs=True),
+        )
+        logger.info("[DocApproval] %s email sent to %s", status, user.email)
+    except Exception as e:
+        logger.warning("[DocApproval] %s email failed: %s", status, e)
+
+
+async def send_waitlist_email(user: User) -> None:
+    await _send_account_review_email(user, "waitlist")
+
+
+async def send_rejected_email(user: User, reason: str | None = None) -> None:
+    await _send_account_review_email(user, "rejected", reason)
+
+
 async def recompute_driver_approval(
     db: AsyncSession, user: User, vehicle_id: int | None = None
 ) -> bool:

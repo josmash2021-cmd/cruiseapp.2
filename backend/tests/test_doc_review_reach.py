@@ -284,6 +284,58 @@ async def test_rejection_email_spanish_and_notify_fires_it(
     assert "ABRIR LA APP" in sent[0][2]
 
 
+async def test_waitlist_email_spanish_brand_steps_and_button(monkeypatch):
+    import services.email_sms_service as em
+
+    sent = []
+
+    def _fake_email(to, subject, html, template_params=None,
+                    skip_emailjs=False):
+        sent.append((to, subject, html, skip_emailjs))
+        return True
+
+    monkeypatch.setattr(em, "_send_email", _fake_email)
+    u = _user("es", None)
+    u.email = "waitlist@test.com"
+    await driver_approval.send_waitlist_email(u)
+
+    assert len(sent) == 1
+    to, subject, html, skip_emailjs = sent[0]
+    assert to == "waitlist@test.com"
+    assert subject == "CRUISE IN RIDE — Estás en lista de espera"
+    assert "No necesitas hacer nada más" in html
+    assert "No tienes que volver a enviarlos" in html
+    assert "ABRIR LA APP" in html
+    assert driver_approval._OPEN_APP_URL in html
+    assert skip_emailjs is True
+
+
+async def test_rejected_account_email_english_reason_and_button(monkeypatch):
+    import services.email_sms_service as em
+
+    sent = []
+
+    def _fake_email(to, subject, html, template_params=None,
+                    skip_emailjs=False):
+        sent.append((subject, html, skip_emailjs))
+        return True
+
+    monkeypatch.setattr(em, "_send_email", _fake_email)
+    u = _user("en", None)
+    u.email = "account-rejected@test.com"
+    await driver_approval.send_rejected_email(
+        u, "Blurry <script>alert(1)</script> document")
+
+    assert len(sent) == 1
+    subject, html, skip_emailjs = sent[0]
+    assert subject == "CRUISE IN RIDE — Application not approved"
+    assert "Review the reason" in html
+    assert "&lt;script&gt;" in html and "<script>" not in html
+    assert "OPEN THE APP" in html
+    assert driver_approval._OPEN_APP_URL in html
+    assert skip_emailjs is True
+
+
 async def test_open_app_page_goes_straight_to_the_store(client):
     """2026-10-20 user spec: "directo a la app en Google Play si tienen
     Android y App Store si tienen iOS" — the server 302s by User-Agent,

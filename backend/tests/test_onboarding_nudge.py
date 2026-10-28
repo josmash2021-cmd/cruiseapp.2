@@ -182,3 +182,66 @@ async def test_spanish_nudge_lists_the_missing_items(db, channels):
     assert box[0].title == "📝 Completa tu cuenta"
     assert "Te falta:" in box[0].body
     assert "Licencia de conducir" in box[0].body
+
+
+async def test_approved_driver_with_missing_items_is_never_nudged(db, channels):
+    d = await _driver(db, "Approved", is_verified=True,
+                      verification_status="approved",
+                      created_at=NOW - timedelta(days=8))
+    await agent._onboarding_nudges(NOW, db)
+    assert await _inbox(db, d.id) == []
+    assert channels["email"] == [] and channels["sms"] == []
+    await db.refresh(d)
+    assert (d.onboard_nudge_count or 0) == 0
+
+
+async def test_pending_driver_with_legacy_verified_flag_is_still_nudged(
+    db, channels
+):
+    d = await _driver(db, "Legacy", is_verified=True,
+                      verification_status="pending",
+                      created_at=NOW - timedelta(days=8))
+    await agent._onboarding_nudges(NOW, db)
+    assert len(await _inbox(db, d.id)) == 1
+
+
+async def test_scan_reaches_pending_drivers_beyond_the_send_cap(
+    db, channels, monkeypatch
+):
+    complete = await _driver(db, "Complete", verification_status="pending",
+                             created_at=NOW - timedelta(days=8))
+    pending = await _driver(db, "Pending", verification_status="pending",
+                            created_at=NOW - timedelta(days=8))
+    monkeypatch.setattr(agent, "_NUDGE_CAP_PER_TICK", 1)
+
+    async def _items(_db, user):
+        if user.id == complete.id:
+            return {"license": {"status": "submitted"}}
+        return {"license": {"status": "pending"}}
+
+    monkeypatch.setattr("routers.auth._derive_onboarding_items", _items)
+    await agent._onboarding_nudges(NOW, db)
+
+    assert await _inbox(db, complete.id) == []
+    assert len(await _inbox(db, pending.id)) == 1
+
+
+async def test_one_driver_error_does_not_stop_the_remaining_nudges(
+    db, channels, monkeypatch
+):
+    broken = await _driver(db, "Broken", verification_status="pending",
+                           created_at=NOW - timedelta(days=8))
+    pending = await _driver(db, "Pending", verification_status="pending",
+                            created_at=NOW - timedelta(days=8))
+    broken_id = broken.id
+    pending_id = pending.id
+
+    async def _items(_db, user):
+        if user.id == broken_id:
+            raise RuntimeError("bad onboarding row")
+        return {"license": {"status": "pending"}}
+
+    monkeypatch.setattr("routers.auth._derive_onboarding_items", _items)
+    await agent._onboarding_nudges(NOW, db)
+
+    assert len(await _inbox(db, pending_id)) == 1

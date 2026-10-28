@@ -152,49 +152,62 @@ async def _onboarding_nudges(now: datetime, db) -> None:
     then weekly x3, gaps enforced so a legacy driver never gets a burst,
     total silence after the 6th touch.
 
-    WAITLIST IS EXCLUDED (2026-10-22, owner catch): their app shows only
-    the waiting state — nothing is actionable, so 'completa tu cuenta' is
-    the same incoherent demand the support bot used to make. When they
-    leave the list, the cadence picks up from their CURRENT journey day."""
+    Waitlisted and approved drivers are excluded. The per-tick cap limits
+    sends, not candidates scanned, so complete accounts cannot starve the
+    pending drivers behind them."""
     if now.date() < _NUDGE_START_DATE or _nudge_quiet_hours(now):
         return
     r = await db.execute(
-        select(User).where(
+        select(User.id).where(
             User.role == "driver",
             (User.status.is_(None)) | (User.status.notin_(_NUDGE_BLOCKED)),
             (User.verification_status.is_(None))
-            | (func.lower(User.verification_status) != "waitlist"),
+            | (func.lower(User.verification_status).notin_(("waitlist", "approved"))),
             User.created_at <= now - timedelta(days=1),
             (User.onboard_nudge_count.is_(None))
             | (User.onboard_nudge_count < _NUDGE_MAX),
-        ).limit(_NUDGE_CAP_PER_TICK))
+        ).order_by(User.id))
     from routers.auth import _derive_onboarding_items
-    for user in r.scalars().all():
-        count = user.onboard_nudge_count or 0
-        if count >= len(_NUDGE_STEPS):
-            continue
-        created = _aware(user.created_at)
-        last = _aware(user.onboard_nudge_last_at)
-        if created is None:
-            continue
-        jday, min_gap, with_email = _NUDGE_STEPS[count]
-        if now - created < timedelta(days=jday):
-            continue
-        if last is not None and now - last < min_gap:
-            continue
-        items = await _derive_onboarding_items(db, user)
-        missing = [k for k, v in items.items()
-                   if (v or {}).get("status") in ("pending", "rejected")]
-        if not missing:
-            continue  # complete, or everything waits on OUR review
-        sent = await send_onboarding_nudge_email(user, missing, with_email)
-        if sent:
-            user.onboard_nudge_count = count + 1
-            user.onboard_nudge_last_at = now
-            await db.commit()
-            logger.info(
-                "[DriverEmailAgent] nudge %d sent (driver %s, missing=%s)",
-                count + 1, user.id, missing[:4])
+    sent_count = 0
+    for user_id in r.scalars().all():
+        if sent_count >= _NUDGE_CAP_PER_TICK:
+            break
+        try:
+            user = await db.get(User, user_id, populate_existing=True)
+            if user is None:
+                continue
+            if (user.verification_status or "").lower() in ("waitlist", "approved"):
+                continue
+            count = user.onboard_nudge_count or 0
+            if count >= len(_NUDGE_STEPS):
+                continue
+            created = _aware(user.created_at)
+            last = _aware(user.onboard_nudge_last_at)
+            if created is None:
+                continue
+            jday, min_gap, with_email = _NUDGE_STEPS[count]
+            if now - created < timedelta(days=jday):
+                continue
+            if last is not None and now - last < min_gap:
+                continue
+            items = await _derive_onboarding_items(db, user)
+            missing = [k for k, v in items.items()
+                       if (v or {}).get("status") in ("pending", "rejected")]
+            if not missing:
+                continue  # complete, or everything waits on OUR review
+            sent = await send_onboarding_nudge_email(user, missing, with_email)
+            if sent:
+                user.onboard_nudge_count = count + 1
+                user.onboard_nudge_last_at = now
+                await db.commit()
+                sent_count += 1
+                logger.info(
+                    "[DriverEmailAgent] nudge %d sent (driver %s, missing=%s)",
+                    count + 1, user.id, missing[:4])
+        except Exception as e:
+            await db.rollback()
+            logger.warning(
+                "[DriverEmailAgent] nudge failed for driver %s: %s", user_id, e)
 
 
 # ── Weekly summary ───────────────────────────────────────────────────────

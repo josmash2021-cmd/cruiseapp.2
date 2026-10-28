@@ -32,8 +32,8 @@ async def _mk_user(db, *, role="driver", locale="en", reason=None):
 
 @pytest.fixture
 def push(monkeypatch):
-    """Captura FCM y Socket.IO de routers.auth."""
-    sent = {"fcm": [], "socket": []}
+    """Captura FCM, Socket.IO y el correo de routers.auth."""
+    sent = {"fcm": [], "socket": [], "email": []}
 
     async def _fake_fcm(token, title, body, data=None, **kw):
         sent["fcm"].append({"token": token, "title": title, "body": body, "data": data})
@@ -41,8 +41,12 @@ def push(monkeypatch):
     async def _fake_socket(user_id, event, payload=None, **kw):
         sent["socket"].append({"user_id": user_id, "event": event, "payload": payload})
 
+    async def _fake_email(user):
+        sent["email"].append(user.id)
+
     monkeypatch.setattr("routers.auth._send_fcm_push_async", _fake_fcm)
     monkeypatch.setattr("routers.auth.notify_user", _fake_socket)
+    monkeypatch.setattr("services.driver_approval.send_waitlist_email", _fake_email)
     return sent
 
 
@@ -85,6 +89,7 @@ async def test_waitlist_sets_status_mirrors_firestore_and_keeps_reason(client, d
     assert push["socket"][0]["payload"]["status"] == "waitlist"
     assert push["fcm"][0]["data"]["type"] == "driver_waitlisted"
     assert push["fcm"][0]["data"]["user_id"] == str(u.id)
+    assert push["email"] == [u.id]
 
 
 async def test_waitlist_clears_accidental_approval(client, db, push):

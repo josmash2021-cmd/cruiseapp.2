@@ -115,3 +115,32 @@ async def test_call_without_verify_falls_back_to_sms(
     assert len(twilio_verify) == 1
     assert "Messages.json" in twilio_verify[0].full_url
     assert any("falling back to SMS" in r.getMessage() for r in caplog.records)
+
+
+async def test_phone_wins_when_request_also_contains_email(
+    client: AsyncClient, twilio_verify, monkeypatch
+):
+    """A phone login must never send an email OTP, even if a client also
+    includes the account's email address in the request."""
+    import routers.auth as auth
+
+    scheduled = []
+
+    def _capture_task(coro):
+        scheduled.append(coro)
+        coro.close()
+
+    monkeypatch.setattr(auth, "_safe_create_task", _capture_task)
+    resp = await client.post(
+        "/auth/send-otp",
+        json={
+            "phone": "+15551116666",
+            "email": "phone-user@test.com",
+        },
+        headers=_make_auth_headers(),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["method"] == "sms_twilio_verify"
+    assert len(twilio_verify) == 1
+    assert scheduled == [], "phone OTP must not schedule an email send"

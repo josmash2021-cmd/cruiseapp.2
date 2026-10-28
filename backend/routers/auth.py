@@ -518,8 +518,9 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
     Uses Twilio Verify API if SERVICE_SID is configured, otherwise falls back
     to direct Twilio Messages API (requires only ACCOUNT_SID + AUTH_TOKEN + PHONE_NUMBER).
     
-    If SMS fails, automatically falls back to email.
-    In development mode, the code is also logged for testing."""
+    A request containing a phone uses only SMS/call, never email. Email is
+    the delivery channel only for email-only requests. In development mode,
+    the code is also logged for testing."""
     import urllib.request, urllib.parse
     
     # Get contact info - either phone or email
@@ -551,8 +552,8 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
     _code_hint = _hl.sha256(code.encode()).hexdigest()[:8]
     logging.info("[OTP] Code generated for %s (hash=%s, expires in %d seconds)", otp_key, _code_hint, _OTP_TTL)
     
-    # â"€â"€ Try Email if email is provided â"€â"€
-    if email:
+    # Email is only a delivery channel when no phone was requested.
+    if email and not phone:
         html_body = f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/></head>
@@ -3512,6 +3513,13 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
     except Exception as e:
         logging.warning("[DISPATCH-REJECT] FCM/SMS failed: %s", e)
 
+    if not item:
+        try:
+            from services.driver_approval import send_rejected_email
+            await send_rejected_email(db_user, reason)
+        except Exception as e:
+            logging.warning("[DISPATCH-REJECT] Email failed: %s", e)
+
     return {"ok": True, "message": f"Driver {user_id} rejected", "status": "rejected", "approval_status": "rejected"}
 
 
@@ -3578,6 +3586,12 @@ async def dispatch_waitlist_driver(user_id: int, db: AsyncSession = Depends(get_
             logging.info("[DISPATCH-WAITLIST] SMS fallback sent to user %d", user_id)
     except Exception as e:
         logging.warning("[DISPATCH-WAITLIST] FCM/SMS failed: %s", e)
+
+    try:
+        from services.driver_approval import send_waitlist_email
+        await send_waitlist_email(db_user)
+    except Exception as e:
+        logging.warning("[DISPATCH-WAITLIST] Email failed: %s", e)
 
     return {"ok": True, "message": f"Driver {user_id} waitlisted", "status": "waitlist", "approval_status": "waitlist"}
 

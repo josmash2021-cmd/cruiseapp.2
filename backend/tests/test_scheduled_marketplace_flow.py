@@ -92,3 +92,47 @@ async def test_scheduled_ride_browse_and_claim(client, db, test_rider, test_driv
     # 5. It no longer shows up in the marketplace.
     resp = await client.get("/scheduled-trips/available", headers=headers())
     assert all(c["id"] != trip.id for c in resp.json())
+
+
+async def test_available_tolerates_legacy_multiple_active_vehicles(
+    client, db, test_driver,
+):
+    from main import Trip, Vehicle
+
+    driver, token = test_driver
+    driver.is_verified = True
+    db.add(Vehicle(
+        user_id=driver.id, make="Hyundai", model="Santa Fe", year=2020,
+        plate="OLD123", vehicle_type="standard",
+        created_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    ))
+    db.add(Vehicle(
+        user_id=driver.id, make="Hyundai", model="Tucson", year=2024,
+        plate="NEW123", vehicle_type="standard",
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    ))
+    trip = Trip(
+        rider_id=None,
+        driver_id=None,
+        pickup_address="A",
+        dropoff_address="B",
+        pickup_lat=25.7617,
+        pickup_lng=-80.1918,
+        dropoff_lat=25.7750,
+        dropoff_lng=-80.2000,
+        fare=30.0,
+        vehicle_type="standard",
+        status="scheduled",
+        scheduled_at=datetime.now(timezone.utc) + timedelta(hours=2),
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(trip)
+    await db.commit()
+
+    response = await client.get(
+        "/scheduled-trips/available",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert any(card["id"] == trip.id for card in response.json())

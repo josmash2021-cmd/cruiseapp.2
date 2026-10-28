@@ -241,7 +241,8 @@ async def get_available_scheduled_trips(
         select(Vehicle.vehicle_type).where(
             Vehicle.user_id == user.id,
             Vehicle.is_active == True,
-        )
+            Vehicle.archived_at.is_(None),
+        ).order_by(Vehicle.created_at.asc(), Vehicle.id.asc()).limit(1)
     )
     driver_vtype = (veh.scalar_one_or_none() or "standard")
     eligible_request_tiers = {

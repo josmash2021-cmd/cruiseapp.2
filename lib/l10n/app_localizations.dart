@@ -5712,6 +5712,13 @@ class S {
       ? 'Viaje cancelado. Volviendo a las ofertas.'
       : 'Trip cancelled. Returning to ride requests.';
 
+  // Driver notice when dispatch reassigned the trip to another driver
+  // (POST /admin/trips/{id}/reassign) — the driver stays online.
+  String get tripReassigned => _es ? 'Viaje reasignado' : 'Trip reassigned';
+  String get driverTripReassignedReturning => _es
+      ? 'Dispatch asignó este viaje a otro conductor. Sigues en línea.'
+      : 'Dispatch assigned this trip to another driver. You are still online.';
+
   // Rider gold-snackbar messages used by the auto-cancel flow.
   String get riderNoDriversFoundTryAgain => _es
       ? 'No encontramos un conductor disponible. Intenta de nuevo.'

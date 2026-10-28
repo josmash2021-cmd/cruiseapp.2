@@ -335,6 +335,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   double _finishSlideVal = 0;
   bool _finishSlidDone = false;
   bool _tripFinished = false;
+  /// When this screen came up. The Firestore fast path for a dispatch
+  /// reassignment only trusts a `releasedAt` newer than this: right after
+  /// accept the mirror can lag and still read "requested" with no fresh
+  /// release stamp — that is not a reassignment.
+  final DateTime _screenOpenedAt = DateTime.now();
   Timer? _finishNavTimer;
   late final AnimationController _finishFadeCtrl;
   late final Animation<double> _finishFadeAnim;
@@ -1625,6 +1630,28 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         return;
       }
 
+      // Dispatch reassigned the trip (POST /admin/trips/{id}/reassign):
+      // the release mirror writes status "requested" together with a
+      // fresh `releasedAt`. The stamp is the guard — right after accept
+      // the mirror can lag and still read "requested" with an old or
+      // missing stamp, and that must not throw the driver off a trip
+      // that is theirs. Never key on driverId here: it lags the same way.
+      if (!_tripFinished &&
+          status == 'requested' &&
+          _releasedAfterOpen(data['releasedAt'])) {
+        if (!mounted) return;
+        debugPrint('[Driver] Trip released by dispatch (Firestore) → returning to online');
+        _tripFinished = true;
+        _riderConfirmSub?.cancel();
+        _statusPollTimer?.cancel();
+        try {
+          _exitAfterRemoteCancel(reassigned: true);
+        } catch (e) {
+          debugPrint('[Driver] reassign-navigate failed: $e');
+        }
+        return;
+      }
+
       // Detect external cancellation (dispatch cancelled the trip, or
       // guardian ghost cleanup fired, or an auto-cancel reason landed).
       // Driver-initiated cancels go through _performDriverCancel; any
@@ -1787,6 +1814,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             _exitAfterRemoteCancel();
           } catch (e) {
             debugPrint('[Driver] poll-cancel-navigate failed: $e');
+          }
+        } else if (_tripTakenAwayByDispatch(status, trip['driver_id'])) {
+          // Dispatch reassigned the trip: back in the queue (`requested`)
+          // or another driver owns it now. The backend is authoritative
+          // here — accept commits driver_id before this screen is pushed,
+          // so a trip that is not ours anymore is not a mirror lag.
+          debugPrint('[Driver] Backend poll: trip reassigned by dispatch → returning to online');
+          _tripFinished = true;
+          _statusPollTimer?.cancel();
+          _riderConfirmSub?.cancel();
+          try {
+            _exitAfterRemoteCancel(reassigned: true);
+          } catch (e) {
+            debugPrint('[Driver] poll-reassign-navigate failed: $e');
           }
         } else {
           // Dispatch advanced the trip while the Firestore stream lagged.
@@ -4529,6 +4570,36 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// Dispatch advanced the trip from the panel — mirror it locally so the
   /// action button morphs to the matching stage (the AnimatedSwitcher on
   /// the phase router does the silk).
+  /// Backend truth says this trip is no longer ours: dispatch put it back
+  /// in the queue (`requested` with no driver) or handed it to another
+  /// driver. A `requested` trip that still carries OUR id is the
+  /// half-written assignment the release path cleans up, not a
+  /// reassignment — leave that one alone.
+  bool _tripTakenAwayByDispatch(String status, Object? rawDriverId) {
+    if (_tripFinished) return false;
+    final me = _driverId;
+    final owner = rawDriverId is num
+        ? rawDriverId.toInt()
+        : int.tryParse('${rawDriverId ?? ''}');
+    // With our own id still unknown (init race) only an owner-less
+    // `requested` trip is a safe exit: anything else cannot be judged yet.
+    if (status == 'requested') return owner == null || (me != null && owner != me);
+    return me != null && owner != null && owner != me;
+  }
+
+  /// `releasedAt` from the trip doc is newer than this screen (10 s of
+  /// slack for clock skew between the server stamp and the phone).
+  bool _releasedAfterOpen(Object? raw) {
+    DateTime? at;
+    if (raw is Timestamp) {
+      at = raw.toDate();
+    } else if (raw is DateTime) {
+      at = raw;
+    }
+    if (at == null) return false;
+    return at.isAfter(_screenOpenedAt.subtract(const Duration(seconds: 10)));
+  }
+
   void _applyRemoteStage(String rawStatus) {
     if (_tripFinished || !mounted) return;
     const arrivedAliases = {'arrived', 'driver_arrived', 'arrived_pickup', 'arrived_at_pickup'};
@@ -4563,7 +4634,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// with its gold toast: nothing destroyed, nothing rebuilt. Orphan
   /// entry points (resume-from-home, push notification) keep the
   /// rebuild fallback.
-  void _exitAfterRemoteCancel() {
+  ///
+  /// [reassigned]: dispatch took the trip away (reassign endpoint) rather
+  /// than cancelling it — the online screen shows "Viaje reasignado".
+  void _exitAfterRemoteCancel({bool reassigned = false}) {
     final nav = Navigator.of(context);
     if (nav.canPop()) {
       // The online screen underneath consumes this when it resets to
@@ -4571,7 +4645,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // cancel is already locked on the backend and must not die with this
       // screen.
       DriverOnlineScreen.chainedHandoffOffer = ChainedRideStore.take();
-      nav.pop('cancelled');
+      nav.pop(reassigned ? 'reassigned' : 'cancelled');
       return;
     }
     // A chained ride booked before this cancel is already locked on the
@@ -4580,8 +4654,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     nav.pushAndRemoveUntil(
       PageRouteBuilder(
         // resuming: the driver never went offline — no "Go" chime replay.
-        pageBuilder: (_, __, ___) =>
-            const DriverOnlineScreen(showCancelledNotice: true, resuming: true),
+        pageBuilder: (_, __, ___) => DriverOnlineScreen(
+            showCancelledNotice: !reassigned,
+            showReassignedNotice: reassigned,
+            resuming: true),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),
         transitionDuration: const Duration(milliseconds: 400),

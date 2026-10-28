@@ -142,6 +142,11 @@ class DriverOnlineScreen extends StatefulWidget {
   /// carry state over.
   final bool showCancelledNotice;
 
+  /// Same hand-back as [showCancelledNotice], but dispatch REASSIGNED the
+  /// trip (POST /admin/trips/{id}/reassign) instead of cancelling it: the
+  /// notice reads "Viaje reasignado" and says the driver is still online.
+  final bool showReassignedNotice;
+
   /// The driver never went offline — they just stepped back to the home
   /// screen and are coming straight back. The whole go-online handshake
   /// (approval check + register online + the "GOING ONLINE" state) is for
@@ -199,6 +204,7 @@ class DriverOnlineScreen extends StatefulWidget {
     this.initialHeading = 0,
     this.photoUrl,
     this.showCancelledNotice = false,
+    this.showReassignedNotice = false,
     this.resuming = false,
     this.deepLinkOffer,
   });
@@ -544,6 +550,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // Centred, semi-dark, never tappable: the driver is already back to
   // searching the moment it appears. ~5 s up, then a fluid fade.
   bool _cancelledNoticeVisible = false;
+  // true → "Viaje reasignado" wording (dispatch moved the trip to
+  // another driver); false → "Viaje cancelado".
+  bool _cancelledNoticeReassigned = false;
   Timer? _cancelledNoticeTimer;
   AnimationController? _cancelledNoticeCtrl;
   Animation<double>? _cancelledNoticeFade;
@@ -1069,9 +1078,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _startMotionDiag();
     // The trip screen handed us a cancelled trip: show the notice as soon
     // as the first frame is down, not from inside initState.
-    if (widget.showCancelledNotice) {
+    if (widget.showCancelledNotice || widget.showReassignedNotice) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showCancelledNotice();
+        if (mounted) {
+          _showCancelledNotice(reassigned: widget.showReassignedNotice);
+        }
       });
     }
     // Offline the sheet RESTS half-open with the pill "Go online" at its
@@ -2837,15 +2848,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                                     width: 1.5,
                                   ),
                                 ),
-                                child: const Icon(
-                                  Icons.cancel_outlined,
-                                  color: Color(0xFFE8C547),
+                                child: Icon(
+                                  _cancelledNoticeReassigned
+                                      ? Icons.swap_horiz_rounded
+                                      : Icons.cancel_outlined,
+                                  color: const Color(0xFFE8C547),
                                   size: 30,
                                 ),
                               ),
                               const SizedBox(height: 14),
                               Text(
-                                S.of(context).tripCancelled,
+                                _cancelledNoticeReassigned
+                                    ? S.of(context).tripReassigned
+                                    : S.of(context).tripCancelled,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 20,
@@ -2854,7 +2869,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                S.of(context).driverTripCancelledReturning,
+                                _cancelledNoticeReassigned
+                                    ? S.of(context).driverTripReassignedReturning
+                                    : S.of(context).driverTripCancelledReturning,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.55),

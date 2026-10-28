@@ -183,6 +183,7 @@ String _riderNotifTitle(String type) {
     'trip_offer' || 'new_offer' => isEs ? 'Nueva Oferta de Viaje' : 'New Ride Offer',
     'rider_cancelled'    => isEs ? 'Viaje Cancelado' : 'Ride Cancelled',
     'trip_canceled' || 'trip_cancelled' => isEs ? 'Viaje Cancelado por Dispatch' : 'Trip Cancelled by Dispatch',
+    'trip_reassigned'    => isEs ? 'Viaje reasignado' : 'Trip reassigned',
     'scheduled_cancelled' => isEs ? 'Viaje Programado Cancelado' : 'Scheduled Ride Cancelled',
     'tip_received'       => isEs ? '¡Recibiste una Propina!' : 'You Got a Tip!',
     'level_up'           => isEs ? '¡Subiste de Nivel!' : 'Level Up!',
@@ -216,6 +217,7 @@ String _riderNotifBody(String type) {
     'trip_offer' || 'new_offer' => isEs ? 'Un pasajero necesita un viaje — abre Cruise para aceptar.' : 'A rider needs a ride — open Cruise to accept.',
     'rider_cancelled'    => isEs ? 'El pasajero canceló el viaje.' : 'The rider has cancelled the ride.',
     'trip_canceled' || 'trip_cancelled' => isEs ? 'El viaje fue cancelado por dispatch.' : 'The trip has been cancelled by dispatch.',
+    'trip_reassigned'    => isEs ? 'Dispatch asignó este viaje a otro conductor. Sigues en línea.' : 'Dispatch assigned this trip to another driver. You are still online.',
     'scheduled_cancelled' => isEs ? 'Un viaje programado ha sido cancelado por el pasajero.' : 'A scheduled ride has been cancelled by the rider.',
     'tip_received'       => isEs ? 'Un pasajero te dejó una propina. ¡Sigue así!' : 'A rider left you a tip. Keep up the great work!',
     'level_up'           => isEs ? '¡Felicidades! Subiste de nivel en Cruise.' : 'Congratulations! You leveled up in Cruise.',
@@ -756,7 +758,11 @@ void _handleNotificationTap(RemoteMessage message) {
   // The Firestore watcher on each screen handles the actual UI update,
   // but the notification tap should refresh the home screen so the user
   // sees the trip is gone if they open the app from the notification.
-  if (type == 'trip_canceled' || type == 'trip_cancelled') {
+  // 'trip_reassigned' (dispatch moved the trip to another driver) takes
+  // the same path: the trip screen's poll/Firestore watcher does the exit.
+  if (type == 'trip_canceled' ||
+      type == 'trip_cancelled' ||
+      type == 'trip_reassigned') {
     HomeScreen.scheduledRideRefresh.value++;
     return;
   }
@@ -1577,6 +1583,8 @@ Future<void> heavyInit() async {
               'driver_approved', 'driver_rejected',
               // FIX: dispatch cancellation uses 'trip_canceled' (1 l)
               'trip_canceled', 'trip_cancelled',
+              // Dispatch reassigned the trip to another driver.
+              'trip_reassigned',
             };
 
             if (type == 'dispatch_notification') {

@@ -4057,14 +4057,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // trip alive, and let the active-trip check re-open it.
         // Do NOT call _cancel() — the trip must survive.
         _goBackToHomeWithTrip();
-      } else if (result == 'cancelled') {
+      } else if (result == 'cancelled' || result == 'reassigned') {
+        // 'reassigned': dispatch took the trip away (reassign endpoint) —
+        // same reset, "Viaje reasignado" wording.
         // Trip screen reports a remote cancellation (dispatch or auto-cancel).
         // The driver cannot cancel trips directly anymore — this branch is
         // only reached when the trip was ended from outside the driver app.
         // Just reset local state and return to searching with a gold toast.
         debugPrint(
-            '[DriverOnline] trip screen popped with result=cancelled — remote cancel, resetting');
-        _resetToSearchingOnRemoteCancel();
+            '[DriverOnline] trip screen popped with result=$result — remote cancel/reassign, resetting');
+        _resetToSearchingOnRemoteCancel(reassigned: result == 'reassigned');
       } else {
         // result == null — DriverTripAcceptScreen left via pushAndRemoveUntil
         // (rating screen, home) rather than popping a result, so nothing was
@@ -4979,7 +4981,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// Show the centred "Viaje cancelado" notice: fade in over a semi-dark
   /// wash, hold ~5 s, fade back out fluidly. It never takes a pointer —
   /// the driver is already back to searching the moment it appears.
-  void _showCancelledNotice() {
+  ///
+  /// [reassigned] swaps the wording to "Viaje reasignado" — dispatch moved
+  /// the trip to another driver; this one is still online.
+  void _showCancelledNotice({bool reassigned = false}) {
     if (!mounted) return;
     _cancelledNoticeTimer?.cancel();
     _cancelledNoticeCtrl ??= AnimationController(
@@ -4990,7 +4995,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       parent: _cancelledNoticeCtrl!,
       curve: Curves.easeInOut,
     );
-    _setState(() => _cancelledNoticeVisible = true);
+    _setState(() {
+      _cancelledNoticeVisible = true;
+      _cancelledNoticeReassigned = reassigned;
+    });
     _cancelledNoticeCtrl!.forward(from: 0);
     _cancelledNoticeTimer = Timer(const Duration(seconds: 5), () async {
       if (!mounted) return;
@@ -5000,7 +5008,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
-  void _resetToSearchingOnRemoteCancel() {
+  void _resetToSearchingOnRemoteCancel({bool reassigned = false}) {
     // All callers are async-after-await, so the State may already be
     // disposed by the time we land here.
     if (!mounted) return;
@@ -5051,7 +5059,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // The notice replaces the old corner snackbar: a rider cancel is the
     // one event the driver must not miss in their periphery, so it lands
     // centred on a semi-dark wash for ~5 s and then fades out of the way.
-    _showCancelledNotice();
+    _showCancelledNotice(reassigned: reassigned);
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

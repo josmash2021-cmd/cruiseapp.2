@@ -76,6 +76,15 @@ def reset_rate_limiter():
 
 
 @pytest.fixture(autouse=True)
+def reset_security_ip_reputation():
+    """Negative auth tests must not ban the shared test client IP."""
+    from utils import security
+    security._ip_blacklist.clear()
+    security._ip_violations.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def zone_gate_fail_open(monkeypatch):
     """The sector connect gate reads the live map with baked FL+AL as
     fallback; most suite drivers use coordinates outside sector coverage.

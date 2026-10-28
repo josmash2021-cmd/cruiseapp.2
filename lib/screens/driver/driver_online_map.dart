@@ -724,6 +724,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _goldDotAnnotGen = 0;
       _dotPopDone = false;
       _dotPopScale = 0.0;
+      // Mapbox delete() can fail silently and leave the line on screen
+      // (CLAUDE.md #17), and a handle already nulled by an earlier failed
+      // delete is invisible to the sweep above. This is the wipe-everything
+      // path (skip, offer taken away, back to searching, going offline), so
+      // empty both managers outright: no route or pin may survive it
+      // (owner report 2026-10-28, "la ruta queda dibujada").
+      try {
+        await _polylineAnnotMgr?.deleteAll();
+      } catch (_) {}
+      try {
+        await _pointAnnotMgr?.deleteAll();
+      } catch (_) {}
     } finally {
       _isClearingAnnotations = false;
     }

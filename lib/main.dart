@@ -1621,6 +1621,7 @@ Future<void> heavyInit() async {
             // every non-offer banner in foreground (AppDelegate), so drawing
             // here too would put two banners on one broadcast.
             if (type == 'scheduled_ride') {
+              NotificationService.scheduledRideRefreshNotifier.value++;
               LocalDataService.addNotification(
                 title: title,
                 message: body,
@@ -1755,6 +1756,7 @@ Future<void> heavyInit() async {
           final payload = launch?.notificationResponse?.payload;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             handleOfferNotificationPayload(payload);
+            handleScheduledRideNotificationPayload(payload);
           });
         }
       } catch (e) {

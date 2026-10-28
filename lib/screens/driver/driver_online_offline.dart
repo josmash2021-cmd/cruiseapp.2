@@ -1465,6 +1465,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                             opacity: t,
                             child: _GoScheduleButton(
                               onTap: _openScheduledRides,
+                              count: _scheduledAvailCount,
+                              bounceAnimation: _scheduledBounceAnim,
                             ),
                           ),
                         ),
@@ -2647,19 +2649,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: GestureDetector(
-                    onTap: () {
-                      HapticService.selectionClick();
-                      Navigator.of(context).push(
-                        slideFromRightRoute(
-                          const ScheduledRidesScreen(initialTab: 0),
-                        ),
-                        // An expanded My-Rides card holds the one live map
-                        // surface — claim it back on return, the same
-                        // convention every map-pushing route here uses.
-                      ).then((_) {
-                        if (mounted) unawaited(_remountMapSurface());
-                      });
-                    },
+                    onTap: _openScheduledRides,
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: neuBox(radius: 20),
@@ -3157,37 +3147,84 @@ class _GoRadarPainter extends CustomPainter {
 /// el calendario") — opens the scheduled-rides map. Same dark disc with the
 /// gold rim the wheel badge had, but this one owns its tap.
 class _GoScheduleButton extends StatelessWidget {
-  const _GoScheduleButton({required this.onTap});
+  const _GoScheduleButton({
+    required this.onTap,
+    required this.count,
+    required this.bounceAnimation,
+  });
 
   final VoidCallback onTap;
+  final int count;
+  final Animation<double>? bounceAnimation;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: const Color(0xFF141420),
-          border: Border.all(color: _offlineGold.withValues(alpha: 0.4)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.35),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF141420),
+              border: Border.all(color: _offlineGold.withValues(alpha: 0.4)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: const Center(
-          child: Icon(
-            Icons.calendar_month_rounded,
-            color: Colors.white,
-            size: 22,
+            child: const Center(
+              child: Icon(
+                Icons.calendar_month_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
           ),
-        ),
+          if (count > 0)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: ScaleTransition(
+                scale: bounceAnimation ??
+                    const AlwaysStoppedAnimation<double>(1.0),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  transitionBuilder: (child, animation) => ScaleTransition(
+                    scale: animation,
+                    child: FadeTransition(opacity: animation, child: child),
+                  ),
+                  child: Container(
+                    key: ValueKey(count),
+                    constraints: const BoxConstraints(minWidth: 20),
+                    height: 20,
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _offlineGold,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.black, width: 1.5),
+                    ),
+                    child: Text(
+                      count > 99 ? '99+' : '$count',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

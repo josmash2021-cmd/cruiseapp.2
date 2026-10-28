@@ -302,6 +302,36 @@ void main() {
           reason: 'the decorative steering-wheel badge is gone');
     });
 
+    test('the GO calendar wears the animated available-rides count', () {
+      expect(off, contains('count: _scheduledAvailCount'));
+      expect(off, contains('bounceAnimation: _scheduledBounceAnim'));
+      expect(off, contains('if (count > 0)'));
+      expect(off, contains('AnimatedSwitcher('));
+      expect(off, contains("count > 99 ? '99+' : '\$count'"));
+    });
+
+    test('scheduled counts refresh by push in both modes and latest-wins', () {
+      expect(screen, contains('.addListener(_onScheduledRidePush)'));
+      expect(screen, contains('.removeListener(_onScheduledRidePush)'));
+      expect(ctrl, contains('const Duration(seconds: 30)'));
+      expect(ctrl, contains('radiusKm: 50'));
+      expect(ctrl, contains('seq != _scheduledCountSeq'));
+      final exitAt = ctrl.indexOf('Future<void> _exitOnlineMode(');
+      expect(exitAt, isNonNegative);
+      final exit = ctrl.substring(exitAt, exitAt + 1400);
+      expect(exit, isNot(contains('_scheduledPollTimer?.cancel()')),
+          reason: 'offline still needs the badge beside GO');
+    });
+
+    test('every Schedule entry uses the shared normal-map route', () {
+      final widgets = File('lib/screens/driver/driver_online_widgets.dart')
+          .readAsStringSync();
+      expect(off, contains('onTap: _openScheduledRides'));
+      expect(widgets, contains('onTap: _openScheduledRides'));
+      expect(off, isNot(contains('ScheduledRidesScreen(initialTab: 0)')),
+          reason: 'the reserved card must not open the alternate tabs page');
+    });
+
     test(
         'the calendar opens the scheduled-rides map and reclaims the '
         'surface on return', () {

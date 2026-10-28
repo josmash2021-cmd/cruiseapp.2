@@ -446,7 +446,7 @@ async def test_targeted_broadcast_reaches_only_the_target(
     monkeypatch.setattr(sb, "_send_fcm_push_async", fake)
 
     async def fake_state(lat, lng):
-        return None
+        return "AL"
 
     import routers.dispatch as disp
     monkeypatch.setattr(disp, "_state_for", fake_state)

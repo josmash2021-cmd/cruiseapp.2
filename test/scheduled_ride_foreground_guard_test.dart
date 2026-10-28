@@ -61,4 +61,42 @@ void main() {
       isTrue,
     );
   });
+
+  test('cold launch also routes a scheduled local-notification payload', () {
+    final launchAt = main.indexOf('getNotificationAppLaunchDetails');
+    final catchAt = main.indexOf('} catch', launchAt);
+    final launch = main.substring(launchAt, catchAt);
+    expect(launch, contains('handleOfferNotificationPayload(payload);'));
+    expect(launch,
+        contains('handleScheduledRideNotificationPayload(payload);'));
+  });
+
+  test('a scheduled push refreshes either open marketplace screen', () {
+    expect(notifService, contains('scheduledRideRefreshNotifier'));
+    expect(main, contains('scheduledRideRefreshNotifier.value++'));
+    for (final path in [
+      'lib/screens/driver/scheduled_rides_map_screen.dart',
+      'lib/screens/driver/scheduled_rides_screen.dart',
+    ]) {
+      final screen = File(path).readAsStringSync().replaceAll('\r\n', '\n');
+      expect(screen, contains('.addListener(_onScheduledRidePush)'),
+          reason: path);
+      expect(screen, contains('_loadAvailable(force: true)'), reason: path);
+      expect(screen, contains('.removeListener(_onScheduledRidePush)'),
+          reason: path);
+    }
+  });
+
+  test('the driver home refreshes its scheduled badge on push', () {
+    final screen = File('lib/screens/driver/driver_online_screen.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    final controller = File('lib/screens/driver/driver_online_controller.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    expect(screen, contains('.addListener(_onScheduledRidePush)'));
+    expect(screen, contains('.removeListener(_onScheduledRidePush)'));
+    expect(controller, contains('void _onScheduledRidePush()'));
+    expect(controller, contains('unawaited(_fetchScheduledCount())'));
+  });
 }

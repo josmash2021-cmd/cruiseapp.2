@@ -107,7 +107,6 @@ import 'selfie_check_screen.dart';
 import 'onboarding/driver_notifications_screen.dart';
 import 'onboarding/driver_todo_screen.dart'; // gate de aprobación en el destino
 import 'driver_waitlist_screen.dart'; // gate de aprobación en el destino
-import 'scheduled_rides_screen.dart';
 import 'scheduled_ride_details_screen.dart';
 import '../../utils/responsive.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -523,6 +522,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   int _unreadCount = 0;
   int _prevScheduledCount = 0;
   Timer? _scheduledPollTimer;
+  int _scheduledCountSeq = 0;
   AnimationController? _scheduledBounceCtrl;
   Animation<double>? _scheduledBounceAnim;
   bool _showScheduledToast = false;
@@ -1063,6 +1063,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _restoreRestUntil();
     unawaited(_ensureAirportState());
     WidgetsBinding.instance.addObserver(this);
+    NotificationService.scheduledRideRefreshNotifier
+        .addListener(_onScheduledRidePush);
+    _startScheduledPoll();
     _startMotionDiag();
     // The trip screen handed us a cancelled trip: show the notice as soon
     // as the first frame is down, not from inside initState.
@@ -1745,6 +1748,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _startClock();
       }
       _startEarningsRefresh();
+      _startScheduledPoll();
       // Re-attach the compass dropped on pause, so the arrow is already
       // pointing the right way by the time the driver has looked at it.
       _startHeadingSource();
@@ -1833,6 +1837,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         .removeListener(_applyInjectedOffer);
     DriverOnlineScreen.removeOfferNotifier
         .removeListener(_applyRemoveInjectedOffer);
+    NotificationService.scheduledRideRefreshNotifier
+        .removeListener(_onScheduledRidePush);
     DriverOnlineScreen.shiftEndedNotifier.removeListener(_onShiftEndedPush);
     DriverOnlineScreen.faceReviewNotifier.removeListener(_onFaceReviewPush);
     _faceReviewTimer?.cancel();

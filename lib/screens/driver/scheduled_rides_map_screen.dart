@@ -21,6 +21,7 @@ import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
 import '../../services/haptic_service.dart';
+import '../../services/notification_service.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/neu_style.dart';
@@ -149,6 +150,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   void initState() {
     super.initState();
     initDriverRestGate();
+    NotificationService.scheduledRideRefreshNotifier
+        .addListener(_onScheduledRidePush);
     _pendingSelectTripId = widget.initialTripId;
     _seedInitialCenter();
     _loadAvailable();
@@ -162,6 +165,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   @override
   void dispose() {
+    NotificationService.scheduledRideRefreshNotifier
+        .removeListener(_onScheduledRidePush);
     disposeDriverRestGate();
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _countdownTimer?.cancel();
@@ -170,6 +175,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     _driverDot.dispose();
     _sheetCtrl.dispose();
     super.dispose();
+  }
+
+  void _onScheduledRidePush() {
+    if (mounted) _loadAvailable(force: true);
   }
 
   // ─────────────────────────────────────────────

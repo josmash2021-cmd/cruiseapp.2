@@ -102,9 +102,11 @@ void main() {
       final offline =
           File('lib/screens/driver/driver_online_offline.dart')
               .readAsStringSync();
-      final pushStart =
-          offline.indexOf('const ScheduledRidesScreen(initialTab: 0)');
+      final pushStart = offline.indexOf('void _openScheduledRides(');
+      expect(pushStart, isNonNegative);
       final block = offline.substring(pushStart, pushStart + 800);
+      expect(block, contains('const ScheduledRidesMapScreen()'),
+          reason: 'the shared entry opens the normal scheduled-rides map');
       expect(block, contains('_remountMapSurface()'),
           reason: 'the card map revokes the online map through the '
               'coordinator — on pop it must come back');

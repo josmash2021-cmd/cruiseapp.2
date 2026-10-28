@@ -1267,7 +1267,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _sseReconnectTimer?.cancel();
     _sseActive = false;
     _clock?.cancel();
-    _scheduledPollTimer?.cancel();
     _marketplacePollTimer?.cancel();
     _marketplaceOpen = false;
     _availableTrips = [];
@@ -2486,16 +2485,20 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
-  /// Poll for available scheduled rides every 90 seconds.
+  /// Poll for available scheduled rides every 30 seconds.
   void _startScheduledPoll() {
     _scheduledPollTimer?.cancel();
     _fetchScheduledCount();
-    _scheduledPollTimer = Timer.periodic(const Duration(seconds: 90), (_) {
+    _scheduledPollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) _fetchScheduledCount();
       // Destination TTL/auto-clear lives server-side: when the profile
       // stops carrying it, the chip disappears on this refresh.
       if (mounted) _loadDestination();
     });
+  }
+
+  void _onScheduledRidePush() {
+    if (mounted) unawaited(_fetchScheduledCount());
   }
 
   /// Poll the unclaimed-trips board every 12 s (user spec 2026-10-02).
@@ -2832,6 +2835,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   Future<void> _fetchScheduledCount() async {
+    final seq = ++_scheduledCountSeq;
     try {
       // Where the driver actually is, not 0,0.
       //
@@ -2846,9 +2850,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final trips = await ApiService.getAvailableScheduledTrips(
         lat: here?.latitude ?? 0,
         lng: here?.longitude ?? 0,
-        radiusKm: 100,
+        radiusKm: 50,
       );
-      if (!mounted) return;
+      if (!mounted || seq != _scheduledCountSeq) return;
       final newCount = trips.length;
       final oldCount = _scheduledAvailCount;
       _setState(() => _scheduledAvailCount = newCount);

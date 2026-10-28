@@ -4048,22 +4048,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         active: false,
                         badge: _scheduledAvailCount,
                         semanticLabel: S.of(context).reservedLabel,
-                        onTap: () {
-                          HapticService.selectionClick();
-                          // La pantalla completa de agendados (user spec
-                          // 2026-10-15: la vista in-place "no avisa ni
-                          // muestra los viajes programados — tengo que entrar
-                          // y salir"). El badge refresca al volver y el mapa
-                          // se re-clama como toda salida de superficie.
-                          Navigator.push(
-                            context,
-                            slideFromRightRoute(
-                                const ScheduledRidesMapScreen()),
-                          ).then((_) {
-                            _fetchScheduledCount();
-                            _remountMapSurface();
-                          });
-                        },
+                        onTap: _openScheduledRides,
                       ),
                       const SizedBox(width: 14),
                     ],

@@ -7,12 +7,10 @@ addresses. Now it is a per-driver send, only to the drivers who can actually
 claim the ride, with a deliberately bare body ("Open to accept the ride" —
 no price, no addresses; the marketplace card carries all of that).
 
-The audience mirrors GET /scheduled-trips/available exactly, so nobody is
-notified about a card they cannot see: approved account in good standing,
-vehicle tier eligible for the request tier, and — the headline ask — the
-driver's state (from their last known position) must match the pickup's
-state. Unknown on either side keeps the driver, the same call the browse
-makes: a geocoder outage must not silence the whole marketplace.
+The account and vehicle gates mirror GET /scheduled-trips/available. The
+state rule is stricter for pushes: the driver's last known position and the
+pickup must resolve to the same state. An unresolved state on either side
+means no notification, so a geocoder outage can never cause cross-state spam.
 """
 
 import asyncio
@@ -57,6 +55,12 @@ async def notify_new_scheduled_ride(trip_id: int) -> None:
             pickup_state = None
             if trip.pickup_lat and trip.pickup_lng:
                 pickup_state = await _state_for(trip.pickup_lat, trip.pickup_lng)
+            if not pickup_state:
+                logging.info(
+                    "[ScheduledPush] trip %d — no notifications: pickup state unresolved",
+                    trip.id,
+                )
+                return
             request_tier = normalize_tier(trip.vehicle_type or "standard")
 
             # Dispatch-aimed reservation (2026-10-26): while
@@ -109,11 +113,12 @@ async def notify_new_scheduled_ride(trip_id: int) -> None:
                 vtier = driver_vtypes.get(d.id, "standard")
                 if vtier not in eligible_tiers(request_tier):
                     continue
-                if pickup_state and d.lat and d.lng:
-                    d_state = await _state_for(d.lat, d.lng)
-                    if d_state and d_state != pickup_state:
-                        skipped_state += 1
-                        continue
+                d_state = (
+                    await _state_for(d.lat, d.lng) if d.lat and d.lng else None
+                )
+                if d_state != pickup_state:
+                    skipped_state += 1
+                    continue
                 token = (d.fcm_token or "").strip()
                 if not token:
                     continue
@@ -140,7 +145,7 @@ async def notify_new_scheduled_ride(trip_id: int) -> None:
                 await asyncio.gather(*tasks, return_exceptions=True)
             logging.info(
                 "[ScheduledPush] trip %d — notified %d driver(s) in %s, "
-                "skipped %d out-of-state",
+                "skipped %d unresolved/out-of-state",
                 trip.id,
                 len(tasks),
                 pickup_state or "unknown-state",

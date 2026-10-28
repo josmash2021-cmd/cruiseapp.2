@@ -362,6 +362,8 @@ class NotificationService {
   /// and must not reach up into it.
   static void Function(String? payload)? onOfferTapped;
 
+  static final scheduledRideRefreshNotifier = ValueNotifier<int>(0);
+
   /// Same wiring as [onOfferTapped], for the marketplace heads-up the
   /// foreground handler draws on `scheduled_ride` (payload
   /// `scheduled_ride:<trip_id>`) — main routes it to the browse map.

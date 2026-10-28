@@ -24,6 +24,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
+import '../../services/notification_service.dart';
 import '../../widgets/tier_badge.dart';
 import 'driver_rest_gate_mixin.dart';
 import 'scheduled_ride_details_screen.dart';
@@ -87,6 +88,8 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   void initState() {
     super.initState();
     initDriverRestGate();
+    NotificationService.scheduledRideRefreshNotifier
+        .addListener(_onScheduledRidePush);
     _tabCtrl = TabController(
       length: 2,
       vsync: this,
@@ -102,10 +105,16 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 
   @override
   void dispose() {
+    NotificationService.scheduledRideRefreshNotifier
+        .removeListener(_onScheduledRidePush);
     disposeDriverRestGate();
     _tabCtrl.dispose();
     _countdownTimer?.cancel();
     super.dispose();
+  }
+
+  void _onScheduledRidePush() {
+    if (mounted) _loadAvailable(force: true);
   }
 
   // ─────────────────────────────────────────────

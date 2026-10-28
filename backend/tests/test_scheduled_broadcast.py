@@ -3,9 +3,8 @@
 Used to be ONE topic message to `drivers_available`: every subscribed
 device in the country, with fare + addresses in the body. Now it is a
 per-driver send — only drivers of the ride's STATE whose tier can serve it,
-with a bare body ("Open to accept the ride"). These tests pin the audience
-rules (same as /scheduled-trips/available) and the payload contract the
-app's tap handler routes on.
+with a bare body ("Open to accept the ride"). These tests pin the strict
+same-state audience and the payload contract the app's tap handler routes on.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -154,12 +153,10 @@ async def test_unapproved_wrong_tier_and_tokenless_excluded(
     assert _tokens(fcm_spy) == {"tok-blk"}
 
 
-async def test_unknown_pickup_state_keeps_everyone(db, fcm_spy, state_fake):
-    """A geocoder outage must not silence the marketplace — same call the
-    browse makes ('unknown on either side keeps the driver')."""
+async def test_unknown_pickup_state_notifies_nobody(db, fcm_spy, state_fake):
+    """An unresolved pickup can never justify a cross-state notification."""
     await _driver(db, email="al3@test.com", lat=33.0, token="tok-al3")
     await _driver(db, email="tx3@test.com", lat=41.0, token="tok-tx3")
-    # No pickup coords -> pickup state unknown -> no state filtering.
     now = datetime.now(timezone.utc)
     t = Trip(
         rider_id=999,
@@ -181,7 +178,17 @@ async def test_unknown_pickup_state_keeps_everyone(db, fcm_spy, state_fake):
 
     await sb.notify_new_scheduled_ride(t.id)
 
-    assert _tokens(fcm_spy) == {"tok-al3", "tok-tx3"}
+    assert fcm_spy == []
+
+
+async def test_unknown_driver_state_is_not_notified(db, fcm_spy, state_fake):
+    await _driver(db, email="unknown@test.com", lat=None, token="tok-unknown")
+    await _driver(db, email="known@test.com", lat=33.0, token="tok-known")
+    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.5)
+
+    await sb.notify_new_scheduled_ride(trip.id)
+
+    assert _tokens(fcm_spy) == {"tok-known"}
 
 
 async def test_non_scheduled_trip_sends_nothing(db, fcm_spy, state_fake):

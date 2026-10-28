@@ -28,7 +28,7 @@ from services.payment_security import (
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, user_lang
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, user_lang, _driver_cancel_copy
 from services.fcm_service import _send_fcm_push_async
 from services import rating_actions, vehicle_tiers
 from services.platform_earnings import driver_fare_basis
@@ -2549,10 +2549,10 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
                 select(User).where(User.id == trip.driver_id)
             )).scalar_one_or_none()
             if _drv:
-                _title = "Trip ended" if in_trip_full_fare else "Ride cancelled"
-                _body = ("The rider ended the trip early — you are paid the full fare."
-                         if in_trip_full_fare else
-                         "The rider cancelled this trip. You are back online.")
+                copy = _driver_cancel_copy(
+                    trip, in_trip_full_fare=in_trip_full_fare)
+                _title = copy["title_en"] if user_lang(_drv) == "en" else copy["title"]
+                _body = copy["body_en"] if user_lang(_drv) == "en" else copy["body"]
                 db.add(Notification(
                     user_id=_drv.id,
                     title=_title,
@@ -2564,12 +2564,10 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
                 if _drv.fcm_token:
                     _safe_create_task(_send_fcm_push_async(
                         _drv.fcm_token,
-                        title="Viaje terminado" if in_trip_full_fare else "Viaje cancelado",
-                        body=("El pasajero terminó el viaje antes — se te paga la tarifa completa."
-                              if in_trip_full_fare else
-                              "El pasajero canceló este viaje. Estás en línea de nuevo."),
-                        title_en=_title,
-                        body_en=_body,
+                        title=copy["title"],
+                        body=copy["body"],
+                        title_en=copy["title_en"],
+                        body_en=copy["body_en"],
                         locale=user_lang(_drv),
                         data={
                             "type": "trip_cancelled",

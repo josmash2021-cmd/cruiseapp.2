@@ -19,7 +19,7 @@ from utils.security import (
     _check_login_throttle, _record_login_failure, _clear_login_failures,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, _haversine, _abs_photo_url, _user_dict, _resolve_rider_display, _gen_pickup_pin, user_lang
+from utils.helpers import _safe_create_task, _haversine, _abs_photo_url, _user_dict, _resolve_rider_display, _gen_pickup_pin, user_lang, _driver_cancel_copy
 from services.fcm_service import _send_fcm_push
 from services import vehicle_tiers, web_pricing
 from services.payment_security import (
@@ -2760,17 +2760,18 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
             for drv in drv_q.scalars().all():
                 if not drv.fcm_token:
                     continue
+                copy = _driver_cancel_copy(trip)
                 _safe_create_task(_send_fcm_push_async(
                     drv.fcm_token,
-                    title="Viaje cancelado",
-                    body="El pasajero canceló este viaje.",
+                    title=copy["title"],
+                    body=copy["body"],
                     data={
                         "type": "booking_cancelled",
                         "trip_id": str(trip.id),
                         "cancelled_by": "rider",
                     },
-                    title_en="Ride cancelled",
-                    body_en="The rider cancelled this trip.",
+                    title_en=copy["title_en"],
+                    body_en=copy["body_en"],
                     locale=user_lang(drv),
                 ))
     except Exception as _fcm_err:

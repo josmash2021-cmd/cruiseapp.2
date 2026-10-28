@@ -104,6 +104,31 @@ def _resolve_rider_display(trip, rider=None) -> tuple[str, str]:
     return "Rider", ""
 
 
+def _driver_cancel_copy(trip, in_trip_full_fare=False) -> dict[str, str]:
+    """Bilingual driver-facing cancellation text, with airport-specific copy."""
+    if in_trip_full_fare:
+        return {
+            "title": "Viaje terminado",
+            "body": "El pasajero terminó el viaje antes — se te paga la tarifa completa.",
+            "title_en": "Trip ended",
+            "body_en": "The rider ended the trip early — you are paid the full fare.",
+        }
+    if (getattr(trip, "is_airport", False)
+            or (getattr(trip, "airport_code", None) or "").strip()):
+        return {
+            "title": "Viaje cancelado",
+            "body": "El pasajero tuvo un retraso en el aeropuerto y canceló su viaje.",
+            "title_en": "Ride cancelled",
+            "body_en": "The passenger was delayed at the airport and canceled their trip.",
+        }
+    return {
+        "title": "Viaje cancelado",
+        "body": "El pasajero canceló este viaje.",
+        "title_en": "Ride cancelled",
+        "body_en": "The rider cancelled this trip.",
+    }
+
+
 # ═══════════════════════════════════════════════════════
 #  Rider ID name matching (OCR auto-verification)
 # ═══════════════════════════════════════════════════════

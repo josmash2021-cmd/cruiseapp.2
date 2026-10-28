@@ -35,7 +35,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
     _user_dict, _trip_dict, _doc_dict, _vehicle_dict, _haversine, _resolve_rider_display, _safe_create_task,
-    _abs_photo_url, user_lang,
+    _abs_photo_url, user_lang, _driver_cancel_copy,
     SETTABLE_ACCOUNT_STATUSES, ACTIVE_ACCOUNT_STATUSES, normalise_account_status,
     _strip_accents,
 )
@@ -513,10 +513,14 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
                 driver_res = await db.execute(select(User).where(User.id == t.driver_id))
                 driver = driver_res.scalar_one_or_none()
                 if driver and driver.fcm_token:
+                    copy = _driver_cancel_copy(t)
                     _safe_create_task(_send_fcm_push_async(
                         driver.fcm_token,
-                        "Trip Canceled",
-                        "A trip has been canceled by dispatch.",
+                        title=copy["title"],
+                        body=copy["body"],
+                        title_en=copy["title_en"],
+                        body_en=copy["body_en"],
+                        locale=user_lang(driver),
                         data={"type": "trip_canceled", "trip_id": str(t.id)},
                     ))
         except Exception as _fcm_err:
@@ -598,10 +602,14 @@ async def admin_cancel_trip(trip_id: int, body: AdminCancelTripIn, db: AsyncSess
             driver_res = await db.execute(select(User).where(User.id == trip.driver_id))
             driver = driver_res.scalar_one_or_none()
             if driver and driver.fcm_token:
+                copy = _driver_cancel_copy(trip)
                 _safe_create_task(_send_fcm_push_async(
                     driver.fcm_token,
-                    "Trip Canceled",
-                    "A trip has been canceled by dispatch.",
+                    title=copy["title"],
+                    body=copy["body"],
+                    title_en=copy["title_en"],
+                    body_en=copy["body_en"],
+                    locale=user_lang(driver),
                     data={"type": "trip_canceled", "trip_id": str(trip.id)},
                 ))
     except Exception as _fcm_err:

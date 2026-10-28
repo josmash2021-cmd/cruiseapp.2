@@ -141,7 +141,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               if (!kIsWeb)
                 Positioned.fill(
                   child: AbsorbPointer(
-                    absorbing: !(_mapStyleLoaded && _firstRenderDone),
+                    absorbing: !_mapMounted,
                     child: AnimatedOpacity(
                       opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0,
                       duration: const Duration(milliseconds: 200),

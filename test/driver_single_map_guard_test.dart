@@ -176,7 +176,7 @@ void main() {
               'mount');
     });
 
-    test('the boot veil absorbs gestures only until the first real render', () {
+    test('the boot veil releases gestures as soon as the surface mounts', () {
       final widgets = File('lib/screens/driver/driver_online_widgets.dart')
           .readAsStringSync();
       final start = widgets.indexOf('child: AbsorbPointer(');
@@ -186,14 +186,15 @@ void main() {
       final veil = widgets.substring(start, end);
       expect(
         veil,
-        contains('absorbing: !(_mapStyleLoaded && _firstRenderDone)'),
-        reason: 'a drag over the startup still must not move only the arrow',
+        contains('absorbing: !_mapMounted'),
+        reason: 'drag and zone taps must not wait for style/tile flags',
       );
       expect(
         veil,
         contains('opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0'),
-        reason: 'gestures return exactly when the live map replaces the veil',
+        reason: 'the veil still fades after the first real render',
       );
+      expect(veil, isNot(contains('absorbing: !(_mapStyleLoaded && _firstRenderDone)')));
       expect(veil, isNot(contains('child: IgnorePointer(')));
     });
   });

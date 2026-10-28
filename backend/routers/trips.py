@@ -680,9 +680,23 @@ async def get_trip(trip_id: int, user: User = Depends(_get_current_user), db: As
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
-    # Ownership check: only rider, driver, or admin can view
+    # Ownership check: only rider, driver, or admin can view -- plus any
+    # driver this trip was ever OFFERED to. The driver app verifies here
+    # after a refused accept (another driver won the race) and after a
+    # dispatch reassign; a 403 read as "cannot tell" and the app kept a
+    # trip that was never its own (2026-10-28). The offer payload already
+    # carried everything this returns, so nothing new is exposed.
     if user.id not in (trip.rider_id, trip.driver_id) and user.role != "admin":
-        raise HTTPException(403, "Not authorized to view this trip")
+        was_offered = False
+        if user.role == "driver":
+            was_offered = (await db.execute(
+                select(DispatchOffer.id).where(
+                    DispatchOffer.trip_id == trip.id,
+                    DispatchOffer.driver_id == user.id,
+                ).limit(1)
+            )).scalar_one_or_none() is not None
+        if not was_offered:
+            raise HTTPException(403, "Not authorized to view this trip")
     d = _trip_dict_for_user(trip, user)
     # Enrich with driver + active-vehicle info so a RESUMED rider screen
     # (tracking / Find-My) shows the same data as the live flow — _trip_dict

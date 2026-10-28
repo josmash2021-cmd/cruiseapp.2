@@ -141,3 +141,65 @@ async def test_admin_delete_user_with_vehicle_documents(client, test_driver, db)
         assert (await db.execute(select(Document).where(Document.user_id == driver.id))).scalars().all() == []
     finally:
         await db.execute(text("PRAGMA foreign_keys=OFF"))
+
+
+@pytest.mark.asyncio
+async def test_admin_delete_user_with_quotes_and_promotions(client, test_rider, test_driver, db):
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select, text
+    from models.database import (
+        User, Trip, RideQuote, RiderPromotionGrant, RiderPromotionGrantRider,
+        RiderPromotionUsage, RiderPromotionRedemption,
+    )
+    from tests.conftest import _make_auth_headers
+
+    rider, _ = test_rider
+    driver, _ = test_driver
+    await db.execute(text("PRAGMA foreign_keys=ON"))
+    quote = RideQuote(
+        id="quote-cascade-1", rider_id=rider.id,
+        request_json="{}", quotes_json="[]", pricing_version=1,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    )
+    grant = RiderPromotionGrant(kind="free", allowed_tiers="[]")
+    trip = _trip(rider.id, driver.id, status="completed")
+    db.add_all([quote, grant, trip])
+    await db.flush()
+    db.add_all([
+        RiderPromotionGrantRider(grant_id=grant.id, rider_id=rider.id),
+        RiderPromotionUsage(grant_id=grant.id, rider_id=rider.id),
+    ])
+    redemption = RiderPromotionRedemption(
+        grant_id=grant.id, rider_id=rider.id, quote_id=quote.id,
+        trip_id=trip.id, original_fare_cents=1000, rider_fare_cents=0,
+        driver_fare_cents=900, distance_miles=1.0,
+    )
+    db.add(redemption)
+    await db.flush()
+    trip.pricing_quote_id = quote.id
+    trip.promotion_redemption_id = redemption.id
+    trip.scheduled_target_driver_id = rider.id
+    await db.commit()
+
+    try:
+        response = await client.delete(
+            f"/admin/users/{rider.id}",
+            headers=_make_auth_headers("test-dispatch-key"),
+        )
+        assert response.status_code == 200, response.text
+        assert (await db.execute(
+            select(User).where(User.id == rider.id),
+        )).scalar_one_or_none() is None
+        assert (await db.execute(select(RideQuote))).scalars().all() == []
+        assert (await db.execute(
+            select(RiderPromotionRedemption),
+        )).scalars().all() == []
+        assert (await db.execute(select(RiderPromotionUsage))).scalars().all() == []
+        assert (await db.execute(select(RiderPromotionGrantRider))).scalars().all() == []
+        assert (await db.execute(select(Trip))).scalars().all() == []
+        await db.refresh(grant)
+        assert grant.id is not None
+        await db.refresh(driver)
+        assert driver.id is not None
+    finally:
+        await db.execute(text("PRAGMA foreign_keys=OFF"))

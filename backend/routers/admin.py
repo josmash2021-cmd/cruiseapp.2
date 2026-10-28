@@ -17,7 +17,8 @@ from models.database import (
     SmsLog, EmailLog, ZeroToleranceComplaint, ConsentLog,
     LegalDocument, LegalDocumentVersion,
     SummaryOfRightsDelivery, WalletTransaction, ZeroToleranceAudit,
-    LoginActivity, StoreOrder,
+    LoginActivity, StoreOrder, RideQuote, RiderPromotionGrantRider,
+    RiderPromotionUsage, RiderPromotionRedemption,
 )
 
 # Process uptime anchor — set once at module import
@@ -754,6 +755,27 @@ async def _purge_user_cascade(db: AsyncSession, user_id: int) -> None:
                   Notification, PasswordResetToken, FavoriteLocation,
                   RevokedToken, CruiseCashBalance, LoginActivity):
         await db.execute(delete(model).where(model.user_id == user_id))
+    # Pricing/promotion rows and targeted reservations also reference the user.
+    await db.execute(
+        update(Trip)
+        .where(or_(
+            Trip.rider_id == user_id,
+            Trip.driver_id == user_id,
+            Trip.scheduled_target_driver_id == user_id,
+        ))
+        .values(
+            pricing_quote_id=None,
+            promotion_redemption_id=None,
+            scheduled_target_driver_id=None,
+        )
+    )
+    await db.execute(delete(RiderPromotionRedemption).where(
+        RiderPromotionRedemption.rider_id == user_id))
+    await db.execute(delete(RiderPromotionUsage).where(
+        RiderPromotionUsage.rider_id == user_id))
+    await db.execute(delete(RiderPromotionGrantRider).where(
+        RiderPromotionGrantRider.rider_id == user_id))
+    await db.execute(delete(RideQuote).where(RideQuote.rider_id == user_id))
     # Trips they rode or drove, and everything hanging off those trips
     # (counterparty ratings, chat messages, offers to other drivers…).
     trip_ids = (await db.execute(

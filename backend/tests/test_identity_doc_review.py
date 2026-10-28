@@ -69,7 +69,7 @@ async def test_backfill_skips_missing_uploads(client, db):
     assert res.json()["documents"] == []
 
 
-async def test_backfill_never_resurrects_a_rejected_row(client, db):
+async def test_backfill_refreshes_photo_without_resetting_review(client, db):
     u = await _mkuser(db, photo_url="photos/u2/profile_new.jpg")
     db.add(Document(user_id=u.id, vehicle_id=None, doc_type="profile_photo",
                     status="rejected", file_path="photos/u2/profile_old.jpg",
@@ -82,7 +82,8 @@ async def test_backfill_never_resurrects_a_rejected_row(client, db):
             if d["doc_type"] == "profile_photo"]
     assert len(docs) == 1
     assert docs[0]["status"] == "rejected"
-    assert docs[0]["file_path"] == "photos/u2/profile_old.jpg"
+    assert docs[0]["rejection_reason"] == "borrosa"
+    assert docs[0]["file_path"] == "photos/u2/profile_new.jpg"
 
 
 async def test_ensured_row_reviews_like_any_document(client, db):

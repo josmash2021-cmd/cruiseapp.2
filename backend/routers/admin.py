@@ -1144,10 +1144,9 @@ _IDENTITY_DOC_SOURCES = (
 
 
 async def _ensure_identity_doc_rows(db, user) -> None:
-    """Create the missing pending Document rows for a user's identity
-    uploads. Create-only: an existing row is NEVER touched — a rejected
-    document keeps its rejection until the driver re-uploads (the upload
-    flows reset the row to pending themselves).
+    """Create missing pending identity rows and refresh the profile-photo
+    URL from User.photo_url. Existing review decisions and rejection reasons
+    are never changed.
 
     Dedup (2026-10-14, panel report "aparece doble"): for a DRIVER the
     identity document IS the driver's license — id_photo_url carries the
@@ -1202,7 +1201,16 @@ async def _ensure_identity_doc_rows(db, user) -> None:
         if removed:
             await db.commit()
 
-        created = False
+        changed = False
+        current_photo = getattr(user, "photo_url", None)
+        if current_photo:
+            for d in existing:
+                if (d.doc_type == "profile_photo"
+                        and d.vehicle_id is None
+                        and d.file_path != current_photo):
+                    d.file_path = current_photo
+                    d.updated_at = datetime.now(timezone.utc)
+                    changed = True
         for doc_type, attr in _IDENTITY_DOC_SOURCES:
             if doc_type in have:
                 continue
@@ -1220,8 +1228,8 @@ async def _ensure_identity_doc_rows(db, user) -> None:
                 file_path=url,
             ))
             have.add(doc_type)
-            created = True
-        if created:
+            changed = True
+        if changed:
             await db.commit()
     except Exception as e:
         logging.warning("[Admin] identity doc backfill failed (user %s): %s",
@@ -1257,6 +1265,13 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
         ).order_by(Vehicle.created_at.asc())
     )
     vehicles = veh_result.scalars().all()
+    archived_result = await db.execute(
+        select(Vehicle).where(
+            Vehicle.user_id == user_id,
+            Vehicle.archived_at.is_not(None),
+        ).order_by(Vehicle.created_at.asc())
+    )
+    archived_vehicles = archived_result.scalars().all()
     ud = _user_dict(user)
     ud["documents"] = [_doc_dict(d) for d in docs]
     from services.vehicle_eligibility import vehicle_document_status
@@ -1269,6 +1284,7 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
             data["plate_pending_review"] = "registration" not in status["approved_document_types"]
         vehicle_payload.append(data)
     ud["vehicles"] = vehicle_payload
+    ud["archived_vehicles"] = [_vehicle_dict(v) for v in archived_vehicles]
     ud["has_password"] = user.password_hash is not None and len(user.password_hash) > 0
     ud["created_at"] = user.created_at.isoformat() if user.created_at else None
     # Password reset available but never expose plaintext (security best practice)

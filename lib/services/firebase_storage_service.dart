@@ -6,7 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'firebase_auth_recovery.dart';
 
-/// Handles Firebase Storage uploads for permanent photo/document storage.
+/// Handles Firebase Storage uploads for permanent profile photo storage.
 /// URLs returned are permanent https://firebasestorage.googleapis.com/... links
 /// that work across devices and survive server restarts.
 class FirebaseStorageService {
@@ -35,21 +35,6 @@ class FirebaseStorageService {
     return ref.getDownloadURL();
   }
 
-  /// Upload a document photo and return its permanent download URL.
-  static Future<String> uploadDocumentPhoto(
-    String filePath,
-    int userId,
-    String docType,
-  ) async {
-    await _ensureAuth();
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final ext = filePath.split('.').last.toLowerCase();
-    final mime = (ext == 'jpg' || ext == 'jpeg') ? 'image/jpeg' : 'image/$ext';
-    final ref = _storage.ref('documents/user_$userId/${docType}_$ts.$ext');
-    await ref.putFile(File(filePath), SettableMetadata(contentType: mime));
-    return ref.getDownloadURL();
-  }
-
   /// Update photoUrl in Firestore drivers/clients collection so Dispatch
   /// shows the new photo immediately.
   static Future<void> updateFirestorePhotoUrl(
@@ -74,62 +59,6 @@ class FirebaseStorageService {
       }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('[FirebaseStorageService] updateFirestorePhotoUrl error: $e');
-    }
-  }
-
-  /// Save a verification document URL to Firestore verifications collection
-  /// so Dispatch can display it in the user detail page.
-  static Future<void> saveVerificationPhoto(
-    int userId,
-    String docType,
-    String photoUrl, {
-    int? vehicleId,
-  }) async {
-    try {
-      final fieldName = _docTypeToField(docType);
-      final payload = vehicleId == null
-          ? {fieldName: photoUrl}
-          : {
-              'vehicleDocumentUrls': {
-                '$vehicleId': {fieldName: photoUrl},
-              },
-            };
-      await _firestore
-          .collection('verifications')
-          .doc('sql_$userId')
-          .set(payload, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('[FirebaseStorageService] saveVerificationPhoto error: $e');
-    }
-  }
-
-  static String _docTypeToField(String docType) {
-    switch (docType.toLowerCase()) {
-      case 'license_front':
-      case 'driver_license_front':
-        return 'licenseFrontUrl';
-      case 'license_back':
-      case 'driver_license_back':
-        return 'licenseBackUrl';
-      case 'profile':
-      case 'profile_photo':
-        return 'profilePhotoUrl';
-      case 'id':
-      case 'id_document':
-        return 'idPhotoUrl';
-      case 'selfie':
-      case 'biometrics':
-        return 'selfieUrl';
-      case 'insurance':
-        return 'insuranceUrl';
-      // The panel (and the server-side sync) read these exact keys — the
-      // default '${docType}Url' shape writes a field nobody displays.
-      case 'registration':
-        return 'registrationPhotoUrl';
-      case 'vehicle_inspection':
-        return 'vehicleInspectionUrl';
-      default:
-        return '${docType}Url';
     }
   }
 

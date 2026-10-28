@@ -2,40 +2,76 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guardian for the missing-documents panel bug (user report 2026-10: "hay
-/// drivers que se están registrando que solo están llegando las fotos de la
-/// licencia y perfil").
+/// Guardian for the missing-documents panel bug and orphan-free uploads.
 ///
 /// License/profile reach the review panel because /auth/verify-request syncs
 /// them server-side into the Firestore `verifications` doc the panel reads.
-/// Insurance/registration/inspection go through /drivers/documents*, which
-/// never synced that doc — the only Firestore write was a best-effort
-/// client-side mirror that also wrote `registrationUrl` while the panel
-/// reads `registrationPhotoUrl`.
+/// Insurance/registration/inspection go through /drivers/documents*. Both app
+/// flows send the photo directly to the backend, which validates the vehicle
+/// before storing anything and owns the panel sync. A rejected upload therefore
+/// cannot leave a client-created Storage object behind.
 ///
-/// The fix has three legs, all pinned here:
-///   1. Backend merges each uploaded doc URL into the verifications doc
+/// The repair has three legs, all pinned here:
+///   1. Both Flutter flows call ApiService.uploadDocument with their vehicle id
+///      and never upload or mirror documents through FirebaseStorageService.
+///   2. Backend merges each uploaded doc URL into the verifications doc
 ///      (sync_verification_doc_url) from BOTH /drivers/documents endpoints.
-///   2. The client mirror uses the panel's exact field names.
 ///   3. /admin/sync-verifications backfills registration from
 ///      vehicle_registration_url (the column onboarding writes) and carries
 ///      inspection.
 void main() {
-  String norm(String p) =>
-      File(p).readAsStringSync().replaceAll('\r\n', '\n');
+  String norm(String p) => File(p).readAsStringSync().replaceAll('\r\n', '\n');
 
-  final client = norm('lib/services/firebase_storage_service.dart');
+  String section(String source, String startMarker, String endMarker) {
+    final start = source.indexOf(startMarker);
+    expect(start, greaterThanOrEqualTo(0), reason: 'missing $startMarker');
+    final end = source.indexOf(endMarker, start + startMarker.length);
+    expect(end, greaterThan(start), reason: 'missing $endMarker');
+    return source.substring(start, end);
+  }
+
+  final capture = norm('lib/screens/driver/onboarding/doc_capture_screen.dart');
+  final documents = norm('lib/screens/driver/driver_documents_screen.dart');
   final driversPy = norm('backend/routers/drivers.py');
   final syncPy = norm('backend/firestore_sync.py');
   final dispatchPy = norm('backend/routers/dispatch.py');
+  const forbiddenClientWrites = [
+    'FirebaseStorageService.uploadDocumentPhoto',
+    'FirebaseStorageService.saveVerificationPhoto',
+    'ApiService.getMe',
+  ];
 
-  test('client mirror writes the field names the panel reads', () {
-    expect(client.contains("case 'registration':"), isTrue);
-    expect(client.contains("return 'registrationPhotoUrl';"), isTrue,
-        reason: 'the panel reads registrationPhotoUrl — the default '
-            "'\${docType}Url' shape wrote registrationUrl, a field nobody displays");
-    expect(client.contains("return 'vehicleInspectionUrl';"), isTrue,
-        reason: 'vehicle_inspection must not fall to the default either');
+  test('onboarding capture uploads through the backend with its vehicle id',
+      () {
+    final body = section(
+      capture,
+      'Future<void> _save() async {',
+      '  @override\n  Widget build(BuildContext context) {',
+    );
+    expect(body, contains('ApiService.uploadDocument('));
+    expect(body, contains('filePath: path'));
+    expect(body, contains('vehicleId: widget.vehicleId'));
+    expect(body, contains('ApiService.submitOnboardingDoc('));
+    for (final forbidden in forbiddenClientWrites) {
+      expect(body, isNot(contains(forbidden)),
+          reason: 'the server must be the first and only storage writer');
+    }
+  });
+
+  test('documents upload uses base64 backend flow with its selected vehicle',
+      () {
+    final body = section(
+      documents,
+      'Future<void> _uploadFile(String path, String docType) async {',
+      '  Widget _uploadOption(',
+    );
+    expect(body, contains('ApiService.uploadDocument('));
+    expect(body, contains('photoBase64: base64Photo'));
+    expect(body, contains('vehicleId: _selectedVehicleId'));
+    for (final forbidden in forbiddenClientWrites) {
+      expect(body, isNot(contains(forbidden)),
+          reason: 'the server must be the first and only storage writer');
+    }
   });
 
   test('server maps doc types to the exact panel fields', () {
@@ -45,15 +81,32 @@ void main() {
     final body = syncPy.substring(start, start + 400);
     expect(body.contains('"insurance": "insuranceUrl"'), isTrue);
     expect(body.contains('"registration": "registrationPhotoUrl"'), isTrue);
-    expect(body.contains('"vehicle_inspection": "vehicleInspectionUrl"'), isTrue);
+    expect(
+        body.contains('"vehicle_inspection": "vehicleInspectionUrl"'), isTrue);
   });
 
   test('both /drivers/documents endpoints sync the panel after storing', () {
-    final calls = 'sync_verification_doc_url('.allMatches(driversPy).length;
-    expect(calls, greaterThanOrEqualTo(2),
-        reason: 'one call in _store_driver_document (multipart + support '
-            'chat filing) and one in the JSON endpoint — a single call '
-            'leaves a path that stores the doc but hides it from the panel');
+    final jsonEndpoint = section(
+      driversPy,
+      'async def upload_document(',
+      'async def _store_driver_document(',
+    );
+    final sharedStore = section(
+      driversPy,
+      'async def _store_driver_document(',
+      '@router.post("/drivers/documents/upload"',
+    );
+    final multipartEndpoint = section(
+      driversPy,
+      'async def upload_document_multipart(',
+      '@router.post("/drivers/{driver_id}/background-check"',
+    );
+    expect(jsonEndpoint, contains('sync_verification_doc_url('),
+        reason: 'the JSON endpoint must sync its own stored document');
+    expect(sharedStore, contains('sync_verification_doc_url('),
+        reason: 'the shared store also covers support chat document filing');
+    expect(multipartEndpoint, contains('_store_driver_document('),
+        reason: 'multipart reaches the panel through the syncing shared store');
   });
 
   test('admin re-sync backfills registration and inspection', () {

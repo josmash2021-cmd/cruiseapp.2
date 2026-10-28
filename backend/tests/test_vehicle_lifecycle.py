@@ -213,6 +213,33 @@ async def test_vehicle_list_reports_real_doc_state_and_hides_archived(
     assert len(documents) == 2
 
 
+async def test_admin_detail_separates_archived_vehicle_history(
+        client, db, test_driver):
+    driver, _ = test_driver
+    current = await _add_vehicle(
+        db, driver, active=True, approval="approved", plate="CURRENT")
+    archived = await _add_vehicle(
+        db, driver, approval="approved", plate="ARCHIVED")
+    archived.archived_at = datetime.now(timezone.utc)
+    await db.commit()
+    old_insurance = await _add_doc(db, driver, archived, "insurance")
+    old_registration = await _add_doc(db, driver, archived, "registration")
+    current_insurance = await _add_doc(db, driver, current, "insurance")
+
+    res = await client.get(
+        f"/admin/users/{driver.id}",
+        headers=_make_auth_headers("test-dispatch-key"),
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert [v["id"] for v in body["vehicles"]] == [current.id]
+    assert [v["id"] for v in body["archived_vehicles"]] == [archived.id]
+    assert body["archived_vehicles"][0]["archived_at"] is not None
+    document_ids = {d["id"] for d in body["documents"]}
+    assert {old_insurance.id, old_registration.id, current_insurance.id} <= document_ids
+    assert all(d["status"] == "approved" for d in body["documents"])
+
+
 async def test_archive_active_selects_only_a_fully_eligible_replacement(
         client, db, test_driver):
     driver, token = test_driver

@@ -133,11 +133,11 @@ void main() {
         reason: 'a bare tier chip filters by tier alone');
   });
 
-  test('person cards fall back to the conventional photo path', () {
-    expect(chunk, contains('guard-pin panel_photo_fallback_guard_test'),
-        reason: 'the photo fallback carries its pin');
-    expect(chunk, contains('photoUrl:s.photoUrl??(s.sqliteId!=null?'),
-        reason: 'a card with an empty mirror photoUrl tries the '
-            'conventional photos/user_<id>/profile.jpg');
+  test('person cards use the real profile photo source', () {
+    expect(chunk, contains('guard-pin panel_photo_source_guard_test'),
+        reason: 'the authoritative photo source carries its rebuild pin');
+    expect(chunk, contains('photoUrl:s.photoUrl??null'),
+        reason: 'the card uses the profile/roster URL, never a guessed path');
+    expect(chunk, isNot(contains('photos/user_')));
   });
 }

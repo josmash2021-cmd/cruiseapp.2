@@ -40,14 +40,15 @@ void main() {
     final plate = File('lib/screens/driver/driver_license_plate_screen.dart')
         .readAsStringSync();
     final api = File('lib/services/api_service.dart').readAsStringSync();
-    final mirror =
-        File('lib/services/firebase_storage_service.dart').readAsStringSync();
+    final drivers = File('backend/routers/drivers.py').readAsStringSync();
     expect(docs, contains('vehicleId: _selectedVehicleId'));
     expect(docs, contains('isActiveVehicle: vehicle'));
     expect(plate, contains('vehicleId: widget.vehicleId'));
     expect(api, contains("if (vehicleId != null) 'vehicle_id': vehicleId"));
-    expect(mirror, contains("'vehicleDocumentUrls': {"));
-    expect(mirror, contains("'\$vehicleId': {fieldName: photoUrl}"));
+    expect(docs, isNot(contains('FirebaseStorageService')),
+        reason: 'the backend is the only storage and panel-mirror writer');
+    expect(drivers, contains('sync_verification_doc_url('));
+    expect(drivers, contains('vehicle_id=doc.vehicle_id'));
   });
 
   test('View Documents refreshes on dispatch decisions and cancels watchers',

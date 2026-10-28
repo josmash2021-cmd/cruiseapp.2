@@ -2388,6 +2388,28 @@ async def web_get_chat(trip_id: int, request: Request, db: AsyncSession = Depend
 # dirname(routers/auth.py)/photos — /app/routers/photos — which is not the
 # directory anything serves from, so uploads landed where no reader looks.
 
+
+async def _sync_profile_photo_links(db: AsyncSession, user_id: int, photo_url: str):
+    result = await db.execute(
+        select(Document).where(
+            Document.user_id == user_id,
+            Document.doc_type == "profile_photo",
+            Document.vehicle_id.is_(None),
+        )
+    )
+    now = datetime.now(timezone.utc)
+    for document in result.scalars():
+        if document.file_path != photo_url:
+            document.file_path = photo_url
+            document.updated_at = now
+    await db.commit()
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_verification_doc_url(user_id, "profile_photo", photo_url)
+        except Exception as e:
+            logging.error("Firestore profile photo sync failed for user %s: %s", user_id, e)
+
+
 @router.post("/auth/web/photo")
 async def web_upload_photo(request: Request, db: AsyncSession = Depends(get_db)):
     """Profile photo upload from cruiseinride.com — JWT only, no API key/HMAC.
@@ -2461,7 +2483,7 @@ async def web_upload_photo(request: Request, db: AsyncSession = Depends(get_db))
 
     db_user.photo_url = photo_url
     db_user.last_active_at = datetime.now(timezone.utc)
-    await db.commit()
+    await _sync_profile_photo_links(db, db_user.id, photo_url)
     await db.refresh(db_user)
 
     try:
@@ -2521,7 +2543,7 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
         db_user.photo_url = full_photo_url
         # A fresh profile photo clears a previous per-item rejection.
         _set_onboarding_override(db_user, "photo", "submitted")
-        await db.commit()
+        await _sync_profile_photo_links(db, db_user.id, full_photo_url)
         await db.refresh(db_user)
         # Sync to Firestore
         if _HAS_FIRESTORE:
@@ -2566,7 +2588,7 @@ async def save_photo_url(request: Request, user: User = Depends(_get_current_use
         raise HTTPException(404, "User not found")
     db_user.photo_url = photo_url
     _set_onboarding_override(db_user, "photo", "submitted")
-    await db.commit()
+    await _sync_profile_photo_links(db, db_user.id, photo_url)
     await db.refresh(db_user)
     if _HAS_FIRESTORE:
         try:
@@ -2636,7 +2658,7 @@ async def upload_photo_to_firebase(request: Request, user: User = Depends(_get_c
     db_user = result.scalar_one_or_none()
     if db_user:
         db_user.photo_url = photo_url
-        await db.commit()
+        await _sync_profile_photo_links(db, db_user.id, photo_url)
         await db.refresh(db_user)
         # Sync to Firestore
         if _HAS_FIRESTORE:

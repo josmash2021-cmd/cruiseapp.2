@@ -6,7 +6,6 @@ import '../../services/haptic_service.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
-import '../../services/firebase_storage_service.dart';
 import '../../services/socket_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/feathered_image.dart';
@@ -1563,26 +1562,6 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       ),
     );
     try {
-      // Upload to Firebase Storage for permanent URL visible in Dispatch
-      try {
-        final me =
-            await ApiService.getMe().timeout(const Duration(seconds: 15));
-        final userId = int.tryParse(me?['id']?.toString() ?? '') ?? 0;
-        final url = await FirebaseStorageService.uploadDocumentPhoto(
-          path,
-          userId,
-          docType,
-        );
-        await FirebaseStorageService.saveVerificationPhoto(
-          userId,
-          docType,
-          url,
-          vehicleId: _selectedVehicleId,
-        );
-      } catch (e) {
-        debugPrint('[Documents] Firebase Storage upload failed: $e');
-      }
-
       final bytes = await File(path).readAsBytes();
       final base64Photo = base64Encode(bytes);
       await ApiService.uploadDocument(

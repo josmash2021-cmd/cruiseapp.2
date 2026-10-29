@@ -3836,7 +3836,11 @@ async def admin_set_driver_presence(user_id: int, request: Request, db: AsyncSes
         await notify_user(user.id, "dispatch_presence_set", {"online": online})
     except Exception as e:
         logging.warning("[Admin] presence socket failed for %s: %s", user.id, e)
-    if user.fcm_token:
+    # Only the "online" request is pushed (it has to wake a backgrounded app
+    # to run its GO). Going offline is silent (owner spec 2026-10-29: no
+    # "Dispatch te desconectó" notification); the socket event and the
+    # server-side refusal of heartbeats are enough.
+    if online and user.fcm_token:
         try:
             await _send_fcm_push_async(
                 user.fcm_token,

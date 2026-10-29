@@ -116,9 +116,14 @@ void main() {
       expect(l10n, contains('String get $g'));
       expect(ctrl, contains('s.$g'));
     }
-    expect(l10n, contains('Dispatch te desconectó'));
-    expect(l10n, contains('Dispatch took you offline'));
-    expect(l10n, contains('Dispatch te conectó'));
-    expect(l10n, contains('Dispatch put you online'));
+    // Owner copy 2026-10-29 — never mentions Dispatch.
+    expect(l10n, contains('Has sido desconectado'));
+    expect(l10n, contains('No estás recibiendo viajes'));
+    expect(l10n, contains('Estás conectado'));
+    expect(l10n, contains('Disponible para recibir viajes'));
+    expect(l10n, contains('You have been disconnected'));
+    expect(l10n, contains('Available to receive rides'));
+    expect(l10n, isNot(contains('Dispatch te desconectó')));
+    expect(l10n, isNot(contains('Dispatch te conectó')));
   });
 }

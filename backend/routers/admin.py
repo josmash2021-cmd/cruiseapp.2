@@ -3836,19 +3836,16 @@ async def admin_set_driver_presence(user_id: int, request: Request, db: AsyncSes
         await notify_user(user.id, "dispatch_presence_set", {"online": online})
     except Exception as e:
         logging.warning("[Admin] presence socket failed for %s: %s", user.id, e)
-    # Only the "online" request is pushed (it has to wake a backgrounded app
-    # to run its GO). Going offline is silent (owner spec 2026-10-29: no
-    # "Dispatch te desconectó" notification); the socket event and the
-    # server-side refusal of heartbeats are enough.
-    if online and user.fcm_token:
+    # Owner copy 2026-10-29 (never mentions Dispatch).
+    if user.fcm_token:
         try:
             await _send_fcm_push_async(
                 user.fcm_token,
-                "Dispatch te conectó" if online else "Dispatch te desconectó",
-                "Abre Cruise para recibir viajes." if online else "Ya no estás en línea.",
+                "Estás conectado" if online else "Has sido desconectado",
+                "Disponible para recibir viajes" if online else "No estás recibiendo viajes",
                 {"type": "dispatch_presence_set", "online": "1" if online else "0"},
-                title_en="Dispatch put you online" if online else "Dispatch took you offline",
-                body_en="Open Cruise to receive rides." if online else "You are no longer online.",
+                title_en="You are online" if online else "You have been disconnected",
+                body_en="Available to receive rides" if online else "You are not receiving rides",
             )
         except Exception as e:
             logging.warning("[Admin] presence push failed for %s: %s", user.id, e)

@@ -1484,6 +1484,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   void _showDispatchPresenceNotice({required bool online}) {
+    // Owner copy 2026-10-29 — never mentions Dispatch: "Has sido
+    // desconectado / No estás recibiendo viajes" and "Estás conectado /
+    // Disponible para recibir viajes".
     // After the pop settles, so it lands on this screen's Scaffold.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1491,9 +1494,22 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (messenger == null) return;
       final s = S.of(context);
       messenger.showSnackBar(SnackBar(
-        content: Text(
-          online ? s.dispatchPresenceOnline : s.dispatchPresenceOffline,
-          textAlign: TextAlign.center,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              online ? s.dispatchPresenceOnline : s.dispatchPresenceOffline,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              online
+                  ? s.dispatchPresenceOnlineBody
+                  : s.dispatchPresenceOfflineBody,
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 3),

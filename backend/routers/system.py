@@ -560,6 +560,94 @@ async def _notify_update_available(role: str) -> None:
         logger.warning("[AppUpdate] update-available fan-out failed: %s", e)
 
 
+# ── Maintenance mode: drivers off the road (owner spec 2026-10-29) ────────
+# The kill page already blanks every live app; this is the server side of
+# it. Flipping maintenance ON forces every online driver offline, retires
+# their pending offers and tells them why. While it stays on nobody can flip
+# back online (PATCH location is_online=true, drivers.py), GO reads as
+# disabled (can-go-online) and scheduled rides cannot be claimed. A 5 s
+# cache keeps the flag read off the hot location path.
+_MAINT_CACHE_TTL_S = 5.0
+_maint_cache: tuple[bool, float] | None = None
+
+
+def _set_maintenance_cache(on: bool) -> None:
+    global _maint_cache
+    _maint_cache = (bool(on), time.monotonic())
+
+
+async def maintenance_is_on(db) -> bool:
+    """True while dispatch has the maintenance kill page on. Cached 5 s."""
+    if (_maint_cache is not None
+            and time.monotonic() - _maint_cache[1] < _MAINT_CACHE_TTL_S):
+        return _maint_cache[0]
+    try:
+        from sqlalchemy import select as _select
+        row = (await db.execute(
+            _select(AppConfig.value).where(AppConfig.key == _MAINTENANCE_KEY)
+        )).scalar_one_or_none()
+        on = (row or "0").strip() == "1"
+    except Exception as e:
+        logger.warning("[Maintenance] flag read failed (treating as off): %s", e)
+        on = False
+    _set_maintenance_cache(on)
+    return on
+
+
+async def _force_drivers_offline_for_maintenance() -> int:
+    """Every online driver goes offline, loses pending offers and is told.
+    Returns how many were kicked."""
+    from sqlalchemy import select as _select
+    from models.database import User
+    from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+    from services.fcm_service import _send_fcm_push_async
+    from utils.helpers import _safe_create_task
+    kicked = 0
+    try:
+        async with SessionLocal() as s:
+            rows = (await s.execute(
+                _select(User).where(User.role == "driver", User.is_online == True)
+            )).scalars().all()
+            for u in rows:
+                try:
+                    await expire_pending_offers_for_driver(s, u.id, "maintenance mode")
+                except Exception as e:
+                    logger.warning("[Maintenance] offers for driver %s: %s", u.id, e)
+            # A plain UPDATE, not ORM attributes: SessionLocal runs with
+            # autoflush=False and the counter UPDATE inside the offer
+            # expiry synchronises the identity map, which silently dropped
+            # the pending is_online=False (caught by the test).
+            if rows:
+                from sqlalchemy import update as _update
+                await s.execute(
+                    _update(User)
+                    .where(User.id.in_([u.id for u in rows]))
+                    .values(is_online=False, online_since=None)
+                )
+            await s.commit()
+            for u in rows:
+                kicked += 1
+                try:
+                    import firestore_sync
+                    firestore_sync.sync_driver_location(u.id, u.lat or 0, u.lng or 0, False)
+                except Exception:
+                    pass
+                if u.fcm_token:
+                    es = (u.locale or "es").lower().startswith("es")
+                    _safe_create_task(_send_fcm_push_async(
+                        u.fcm_token,
+                        "Cruise en mantenimiento" if es else "Cruise is under maintenance",
+                        ("Te desconectamos temporalmente. Te avisaremos cuando vuelva el servicio."
+                         if es else
+                         "You were taken offline for now. We will let you know when service is back."),
+                        {"type": "maintenance_on"},
+                    ), name=f"maintenance_push_{u.id}")
+    except Exception as e:
+        logger.warning("[Maintenance] force-offline failed: %s", e)
+    logger.warning("[Maintenance] ON — %d driver(s) forced offline", kicked)
+    return kicked
+
+
 @router.post("/admin/app-update", dependencies=[Depends(_require_dispatch_auth)])
 async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
                                 db=Depends(get_db)):
@@ -606,6 +694,12 @@ async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
     await _upsert(_MIN_BUILD_KEYS["android"], str(req.min_build_android),
                   "Min Android build before the gate applies (0 = all builds)")
     await db.commit()
+    if req.maintenance_enabled is not None:
+        _set_maintenance_cache(bool(req.maintenance_enabled))
+        if req.maintenance_enabled and not prev["maintenance"]:
+            from utils.helpers import _safe_create_task
+            _safe_create_task(_force_drivers_offline_for_maintenance(),
+                              name="maintenance_force_offline")
     _security_audit_log(
         "app_update_switch",
         request.client.host if request.client else "unknown",

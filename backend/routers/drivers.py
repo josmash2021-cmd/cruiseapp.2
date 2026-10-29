@@ -320,6 +320,15 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         _driver_locations.pop(driver_id, None)
         raise HTTPException(403, "go_online_disabled")
 
+    # Maintenance mode (owner spec 2026-10-29): nobody flips online while the
+    # kill page is up, and a stale heartbeat still claiming is_online cannot
+    # undo the forced offline. Same terminal class for the app as the switch.
+    if body.is_online:
+        from routers.system import maintenance_is_on  # lazy: import cycle
+        if await maintenance_is_on(db):
+            _driver_locations.pop(driver_id, None)
+            raise HTTPException(403, "maintenance")
+
     # Face-check rejection (2026-10-23, owner report: "le doy rechazar y no
     # desconecta al driver si esta conectado"): the dispatch reject writes
     # is_online=False — but the live app never learned and its next location
@@ -3182,6 +3191,13 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     go_disabled = bool(user.go_online_disabled)
     if go_disabled:
         reasons.append("go_online_disabled")
+    # Maintenance mode (2026-10-29): GO reads as disabled for everyone while
+    # the kill page is up; the app shows the maintenance copy for it.
+    from routers.system import maintenance_is_on  # lazy: import cycle
+    maintenance = await maintenance_is_on(db)
+    if maintenance:
+        go_disabled = True
+        reasons.append("maintenance")
 
     rest_until = user.rest_until
     if rest_until is not None and rest_until.tzinfo is None:
@@ -3238,6 +3254,7 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         "face_review_required": bool(user.face_review_required),
         "face_check_pending": face_pending,
         "go_online_disabled": go_disabled,
+        "maintenance": maintenance,
         "rest_until": rest_until.isoformat() if rest_until is not None else None,
         "reasons": reasons,
     }

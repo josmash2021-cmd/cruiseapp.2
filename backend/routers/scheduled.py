@@ -319,6 +319,11 @@ async def claim_scheduled_trip(
     # Checked here as well as in the browse: a trip id survives a stale
     # list, and hiding a card is a courtesy while this is the rule.
     _require_approved_driver(user)
+    # Maintenance mode (owner spec 2026-10-29): no reservations while the
+    # kill page is up.
+    from routers.system import maintenance_is_on  # lazy: import cycle
+    if await maintenance_is_on(db):
+        raise HTTPException(403, "maintenance")
     rest_until = user.rest_until
     if rest_until is not None and rest_until.tzinfo is None:
         rest_until = rest_until.replace(tzinfo=timezone.utc)

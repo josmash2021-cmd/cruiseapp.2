@@ -3781,6 +3781,76 @@ async def admin_go_online_gate(user_id: int, request: Request, db: AsyncSession 
     return {"ok": True, "disabled": disabled}
 
 
+@router.post("/admin/drivers/{user_id}/presence", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_set_driver_presence(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Dispatch online/offline switch for one APPROVED driver (owner spec
+    2026-10-29), live:
+
+    * online=false: the driver goes offline now (DB + Firestore, pending
+      offers retired), a forced-offline latch stops stale heartbeats from
+      reviving him, and the live app is told to drop to its home screen.
+    * online=true: the latch lifts and the live app is told to go online;
+      the app runs its normal GO (location, channels) and that write puts
+      him online. Nothing is faked server-side without a GPS fix.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    online = body.get("online") if isinstance(body, dict) else None
+    if not isinstance(online, bool):
+        raise HTTPException(400, "online (bool) required")
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user or user.role != "driver":
+        raise HTTPException(404, "Driver not found")
+    approved = ((user.verification_status or "").lower() == "approved"
+                and user.status in ACTIVE_ACCOUNT_STATUSES)
+    if not approved:
+        raise HTTPException(400, "Solo conductores aprobados")
+    from services import presence_latch
+    if online:
+        if user.go_online_disabled:
+            raise HTTPException(409, "El GO de este conductor está desactivado")
+        from routers.system import maintenance_is_on  # lazy: import cycle
+        if await maintenance_is_on(db):
+            raise HTTPException(409, "Cruise está en mantenimiento")
+        await presence_latch.clear(db, user.id)
+        await db.commit()
+    else:
+        from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+        await expire_pending_offers_for_driver(db, user.id, "dispatch presence switch")
+        await presence_latch.latch(db, [user.id])
+        await db.execute(
+            User.__table__.update().where(User.__table__.c.id == user.id)
+            .values(is_online=False, online_since=None)
+        )
+        await db.commit()
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_driver_location(user.id, user.lat or 0, user.lng or 0, False)
+            except Exception:
+                pass
+    _security_audit_log("ADMIN_DRIVER_PRESENCE", "admin",
+                        f"user_id={user_id} online={online}")
+    try:
+        await notify_user(user.id, "dispatch_presence_set", {"online": online})
+    except Exception as e:
+        logging.warning("[Admin] presence socket failed for %s: %s", user.id, e)
+    if user.fcm_token:
+        try:
+            await _send_fcm_push_async(
+                user.fcm_token,
+                "Dispatch te conectó" if online else "Dispatch te desconectó",
+                "Abre Cruise para recibir viajes." if online else "Ya no estás en línea.",
+                {"type": "dispatch_presence_set", "online": "1" if online else "0"},
+                title_en="Dispatch put you online" if online else "Dispatch took you offline",
+                body_en="Open Cruise to receive rides." if online else "You are no longer online.",
+            )
+        except Exception as e:
+            logging.warning("[Admin] presence push failed for %s: %s", user.id, e)
+    return {"ok": True, "online": online}
+
+
 # ── Digital contracts admin (2026-10-21, user spec — Uber-style): consult
 # acceptances, download receipt PDFs, update the documents (version bump →
 # re-acceptance wave), and read the version history ──────────────────────

@@ -247,6 +247,10 @@ class DriverLocationIn(BaseModel):
     heading: float | None = Field(default=None, ge=0, le=360)
     speed: float | None = Field(default=None, ge=0)
     captured_at: datetime | None = None
+    # True only on the driver's own GO (or a Dispatch "online" request the
+    # app acts on): the only kind of write that may lift a forced-offline
+    # latch. Heartbeats leave it False (services/presence_latch.py).
+    explicit: bool = False
 
 
 class DriverDestinationIn(BaseModel):

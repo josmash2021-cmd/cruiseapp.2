@@ -160,3 +160,20 @@ async def test_turning_it_on_forces_online_drivers_offline(db, test_driver, test
         )).scalar_one()
         assert status == "expired"
     assert any(n and n.startswith("maintenance_push_") for n in pushes)
+
+
+async def test_forced_offline_drivers_are_latched(db, test_driver, monkeypatch):
+    from services import presence_latch
+    presence_latch.reset_for_tests()
+    driver, _ = test_driver
+    driver.is_online = True
+    await db.commit()
+    import utils.helpers as helpers
+    from routers import dispatch
+    monkeypatch.setattr(helpers, "_safe_create_task", lambda c, name=None: c.close())
+    monkeypatch.setattr(dispatch, "_safe_create_task", lambda c, name=None: c.close())
+    await system._force_drivers_offline_for_maintenance(announce=False)
+    presence_latch.reset_for_tests()  # read back from the row, not the cache
+    from models.database import SessionLocal
+    async with SessionLocal() as fresh:
+        assert await presence_latch.is_latched(fresh, driver.id) is True

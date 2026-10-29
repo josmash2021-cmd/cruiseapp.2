@@ -329,6 +329,18 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
             _driver_locations.pop(driver_id, None)
             raise HTTPException(403, "maintenance")
 
+    # Dispatch-forced offline (owner spec 2026-10-29): a stale heartbeat
+    # saying is_online=true must not revive a driver Dispatch (or the
+    # maintenance switch) took offline. Only an explicit GO lifts it.
+    if body.is_online and not user.is_online:
+        from services import presence_latch
+        if await presence_latch.is_latched(db, driver_id):
+            if body.explicit or presence_latch.explicit_window_open(driver_id):
+                await presence_latch.clear(db, driver_id)
+            else:
+                _driver_locations.pop(driver_id, None)
+                raise HTTPException(403, "dispatch_offline")
+
     # Face-check rejection (2026-10-23, owner report: "le doy rechazar y no
     # desconecta al driver si esta conectado"): the dispatch reject writes
     # is_online=False — but the live app never learned and its next location
@@ -3107,6 +3119,10 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     a second car and work on it under the FIRST car's insurance,
     registration and inspection.
     """
+    # The pre-GO check every app build runs: opens the short window in
+    # which a go-online may lift a Dispatch-forced offline latch.
+    from services import presence_latch
+    presence_latch.note_gate_check(user.id)
     reasons = []
 
     # 1. Account must be approved

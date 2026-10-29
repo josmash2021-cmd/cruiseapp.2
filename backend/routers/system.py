@@ -594,7 +594,7 @@ async def maintenance_is_on(db) -> bool:
     return on
 
 
-async def _force_drivers_offline_for_maintenance() -> int:
+async def _force_drivers_offline_for_maintenance(announce: bool = True) -> int:
     """Every online driver goes offline, loses pending offers and is told.
     Returns how many were kicked."""
     from sqlalchemy import select as _select
@@ -624,6 +624,9 @@ async def _force_drivers_offline_for_maintenance() -> int:
                     .where(User.id.in_([u.id for u in rows]))
                     .values(is_online=False, online_since=None)
                 )
+                # Stale heartbeats must not revive them; only an explicit GO.
+                from services import presence_latch
+                await presence_latch.latch(s, [u.id for u in rows])
             await s.commit()
             for u in rows:
                 kicked += 1
@@ -632,7 +635,7 @@ async def _force_drivers_offline_for_maintenance() -> int:
                     firestore_sync.sync_driver_location(u.id, u.lat or 0, u.lng or 0, False)
                 except Exception:
                     pass
-                if u.fcm_token:
+                if announce and u.fcm_token:
                     es = (u.locale or "es").lower().startswith("es")
                     _safe_create_task(_send_fcm_push_async(
                         u.fcm_token,
@@ -696,10 +699,16 @@ async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
     await db.commit()
     if req.maintenance_enabled is not None:
         _set_maintenance_cache(bool(req.maintenance_enabled))
-        if req.maintenance_enabled and not prev["maintenance"]:
+        # ON takes every driver off the road. OFF does it again (owner spec
+        # 2026-10-29: coming back from maintenance, everyone starts offline
+        # and reconnects with their own GO) — anyone a stale heartbeat
+        # slipped back online during the window is caught here.
+        if bool(req.maintenance_enabled) != bool(prev["maintenance"]):
             from utils.helpers import _safe_create_task
-            _safe_create_task(_force_drivers_offline_for_maintenance(),
-                              name="maintenance_force_offline")
+            _safe_create_task(
+                _force_drivers_offline_for_maintenance(
+                    announce=bool(req.maintenance_enabled)),
+                name="maintenance_force_offline")
     _security_audit_log(
         "app_update_switch",
         request.client.host if request.client else "unknown",

@@ -89,22 +89,57 @@ class _SplashScreenState extends State<SplashScreen> {
       final c =
           VideoPlayerController.asset('assets/videos/splash_intro.mp4');
       _video = c;
-      await c.initialize();
+      // Bounded init (2026-10-29, Android report: black splash). A decoder
+      // that never answers must not leave the splash waiting on it.
+      await c.initialize().timeout(const Duration(seconds: 4));
       await c.setVolume(0);
       await c.setLooping(true);
       c.addListener(_onVideoTick);
       if (_disposed) return;
       setState(() => _videoReady = true);
       unawaited(c.play());
+      // Stall watchdog: if the clip has not advanced a single frame after
+      // [_videoStallTimeout], it is frozen (its first frame is black, so a
+      // stuck clip reads as a black splash). Drop it — the logo shows again
+      // and the splash moves on instead of sitting out the 8 s cap.
+      _videoStallTimer = Timer(_videoStallTimeout, () {
+        if (_disposed) return;
+        final v = _video;
+        if (v != null && v.value.position > Duration.zero) return;
+        _dropVideo('no progress after ${_videoStallTimeout.inMilliseconds} ms');
+      });
     } catch (e) {
-      debugPrint('[Splash] intro video failed: $e');
-      // No clip — don't hold the splash hostage on the fallback badge.
-      if (!_firstLoopDone.isCompleted) _firstLoopDone.complete();
+      _dropVideo('$e');
     }
+  }
+
+  static const Duration _videoStallTimeout = Duration(milliseconds: 2500);
+  Timer? _videoStallTimer;
+
+  /// Video failed or froze: free the decoder, fall back to the logo on black
+  /// and release the navigation wait. Never holds the splash hostage.
+  void _dropVideo(String why) {
+    debugPrint('[Splash] intro video dropped: $why');
+    _videoStallTimer?.cancel();
+    final c = _video;
+    _video = null;
+    if (c != null) {
+      c.removeListener(_onVideoTick);
+      unawaited(c.dispose().catchError((_) {}));
+    }
+    if (!_disposed && mounted && _videoReady) {
+      setState(() => _videoReady = false);
+    }
+    if (!_firstLoopDone.isCompleted) _firstLoopDone.complete();
   }
 
   void _onVideoTick() {
     final c = _video;
+    if (c != null && c.value.hasError) {
+      // Decoder error mid-playback (Android: MediaCodec) — same fallback.
+      _dropVideo(c.value.errorDescription ?? 'playback error');
+      return;
+    }
     if (c == null || !c.value.isInitialized || _firstLoopDone.isCompleted) {
       return;
     }
@@ -757,6 +792,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void dispose() {
     _disposed = true;
+    _videoStallTimer?.cancel();
     _video?.removeListener(_onVideoTick);
     _video?.dispose();
     super.dispose();

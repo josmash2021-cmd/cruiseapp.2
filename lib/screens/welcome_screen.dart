@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -37,19 +38,57 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     try {
       final c = VideoPlayerController.asset('assets/videos/welcome_bg.mp4');
       _video = c;
-      await c.initialize();
+      // Bounded init (2026-10-29, Android report: frozen welcome video).
+      await c.initialize().timeout(const Duration(seconds: 6));
       await c.setLooping(true);
       await c.setVolume(0);
       if (!mounted) return;
+      c.addListener(_onVideoTick);
       setState(() => _videoReady = true);
-      c.play();
-    } catch (_) {
-      // No clip — the static SUV frame stays as the background.
+      unawaited(c.play());
+      // Stall watchdog: a clip that has not advanced a frame after
+      // [_videoStallTimeout] is frozen — fade back to the poster (the clip's
+      // own first frame) and free the decoder. The role buttons never
+      // depend on the video either way.
+      _videoStallTimer = Timer(_videoStallTimeout, () {
+        if (!mounted) return;
+        final v = _video;
+        if (v != null && v.value.position > Duration.zero) return;
+        _dropVideo('no progress after ${_videoStallTimeout.inMilliseconds} ms');
+      });
+    } catch (e) {
+      // No clip — the static poster frame stays as the background.
+      _dropVideo('$e');
     }
+  }
+
+  static const Duration _videoStallTimeout = Duration(seconds: 3);
+  Timer? _videoStallTimer;
+
+  void _onVideoTick() {
+    final c = _video;
+    if (c != null && c.value.hasError) {
+      _dropVideo(c.value.errorDescription ?? 'playback error');
+    }
+  }
+
+  /// Video failed or froze: release it and keep the poster underneath.
+  void _dropVideo(String why) {
+    debugPrint('[Welcome] background video dropped: $why');
+    _videoStallTimer?.cancel();
+    final c = _video;
+    _video = null;
+    if (c != null) {
+      c.removeListener(_onVideoTick);
+      unawaited(c.dispose().catchError((_) {}));
+    }
+    if (mounted && _videoReady) setState(() => _videoReady = false);
   }
 
   @override
   void dispose() {
+    _videoStallTimer?.cancel();
+    _video?.removeListener(_onVideoTick);
     _video?.dispose();
     super.dispose();
   }

@@ -14,6 +14,7 @@ import '../widgets/neu_style.dart';
 import '../widgets/steering_wheel_icon.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
+import '../services/support_chat_cache.dart';
 import '../services/user_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -747,12 +748,20 @@ class _HelpScreenState extends State<HelpScreen> {
             children: [
               Icon(icon, color: _gold, size: 18),
               const SizedBox(width: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: _gold,
+              // Flexible: "Chat de soporte en vivo" no longer fits one line
+              // on narrow phones next to the e-mail button.
+              Flexible(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _gold,
+                    height: 1.15,
+                  ),
                 ),
               ),
             ],
@@ -1040,7 +1049,14 @@ class CruiseSupportChatScreen extends StatefulWidget {
     this.initialMessage,
     this.inTrip = false,
     this.sessionKey,
+    this.chatId,
   });
+
+  /// The chat a push notification named (`data.chat_id`). The first frame
+  /// paints that chat's cached transcript, so the tapped message is on
+  /// screen before the network answers. Null for the menu / Help entries,
+  /// which open whatever chat was last on screen.
+  final int? chatId;
 
   /// Which conversation this is. When it differs from the last one opened,
   /// the previous chat is closed server-side and a clean one starts.
@@ -1098,7 +1114,16 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   // renders (2026-10-02 redesign: two assistants).
   String? _agentAvatar;
   String _subtitle = '';
-  bool _loading = true;
+  /// Background refresh in flight. Drawn as a thin strip over the transcript
+  /// (2026-10-29): the body is on screen from the first frame — cached
+  /// transcript or the welcome header — never behind a full-screen spinner.
+  bool _syncing = true;
+  /// _userRole came from the cache / prefs already; skip the prefs read.
+  bool _roleResolved = false;
+  /// First server transcript after opening already merged. Until then the
+  /// poll merges plainly: no typing theatre for replies that landed while
+  /// the app was closed, no count short-circuit against a cached list.
+  bool _firstSyncDone = false;
   bool _sending = false;
   /// A file is on its way up — the attach button becomes a spinner and stops
   /// accepting taps, so a driver on a slow signal cannot queue five copies.
@@ -1140,6 +1165,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   void initState() {
     super.initState();
     _queueDuration = AiSupportService.randomQueueWait();
+    // Cache first (synchronous, before the first build); the network only
+    // ever updates in place from the post-frame callback below.
+    _hydrateFromCache();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _initChat();
@@ -1164,88 +1192,149 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   // ── Initialization ──────────────────────────────────────────────────
 
+  /// setState that survives the screen being popped mid-await.
+  void _setState(VoidCallback fn) {
+    if (mounted) setState(fn);
+  }
+
+  /// Paint the first frame from the last known chat (2026-10-29 owner spec:
+  /// the support chat has to open instantly). Synchronous, runs inside
+  /// initState, so nothing here may touch inherited widgets (no S.of).
+  ///
+  /// The server stays the truth: _initChat runs right after the first frame
+  /// and whatever it answers replaces this — but the user is already
+  /// reading. Scoped to the logged-in account: the cache outlives a logout.
+  void _hydrateFromCache() {
+    final last = SupportChatCache.lastChat();
+    final lastId = (last?['id'] as num?)?.toInt();
+    final id = widget.chatId ?? lastId;
+    if (id == null) return;
+    // No `last` means nothing was ever cached (saveChat always precedes the
+    // first saveMessages); a different account's entry is never painted.
+    final uid = UserSession.userIdSync();
+    if (uid == null || last == null) return;
+    if ((last['user_id']?.toString() ?? '') != uid) return;
+    if (lastId == id) {
+      if ((last['status'] as String?) == 'closed') return; // init restarts
+      _agentName = last['agent_name'] as String?;
+      _agentAvatar = last['agent_avatar'] as String?;
+      final role = last['role'] as String?;
+      if (role != null && role.isNotEmpty) {
+        _userRole = role;
+        _roleResolved = true;
+      }
+      _applyBotPhase(last['bot_phase'] as String?);
+    }
+    _chatId = id;
+    _messages
+      ..clear()
+      ..addAll(SupportChatCache.messages(id).map(_msgFromJson))
+      ..sort((a, b) => a.time.compareTo(b.time));
+  }
+
+  /// Server `bot_phase` → local phase. One place for the cache, the resume
+  /// call and the poll so the three can never disagree.
+  void _applyBotPhase(String? botPhase) {
+    if (botPhase == 'agent_active' ||
+        botPhase == 'escalated' ||
+        botPhase == 'dispatch_takeover') {
+      _phase = _ChatPhase.agent;
+      _showQuickActions = false;
+    }
+  }
+
+  _ChatMsg _msgFromJson(Map<String, dynamic> m) {
+    return _ChatMsg(
+      id: (m['id'] as num?)?.toInt(),
+      text: (m['message'] ?? '').toString(),
+      role: (m['sender_role'] ?? '').toString(),
+      time: DateTime.tryParse((m['created_at'] ?? '').toString()) ??
+          DateTime.now(),
+      senderName: (m['sender_name'] ?? '').toString(),
+      isRead: m['is_read'] == true,
+    );
+  }
+
+  /// Background sync. Never gates the first frame: the body is already on
+  /// screen and only the thin "updating…" strip shows this is running.
+  ///
+  /// Awaits on this path, in order: role (prefs, skipped when cached), the
+  /// open-chat lookup (GET /support/chats — only with nothing cached and no
+  /// chat named by a push), resume (POST /support/chats, get-or-create) and
+  /// the transcript (GET …/messages). The old version awaited all of them
+  /// behind a full-screen spinner — three sequential round-trips, each with
+  /// retries, before a single message was visible.
   Future<void> _initChat() async {
     _initAttemptCount++;
     if (_initAttemptCount > 3) {
       _initAttemptCount = 0;
-      if (mounted) setState(() => _loading = false);
+      _setState(() => _syncing = false);
       return;
     }
-    // Declared out here so the retry inside the catch can see it.
-    bool fresh = false;
+    _setState(() => _syncing = true);
     try {
-      final locale = Localizations.localeOf(context).languageCode;
-
-      // Determine user role
-      final mode = await UserSession.getMode();
-      _userRole = mode.isNotEmpty ? mode : 'rider';
+      if (!_roleResolved) {
+        final mode = await UserSession.getMode();
+        if (!mounted) return;
+        _userRole = mode.isNotEmpty ? mode : 'rider';
+        _roleResolved = true;
+      }
 
       // The boot probe (main.dart) already settled the best URL — awaiting
       // another one here used to add up to 4 s to every chat open
       // (2026-10-20, user report: ~10 s to load the chat the first time).
       unawaited(ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 4)));
-      // 2026-10-27 (owner spec): EVERY support-chat entry point opens the
-      // driver's PENDING conversation, not a fresh per-trip one. The old
-      // per-trip sessionKey forced a brand-new empty chat (and closed the
-      // previous transcript) whenever the driver opened support from another
-      // trip — that read as "the chat got deleted on reopen". We now always
-      // resume the open chat; a new conversation only happens when there is
-      // no open one, or after 6h idle (that rule already lives in the
-      // backend, so we pass fresh: false unconditionally).
-      fresh = false;
-      final chat = await ApiService.createSupportChat(
-        subject: 'Soporte general',
-        locale: locale,
-        fresh: fresh,
-      );
-      _chatId = chat['id'] as int?;
-      _agentName = chat['agent_name'] as String?;
-      _agentAvatar = chat['agent_avatar'] as String?;
-      final status = chat['status'] as String? ?? 'open';
-      final botPhase = chat['bot_phase'] as String? ?? 'welcome';
-      if (status == 'closed') _chatClosed = true;
 
-      if (_chatId != null) {
-        await _loadMessages();
-
-        // If the loaded chat was already ended, auto-restart with a fresh one
-        if (_chatClosed) {
-          ApiService.closeSupportChat(_chatId!).catchError((_) {});
-          _chatId = null;
-          _chatClosed = false;
-          _messages.clear();
-          _agentName = null;
-          _phase = _ChatPhase.bot;
-          _showQuickActions = true;
-          await Future.delayed(const Duration(milliseconds: 600));
-          if (mounted) await _initChat();
+      // Lazy creation (2026-10-29): with nothing cached and no chat named by
+      // a push, ask whether an open conversation exists before resuming. A
+      // first-time visitor keeps the welcome header and the chat row is only
+      // created when they actually send something (_ensureChat on send).
+      if (_chatId == null && widget.chatId == null) {
+        final chats = await ApiService.getSupportChats();
+        if (!mounted) return;
+        final hasOpen =
+            chats.any((c) => (c['status'] ?? 'open').toString() == 'open');
+        if (!hasOpen) {
+          _initAttemptCount = 0;
+          // Persona subtitle before any server word: it follows the role.
+          _setState(() => _agentAvatar ??= _userRole);
           return;
         }
-
-        _initAttemptCount = 0; // successful init
-        _pollTimer = Timer.periodic(
-          const Duration(seconds: 3),
-          (_) => _loadMessages(),
-        );
       }
 
-      // If resuming a chat that's already in agent phase, skip to agent
-      if (botPhase == 'agent_active' || botPhase == 'escalated' || botPhase == 'dispatch_takeover') {
-        _phase = _ChatPhase.agent;
-        _showQuickActions = false;
-        if (_agentName != null) {
-          _subtitle = '${_agentName!} · ${_isSpanish ? 'En línea' : 'Online'}';
-        }
-      } else {
-        _subtitle = _isSpanish ? 'Soporte Cruise' : 'Cruise Support';
+      final ok = await _ensureChat();
+      if (!mounted || !ok) return;
+
+      await _loadMessages();
+      if (!mounted) return;
+
+      // If the loaded chat was already ended, auto-restart with a fresh one
+      if (_chatClosed) {
+        final old = _chatId!;
+        ApiService.closeSupportChat(old).catchError((_) => <String, dynamic>{});
+        SupportChatCache.forget(old);
+        _pollTimer?.cancel();
+        _pollTimer = null;
+        _chatId = null;
+        _chatClosed = false;
+        _firstSyncDone = false;
+        _messages.clear();
+        _agentName = null;
+        _phase = _ChatPhase.bot;
+        _showQuickActions = true;
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (mounted) await _initChat();
+        return;
       }
+
+      _initAttemptCount = 0; // successful init
 
       // Opening line the caller already knows. Sent through the normal send
       // path so it is stored, echoed and answered exactly like anything the
       // user types — the agent must not be able to tell the difference.
       final opener = widget.initialMessage?.trim();
       if (opener != null && opener.isNotEmpty && _chatId != null && mounted) {
-        setState(() => _loading = false);
+        _setState(() => _syncing = false);
         await _sendMessage(opener);
         return;
       }
@@ -1255,26 +1344,13 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       if (_chatId == null) {
         try {
           await ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 8));
-          final chat = await ApiService.createSupportChat(
-            subject: 'Soporte general',
-            locale: 'en',
-            fresh: fresh,
-          );
-          _chatId = chat['id'] as int?;
-          _agentName = chat['agent_name'] as String?;
-          _agentAvatar = chat['agent_avatar'] as String?;
-          if (_chatId != null) {
-            await _loadMessages();
-            _pollTimer = Timer.periodic(
-              const Duration(seconds: 3),
-              (_) => _loadMessages(),
-            );
-          }
+          if (!mounted) return;
+          if (await _ensureChat()) await _loadMessages();
         } catch (e2) {
           debugPrint('[SupportChat] init retry also failed: $e2');
           // Show error to user — don't fail silently
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            ScaffoldMessenger.maybeOf(context)?.showSnackBar(
               SnackBar(
                 content: Text(_isSpanish
                     ? 'No se pudo conectar al soporte. Intenta de nuevo.'
@@ -1283,18 +1359,69 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                 action: SnackBarAction(
                   label: _isSpanish ? 'Reintentar' : 'Retry',
                   textColor: Colors.white,
-                  onPressed: () {
-                    setState(() => _loading = true);
-                    _initChat();
-                  },
+                  onPressed: () => _initChat(),
                 ),
               ),
             );
           }
         }
       }
+    } finally {
+      _setState(() => _syncing = false);
     }
-    if (mounted) setState(() => _loading = false);
+  }
+
+  /// Resume the user's open chat or create one — the backend's
+  /// get-or-create. Called from the background sync when an open chat is
+  /// known to exist, and lazily from send / attach when there is none yet.
+  /// Returns false when the server answered without an id; throws on
+  /// transport errors (callers decide how loud to be).
+  ///
+  /// 2026-10-27 (owner spec): EVERY support-chat entry point opens the
+  /// driver's PENDING conversation, not a fresh per-trip one. The old
+  /// per-trip sessionKey forced a brand-new empty chat (and closed the
+  /// previous transcript) whenever the driver opened support from another
+  /// trip — that read as "the chat got deleted on reopen". We now always
+  /// resume the open chat; a new conversation only happens when there is
+  /// no open one, or after 6h idle (that rule already lives in the
+  /// backend, so we pass fresh: false unconditionally).
+  Future<bool> _ensureChat() async {
+    if (!mounted) return false;
+    final locale = Localizations.maybeLocaleOf(context)?.languageCode ?? 'en';
+    const bool fresh = false;
+    final chat = await ApiService.createSupportChat(
+      subject: 'Soporte general',
+      locale: locale,
+      fresh: fresh,
+    );
+    if (!mounted) return false;
+    final id = (chat['id'] as num?)?.toInt();
+    if (id == null) return false;
+    final swapped = _chatId != null && _chatId != id;
+    _setState(() {
+      if (swapped) {
+        // The server moved us on (6h idle, or the chat a push named is
+        // closed): the transcript on screen belongs to the old one.
+        SupportChatCache.forget(_chatId!);
+        _messages.clear();
+        _bufferedMessages.clear();
+        _phase = _ChatPhase.bot;
+        _showQuickActions = true;
+        _chatClosed = false;
+        _firstSyncDone = false;
+      }
+      _chatId = id;
+      _agentName = chat['agent_name'] as String?;
+      _agentAvatar = chat['agent_avatar'] as String?;
+      _chatClosed = (chat['status'] as String? ?? 'open') == 'closed';
+      _applyBotPhase(chat['bot_phase'] as String?);
+    });
+    SupportChatCache.saveChat(chat, role: _userRole);
+    _pollTimer ??= Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _loadMessages(),
+    );
+    return true;
   }
 
   // ── Message loading & polling ───────────────────────────────────────
@@ -1323,23 +1450,29 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     _polling = true;
     _loadDispatchTyping();
     try {
-      final msgs = await ApiService.getSupportMessages(_chatId!);
-      if (!mounted) return;
+      final chatId = _chatId!;
+      final msgs = await ApiService.getSupportMessages(chatId);
+      if (!mounted || _chatId != chatId) return;
       _pollFailures = 0;
+      // Every server answer refreshes the on-device copy the next open
+      // paints its first frame from.
+      SupportChatCache.saveMessages(chatId, msgs);
 
-      final newMessages = msgs.map((m) {
-        final role = m['sender_role'] ?? '';
-        return _ChatMsg(
-          id: (m['id'] as num?)?.toInt(),
-          text: m['message'] ?? '',
-          role: role,
-          time: DateTime.tryParse(m['created_at'] ?? '') ?? DateTime.now(),
-          senderName: m['sender_name'] ?? '',
-          isRead: m['is_read'] == true,
-        );
-      }).toList();
+      final newMessages = msgs
+          .whereType<Map>()
+          .map((m) => _msgFromJson(Map<String, dynamic>.from(m)))
+          .toList();
 
-      if (newMessages.length == _messages.length + _bufferedMessages.length) return;
+      // First answer after opening merges plainly: a cached transcript can
+      // match the server's length with stale rows (read ticks, re-signed
+      // attachment URLs), and replies that landed while the app was closed
+      // must show at once — a push tap lands here.
+      final firstSync = !_firstSyncDone;
+      _firstSyncDone = true;
+      if (!firstSync &&
+          newMessages.length == _messages.length + _bufferedMessages.length) {
+        return;
+      }
 
       // Extract agent name from bot messages
       for (final m in newMessages) {
@@ -1444,7 +1577,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       // Deliver new bot replies with a typing indicator, in bot AND agent
       // phase: the answer reads as written, not pasted. The delay comes
       // from the message length, so a long answer visibly takes longer.
-      if (_phase != _ChatPhase.queue && newMessages.length > _messages.length) {
+      if (!firstSync &&
+          _phase != _ChatPhase.queue &&
+          newMessages.length > _messages.length) {
         final newOnes = newMessages.skip(_messages.length).toList();
         final agentMessages = newOnes.where((m) => m.role == 'bot').toList();
 
@@ -1699,30 +1834,34 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     }
 
     if (_chatId == null) {
-      setState(() => _loading = true);
-      await _initChat();
-      if (_chatId == null) {
-        if (mounted) {
-          setState(() => _loading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_isSpanish
-                  ? 'No se pudo conectar al soporte. Intenta de nuevo.'
-                  : 'Could not connect to support. Please try again.'),
-              backgroundColor: Colors.red,
-              action: SnackBarAction(
-                label: _isSpanish ? 'Reintentar' : 'Retry',
-                textColor: Colors.white,
-                onPressed: () {
-                  setState(() => _loading = true);
-                  _initChat();
-                },
-              ),
+      // Lazy creation (2026-10-29): the chat row is made the moment the user
+      // actually says something, never while they are only looking.
+      _setState(() => _sending = true);
+      var created = false;
+      try {
+        created = await _ensureChat();
+      } catch (e) {
+        debugPrint('[SupportChat] lazy create failed: $e');
+      }
+      if (!mounted) return;
+      if (!created || _chatId == null) {
+        setState(() => _sending = false);
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(_isSpanish
+                ? 'No se pudo conectar al soporte. Intenta de nuevo.'
+                : 'Could not connect to support. Please try again.'),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: _isSpanish ? 'Reintentar' : 'Retry',
+              textColor: Colors.white,
+              onPressed: () => _sendMessage(text),
             ),
-          );
-        }
+          ),
+        );
         return;
       }
+      _sending = false;
     }
 
     setState(() {
@@ -1936,7 +2075,12 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   Future<void> _uploadAttachment(String path, String filename) async {
     if (_chatId == null) {
-      await _initChat();
+      try {
+        await _ensureChat();
+      } catch (e) {
+        debugPrint('[SupportChat] lazy create (attach) failed: $e');
+      }
+      if (!mounted) return;
       if (_chatId == null) {
         _attachError();
         return;
@@ -2014,10 +2158,21 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       ..clear()
       ..addAll(_messages.map((m) => m.key));
     var added = false;
+    final indexOf = {
+      for (var i = 0; i < _messages.length; i++) _messages[i].key: i,
+    };
     for (final m in incoming) {
       if (seen.add(m.key)) {
         _messages.add(m);
         added = true;
+        continue;
+      }
+      // Same row, newer content (a read tick, a re-signed attachment URL
+      // replacing a cached one that expired): swap it without a re-entrance.
+      final i = indexOf[m.key];
+      if (i != null &&
+          (_messages[i].text != m.text || _messages[i].isRead != m.isRead)) {
+        _messages[i] = m;
       }
     }
     _messages.sort((a, b) => a.time.compareTo(b.time));
@@ -2109,6 +2264,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     if (confirm != true) return;
     try {
       await ApiService.closeSupportChat(_chatId!);
+      SupportChatCache.forget(_chatId!);
       _pollTimer?.cancel();
       if (mounted) {
         setState(() {
@@ -2127,7 +2283,8 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       _messages.clear();
       _bufferedMessages.clear();
       _chatClosed = false;
-      _loading = true;
+      _syncing = true;
+      _firstSyncDone = false;
       _agentName = null;
       _subtitle = '';
       _sending = false;
@@ -2150,9 +2307,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       appBar: _buildAppBar(),
       body: Column(
         children: [
-          Expanded(
-            child: _loading ? _buildLoadingState() : _buildBody(),
-          ),
+          // Cache-first (2026-10-29): the transcript is on screen from the
+          // first frame; the network only shows as this thin strip.
+          if (_syncing) _buildSyncStrip(),
+          Expanded(child: _buildBody()),
           _buildInputBar(),
         ],
       ),
@@ -2312,60 +2470,28 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   // ── Loading state ─────────────────────────────────────────────────
 
-  Widget _buildLoadingState() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+  /// Thin inline refresh hint in place of the old full-screen spinner: the
+  /// transcript is already visible, this only says the network is busy.
+  Widget _buildSyncStrip() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      color: neuBase,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 68,
-            height: 68,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFE8C547), Color(0xFFB8921A)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.28),
-                  blurRadius: 24,
-                  spreadRadius: 4,
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.support_agent_rounded,
-              color: Color(0xFF0A0800),
-              size: 34,
-            ),
+          const SizedBox(
+            width: 10,
+            height: 10,
+            child: CircularProgressIndicator(strokeWidth: 1.5, color: _gold),
           ),
-          const SizedBox(height: 22),
-          const Text(
-            'Cruise Support',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(width: 8),
           Text(
-            _isSpanish
-                ? 'Preparando tu sesión de soporte...'
-                : 'Preparing your support session...',
+            S.of(context).syncingLabel,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 13,
+              fontSize: 11.5,
             ),
-          ),
-          const SizedBox(height: 28),
-          const SizedBox(
-            width: 28,
-            height: 28,
-            child: CircularProgressIndicator(strokeWidth: 2.5, color: _gold),
           ),
         ],
       ),

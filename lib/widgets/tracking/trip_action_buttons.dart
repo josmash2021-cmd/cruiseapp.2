@@ -467,7 +467,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: Text(
-                  'No',
+                  S.of(context).noContinueTrip,
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,

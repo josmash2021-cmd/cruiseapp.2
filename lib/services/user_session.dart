@@ -13,6 +13,8 @@ import 'cache_service.dart';
 import 'firebase_storage_service.dart';
 import 'prefs_cache.dart';
 import 'notification_service.dart';
+import 'live_activity_service.dart';
+import 'background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 /// Stores and retrieves the logged-in user's session.
@@ -99,6 +101,23 @@ class UserSession {
     // Save photo URL to persistent cache (never disappears)
     if (photoUrl != null && photoUrl.isNotEmpty) {
       await CacheService.savePhotoUrl(photoUrl);
+    }
+  }
+
+  /// The logged-in user's id without an await, or null when prefs are not
+  /// warm yet or nobody is logged in. For code that must decide BEFORE the
+  /// first frame (the support chat scopes its on-device transcript cache to
+  /// the account, so a shared phone never flashes someone else's chat).
+  static String? userIdSync() {
+    final raw = PrefsCache.instanceSync?.getString(_key);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final id = decoded['id']?.toString() ?? '';
+      return id.isEmpty ? null : id;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -365,6 +384,20 @@ class UserSession {
     // Without it the second driver on a shared phone receives no offers at
     // all, with nothing in any log to explain it.
     NotificationService.forgetRegisteredToken();
+
+    // The shift indicators are the account's shift, not the device's
+    // (owner spec 2026-10-29): a driver who signs out while online used to
+    // keep the Dynamic Island pill and the Android "Finding trips nearby"
+    // notification up on the welcome screen. Both are no-ops when nothing
+    // is running, and never throw past this point.
+    if (!kIsWeb) {
+      try {
+        await LiveActivityService.stop();
+      } catch (_) {}
+      try {
+        await DriverBackgroundService().stop();
+      } catch (_) {}
+    }
 
     // The online flag is the account's, not the phone's. It survived logout,
     // so the next driver to sign in on this device had `_isStillOnline` true

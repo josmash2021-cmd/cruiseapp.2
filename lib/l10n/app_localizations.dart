@@ -1236,7 +1236,10 @@ class S {
   String get supportAvailable247 => _es
       ? 'Nuestro equipo de soporte está disponible 24/7 para ayudarte.'
       : 'Our support team is available 24/7 to assist you.';
-  String get liveChat => _es ? 'Chat en Vivo' : 'Live Chat';
+  // 2026-10-29 owner copy: the Help sheet row reads as a support channel,
+  // not a generic "live chat".
+  String get liveChat =>
+      _es ? 'Chat de soporte en vivo' : 'Live chat support';
 
   // ── Home Screen ───────────────────────────────────────────────────────────
   String get fastRide => _es ? 'Prioritario' : 'Priority';
@@ -1444,16 +1447,24 @@ class S {
       _es ? 'Buscar dirección para $place' : 'Search address for $place';
   String get typeToSearchAddress =>
       _es ? 'Escribe para buscar dirección' : 'Type to search address';
+  // 2026-10-29 owner copy for every rider cancel dialog.
   String get cancelTripConfirm => _es
-      ? '¿Estás seguro de que deseas cancelar este viaje?'
-      : 'Are you sure you want to cancel this trip?';
+      ? '¿Estás seguro que quieres cancelar el viaje?'
+      : 'Are you sure you want to cancel the trip?';
   String get cancelFeeWarning => _es
       ? 'Se te puede cobrar una tarifa de cancelación.'
       : 'You may be charged a cancellation fee.';
-  String get yesCancelTrip => _es ? 'Sí, Cancelar Viaje' : 'Yes, Cancel Trip';
-  String get cancelAfterAssignBody => _es
-      ? 'Tu conductor ya va en camino. Puedes cancelar al instante: es gratis dentro de los primeros 2 minutos después de la asignación del conductor; después aplica una tarifa de cancelación de \$5.00.'
-      : 'Your driver is already on the way. You can cancel instantly: it is free within the first 2 minutes after driver assignment; after that, a \$5.00 cancellation fee applies.';
+  String get yesCancelTrip => _es ? 'Sí, cancelar viaje' : 'Yes, cancel trip';
+  String get noContinueTrip => _es ? 'No, continuar' : 'No, continue';
+  /// Body of the post-assignment cancel dialog. The free window and the fee
+  /// are parameters so the copy can never drift from what the backend
+  /// charges (trips.py: `minutes_elapsed > 2` → 5.00).
+  String cancelAfterAssignBody({required int freeMinutes, required String fee}) => _es
+      ? 'Tu conductor ya va en camino. Puedes cancelar al instante: es gratis dentro de los primeros $freeMinutes minutos después de la asignación del conductor; después aplica una tarifa de cancelación de \$$fee.'
+      : 'Your driver is already on the way. You can cancel instantly: it is free within the first $freeMinutes minutes after driver assignment; after that, a \$$fee cancellation fee applies.';
+  /// Thin inline refresh hint (support chat): the screen paints from cache
+  /// first and this is all the user sees of the network.
+  String get syncingLabel => _es ? 'actualizando…' : 'updating…';
   String get sendCancellationRequest =>
       _es ? 'Cancelar viaje ahora' : 'Cancel trip now';
   String get cancelRequestSentToSupport =>
@@ -3542,6 +3553,23 @@ class S {
   String get pendingApproval =>
       _es ? 'Pendiente de aprobación' : 'Pending approval';
   String get vehicleNowInUse => _es ? 'Vehículo en uso' : 'Vehicle now in use';
+  // Multi-vehicle switch (owner spec 2026-10-29).
+  String get useVehicleAction => _es ? 'Usar vehículo' : 'Use vehicle';
+  String get selectedVehicle =>
+      _es ? 'Vehículo seleccionado' : 'Selected vehicle';
+  String get vehicleSwitchBlockedOnTrip => _es
+      ? 'Termina el viaje en curso antes de cambiar de vehículo.'
+      : 'Finish your current trip before switching vehicles.';
+  String get vehicleNotReadyToUse => _es
+      ? 'Este vehículo aún no está aprobado para usarse.'
+      : 'This vehicle is not approved for use yet.';
+  String get vehicleAwaitingApprovalHint => _es
+      ? 'Podrás usarlo cuando dispatch apruebe el vehículo y sus documentos.'
+      : 'You can use it once dispatch approves the vehicle and its documents.';
+  String get docsPendingReviewTitle => _es ? 'En revisión' : 'Under review';
+  String get docsPendingReviewSubtitle => _es
+      ? 'Dispatch está revisando los documentos de este vehículo.'
+      : "Dispatch is reviewing this vehicle's documents.";
   String get licensePlateLabel =>
       _es ? 'Número de placa' : 'License plate number';
   String get vehicleRequirements => _es

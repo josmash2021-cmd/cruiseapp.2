@@ -1,5 +1,11 @@
 part of '../../screens/rider_tracking_screen.dart';
 
+/// Rider cancel policy shown in the post-assignment dialog. Mirrors the
+/// backend (backend/routers/trips.py: `minutes_elapsed > 2` → fee 5.0); if
+/// that rule changes, change these two and the copy follows.
+const int kRiderCancelFreeMinutes = 2;
+const String kRiderCancelFeeUsd = '5.00';
+
 // ════════════════════════════════════════════════════════════
 //  DRIVER INFO CARD — driver details, avatar, plate
 // ════════════════════════════════════════════════════════════
@@ -1403,16 +1409,22 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                 child: const Icon(Icons.cancel_outlined, color: Color(0xFFEF4444), size: 28),
               ),
               const SizedBox(height: 16),
-              const Text(
-                '¿Cancelar viaje?',
+              // Every string goes through S.of (2026-10-29): the title and the
+              // "No" button were hardcoded in Spanish while the body followed
+              // the device locale, so English phones saw a mixed dialog.
+              Text(
+                S.of(context).cancelTripConfirm,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               Text(
                 inTrip
                     ? S.of(context).riderCancelInTripBody
-                    : S.of(context).cancelAfterAssignBody,
+                    : S.of(context).cancelAfterAssignBody(
+                        freeMinutes: kRiderCancelFreeMinutes,
+                        fee: kRiderCancelFeeUsd,
+                      ),
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
               ),
@@ -1442,7 +1454,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                   ),
                   onPressed: () => Navigator.pop(ctx),
                   child: Text(
-                    'No, continuar',
+                    S.of(context).noContinueTrip,
                     style: TextStyle(
                       fontSize: 15, fontWeight: FontWeight.w600,
                       color: Colors.white.withValues(alpha: 0.6),

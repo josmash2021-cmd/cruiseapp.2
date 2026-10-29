@@ -749,7 +749,9 @@ void _handleNotificationTap(RemoteMessage message) {
   // ya listo") — a bot/dispatch message lands here; the screen resumes the
   // user's open chat with its full transcript.
   if (type == 'support_message' || type == 'support_followup') {
-    _navigateToSupportChat();
+    _navigateToSupportChat(
+      chatId: int.tryParse(message.data['chat_id']?.toString() ?? ''),
+    );
     return;
   }
 
@@ -1011,14 +1013,45 @@ void _navigateToScheduledTracking(int tripId) {
 }
 
 /// Navigate to the support chat from an FCM tap (bot or dispatch wrote).
-/// CruiseSupportChatScreen resumes the user's open chat with its transcript.
-void _navigateToSupportChat() {
+/// CruiseSupportChatScreen resumes the user's open chat with its transcript;
+/// [chatId] is the push's `data.chat_id`, so the first frame paints that
+/// chat's cached transcript before the network answers (2026-10-29).
+///
+/// From a terminated state the tap arrives on the first frame, while the
+/// splash is still the top route — and the splash hands over with
+/// pushReplacement, which would replace the chat we just pushed. So the push
+/// waits until the splash is gone (bounded: ~12 s, then push anyway).
+void _navigateToSupportChat({int? chatId, int attempt = 0}) {
   final nav = _navigatorKey.currentState;
-  if (nav == null) return;
+  if (nav == null || (attempt < 40 && _isSplashOnTop(nav))) {
+    if (attempt < 40) {
+      Future.delayed(
+        const Duration(milliseconds: 300),
+        () => _navigateToSupportChat(chatId: chatId, attempt: attempt + 1),
+      );
+    }
+    return;
+  }
   nav.push(MaterialPageRoute(
-    builder: (_) => const CruiseSupportChatScreen(),
+    builder: (_) => CruiseSupportChatScreen(chatId: chatId),
   ));
-  debugPrint('[FCM] Navigated to CruiseSupportChatScreen');
+  debugPrint('[FCM] Navigated to CruiseSupportChatScreen chat=$chatId');
+}
+
+/// Whether the splash is still the visible route (cold start in progress).
+/// `home:` gives it the default '/' name; the re-launch paths name it
+/// [splashRouteName]. popUntil with a `true` predicate only inspects.
+bool _isSplashOnTop(NavigatorState nav) {
+  String? topName;
+  var sawTop = false;
+  nav.popUntil((route) {
+    if (!sawTop) {
+      sawTop = true;
+      topName = route.settings.name;
+    }
+    return true;
+  });
+  return topName == Navigator.defaultRouteName || topName == splashRouteName;
 }
 
 /// Navigate to ChatScreen from FCM tap.

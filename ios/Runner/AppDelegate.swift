@@ -31,7 +31,11 @@ import ActivityKit
   // switcher never receives this callback at all. The stale sweep in
   // `start(status:)` and the backend's push end cover that case.
   override func applicationWillTerminate(_ application: UIApplication) {
-    CruiseLiveActivityManager.shared.stop()
+    // The manager is @available(iOS 16.2, *): without this guard the whole
+    // archive fails ("only available in iOS 16.2 or newer", OTA run 2026-10-29).
+    if #available(iOS 16.2, *) {
+      CruiseLiveActivityManager.shared.stop()
+    }
     super.applicationWillTerminate(application)
   }
 

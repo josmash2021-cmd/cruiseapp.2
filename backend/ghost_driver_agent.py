@@ -54,7 +54,7 @@ async def _ghost_offline_push_enabled(db) -> bool:
     _flag_cache["at"] = now
     return _flag_cache["value"]
 STALE_LOCATION_HOURS = 24      # Ignore drivers with location older than this
-SHIFT_CAP_HOURS = 6            # Owner spec 2026-10-29: no shift runs past 6 h online (was 12 h)
+SHIFT_CAP_HOURS = 12           # User spec 2026-09-27: no shift runs past 12 h online
 SHIFT_REST_HOURS = 6           # Server-enforced rest after the cap
 
 # ── Ghost recovery phases (driver has an ACTIVE trip) ─────────────────
@@ -231,7 +231,7 @@ class GhostDriverAgent:
                     # offer outlives the flip.
                     try:
                         from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
-                        await expire_pending_offers_for_driver(db, driver.id, f"{SHIFT_CAP_HOURS}h shift cap")
+                        await expire_pending_offers_for_driver(db, driver.id, "12h shift cap")
                     except Exception as _ee:
                         logger.warning(
                             "[ShiftCap] offer expiry failed for #%d: %s",
@@ -607,11 +607,11 @@ class GhostDriverAgent:
             _send_fcm_push(
                 driver.fcm_token,
                 title="Te desconectamos",
-                body=f"Estuviste en línea {SHIFT_CAP_HOURS} horas seguidas. "
-                     f"Podrás volver a conectarte en {SHIFT_REST_HOURS} horas.",
+                body="Estuviste en línea 12 horas seguidas. "
+                     "Podrás volver a conectarte en 6 horas.",
                 title_en="Your shift has ended",
-                body_en=f"You were online for {SHIFT_CAP_HOURS} hours straight. "
-                        f"You can go back online in {SHIFT_REST_HOURS} hours.",
+                body_en="You were online for 12 hours straight. "
+                        "You can go back online in 6 hours.",
                 locale=user_lang(driver),
                 data={
                     "type": "driver_shift_ended",

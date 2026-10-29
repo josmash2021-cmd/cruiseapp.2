@@ -115,12 +115,6 @@ part 'driver_online_map.dart';
 part 'driver_online_widgets.dart';
 part 'driver_online_offline.dart';
 
-/// Server-enforced shift cap (owner spec 2026-10-29: 6 h, was 12 h). The
-/// backend ghost agent (SHIFT_CAP_HOURS) is the authority; this local
-/// timer only closes the shift a moment sooner on the phone. Top-level
-/// on purpose: used inside `part` files (CLAUDE.md #16).
-const Duration kDriverShiftCap = Duration(hours: 6);
-
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  CRUISE DRIVER — ONLINE SCREEN
 //  Uber Driver–style: Finding trips bar, trip request card,

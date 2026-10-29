@@ -1319,8 +1319,8 @@ class S {
   String get navExitNumber => _es ? 'Salida' : 'Exit';
   // 12 h shift cap (2026-09-27): app timer + server-side push share it.
   String get shiftEnded12h => _es
-      ? 'Estuviste en línea 6 horas — tu turno se cerró.'
-      : 'You were online for 6 hours — your shift ended.';
+      ? 'Estuviste en línea 12 horas — tu turno se cerró.'
+      : 'You were online for 12 hours — your shift ended.';
   // 12h cap → 6h rest (2026-10-27 owner spec): after the cap the GO button
   // shows a rest countdown, then "ya puedes conectarte" before GO ONLINE.
   String get restTitle => _es ? 'Descanso' : 'Rest';

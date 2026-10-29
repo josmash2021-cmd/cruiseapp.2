@@ -19,9 +19,9 @@ void main() {
       File('lib/screens/driver/driver_welcome_screen.dart').readAsStringSync();
   final main_ = File('lib/main.dart').readAsStringSync();
 
-  group('backend: the ghost agent caps shifts at 6 h', () {
+  group('backend: the ghost agent caps shifts at 12 h', () {
     test('cap constant + local-day clock + branch', () {
-      expect(ghost, contains('SHIFT_CAP_HOURS = 6 '));  // owner spec 2026-10-29
+      expect(ghost, contains('SHIFT_CAP_HOURS = 12'));
       expect(ghost, contains('effective_shift_start(since, now, state_code)'));
       expect(
           ghost, contains('now - since >= timedelta(hours=SHIFT_CAP_HOURS)'));
@@ -80,7 +80,7 @@ void main() {
   group('app: the live half of the cap', () {
     test('a 1-min timer closes the shift and stamps its start', () {
       expect(ctrl, contains('_shiftCapTimer = Timer.periodic('));
-      expect(ctrl, contains('kDriverShiftCap'));
+      expect(ctrl, contains('const Duration(hours: 12)'));
       expect(ctrl, contains('driver_went_online_at'));
       expect(ctrl, contains('unawaited(_exitOnlineMode()'));
       final dispose = screen.indexOf('void dispose() {');
@@ -103,7 +103,7 @@ void main() {
 
     test('the RESUME label expires at the local-day cap', () {
       expect(ctrl, contains('shiftNow.difference(_dailyShiftStart('));
-      expect(ctrl, contains('kDriverShiftCap'));
+      expect(ctrl, contains('const Duration(hours: 12)'));
       expect(ctrl, contains('ZoneService.stateOfPoint(_pos!)'));
     });
 
@@ -140,4 +140,3 @@ void main() {
     });
   });
 }
-

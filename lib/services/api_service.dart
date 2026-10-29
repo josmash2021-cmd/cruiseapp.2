@@ -497,7 +497,7 @@ class ApiService {
   // either set _refreshCompleter.
   static bool _isHandlingUnauthorized = false;
   static bool _loginInProgress = false;
-  static Completer<bool>? _refreshCompleter;
+  static Completer<bool?>? _refreshCompleter;
 
   /// M2: Set this callback to navigate to login when JWT expires and refresh fails.
   static void Function()? onUnauthorized;
@@ -567,9 +567,16 @@ class ApiService {
     _isHandlingUnauthorized = true;
     try {
       final refreshed = await refreshAccessToken();
-      if (!refreshed) {
+      // Tri-state (2026-10-29): only a DEFINITIVE rejection of the refresh
+      // token (401/403 from /auth/refresh) ends the session. A timeout, a
+      // 429 from the shared per-IP auth bucket or a 5xx is the server's
+      // problem — the token stays put and the caller just sees its own
+      // error. Before this, every one of those signed the driver out.
+      if (refreshed == false) {
         await clearToken();
         onUnauthorized?.call();
+      } else if (refreshed == null) {
+        debugPrint('[Api] 401 but refresh inconclusive — keeping session');
       }
     } finally {
       _isHandlingUnauthorized = false;
@@ -577,16 +584,22 @@ class ApiService {
   }
 
   /// Attempt to refresh the access token using the refresh token.
-  /// Returns true if successful, false otherwise.
+  ///
+  /// Tri-state (2026-10-29): `true` = refreshed, `false` = the refresh
+  /// token was REJECTED (401/403 from /auth/refresh, or there is none to
+  /// send) — the only answer that may end a session — and `null` =
+  /// inconclusive (timeout, no network, 429 from the per-IP auth bucket,
+  /// 5xx during a Railway redeploy). Callers that validate a session must
+  /// treat `null` like CLAUDE.md #21's `null`: keep the token.
   /// If another refresh is in progress, awaits and returns its result.
-  static Future<bool> refreshAccessToken() async {
+  static Future<bool?> refreshAccessToken() async {
     // SINGLE ATOMIC CHECK: If a refresh is already in progress, wait for it
     // and return its result. This prevents duplicate refresh requests when
     // multiple concurrent 401s arrive.
     if (_refreshCompleter != null) {
       return _refreshCompleter!.future;
     }
-    _refreshCompleter = Completer<bool>();
+    _refreshCompleter = Completer<bool?>();
     try {
       final refreshToken = await _getRefreshToken();
       if (refreshToken == null) {
@@ -609,11 +622,20 @@ class ApiService {
         _refreshCompleter!.complete(true);
         return true;
       }
-      _refreshCompleter!.complete(false);
-      return false;
-    } catch (_) {
-      _refreshCompleter!.complete(false);
-      return false;
+      if (res.statusCode == 401 || res.statusCode == 403) {
+        debugPrint('[Api] refresh rejected (${res.statusCode}) — session over');
+        _refreshCompleter!.complete(false);
+        return false;
+      }
+      // 429 / 5xx / anything else: the server could not answer, the
+      // refresh token was never judged.
+      debugPrint('[Api] refresh inconclusive (HTTP ${res.statusCode})');
+      _refreshCompleter!.complete(null);
+      return null;
+    } catch (e) {
+      debugPrint('[Api] refresh inconclusive (${e.runtimeType}: $e)');
+      _refreshCompleter!.complete(null);
+      return null;
     } finally {
       // Clear the completer so the next refresh attempt can proceed.
       // Use a microtask to ensure any awaiters on .future receive the result
@@ -1286,7 +1308,7 @@ class ApiService {
       // Auto-refresh on 401
       if (res.statusCode == 401) {
         final refreshed = await refreshAccessToken();
-        if (refreshed) {
+        if (refreshed == true) {
           final newToken = await getToken();
           final retry = await _cachedGet(
             Uri.parse('$_baseUrl/auth/me'),
@@ -1396,7 +1418,11 @@ class ApiService {
       if (res.statusCode == 200) return true;
       if (res.statusCode == 401 || res.statusCode == 403) {
         // Give the refresh token its chance before condemning the session.
+        // The refresh itself is tri-state: `null` (timeout, 429, 5xx) is
+        // NOT a verdict on the session — before 2026-10-29 it was read as
+        // `false` and the splash signed the driver out in the background.
         final refreshed = await refreshAccessToken();
+        if (refreshed == null) return null;
         if (!refreshed) return false;
         final newToken = await getToken();
         if (newToken == null) return false;
@@ -2099,7 +2125,7 @@ class ApiService {
     // Handle 401 gracefully
     if (res.statusCode == 401) {
       final refreshed = await refreshAccessToken();
-      if (refreshed) {
+      if (refreshed == true) {
         final newToken = await getToken();
         final retry = await _client
             .get(Uri.parse('$_baseUrl/auth/account-status'),
@@ -4090,23 +4116,41 @@ class ApiService {
   /// body is `{ok, pending_review}` — pending_review=true means the selfie
   /// landed in MANUAL dispatch review (dress-code rejection path): the
   /// driver must NOT connect until it clears.
-  /// null = upload failed, retry on the next GO tap (fail-open).
-  static Future<Map<String, dynamic>?> submitFaceCheck(String photoPath) async {
+  /// A failed upload answers `{ok: false, status, detail}` (2026-10-29)
+  /// instead of a bare null, so the caller can log WHY the stamp never
+  /// landed: on Android the full-resolution shot blew the 5 MB body cap
+  /// (413) and the GO fell open silently — the selfie came back on every
+  /// connect. [bytes] is the already-downscaled JPEG; without it the file
+  /// at [photoPath] goes up as-is.
+  static Future<Map<String, dynamic>?> submitFaceCheck(String photoPath,
+      {Uint8List? bytes}) async {
     try {
-      final bytes = await File(photoPath).readAsBytes();
+      final payload = bytes ?? await File(photoPath).readAsBytes();
       final token = await getToken();
-      if (token == null) return null;
+      if (token == null) {
+        return const {'ok': false, 'status': 401, 'detail': 'no token'};
+      }
       final res = await _client
           .post(Uri.parse('$_baseUrl/drivers/face-check'),
               headers: _jsonHeaders(token),
-              body: jsonEncode({'photo_b64': base64Encode(bytes)}))
-          .timeout(const Duration(seconds: 20));
-      if (res.statusCode != 200) return null;
+              body: jsonEncode({'photo_b64': base64Encode(payload)}))
+          .timeout(const Duration(seconds: 60));
+      if (res.statusCode != 200) {
+        String detail = '';
+        try {
+          final body = jsonDecode(res.body);
+          detail = body is Map ? (body['detail']?.toString() ?? '') : '';
+        } on FormatException {
+          detail = res.body.length > 120 ? res.body.substring(0, 120) : res.body;
+        }
+        debugPrint('submitFaceCheck HTTP ${res.statusCode}: $detail');
+        return {'ok': false, 'status': res.statusCode, 'detail': detail};
+      }
       final data = jsonDecode(res.body);
       return data is Map<String, dynamic> ? data : const {'ok': true};
     } catch (e) {
       debugPrint('submitFaceCheck failed: $e');
-      return null;
+      return {'ok': false, 'status': 0, 'detail': '${e.runtimeType}: $e'};
     }
   }
 

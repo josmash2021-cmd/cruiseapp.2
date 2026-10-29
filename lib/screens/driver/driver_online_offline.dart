@@ -1151,9 +1151,19 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           _faceCheckPending = false;
           _faceCheckDue = false;
         });
+      } else {
+        // A bare photo = upload failed — fail-open: the GO proceeds and the
+        // check retries on a later tap (same rule as before). But NOT in
+        // silence any more (2026-10-29): the stamp never landed, the selfie
+        // WILL come back on the next GO, and the driver deserves to know
+        // why — before this it just looked like "the app asks every time".
+        debugPrint('[DriverOnline] face-check upload failed '
+            '(${res['error'] ?? 'unknown'}) — fail-open, will re-ask');
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+          content: Text(S.of(context).faceCheckUploadFailed),
+          duration: const Duration(seconds: 4),
+        ));
       }
-      // A bare photo = upload failed — fail-open: the GO proceeds and the
-      // check retries on a later tap (same rule as before).
     }
 
     // The flip itself: GPS background mode, FCM token, backend online,

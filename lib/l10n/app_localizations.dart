@@ -3594,6 +3594,12 @@ class S {
       _es ? 'Ya puedes conectarte de nuevo' : 'You can go online again';
   String get faceReviewPending =>
       _es ? 'Selfie en revisión' : 'Selfie under review';
+  // The daily selfie could not be uploaded (2026-10-29): the GO still goes
+  // through (fail-open), but the stamp never landed so it WILL be asked
+  // again — say so instead of looking like a bug.
+  String get faceCheckUploadFailed => _es
+      ? 'No se pudo verificar la selfie, se volverá a pedir'
+      : 'The selfie could not be verified, it will be asked again';
   // The verifying wait inside the selfie screen (2026-10-23, owner spec):
   // after the retaken photo the page does NOT close — it holds this loading
   // until dispatch's decision lands, then closes already-connecting.

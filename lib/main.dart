@@ -1825,6 +1825,13 @@ class _UberCloneAppState extends State<UberCloneApp>
     with WidgetsBindingObserver {
   StreamSubscription<Map<String, dynamic>>? _appUpdateGateSub;
 
+  /// One "session replaced" dialog at a time (2026-10-29): every 401
+  /// carrying `session_expired_new_device` used to open ANOTHER dialog on
+  /// top, and each extra "Aceptar" did a blind pop — the second one popped
+  /// the Splash just pushed by the first, leaving an empty Navigator
+  /// (black screen).
+  bool _sessionExpiredDialogOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -1836,17 +1843,22 @@ class _UberCloneAppState extends State<UberCloneApp>
       // Prevent double-fire or firing during login
       final nav = _navigatorKey.currentState;
       if (nav == null) return;
-      // Check if we're already showing an auth/splash screen
+      // "Already on auth" = the TOP route is the splash / welcome / a login
+      // page (2026-10-29). This used to test the route's isFirst flag — but the
+      // splash hands over with pushReplacement, so Home IS the first route:
+      // the token got cleared and nobody navigated. The driver sat on Home
+      // with every poll answering 401 (dead map) until the next cold start
+      // opened on Welcome.
       bool alreadyOnAuth = false;
       nav.popUntil((route) {
-        final name = route.settings.name;
-        if (name == '/' || route.isFirst) alreadyOnAuth = true;
+        if (isAuthRouteName(route.settings.name)) alreadyOnAuth = true;
         return true; // don't actually pop — just inspect
       });
       await ApiService.clearToken();
       if (!alreadyOnAuth) {
         nav.pushAndRemoveUntil(
           PageRouteBuilder(
+            settings: const RouteSettings(name: splashRouteName),
             pageBuilder: (_, __, ___) => const SplashScreen(),
             transitionDuration: const Duration(milliseconds: 280),
             reverseTransitionDuration: const Duration(milliseconds: 220),
@@ -1881,10 +1893,14 @@ class _UberCloneAppState extends State<UberCloneApp>
     ApiService.onSessionExpiredNewDevice = () {
       final nav = _navigatorKey.currentState;
       if (nav == null) return;
+      if (_sessionExpiredDialogOpen) return; // one dialog, however many 401s
+      final overlayContext = nav.overlay?.context;
+      if (overlayContext == null) return;
+      _sessionExpiredDialogOpen = true;
       showDialog(
-        context: nav.overlay!.context,
+        context: overlayContext,
         barrierDismissible: false,
-        builder: (_) => AlertDialog(
+        builder: (dialogContext) => AlertDialog(
           title: const Text('Sesion cerrada'),
           content: const Text(
             'Tu cuenta se abrio en otro dispositivo. Solo puedes tener una sesion activa.',
@@ -1892,9 +1908,13 @@ class _UberCloneAppState extends State<UberCloneApp>
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.of(nav.overlay!.context).pop();
+                // Close THIS dialog through its own context — a blind
+                // `pop()` on the overlay removes whatever is on top, and
+                // after the first tap that was the Splash.
+                Navigator.of(dialogContext).pop();
                 nav.pushAndRemoveUntil(
                   PageRouteBuilder(
+                    settings: const RouteSettings(name: splashRouteName),
                     pageBuilder: (_, __, ___) => const SplashScreen(),
                     transitionDuration: const Duration(milliseconds: 280),
                     reverseTransitionDuration: const Duration(milliseconds: 220),
@@ -1910,7 +1930,7 @@ class _UberCloneAppState extends State<UberCloneApp>
             ),
           ],
         ),
-      );
+      ).whenComplete(() => _sessionExpiredDialogOpen = false);
     };
 
     // Account blocked/deleted while logged in — the session is dead no
@@ -1922,6 +1942,7 @@ class _UberCloneAppState extends State<UberCloneApp>
       if (nav == null) return;
       nav.pushAndRemoveUntil(
         PageRouteBuilder(
+          settings: const RouteSettings(name: splashRouteName),
           pageBuilder: (_, __, ___) => const SplashScreen(),
           transitionDuration: const Duration(milliseconds: 280),
           reverseTransitionDuration: const Duration(milliseconds: 220),

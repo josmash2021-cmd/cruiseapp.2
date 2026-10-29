@@ -25,6 +25,25 @@ import '../services/zone_service.dart';
 import '../main.dart' show heavyInit;
 import '../services/firebase_auth_recovery.dart';
 
+/// Route names the session guards in main.dart recognise as "already on an
+/// auth page" (2026-10-29). The splash and welcome pages used to travel in
+/// unnamed PageRouteBuilders, so the only test left was `route.isFirst` —
+/// which Home also passes after the splash's pushReplacement.
+const String splashRouteName = '/splash';
+const String welcomeRouteName = '/welcome';
+const String homeRouteName = '/home';
+
+/// True when [name] is the initial route ('/'), the splash, the welcome
+/// page or any login page — the places where a cleared token needs no
+/// navigation.
+bool isAuthRouteName(String? name) {
+  if (name == null) return false;
+  return name == '/' ||
+      name == splashRouteName ||
+      name == welcomeRouteName ||
+      name.startsWith('/login');
+}
+
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -225,6 +244,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
       nav.pushReplacement(
         PageRouteBuilder(
+          settings: RouteSettings(
+              name: destination is WelcomeScreen
+                  ? welcomeRouteName
+                  : homeRouteName),
           pageBuilder: (_, __, ___) => destination,
           transitionDuration: const Duration(milliseconds: 400),
           reverseTransitionDuration: Duration.zero,
@@ -280,6 +303,10 @@ class _SplashScreenState extends State<SplashScreen> {
     // one continuous reveal, no cut between splash and welcome.
     nav.pushReplacement(
       PageRouteBuilder(
+        settings: RouteSettings(
+            name: destination is WelcomeScreen
+                ? welcomeRouteName
+                : homeRouteName),
         pageBuilder: (_, __, ___) => destination,
         transitionDuration: const Duration(milliseconds: 700),
         reverseTransitionDuration: Duration.zero,

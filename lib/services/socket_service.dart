@@ -185,7 +185,7 @@ class SocketService {
       debugPrint(
           '[Socket.io] Token missing or likely expired — attempting refresh');
       final refreshed = await ApiService.refreshAccessToken();
-      if (refreshed) {
+      if (refreshed == true) {
         token = await ApiService.getToken();
         debugPrint('[Socket.io] Token refreshed successfully');
       }
@@ -303,7 +303,7 @@ class SocketService {
           '[Socket.io] Auth error: $data — refreshing token and re-authenticating');
       // Token rejected by server — refresh and try again
       final refreshed = await ApiService.refreshAccessToken();
-      if (refreshed) {
+      if (refreshed == true) {
         _authenticate();
       } else {
         debugPrint(

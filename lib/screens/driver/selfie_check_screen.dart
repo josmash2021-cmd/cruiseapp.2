@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -71,10 +75,14 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   /// doc-comment: iOS runs ultraHigh, NEVER max (the plugin's .max branch
   /// overrides the active format AND sets `isHighResolutionPhotoEnabled`
   /// on the still — on iOS 16+ that capture raises a native NSException
-  /// and the app CLOSES at capture). Android keeps max (CameraX's fallback
-  /// chain has no such branch).
+  /// and the app CLOSES at capture). Android ran max until 2026-10-29: a
+  /// full-sensor front shot (3-8 MB, base64 ×1.37) blew the backend's 5 MB
+  /// body cap, the upload answered 413, the GO fell open with no stamp and
+  /// the selfie came back on EVERY connect. A liveness selfie needs a face,
+  /// not 48 MP — `high` (720p) plus the downscale in [_shrinkSelfieForUpload]
+  /// keeps every phone well under the cap.
   static ResolutionPreset get _capturePreset =>
-      AppPlatform.isIOS ? ResolutionPreset.ultraHigh : ResolutionPreset.max;
+      AppPlatform.isIOS ? ResolutionPreset.ultraHigh : ResolutionPreset.high;
 
   @override
   void initState() {
@@ -239,13 +247,28 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
       _reviewPhotoPath = photoPath;
       _reviewDone = false;
     });
-    final resp = await ApiService.submitFaceCheck(photoPath);
+    // Downscale off the UI thread BEFORE the base64: the payload must land
+    // well under the backend's 5 MB body cap on every Android phone.
+    Uint8List? bytes;
+    try {
+      bytes = await compute(_shrinkSelfieForUpload, photoPath);
+    } catch (e) {
+      debugPrint('[SelfieCheck] downscale failed, uploading raw: $e');
+    }
     if (!mounted || _reviewDone) return;
-    if (resp == null) {
+    final resp = await ApiService.submitFaceCheck(photoPath, bytes: bytes);
+    if (!mounted || _reviewDone) return;
+    if (resp == null || resp['ok'] == false) {
       // Upload failed — the callers stay fail-open: bare photo pops and
       // their old logic decides (daily gate still connects; verify retries).
+      // The reason travels with it so the caller can log and TELL the
+      // driver (2026-10-29) instead of failing in silence.
+      final reason = resp == null
+          ? 'null response'
+          : 'HTTP ${resp['status']} ${resp['detail'] ?? ''}'.trim();
+      debugPrint('[SelfieCheck] upload failed: $reason');
       _reviewDone = true;
-      Navigator.of(context).pop({'photo': photoPath});
+      Navigator.of(context).pop({'photo': photoPath, 'error': reason});
       return;
     }
     if (resp['pending_review'] != true) {
@@ -664,5 +687,40 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
         ),
       ],
     );
+  }
+}
+
+/// Longest side of the uploaded selfie, in pixels. 1280 px is plenty for a
+/// face check and lands around 150-300 KB as JPEG — a tenth of the cap.
+const int kSelfieUploadMaxSide = 1280;
+
+/// JPEG quality of the uploaded selfie.
+const int kSelfieUploadJpegQuality = 85;
+
+/// Isolate entry (via `compute`): read the shot, bake the EXIF orientation
+/// in, cap the long side at [kSelfieUploadMaxSide] and re-encode as JPEG
+/// at [kSelfieUploadJpegQuality]. Any decode failure falls back to the
+/// raw bytes — the upload then relies on the backend's cap, never on a
+/// crash here.
+Uint8List _shrinkSelfieForUpload(String path) {
+  final raw = File(path).readAsBytesSync();
+  try {
+    final decoded = img.decodeImage(raw);
+    if (decoded == null) return raw;
+    final oriented = img.bakeOrientation(decoded);
+    final longest = math.max(oriented.width, oriented.height);
+    final resized = longest <= kSelfieUploadMaxSide
+        ? oriented
+        : (oriented.width >= oriented.height
+            ? img.copyResize(oriented,
+                width: kSelfieUploadMaxSide,
+                interpolation: img.Interpolation.average)
+            : img.copyResize(oriented,
+                height: kSelfieUploadMaxSide,
+                interpolation: img.Interpolation.average));
+    return Uint8List.fromList(
+        img.encodeJpg(resized, quality: kSelfieUploadJpegQuality));
+  } catch (_) {
+    return raw;
   }
 }

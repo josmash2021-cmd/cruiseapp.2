@@ -96,4 +96,14 @@ void main() {
           reason: 'the poster is the fallback background');
     });
   });
+
+  // Android 1.1.7+748: the 747 splash/welcome froze the whole screen on
+  // Android only. Impeller stays off there until proven fixed.
+  test('Android runs without Impeller', () {
+    final m = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+    expect(
+        RegExp(r'android:name="io\.flutter\.embedding\.android\.EnableImpeller"\s*android:value="false"')
+            .hasMatch(m),
+        isTrue);
+  });
 }

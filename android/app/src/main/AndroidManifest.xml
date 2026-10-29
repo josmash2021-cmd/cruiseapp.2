@@ -54,6 +54,13 @@
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false"
         android:networkSecurityConfig="@xml/network_security_config">
+        <!-- Android 1.1.7+748 (2026-10-29): Impeller off. On 747 the splash and
+             welcome videos froze the whole screen on Android while iOS was
+             fine; the in-app video watchdog could not recover it. Opt-out is
+             deprecated in Flutter 3.38 but still honored. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

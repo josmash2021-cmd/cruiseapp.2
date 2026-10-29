@@ -502,6 +502,12 @@ class ApiService {
   /// M2: Set this callback to navigate to login when JWT expires and refresh fails.
   static void Function()? onUnauthorized;
 
+  /// The backend refused a signed request because this phone's clock is
+  /// more than 30 min off ("Timestamp expired"). Not an auth failure: the
+  /// token is fine, the user has to turn automatic time back on. Wired by
+  /// main.dart to a one-shot notice.
+  static void Function()? onClockSkew;
+
   /// Called when the backend returns 401 with detail "session_expired_new_device",
   /// meaning the driver logged in on another device and this session is invalid.
   static void Function()? onSessionExpiredNewDevice;
@@ -790,6 +796,15 @@ class ApiService {
     }
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return body is Map<String, dynamic> ? body : {'data': body};
+    }
+    // Phone clock off by >30 min: every signed call dies with this 401. It
+    // must never reach the generic 401 path (refresh / clearToken) — the
+    // session is valid, the clock is not. Tell the user what to fix.
+    if (res.statusCode == 401 &&
+        body is Map &&
+        body['detail'] == 'Timestamp expired') {
+      onClockSkew?.call();
+      throw ApiException(401, 'clock_skew');
     }
     // Session replaced by login on another device — force logout with dialog
     if (res.statusCode == 401 &&

@@ -1831,6 +1831,10 @@ class _UberCloneAppState extends State<UberCloneApp>
   /// the Splash just pushed by the first, leaving an empty Navigator
   /// (black screen).
   bool _sessionExpiredDialogOpen = false;
+  // Clock-skew notice: one at a time, and not more than once a minute —
+  // every poll fails with the same 401 while the clock is wrong.
+  bool _clockSkewDialogOpen = false;
+  DateTime? _clockSkewShownAt;
 
   @override
   void initState() {
@@ -1839,6 +1843,35 @@ class _UberCloneAppState extends State<UberCloneApp>
     UserSession.onBeforeLogout = RiderPresenceService.instance.stop;
     // M2: auto-logout when JWT is expired and refresh also fails.
     // Guard against re-entry: if already on auth screens, skip.
+    // Phone clock >30 min off: the backend refuses every signed call with
+    // 401 "Timestamp expired". Not a session problem (the token is fine), so
+    // nothing is cleared — the user is told what to fix (2026-10-29).
+    ApiService.onClockSkew = () {
+      if (_clockSkewDialogOpen) return;
+      final last = _clockSkewShownAt;
+      if (last != null &&
+          DateTime.now().difference(last) < const Duration(seconds: 60)) {
+        return;
+      }
+      final ctx = _navigatorKey.currentState?.overlay?.context;
+      if (ctx == null) return;
+      _clockSkewDialogOpen = true;
+      _clockSkewShownAt = DateTime.now();
+      showDialog<void>(
+        context: ctx,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(S.of(dialogContext).clockSkewTitle),
+          content: Text(S.of(dialogContext).clockSkewBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(MaterialLocalizations.of(dialogContext).okButtonLabel),
+            ),
+          ],
+        ),
+      ).whenComplete(() => _clockSkewDialogOpen = false);
+    };
+
     ApiService.onUnauthorized = () async {
       // Prevent double-fire or firing during login
       final nav = _navigatorKey.currentState;

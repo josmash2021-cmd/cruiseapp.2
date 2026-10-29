@@ -5724,6 +5724,11 @@ class S {
   String get driverTripReassignedReturning => _es
       ? 'Este viaje fue asignado a otro conductor. Sigues en línea.'
       : 'This trip was assigned to another driver. You are still online.';
+  String get clockSkewTitle =>
+      _es ? 'La hora de tu teléfono está mal' : 'Your phone clock is wrong';
+  String get clockSkewBody => _es
+      ? 'Activa la hora automática en Ajustes para seguir usando Cruise.'
+      : 'Turn on automatic date & time in Settings to keep using Cruise.';
   String get rideTakenByAnotherDriver =>
       _es ? 'Otro conductor lo tomó' : 'Another driver took it';
   String get driverRideTakenReturning => _es

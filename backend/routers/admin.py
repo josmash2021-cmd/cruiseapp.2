@@ -4026,6 +4026,16 @@ async def admin_upload_user_document(
     data = await file.read()
     doc = await _store_driver_document(
         db, target, doc_type, data, vehicle_id=vehicle_id)
+    # The profile-photo card IS the avatar for the operator (2026-10-29): a
+    # replacement from dispatch also becomes the user's profile photo, under
+    # the user's own storage path. Non-image files (PDF) only update the doc.
+    if doc_type == "profile_photo" and (data[:2] == b"\xff\xd8" or data[:8] == b"\x89PNG\r\n\x1a\n"):
+        from routers.auth import store_profile_photo
+        try:
+            await store_profile_photo(db, user_id, data, "jpg" if data[:2] == b"\xff\xd8" else "png")
+            await db.commit()
+        except HTTPException as e:
+            logging.warning("[Admin] avatar update from profile_photo doc failed for %s: %s", user_id, e.detail)
     logging.info("[Admin] Document %s (%s) uploaded by dispatch for user %s",
                  doc.id, doc_type, user_id)
     _security_audit_log("ADMIN_DOCUMENT_UPLOAD", "admin",

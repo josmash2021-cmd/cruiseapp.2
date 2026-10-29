@@ -230,9 +230,9 @@ function na({sqliteId:t,onChanged:s}){
     docType==="biometric_video"||Ie(url,"")?
       e.jsx("video",{src:url,controls:!0,preload:"metadata",className:"w-full rounded-[10px] border border-cardBorder bg-black/40 object-contain",style:{aspectRatio:"4/3"}},url):
       e.jsx("img",{src:url,alt:lab(docType),loading:"lazy",onError:()=>setBroken(g=>new Set(g).add(url)),onClick:()=>setZoom(url),className:"w-full rounded-[10px] border border-cardBorder bg-black/20 object-cover transition-transform hover:scale-[1.02]",style:{aspectRatio:"4/3",cursor:"zoom-in"}},url);
-  const reviewBtns=(kind,id,vehicleId=null)=>{if(id===null)return null;const cardBusy=busyKey===kind+":"+id;return e.jsxs("div",{className:"mt-2 flex gap-2",children:[
+  const reviewBtns=(kind,id,vehicleId=null,docType=null)=>{if(id===null)return null;const cardBusy=busyKey===kind+":"+id;return e.jsxs("div",{className:"mt-2 flex gap-2",children:[
     e.jsx(F,{variant:"ghost",size:"sm",icon:je,disabled:cardBusy,onClick:()=>void act({kind,id},"approve"),className:"flex-1 border-success/40 text-success hover:bg-success/10",children:"Aprobar"}),
-    e.jsx(F,{variant:"ghost",size:"sm",icon:Le,disabled:cardBusy,onClick:()=>{setReason(""),setRejectTarget({kind,id})},className:"flex-1 border-error/40 text-error hover:bg-error/10",children:"Rechazar"}),canUploadDoc(kind)&&e.jsx(F,{variant:"ghost",size:"sm",disabled:cardBusy||busyKey===kind+":upload",onClick:()=>replaceDocPhoto(kind,vehicleId),className:"border-primary/40 text-primary hover:bg-primary/10",children:"Actualizar"})]})};
+    e.jsx(F,{variant:"ghost",size:"sm",icon:Le,disabled:cardBusy,onClick:()=>{setReason(""),setRejectTarget({kind,id})},className:"flex-1 border-error/40 text-error hover:bg-error/10",children:"Rechazar"}),/*! guard-pin panel_doc_upload_real_type (2026-10-29): "Actualizar" sube con el doc_type REAL de la tarjeta (antes mandaba "document" y el backend respondia Invalid document type) - re-aplicar tras rebuild */canUploadDoc(kind)&&e.jsx(F,{variant:"ghost",size:"sm",disabled:cardBusy||busyKey===(docType||kind)+":upload",onClick:()=>replaceDocPhoto(docType||kind,vehicleId),className:"border-primary/40 text-primary hover:bg-primary/10",children:"Actualizar"})]})};
   const docCard=(d,readOnly=false)=>{
     const isLicense=/license/.test((d.docType||"").toLowerCase());
     const isSelfie=(d.docType||"")==="selfie_check";
@@ -245,7 +245,7 @@ function na({sqliteId:t,onChanged:s}){
         e.jsx(Ke,{status:d.status}),
         d.fileUrl!==null&&e.jsx("a",{href:d.fileUrl,target:"_blank",rel:"noreferrer","aria-label":"Descargar documento",title:"Descargar",className:"rounded-md p-1 text-primary transition-colors hover:bg-primary/10",children:e.jsx(st,{className:"h-[16px] w-[16px]",strokeWidth:2})})]}),
       shown.length>0&&e.jsx("div",{className:shown.length>1?"grid grid-cols-2 gap-1.5":"",children:shown.map(u=>mediaCell(u,d.docType))}),
-      !readOnly&&(isSelfie?selfieBtns(d.id):reviewBtns("document",d.id,d.vehicleId))]},`${d.docType}-${d.id??d.fileUrl??""}`)};
+      !readOnly&&(isSelfie?selfieBtns(d.id):reviewBtns("document",d.id,d.vehicleId,d.docType))]},`${d.docType}-${d.id??d.fileUrl??""}`)};
   const showSocial=meta!==null&&meta.role==="driver";
   const bgBadge=meta===null||meta.bg==="none"?"pending":meta.bg==="clear"?"approved":meta.bg==="consider"||meta.bg==="rejected"?"rejected":"pending";
   const socialCard=!showSocial?null:e.jsxs("div",{className:"flex flex-col rounded-card border border-white/5 bg-surfaceHigh p-3",children:[

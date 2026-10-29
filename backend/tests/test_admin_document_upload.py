@@ -109,3 +109,65 @@ async def test_dispatch_upload_validates_type_user_and_auth(client, db, storage)
         data={"doc_type": "profile_photo"},
     )
     assert res.status_code in (401, 403)
+
+
+# 2026-10-29: the profile-photo card is the avatar for the operator — an
+# image uploaded there also becomes users.photo_url (own path); a PDF does not.
+def _jpeg_bytes():
+    import io as _io
+    from PIL import Image
+    buf = _io.BytesIO()
+    Image.new("RGB", (64, 64), (200, 30, 30)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+@pytest.fixture
+def avatar_storage(monkeypatch):
+    from routers import auth
+    paths = []
+
+    class _FS:
+        @staticmethod
+        def upload_to_firebase_storage(data, path, ct):
+            paths.append(path)
+            return f"https://storage.test/{path}"
+
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+
+    monkeypatch.setattr(auth, "firestore_sync", _FS())
+    monkeypatch.setattr(auth, "_HAS_FIRESTORE", False)
+    return paths
+
+
+async def test_profile_photo_image_also_replaces_the_avatar(client, db, storage, avatar_storage):
+    u = await _user(db)
+    res = await client.post(
+        f"/admin/users/{u.id}/documents", headers=_dh(),
+        files={"file": ("face.jpg", _jpeg_bytes(), "image/jpeg")},
+        data={"doc_type": "profile_photo"},
+    )
+    assert res.status_code == 200, res.text
+    assert avatar_storage == [f"photos/user_{u.id}/profile.jpg"]
+    await db.refresh(u)
+    assert u.photo_url == f"https://storage.test/photos/user_{u.id}/profile.jpg"
+
+
+async def test_profile_photo_pdf_leaves_the_avatar(client, db, storage, avatar_storage):
+    u = await _user(db)
+    res = await client.post(
+        f"/admin/users/{u.id}/documents", headers=_dh(),
+        files={"file": ("face.pdf", _PDF, "application/pdf")},
+        data={"doc_type": "profile_photo"},
+    )
+    assert res.status_code == 200, res.text
+    assert avatar_storage == []
+
+
+def test_panel_update_button_sends_the_real_doc_type():
+    import pathlib
+    js = (pathlib.Path(__file__).resolve().parents[1]
+          / "dispatch_panel" / "assets" / "index-azyIyM-i.js").read_text(encoding="utf-8")
+    assert 'reviewBtns("document",d.id,d.vehicleId,d.docType)' in js
+    assert "onClick:()=>replaceDocPhoto(docType||kind,vehicleId)" in js
+    assert "onClick:()=>replaceDocPhoto(kind,vehicleId)" not in js

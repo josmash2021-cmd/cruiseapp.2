@@ -95,7 +95,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
                 DateTime.fromMillisecondsSinceEpoch(wentOnlineAt),
                 shiftNow,
               )) <
-              const Duration(hours: 12);
+              kDriverShiftCap;
       if (!mounted) return;
       _driverWasOnlineAtBoot = shiftAlive;
       // ¿Entrar online de una? SOLO por una entrada de trabajo real:
@@ -1122,7 +1122,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
 
       if (now.difference(_dailyShiftStart(started, now)) >=
-              const Duration(hours: 12) &&
+              kDriverShiftCap &&
           _tripId == null &&
           _activeTripData == null) {
         await closeShift();
@@ -1134,7 +1134,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         if (started == null || !mounted || !_driverOnline) return;
         final tickNow = DateTime.now();
         if (tickNow.difference(_dailyShiftStart(started, tickNow)) >=
-                const Duration(hours: 12) &&
+                kDriverShiftCap &&
             _tripId == null &&
             _activeTripData == null) {
           unawaited(closeShift());

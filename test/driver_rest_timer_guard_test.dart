@@ -52,10 +52,12 @@ void main() {
         '{ _showRestRemaining(restRemaining); return; }',
       ),
     );
-    expect(
-      compactOffline,
-      contains('onTap: resting ? () => _showRestRemaining(restRemaining)'),
-    );
+    // The GO tap moved into _goTapAction() (2026-10-29, shared with the
+    // Dispatch remote GO): the rest branch must still be its first gate.
+    expect(offline, contains('VoidCallback? _goTapAction() {'));
+    final tap = offline.substring(offline.indexOf('VoidCallback? _goTapAction() {'));
+    expect(tap.substring(0, 300), contains('_showRestRemaining(restRemaining)'));
+    expect(compactOffline, contains('onTap: _goTapAction()'));
   });
 
   test('only phase changes animate, not every countdown tick', () {

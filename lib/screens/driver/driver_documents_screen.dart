@@ -17,6 +17,7 @@ import 'onboarding/license_capture_screen.dart';
 import 'onboarding/onboarding_intro_screen.dart';
 import 'onboarding/onboarding_items.dart';
 import 'onboarding/profile_photo_capture_screen.dart';
+import 'vehicle_switch_copy.dart';
 
 enum _ExpiryStatus { ok, expiringSoon, expired }
 
@@ -38,8 +39,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   bool _loading = true;
   List<Map<String, dynamic>> _documents = [];
   String _vehicleLabel = '';
-  // The completed list is the whole page — it opens expanded.
+  // Both groups open expanded: what still needs doing, then what is done.
+  bool _todoOpen = true;
   bool _submittedOpen = true;
+  // True while `POST /drivers/vehicles/{id}/use` is in flight.
+  bool _switching = false;
 
   // Multi-vehicle (2026-08-29): the driver picks which car's documents they
   // are looking at. The dropdown lists every vehicle they own; the upload
@@ -180,7 +184,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
 
         if (docType == 'license_plate') {
           final plate = (vehicle['plate'] ?? '').toString().trim();
-          final pending = vehicle['plate_pending_review'] == true ||
+          final plateChange = vehicle['plate_pending_review'] == true;
+          final pending = plateChange ||
               (vehicle['approval_status'] ?? 'pending') != 'approved';
           merged.add({
             'doc_type': docType,
@@ -193,6 +198,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                     : 'approved',
             'plate': plate,
             'plate_state': (vehicle['plate_state'] ?? '').toString(),
+            // A new car's plate waits on the VEHICLE approval; only a
+            // changed plate waits on a new registration.
+            'plate_change': plateChange,
           });
           continue;
         }
@@ -477,20 +485,31 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     return _checkExpiry(expiry) != _ExpiryStatus.ok;
   }
 
+  /// "Completed" means approved and not about to lapse. Everything else —
+  /// missing, rejected, expiring, or uploaded and still waiting on
+  /// dispatch — is open work and lists under "Action needed" (owner spec
+  /// 2026-10-29: not-uploaded rows were sitting under "Completed" and the
+  /// count included them).
+  bool _isCompleted(Map<String, dynamic> doc) =>
+      (doc['status'] ?? 'not_uploaded') == 'approved' && !_needsAction(doc);
+
+  Map<String, dynamic> get _selectedVehicle => _vehicles.firstWhere(
+        (v) => v['id'] == _selectedVehicleId,
+        orElse: () => <String, dynamic>{},
+      );
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
 
-    // Action items first; everything else keeps its canonical order.
-    final docs = [..._documents]..sort((a, b) {
-        final na = _needsAction(a) ? 0 : 1;
-        final nb = _needsAction(b) ? 0 : 1;
-        return na.compareTo(nb);
-      });
-    final approvedCount = docs.where((d) => d['status'] == 'approved').length;
+    // Two buckets, canonical order inside each.
+    final todo = _documents.where((d) => !_isCompleted(d)).toList();
+    final done = _documents.where(_isCompleted).toList();
     // "You're all set" is a lie while any row still asks for an upload —
     // a freshly added car has insurance/registration(/inspection) to do.
-    final allSet = docs.isNotEmpty && !docs.any(_needsAction);
+    final allSet = _documents.isNotEmpty && todo.isEmpty;
+    // Nothing left for the driver, but dispatch still has to review.
+    final underReview = !allSet && !_documents.any(_needsAction);
 
     return Scaffold(
       backgroundColor: neuBase,
@@ -512,27 +531,45 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                         children: [
                           _closeRow(s),
                           const SizedBox(height: 18),
-                          _hero(s, allSet),
+                          _hero(s, allSet: allSet, underReview: underReview),
                           const SizedBox(height: 22),
                           if (_vehicleLabel.isNotEmpty) ...[
                             _vehicleCard(s),
                             const SizedBox(height: 22),
                           ],
-                          if (docs.isNotEmpty)
+                          if (todo.isNotEmpty)
+                            _section(
+                              title: s.docsActionNeeded,
+                              open: _todoOpen,
+                              onToggle: () =>
+                                  setState(() => _todoOpen = !_todoOpen),
+                              chips: [
+                                _countChip(
+                                  Icons.error_outline_rounded,
+                                  todo.length,
+                                  _gold,
+                                ),
+                              ],
+                              children: todo.map(_documentCard).toList(),
+                            ),
+                          if (todo.isNotEmpty && done.isNotEmpty)
+                            const SizedBox(height: 18),
+                          if (done.isNotEmpty)
                             _section(
                               title: s.docsSubmitted,
                               open: _submittedOpen,
                               onToggle: () => setState(
                                   () => _submittedOpen = !_submittedOpen),
                               chips: [
-                                if (approvedCount > 0)
-                                  _countChip(
-                                    Icons.check_circle_rounded,
-                                    approvedCount,
-                                    const Color(0xFF4CAF50),
-                                  ),
+                                // Approved rows only — exactly what the
+                                // section holds.
+                                _countChip(
+                                  Icons.check_circle_rounded,
+                                  done.length,
+                                  const Color(0xFF4CAF50),
+                                ),
                               ],
-                              children: docs.map(_documentCard).toList(),
+                              children: done.map(_documentCard).toList(),
                             ),
                           const SizedBox(height: 20),
                           _lockedNote(s),
@@ -550,7 +587,17 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   /// opens with the good news; while anything is missing (a freshly added
   /// car still owes insurance/registration) it says so instead of claiming
   /// the driver is all set (user spec 2026-08-29).
-  Widget _hero(S s, bool allSet) {
+  Widget _hero(S s, {required bool allSet, required bool underReview}) {
+    final title = allSet
+        ? s.docsAllSetTitle
+        : underReview
+            ? s.docsPendingReviewTitle
+            : s.docsActionNeeded;
+    final subtitle = allSet
+        ? s.docsAllSetSubtitle
+        : underReview
+            ? s.docsPendingReviewSubtitle
+            : s.docsTodoSubtitle;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -562,7 +609,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         ),
         const SizedBox(height: 18),
         Text(
-          allSet ? s.docsAllSetTitle : s.docsActionNeeded,
+          title,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 22,
@@ -572,7 +619,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          allSet ? s.docsAllSetSubtitle : s.docsTodoSubtitle,
+          subtitle,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.5),
             fontSize: 14,
@@ -614,6 +661,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   /// this is a dropdown: the driver picks the car and the list below reloads
   /// with that car's documents.
   Widget _vehicleCard(S s) {
+    final selected = _selectedVehicle;
+    final selectedIsActive = selected['is_active'] == true;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
       decoration: neuBox(radius: 18),
@@ -621,7 +670,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            s.primaryVehicle,
+            // "Primary" only when it is: a second car the driver is
+            // looking at is not the one on the road yet.
+            selectedIsActive ? s.primaryVehicle : s.selectedVehicle,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.45),
               fontSize: 12.5,
@@ -671,9 +722,116 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                 fontWeight: FontWeight.w700,
               ),
             ),
+          if (selected.isNotEmpty && !selectedIsActive) ...[
+            const SizedBox(height: 12),
+            _useVehicleRow(s, selected),
+          ],
         ],
       ),
     );
+  }
+
+  /// The switch, on the same page as the car's documents (owner spec
+  /// 2026-10-29): once dispatch has approved this vehicle AND its own
+  /// documents, "Use vehicle" makes it the one riders see and the one
+  /// dispatch matches by tier. Until then the row says what it is
+  /// waiting on. The backend enforces the same rule.
+  Widget _useVehicleRow(S s, Map<String, dynamic> vehicle) {
+    final approved = (vehicle['approval_status'] ?? 'pending') == 'approved';
+    final docsApproved = vehicle['documents_approved'] == true;
+    final missing =
+        ((vehicle['missing_vehicle_docs'] as List?)?.isNotEmpty) ?? false;
+    if (approved && docsApproved) {
+      return SizedBox(
+        width: double.infinity,
+        height: 46,
+        child: ElevatedButton(
+          onPressed: _switching ? null : _useSelectedVehicle,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _gold,
+            foregroundColor: Colors.black,
+            disabledBackgroundColor: _gold.withValues(alpha: 0.5),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            elevation: 0,
+          ),
+          child: _switching
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      color: Colors.black, strokeWidth: 2),
+                )
+              : Text(
+                  s.useVehicleAction,
+                  style: const TextStyle(
+                      fontSize: 14.5, fontWeight: FontWeight.w800),
+                ),
+        ),
+      );
+    }
+    final tint = missing ? const Color(0xFFE05C5C) : const Color(0xFFE8A33D);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          missing ? Icons.warning_amber_rounded : Icons.hourglass_top_rounded,
+          size: 16,
+          color: tint,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                missing ? s.requiresAttention : s.pendingApproval,
+                style: TextStyle(
+                  color: tint,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                missing
+                    ? s.docsTodoSubtitle
+                    : s.vehicleAwaitingApprovalHint,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _useSelectedVehicle() async {
+    final id = _selectedVehicleId;
+    if (id == null || _switching) return;
+    HapticService.selectionClick();
+    setState(() => _switching = true);
+    try {
+      await ApiService.useVehicle(id);
+      if (!mounted) return;
+      await _refreshAll();
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(S.of(context).vehicleNowInUse)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(vehicleSwitchErrorCopy(e, S.of(context)))),
+      );
+    } finally {
+      if (mounted) setState(() => _switching = false);
+    }
   }
 
   /// A collapsible group. The header is always tappable; the body grows
@@ -957,13 +1115,19 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       final plate = (doc['plate'] ?? '').toString();
       final st = (doc['plate_state'] ?? '').toString();
       if (isPending) {
-        subtitle = s.plateChangePendingTitle;
+        subtitle = doc['plate_change'] == true
+            ? s.plateChangePendingTitle
+            : s.pendingApproval;
         subtitleColor = const Color(0xFFE8A33D);
       } else if (plate.isEmpty) {
         subtitle = s.notUploadedYet;
       } else {
         subtitle = st.isEmpty ? plate : '$plate · $st';
       }
+    } else if (isPending) {
+      // Uploaded, waiting on dispatch — say so, not when it was uploaded.
+      subtitle = s.pendingApproval;
+      subtitleColor = const Color(0xFFE8A33D);
     } else if (expiryStatus == _ExpiryStatus.expired) {
       subtitle = s.documentExpired;
       subtitleColor = const Color(0xFFE05C5C);
@@ -983,8 +1147,6 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       subtitle = '${s.uploadedLabel}: ${_formatShortDate(createdAt)}';
     } else if (isNotUploaded) {
       subtitle = s.notUploadedYet;
-    } else if (isPending) {
-      subtitle = s.pending;
     } else {
       subtitle = s.approved;
     }

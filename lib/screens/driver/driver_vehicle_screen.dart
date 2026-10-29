@@ -6,6 +6,7 @@ import 'driver_vehicle_detail_screen.dart';
 import 'add_vehicle_screen.dart';
 import '../../services/haptic_service.dart';
 import '../../services/api_service.dart';
+import 'vehicle_switch_copy.dart';
 import '../../services/user_session.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
@@ -249,7 +250,11 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     // Real per-car document state: pending uploads await dispatch, while
     // missing/rejected/expired paperwork requires the driver's attention.
     final needsAttention = missingDocs > 0;
-    final awaitingReview = !isApproved && !needsAttention && !isActive;
+    // Selectable = vehicle approved AND its own documents approved; the
+    // backend's /use rule. An approved car with pending paperwork still
+    // waits on dispatch, so it still reads "Pending approval".
+    final readyToUse = isApproved && documentsApproved;
+    final awaitingReview = !readyToUse && !needsAttention && !isActive;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -443,8 +448,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
             ),
           ),
 
-          // ── Use button (approved vehicles that are not active) ──
-          if (!isActive && isApproved)
+          // ── Use button (approved vehicles, approved docs, not active) ──
+          if (!isActive && isApproved && documentsApproved)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: SizedBox(
@@ -460,7 +465,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                     ),
                   ),
                   child: Text(
-                    s.useThisVehicle,
+                    s.useVehicleAction,
                     style: const TextStyle(
                         fontSize: 14, fontWeight: FontWeight.w800),
                   ),
@@ -527,13 +532,17 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   Future<void> _useVehicle(int vehicleId) async {
     try {
       await ApiService.useVehicle(vehicleId);
-      if (mounted) await _fetchVehicles();
+      if (!mounted) return;
+      await _fetchVehicles();
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(S.of(context).vehicleNowInUse)),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context).connectionError)),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(vehicleSwitchErrorCopy(e, S.of(context)))),
+      );
     }
   }
 

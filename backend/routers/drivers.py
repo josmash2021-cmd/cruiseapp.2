@@ -3460,6 +3460,17 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
     return {"vehicle": _vehicle_dict(v)}
 
 
+# A trip the driver is physically working right now. Same list the wait
+# estimate uses (not trips.py's _ACTIVE_TRIP_STATUSES, which includes
+# `requested` and scheduled claims). While one of these is open the active
+# vehicle is frozen — see use_vehicle.
+_VEHICLE_SWITCH_BUSY_STATUSES = (
+    "accepted", "driver_en_route", "driver_arriving", "arrived",
+    "driver_arrived", "in_trip", "in_progress", "rider_onboard",
+    "on_trip", "en_route_to_pickup",
+)
+
+
 async def _get_active_vehicle(db: AsyncSession, user_id: int) -> Vehicle | None:
     """The driver's selected vehicle, tolerant of legacy duplicate flags."""
     result = await db.execute(
@@ -3555,6 +3566,24 @@ async def use_vehicle(vehicle_id: int, user: User = Depends(_get_current_user), 
             raise HTTPException(400, "Vehicle is not approved yet")
         raise HTTPException(400, "Vehicle documents are not approved yet")
 
+    if vehicle.is_active:
+        # Already the car on the road — nothing to flip, nothing to refuse.
+        return {"vehicle": _vehicle_dict(vehicle)}
+
+    # The rider's tracking screen re-reads the driver's ACTIVE vehicle on
+    # every resume/poll (GET /trips/active, GET /trips/{id}). Switching
+    # cars mid-ride would change the plate the rider is looking for at
+    # the curb, so the swap waits until the current trip is over.
+    busy = await db.scalar(
+        select(func.count()).select_from(Trip).where(
+            Trip.driver_id == user.id,
+            Trip.status.in_(_VEHICLE_SWITCH_BUSY_STATUSES),
+            Trip.created_at >= utc_now() - timedelta(hours=6),
+        )
+    )
+    if busy:
+        raise HTTPException(409, "vehicle_switch_blocked_on_trip")
+
     await db.execute(
         update(Vehicle)
         .where(Vehicle.user_id == user.id, Vehicle.archived_at.is_(None))
@@ -3563,7 +3592,8 @@ async def use_vehicle(vehicle_id: int, user: User = Depends(_get_current_user), 
     vehicle.is_active = True
     await db.commit()
     await db.refresh(vehicle)
-    logging.info("[Vehicle] Driver %s switched active vehicle to %s", user.id, vehicle_id)
+    logging.info("[Vehicle] Driver %s switched active vehicle to %s (tier=%s)",
+                 user.id, vehicle_id, vehicle.vehicle_type)
     return {"vehicle": _vehicle_dict(vehicle)}
 
 

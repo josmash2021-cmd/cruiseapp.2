@@ -7,6 +7,7 @@ import '../../services/haptic_service.dart';
 import '../../widgets/neu_style.dart';
 import '../../widgets/ota_image.dart';
 import 'driver_documents_screen.dart';
+import 'vehicle_switch_copy.dart';
 
 /// One vehicle, in full.
 ///
@@ -351,7 +352,7 @@ class DriverVehicleDetailScreen extends StatelessWidget {
                   elevation: 0,
                 ),
                 child: Text(
-                  s.useThisVehicle,
+                  s.useVehicleAction,
                   style: const TextStyle(
                       fontSize: 15, fontWeight: FontWeight.w800),
                 ),
@@ -401,15 +402,16 @@ class DriverVehicleDetailScreen extends StatelessWidget {
     try {
       await ApiService.useVehicle(vehicleId);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        // Post-await lookups use maybeOf (release-only null crash).
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           SnackBar(content: Text(S.of(context).vehicleNowInUse)),
         );
-        Navigator.of(context).pop();
+        Navigator.maybeOf(context)?.pop();
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(S.of(context).connectionError)),
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text(vehicleSwitchErrorCopy(e, S.of(context)))),
         );
       }
     }

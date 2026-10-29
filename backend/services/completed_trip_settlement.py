@@ -7,6 +7,8 @@ from services.promotion_redemptions import complete_promotion
 async def settle_completed_trip(db, trip, *, collected_amount: float | None = None) -> dict:
     if trip.status != "completed":
         return {"rider_credit": False, "platform_credit": False}
+    from services.platform_earnings import apply_review_test_funding
+    apply_review_test_funding(trip)
     from routers.trips import _credit_driver_earnings
 
     rider_credit = await _credit_driver_earnings(

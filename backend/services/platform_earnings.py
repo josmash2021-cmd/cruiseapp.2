@@ -1,4 +1,5 @@
 import logging
+import os
 
 from sqlalchemy import select
 
@@ -35,6 +36,48 @@ def driver_offer_dict(trip: Trip) -> dict:
     return data
 
 
+# App Store review rider (owner decision 2026-10-29): the account in
+# TEST_MODE_RIDER_IDS pays nothing, and the driver who does and finishes the
+# ride is still paid his share, by the platform, the same way a dispatch
+# courtesy is settled. Trips with a real Stripe hold are never touched.
+REVIEW_TEST_FUNDING_SOURCE = "review_test"
+
+
+def review_tester_ids() -> set[int]:
+    raw = os.environ.get("TEST_MODE_RIDER_IDS", "")
+    return {int(p) for p in (s.strip() for s in raw.split(",")) if p.isdigit()}
+
+
+def apply_review_test_funding(trip: Trip) -> bool:
+    """Turn an unpaid review-rider trip into a platform-funded one.
+
+    Idempotent and narrow: only riders in TEST_MODE_RIDER_IDS, only trips
+    with no funding source and no PaymentIntent, only while unpaid. Called
+    before the completion charge and before settlement, so every completion
+    path (driver, dispatch, admin, retries) credits the driver once.
+    """
+    if getattr(trip, "funding_source", None) or getattr(trip, "stripe_payment_intent_id", None):
+        return False
+    if trip.rider_id not in review_tester_ids():
+        return False
+    if (trip.payment_status or "unpaid") not in ("unpaid", "failed"):
+        return False
+    from services import vehicle_tiers
+    basis_cents = int(round(driver_fare_basis(trip) * 100))
+    if basis_cents <= 0:
+        return False
+    trip.payment_status = "not_required"
+    trip.funding_source = REVIEW_TEST_FUNDING_SOURCE
+    trip.platform_credit_cents = int(round(
+        basis_cents * vehicle_tiers.driver_share_for_trip(trip)))
+    trip.platform_credit_applied_cents = int(trip.platform_credit_applied_cents or 0)
+    logging.info(
+        "[ReviewTest] trip=%s rider=%s — test mode, platform pays driver $%.2f",
+        trip.id, trip.rider_id, trip.platform_credit_cents / 100.0,
+    )
+    return True
+
+
 async def credit_platform_funded_earnings(db, trip: Trip) -> bool:
     if trip.status != "completed" or not trip.driver_id or trip.payout_excluded:
         return False
@@ -61,6 +104,9 @@ async def credit_platform_funded_earnings(db, trip: Trip) -> bool:
     elif trip.funding_source == "dispatch_courtesy":
         # Dispatch-created courtesy (2026-10-26): no promotion redemption
         # exists — the platform owes the 90% by the operator's decision.
+        pass
+    elif trip.funding_source == REVIEW_TEST_FUNDING_SOURCE:
+        # App Store review rider — see apply_review_test_funding.
         pass
     else:
         return False

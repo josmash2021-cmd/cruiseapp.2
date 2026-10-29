@@ -1100,6 +1100,9 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
     """Collect the final fare and report the exact cumulative amount received."""
     if trip.payment_status == "paid":
         return {"status": "already_paid", "message": "Trip already charged"}
+    # App Store review rider: never charged; the platform pays the driver.
+    from services.platform_earnings import apply_review_test_funding
+    apply_review_test_funding(trip)
     if trip.payment_status == "not_required" or float(trip.fare or 0.0) <= 0:
         return {"status": "not_required", "payment_intent_id": None, "collected_cents": 0}
     if not _HAS_STRIPE:
@@ -2284,6 +2287,15 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
                         body="Tu viaje Free ha terminado. La cortesía cubrió el total; no se realizó ningún cargo.",
                         title_en="Trip Completed",
                         body_en="Your Free trip is complete. The courtesy covered everything; no charge was made.",
+                        locale=user_lang(rider),
+                        data={"type": "trip_completed", "trip_id": str(trip_id)})
+                elif trip.funding_source == "review_test":
+                    # Test mode (App Store review): nothing was charged, so
+                    # neither "charged to your card" nor "payment failed".
+                    await _send_fcm_push_async(rider.fcm_token, title="Viaje completado",
+                        body="Tu viaje ha terminado. Modo de prueba: no se realizó ningún cargo.",
+                        title_en="Trip Completed",
+                        body_en="Your trip is complete. Test mode: no charge was made.",
                         locale=user_lang(rider),
                         data={"type": "trip_completed", "trip_id": str(trip_id)})
                 elif trip.payment_status == "paid":

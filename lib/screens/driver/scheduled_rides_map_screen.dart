@@ -388,8 +388,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         // The one refusal the driver can act on gets its own sentence.
         // Everything else keeps the raw server reason.
         content: Text(
-          e is ApiException && e.statusCode == 403
-              ? S.of(context).scheduledOutOfState
+          e is ApiException && e.message == 'maintenance'
+              ? S.of(context).maintenanceClaimBlocked
+              : e is ApiException && e.statusCode == 403
+                  ? S.of(context).scheduledOutOfState
               // 409: the row lock gave it to whoever asked first. The
               // loser was reading a raw exception for what is an ordinary
               // outcome of two drivers wanting the same ride.

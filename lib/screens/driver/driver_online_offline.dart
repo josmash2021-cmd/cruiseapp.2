@@ -255,6 +255,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       final facePending = result['face_check_pending'] == true;
       // Dispatch GO switch (2026-10-23): a blocker, unlike the face signals.
       final goDisabled = result['go_online_disabled'] == true;
+      final maintenanceOn = result['maintenance'] == true;
 
       _serverRestResponseKnown = result.containsKey('rest_until');
       final serverRestRaw = result['rest_until']?.toString();
@@ -290,6 +291,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         _faceReviewRequired = faceReview;
         _faceCheckPending = facePending;
         _goOnlineDisabled = goDisabled;
+        _goDisabledMaintenance = maintenanceOn;
         _docStatusLoaded = true;
       });
       _syncFaceReviewPoll();
@@ -1358,11 +1360,15 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A22),
         title: Text(
-          S.of(ctx).goOnlineDisabledTitle,
+          _goDisabledMaintenance
+              ? S.of(ctx).maintenanceGoTitle
+              : S.of(ctx).goOnlineDisabledTitle,
           style: const TextStyle(color: Colors.white),
         ),
         content: Text(
-          S.of(ctx).goOnlineDisabledBody,
+          _goDisabledMaintenance
+              ? S.of(ctx).maintenanceGoBody
+              : S.of(ctx).goOnlineDisabledBody,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
         ),
         actions: [

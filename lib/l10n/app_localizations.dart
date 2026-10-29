@@ -5729,6 +5729,14 @@ class S {
   String get clockSkewBody => _es
       ? 'Activa la hora automática en Ajustes para seguir usando Cruise.'
       : 'Turn on automatic date & time in Settings to keep using Cruise.';
+  String get maintenanceGoTitle =>
+      _es ? 'Cruise está en mantenimiento' : 'Cruise is under maintenance';
+  String get maintenanceGoBody => _es
+      ? 'No se puede conectar por ahora. Te avisaremos cuando vuelva el servicio.'
+      : 'You cannot go online right now. We will let you know when service is back.';
+  String get maintenanceClaimBlocked => _es
+      ? 'Cruise está en mantenimiento: no se pueden reservar viajes por ahora.'
+      : 'Cruise is under maintenance: rides cannot be reserved right now.';
   String get rideTakenByAnotherDriver =>
       _es ? 'Otro conductor lo tomó' : 'Another driver took it';
   String get driverRideTakenReturning => _es

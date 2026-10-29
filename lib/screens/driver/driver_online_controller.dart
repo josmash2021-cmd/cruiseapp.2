@@ -1536,6 +1536,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         if (mounted) _showGoOnlineDisabledDialog();
         return;
       }
+      // Maintenance mode (owner spec 2026-10-29): the backend refuses
+      // is_online while the kill page is up — also for a driver who was
+      // already online when it flipped (the server forced him offline and
+      // the next heartbeat lands here). Roll back, same terminal class.
+      if (e is ApiException && e.message == 'maintenance') {
+        unawaited(_exitOnlineMode());
+        _setState(() {
+          _goOnlineDisabled = true;
+          _goDisabledMaintenance = true;
+        });
+        if (mounted) _showGoOnlineDisabledDialog();
+        return;
+      }
       if (e is ApiException && e.message == 'shift_rest_required') {
         _onShiftRestKick();
         return;

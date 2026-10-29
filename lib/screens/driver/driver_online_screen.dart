@@ -1469,6 +1469,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // paused THIS driver's GO. The button paints grey, the tap only explains,
   // and the socket event lands it live (even kicking an online driver off).
   bool _goOnlineDisabled = false;
+  /// GO is disabled because dispatch turned maintenance on (not because
+  /// this driver was paused): the dialog shows the maintenance copy.
+  bool _goDisabledMaintenance = false;
   // The "You're now online!" intro fires ~10 s after the shift is truly
   // live (owner spec 2026-10-23) — armed at the end of _enterOnlineMode,
   // no longer keyed off the GO tap.

@@ -3312,6 +3312,19 @@ def _web_normalize_phone_e164(identifier: str) -> str:
     return f"+1{digits}"
 
 
+# Apple review account on the web (owner decision 2026-10-29, ONLY this
+# account): the app logs the Apple demo number straight in (routers/auth.py
+# phone_login); the web sent a real SMS, Twilio rejected the non-routable
+# number with a 400, and no code ever came. Here: no SMS, any 6-digit code,
+# RIDER role only. Every other number keeps the normal SMS check.
+_WEB_REVIEW_OTP_SENTINEL = "apple_review"
+
+
+def _web_is_apple_review_phone(identifier_e164: str) -> bool:
+    from routers.auth import APPLE_REVIEW_PHONE
+    return identifier_e164 == APPLE_REVIEW_PHONE
+
+
 def _web_mask_email(addr: str) -> str:
     """j•••h@gmail.com — enough to recognise, not enough to read out."""
     name, _, domain = addr.partition("@")
@@ -3417,8 +3430,10 @@ async def web_send_otp(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(429, "Too many attempts. Try again in a few minutes.")
     _record_web_otp_send(identifier, client_ip)
 
+    review = channel == "sms" and _web_is_apple_review_phone(identifier)
     code = f"{secrets.randbelow(1000000):06d}"
-    code_hash = hashlib.sha256(code.encode()).hexdigest()
+    code_hash = (_WEB_REVIEW_OTP_SENTINEL if review
+                 else hashlib.sha256(code.encode()).hexdigest())
 
     # One live code per identifier: wipe previous codes and stale tokens.
     await db.execute(
@@ -3431,6 +3446,9 @@ async def web_send_otp(request: Request, db: AsyncSession = Depends(get_db)):
         expires_at=time.time() + _WEB_OTP_TTL,
     ))
     await db.commit()
+    if review:
+        logging.info("[WebOTP] Apple review number %s — no SMS, any code", masked)
+        return {"ok": True, "channel": channel, "masked": masked}
 
     # Deliver. Both senders are blocking — run them off the event loop.
     # A delivery failure is logged but never leaked to the caller.
@@ -3507,7 +3525,12 @@ async def web_verify_otp(request: Request, db: AsyncSession = Depends(get_db)):
     if not row or row.attempts >= _WEB_OTP_MAX_ATTEMPTS:
         return {"ok": False}
 
-    if row.code_hash == "twilio_verify":
+    if row.code_hash == _WEB_REVIEW_OTP_SENTINEL:
+        if not (code.isdigit() and len(code) == 6):
+            row.attempts += 1
+            await db.commit()
+            return {"ok": False}
+    elif row.code_hash == "twilio_verify":
         # The code lives in Twilio Verify, not in our hash — check it with
         # the same helper the mobile app uses.
         from routers.auth import _twilio_verify_check
@@ -3581,6 +3604,9 @@ async def web_otp_login(request: Request, db: AsyncSession = Depends(get_db)):
     else:
         identifier = _web_normalize_phone_e164(identifier)
 
+    if ("@" not in identifier and role != "rider"
+            and _web_is_apple_review_phone(identifier)):
+        raise HTTPException(403, "Review account is rider-only")
     from routers.auth import _otp_users_for_identifier, _consume_otp_proof
     users = await _otp_users_for_identifier(db, identifier, include_inactive=True)
     user = next((u for u in users if u.role == role), None)

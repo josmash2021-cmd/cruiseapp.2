@@ -18,6 +18,7 @@ from models.schemas import (
     RiderPresenceIn,
 )
 from utils.security import (
+    remember_issued_sid,
     pwd, _create_token, _create_refresh_token, _create_login_token,
     _get_current_user, _verify_api_key, _require_dispatch_auth,
     _check_login_throttle, _record_login_failure, _clear_login_failures,
@@ -106,6 +107,7 @@ async def _create_driver_aware_token(
     user_status: str,
     user,
     db,
+    rotate: bool = True,
 ) -> str:
     """Create JWT token. For drivers, generate + store a session_id for single-device enforcement.
 
@@ -115,14 +117,24 @@ async def _create_driver_aware_token(
     """
     session_id = ""
     if user_role == "driver":
-        import secrets as _s
-        session_id = _s.token_hex(16)
-        user.active_session_id = session_id
-        await db.flush()
+        # One phone per driver (owner spec 2026-10-29): every sign-in mints
+        # a new session id and PERSISTS it, so the previous phone's tokens
+        # (access and refresh, both carry the sid) stop working. Before,
+        # this only flushed and nothing committed afterwards, so the check
+        # in _get_current_user never had a stored sid to compare against.
+        # A refresh keeps the current sid (rotate=False): the same phone
+        # must not kick itself.
+        session_id = (getattr(user, "active_session_id", None) or "") if not rotate else ""
+        if not session_id:
+            import secrets as _s
+            session_id = _s.token_hex(16)
+            user.active_session_id = session_id
+            await db.commit()
+        remember_issued_sid(user_id, session_id)
     return _create_token(user_id, role=user_role, status=user_status, session_id=session_id)
 
 
-async def _create_driver_aware_token_from_user(user, db) -> str:
+async def _create_driver_aware_token_from_user(user, db, rotate: bool = True) -> str:
     """Helper that extracts primitives from an ORM user object and calls
     _create_driver_aware_token. Use this when the user object is fresh and
     the session is still active."""
@@ -132,6 +144,7 @@ async def _create_driver_aware_token_from_user(user, db) -> str:
         user.status or "active",
         user,
         db,
+        rotate=rotate,
     )
 
 
@@ -1446,7 +1459,13 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
     st = user.status or "active"
     if st in ("deleted", "blocked", "deactivated"):
         raise HTTPException(403, f"Account {st}")
-    new_access = await _create_driver_aware_token_from_user(user, db)
+    # A refresh token from a phone the driver has since replaced (signed in
+    # elsewhere) must not mint a fresh session on the old phone.
+    if (user.role or "") == "driver":
+        db_sid = getattr(user, "active_session_id", None)
+        if db_sid and payload.get("sid") != db_sid:
+            raise HTTPException(401, "session_expired_new_device")
+    new_access = await _create_driver_aware_token_from_user(user, db, rotate=False)
     new_refresh = _create_refresh_token(user.id)
     _security_audit_log("TOKEN_REFRESHED", request.client.host if request.client else "unknown", f"user_id={user.id}")
     return {"access_token": new_access, "refresh_token": new_refresh, "token_type": "bearer"}

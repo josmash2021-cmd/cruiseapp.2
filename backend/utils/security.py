@@ -482,15 +482,29 @@ def _create_token(user_id: int, device_fp: str = "", role: str = "", status: str
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+# Session id minted for a driver in THIS request, so the refresh token
+# created right after the access token carries the same sid without
+# touching every login handler (routers/auth.py _create_driver_aware_token).
+_last_issued_sid: dict[int, str] = {}
+
+
+def remember_issued_sid(user_id: int, session_id: str) -> None:
+    _last_issued_sid[int(user_id)] = session_id
+
+
 def _create_refresh_token(user_id: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=JWT_REFRESH_HOURS)
-    return jwt.encode({
+    payload = {
         "sub": str(user_id),
         "exp": expire,
         "iat": datetime.now(timezone.utc),
         "jti": secrets.token_hex(16),
         "type": "refresh",
-    }, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    }
+    sid = _last_issued_sid.pop(int(user_id), None)
+    if sid:
+        payload["sid"] = sid
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def _create_login_token(user_id: int) -> str:
@@ -588,8 +602,10 @@ async def _get_current_user(
 
     # Driver single-device enforcement: check session_id matches
     jwt_sid = payload.get("sid")
-    if jwt_sid and (user.role or "") == "driver":
+    if (user.role or "") == "driver":
         db_sid = getattr(user, "active_session_id", None)
+        # A token without a sid (issued before one-phone-per-driver) is as
+        # stale as one with an old sid once the driver signed in elsewhere.
         if db_sid and db_sid != jwt_sid:
             raise HTTPException(401, "session_expired_new_device")
 

@@ -188,7 +188,8 @@ async def connect(sid: str, environ: dict, auth: Optional[dict] = None):
         return False
 
     try:
-        payload = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGORITHM])
+        from utils.security import decode_access_token  # same grace as REST
+        payload = decode_access_token(token)
         user_id = int(payload["sub"])
     except (jwt.InvalidTokenError, ValueError, KeyError) as e:
         logger.warning("[Socket.io] Invalid JWT from %s: %s", sid, e)
@@ -236,7 +237,8 @@ async def authenticate(sid: str, data: dict):
         return
 
     try:
-        payload = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGORITHM])
+        from utils.security import decode_access_token  # same grace as REST
+        payload = decode_access_token(token)
         user_id = int(payload["sub"])
     except (jwt.InvalidTokenError, ValueError, KeyError) as e:
         logger.warning("[Socket.io] Invalid JWT from %s: %s", sid, e)

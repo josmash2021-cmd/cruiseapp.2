@@ -508,6 +508,25 @@ def invalidate_user_cache(user_id: int):
     """Call when user status/role changes (block, delete, role upgrade)."""
     _user_cache.pop(user_id, None)
 
+# Old app builds (Android 1.1.6+740) never refresh: when their 24 h access
+# token expired they looped on 401 with a dead session and the driver was
+# sent back to sign-in (owner report 2026-10-29). New tokens last 30 days;
+# tokens that expired recently are still honoured for the same window.
+# Signature, token type, revocation and account status are still checked
+# on every request, so a logout or a blocked account ends the session.
+ACCESS_TOKEN_EXPIRED_GRACE_S = 30 * 24 * 3600
+
+
+def decode_access_token(token: str) -> dict:
+    """jwt.decode for access tokens with the expired-token grace window."""
+    payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM],
+                         options={"verify_exp": False})
+    exp = payload.get("exp")
+    if exp is not None and float(exp) + ACCESS_TOKEN_EXPIRED_GRACE_S < time.time():
+        raise jwt.ExpiredSignatureError("access token expired beyond grace")
+    return payload
+
+
 async def _get_current_user(
     request: Request,
     authorization: str = Header(None),
@@ -517,7 +536,7 @@ async def _get_current_user(
         raise HTTPException(401, "Not authenticated")
     token = authorization.split(" ")[1]
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = decode_access_token(token)
         if payload.get("type") != "access":
             raise HTTPException(401, "Invalid token type")
         jti = payload.get("jti", "")
@@ -585,7 +604,7 @@ async def _require_admin(
         raise HTTPException(401, "Not authenticated")
     token = authorization.split(" ")[1]
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = decode_access_token(token)
         if payload.get("type") != "access":
             raise HTTPException(401, "Invalid token type")
         jti = payload.get("jti", "")

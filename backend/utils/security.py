@@ -629,7 +629,10 @@ def _verify_api_key(
         now = int(time.time())
         if abs(now - ts) > 1800:
             logging.warning("[AUTH-DBG] expired_timestamp from %s drift=%ds", client_ip, abs(now - ts))
-            _record_violation(client_ip)
+            # A phone clock 30 min off is a misconfiguration, not an attack:
+            # it used to count toward the 20-strike IP ban, and one such
+            # phone behind a carrier NAT banned every driver on that IP
+            # (owner decision 2026-10-29). Refuse the request, keep the IP.
             _security_audit_log("expired_timestamp", client_ip, f"drift={abs(now - ts)}s")
             raise HTTPException(401, "Timestamp expired")
     except ValueError:

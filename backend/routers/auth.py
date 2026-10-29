@@ -160,11 +160,24 @@ async def save_fcm_token(
     # both rows — and every push addressed to the rider landed on the phone
     # while the DRIVER was signed in ("Driver Found!" on the driver's own
     # trip screen). Claim it: the token lives on exactly one row.
-    await db.execute(
-        update(User)
-        .where(User.fcm_token == token, User.id != user.id)
-        .values(fcm_token=None)
-    )
+    # Logged with both ids (2026-10-29): a driver who silently stops getting
+    # pushes is almost always a token that moved to another account on the
+    # same phone, and without this line nothing says so.
+    _prev_owners = (
+        await db.execute(
+            select(User.id).where(User.fcm_token == token, User.id != user.id)
+        )
+    ).scalars().all()
+    if _prev_owners:
+        await db.execute(
+            update(User)
+            .where(User.fcm_token == token, User.id != user.id)
+            .values(fcm_token=None)
+        )
+        logging.info(
+            "[FCM] token ...%s moved from user(s) %s to user %s (%s)",
+            token[-8:], list(_prev_owners), user.id, user.role,
+        )
     user.fcm_token = token
     await db.commit()
     return {"ok": True}

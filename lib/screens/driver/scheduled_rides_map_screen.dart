@@ -84,6 +84,17 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   /// list and the live map — see _tryConsumePendingSelect.
   int? _pendingSelectTripId;
   bool _freshLoaded = false;
+
+  // Live refresh (owner report 2026-10-29: a new reservation never showed up
+  // while this list was open). It reloaded only on open and on the
+  // `scheduled_ride` push, so a push that did not arrive left the list stale
+  // for good. The poll replays the LAST query exactly (same area the driver
+  // is looking at), so it never swaps a searched area for the default one.
+  static const Duration _availPollEvery = Duration(seconds: 15);
+  Timer? _availPollTimer;
+  double? _lastQLat;
+  double? _lastQLng;
+  mapbox.CoordinateBounds? _lastQBbox;
   mapbox.PointAnnotationManager? _bubbleMgr;
   mapbox.PointAnnotationManager? _dotMgr;
   mapbox.PointAnnotation? _dotAnnot;
@@ -161,6 +172,14 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     _countdownTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
+    _availPollTimer = Timer.periodic(_availPollEvery, (_) {
+      if (!mounted) return;
+      if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+        return;
+      }
+      _loadAvailable(
+          force: true, lat: _lastQLat, lng: _lastQLng, bbox: _lastQBbox);
+    });
   }
 
   @override
@@ -170,6 +189,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     disposeDriverRestGate();
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _countdownTimer?.cancel();
+    _availPollTimer?.cancel();
     _bubbleTap?.cancel();
     _bubblePopTicker?.dispose();
     _driverDot.dispose();
@@ -263,11 +283,16 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       return;
     }
     _fetchingAvail = true;
-    // Cached data paints instantly while fresh data loads in background.
+    _lastQLat = lat;
+    _lastQLng = lng;
+    _lastQBbox = bbox;
+    // Cached data paints instantly while fresh data loads in background —
+    // first paint only; once fresh data is on screen a refresh must not
+    // flash the cached list over it.
     try {
       final prefs = await SharedPreferences.getInstance();
       final cached = prefs.getString(_cacheKey);
-      if (cached != null && mounted) {
+      if (cached != null && mounted && !_freshLoaded) {
         final list = (jsonDecode(cached) as List).cast<Map<String, dynamic>>();
         setState(() {
           _available = list;

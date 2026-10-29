@@ -1499,6 +1499,24 @@ async def firebase_token(user: User = Depends(_get_current_user)):
 
 @router.get("/auth/me", dependencies=[Depends(_verify_api_key)])
 async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # Foreground stamp (inactivity reminder, 2026-10-29): every app build
+    # calls /auth/me on launch and on every resume, never from a background
+    # timer. Throttled to one write a minute.
+    if user.role == "driver":
+        _fg = getattr(user, "last_foreground_at", None)
+        _now_fg = datetime.now(timezone.utc)
+        if _fg is not None and _fg.tzinfo is None:
+            _fg = _fg.replace(tzinfo=timezone.utc)
+        if _fg is None or (_now_fg - _fg).total_seconds() >= 60:
+            try:
+                await db.execute(
+                    User.__table__.update().where(User.__table__.c.id == user.id)
+                    .values(last_foreground_at=_now_fg)
+                )
+                await db.commit()
+                user.last_foreground_at = _now_fg
+            except Exception as _fe:
+                logging.warning("[Auth] foreground stamp failed for %s: %s", user.id, _fe)
     # Mark user as online when they call /auth/me (heartbeat)
     # Riders only: a driver goes online ONLY through the explicit online
     # toggle (PATCH /drivers/{id}/location with is_online=True). The app

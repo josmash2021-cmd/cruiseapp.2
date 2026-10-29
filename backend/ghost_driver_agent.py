@@ -56,6 +56,15 @@ async def _ghost_offline_push_enabled(db) -> bool:
 STALE_LOCATION_HOURS = 24      # Ignore drivers with location older than this
 SHIFT_CAP_HOURS = 12           # User spec 2026-09-27: no shift runs past 12 h online
 SHIFT_REST_HOURS = 6           # Server-enforced rest after the cap
+# Inactivity reminder (owner spec 2026-10-29): online for this long without
+# opening the app (users.last_foreground_at, stamped by GET /auth/me on
+# launch/resume) → reminder push; no visit within the grace → offline.
+INACTIVITY_REMIND_HOURS = 3
+INACTIVITY_GRACE_MINUTES = 15
+# driver_id -> when the reminder went out (leader process only; a restart
+# just re-sends the reminder, it never skips the grace).
+_inactivity_reminded: dict[int, datetime] = {}
+_AGENT_BOOT_AT = datetime.now(timezone.utc)
 
 # ── Ghost recovery phases (driver has an ACTIVE trip) ─────────────────
 RECOVERY_WARN_MINUTES = 10     # Phase 1: send "are you still there?" push
@@ -237,6 +246,10 @@ class GhostDriverAgent:
                             "[ShiftCap] offer expiry failed for #%d: %s",
                             driver.id, _ee)
                     await self._sync_driver_offline(driver)
+                    continue
+
+                if await self._inactivity_check(db, driver, now, drivers_on_active_trip):
+                    offlined_count += 1
                     continue
 
                 last_active = driver.last_active_at
@@ -597,6 +610,85 @@ class GhostDriverAgent:
             )
         except Exception as e:
             logger.warning("[GhostDriver] Offline push failed for #%d: %s", driver.id, e)
+
+    async def _inactivity_check(self, db, driver, now, drivers_on_active_trip) -> bool:
+        """Reminder after INACTIVITY_REMIND_HOURS online without opening the
+        app; offline after INACTIVITY_GRACE_MINUTES more. True if the driver
+        was taken offline (the caller counts it and skips the other checks)."""
+        if driver.id in drivers_on_active_trip:
+            _inactivity_reminded.pop(driver.id, None)
+            return False  # never with a rider aboard
+        anchor = _AGENT_BOOT_AT  # no blast for shifts that predate the feature
+        for t in (driver.online_since, getattr(driver, "last_foreground_at", None)):
+            if t is not None:
+                if t.tzinfo is None:
+                    t = t.replace(tzinfo=timezone.utc)
+                anchor = max(anchor, t)
+        reminded = _inactivity_reminded.get(driver.id)
+        if reminded is not None and reminded <= anchor:
+            _inactivity_reminded.pop(driver.id, None)  # he opened the app since
+            reminded = None
+        if now - anchor < timedelta(hours=INACTIVITY_REMIND_HOURS):
+            return False
+        if reminded is None:
+            _inactivity_reminded[driver.id] = now
+            logger.info("[Inactivity] reminder → driver #%d (no app visit since %s)",
+                        driver.id, anchor.isoformat())
+            self._send_inactivity_push(driver, reminder=True)
+            return False
+        if now - reminded < timedelta(minutes=INACTIVITY_GRACE_MINUTES):
+            return False
+        # No visit after the reminder: offline, offers retired, and latched so
+        # a background heartbeat cannot bring him straight back.
+        _inactivity_reminded.pop(driver.id, None)
+        driver.is_online = False
+        driver.online_since = None
+        try:
+            from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+            await expire_pending_offers_for_driver(db, driver.id, "inactivity")
+        except Exception as e:
+            logger.warning("[Inactivity] offer expiry failed for #%d: %s", driver.id, e)
+        try:
+            from services import presence_latch
+            await presence_latch.latch(db, [driver.id])
+        except Exception as e:
+            logger.warning("[Inactivity] latch failed for #%d: %s", driver.id, e)
+        logger.warning("[Inactivity] OFFLINE driver #%d — no app visit since %s",
+                       driver.id, anchor.isoformat())
+        self._send_inactivity_push(driver, reminder=False)
+        await self._sync_driver_offline(driver)
+        return True
+
+    def _send_inactivity_push(self, driver, reminder: bool):
+        if not driver.fcm_token:
+            return
+        try:
+            from services.fcm_service import _send_fcm_push
+            from utils.helpers import user_lang
+            if reminder:
+                _send_fcm_push(
+                    driver.fcm_token,
+                    title="¿Sigues ahí?",
+                    body=f"Entra a Cruise para seguir conectado. Si no entras en "
+                         f"{INACTIVITY_GRACE_MINUTES} minutos te desconectaremos.",
+                    title_en="Are you still there?",
+                    body_en=f"Open Cruise to stay online. If you don't open it within "
+                            f"{INACTIVITY_GRACE_MINUTES} minutes you will be taken offline.",
+                    locale=user_lang(driver),
+                    data={"type": "inactivity_reminder", "driver_id": str(driver.id)},
+                )
+            else:
+                _send_fcm_push(
+                    driver.fcm_token,
+                    title="Has sido desconectado",
+                    body="No estás recibiendo viajes",
+                    title_en="You have been disconnected",
+                    body_en="You are not receiving rides",
+                    locale=user_lang(driver),
+                    data={"type": "dispatch_presence_set", "online": "0"},
+                )
+        except Exception as e:
+            logger.warning("[Inactivity] push failed for #%d: %s", driver.id, e)
 
     def _send_shift_ended_push(self, driver):
         """12 h cap: tell the driver the shift closed (app flips its UI live

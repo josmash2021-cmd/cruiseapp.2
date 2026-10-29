@@ -296,6 +296,11 @@ class User(Base):
     # 24h"): stamped by POST /drivers/face-check; can_go_online reports
     # face_check_due when it's null or older than 24 h.
     last_face_verified_at = Column(DateTime(timezone=True), nullable=True)
+    # Last time the driver had the app in front of him (GET /auth/me on
+    # launch/resume, or his own GO). Inactivity reminder, owner spec
+    # 2026-10-29: 3 h online without opening the app → push; 15 min more
+    # → offline. Not touched by background heartbeats.
+    last_foreground_at = Column(DateTime(timezone=True), nullable=True)
     # Face-check dispatch review (2026-10-23, owner spec): the daily selfie
     # auto-approves by default; a dispatch REJECT flips face_review_required
     # so the next selfie stays pending until dispatch approves it, and
@@ -1350,6 +1355,7 @@ async def migrate_add_columns(conn):
         # (2026-10-23) — boot lists or prod never gets them (trampa #0).
         ("users", "gender", "VARCHAR(20)"),
         ("users", "last_face_verified_at", "DATETIME"),
+        ("users", "last_foreground_at", "DATETIME"),
         # Face-check dispatch review (2026-10-23) — boot lists (trampa #0).
         ("users", "face_review_required", "BOOLEAN DEFAULT 0"),
         ("users", "face_kick_pending", "BOOLEAN DEFAULT 0"),
@@ -1636,6 +1642,7 @@ async def migrate_postgres(conn):
         ("users", "contracts_accepted_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "gender", "VARCHAR(20)"),
         ("users", "last_face_verified_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "last_foreground_at", "TIMESTAMP WITH TIME ZONE"),
         # Face-check dispatch review (2026-10-23) — boot list (trampa #0).
         ("users", "face_review_required", "BOOLEAN DEFAULT FALSE"),
         ("users", "face_kick_pending", "BOOLEAN DEFAULT FALSE"),

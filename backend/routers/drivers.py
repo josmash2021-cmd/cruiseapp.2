@@ -420,6 +420,8 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         # only — heartbeats must not restart it.
         if _online_flipped:
             user.online_since = utc_now() if body.is_online else None
+            if body.is_online:
+                user.last_foreground_at = utc_now()  # his own GO
         await db.commit()
         _driver_last_db_write[driver_id] = _now
         # Demand waitlist (2026-10-17, owner spec): a rider whose request

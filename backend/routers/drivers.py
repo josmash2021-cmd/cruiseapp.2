@@ -372,7 +372,11 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     # boundary keeps working.
     if body.is_online:
         from services.zone_polygons import sector_gate_blocks
-        if await sector_gate_blocks(db, body.lat, body.lng):
+        # Connect-time only, as the rule above says (2026-10-29): this ran on
+        # EVERY heartbeat, so a driver who connected inside coverage and then
+        # drove out had every location write refused — still "online" with a
+        # frozen position that dispatch kept offering trips to.
+        if not user.is_online and await sector_gate_blocks(db, body.lat, body.lng):
             _driver_locations.pop(driver_id, None)
             raise HTTPException(403, "outside_service_area")
         # 2026-10-17 (owner spec, "todo se controla desde dispatch"): a zone

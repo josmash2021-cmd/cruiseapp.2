@@ -127,6 +127,7 @@ async def test_inside_coverage_but_outside_every_sector_is_403(
     driver, token = test_driver
     driver.is_verified = True
     driver.verification_status = "approved"
+    driver.is_online = False  # the gate is connect-time: this is a connect
     await db.commit()
 
     res = await client.patch(
@@ -198,3 +199,34 @@ async def test_gate_follows_the_live_panel_map(client, db, test_driver):
         json={**HIALEAH, "is_online": True},
     )
     assert res.status_code == 200, res.text
+
+
+
+async def test_online_driver_leaving_coverage_keeps_reporting(
+        client, db, test_driver):
+    """Connect-time only (2026-10-29): a driver already online who drives
+    out of coverage keeps his location updates — before, every heartbeat
+    got 403 and his position froze while he stayed online."""
+    _force_real_sectors()
+    gap = None
+    for sector in zone_polygons._sectors:
+        w, s_, e, n = sector["bbox"]
+        for lat, lng in [(s_, w), (s_, e), (n, w), (n, e)]:
+            if await zone_polygons.sector_gate_blocks(None, lat, lng):
+                gap = {"lat": lat, "lng": lng}
+                break
+        if gap:
+            break
+    assert gap
+    driver, token = test_driver
+    driver.is_verified = True
+    driver.verification_status = "approved"
+    driver.is_online = True
+    await db.commit()
+    from tests.conftest import _make_auth_headers
+    resp = await client.patch(
+        f"/drivers/{driver.id}/location",
+        json={**gap, "is_online": True},
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text

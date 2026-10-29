@@ -72,6 +72,23 @@ class DriverRoadLock {
     }
 
     final closest = _closest(raw);
+    // Past the END of a confidence line (owner report 2026-10-29: the arrow
+    // "avanza, se detiene, vuelve a avanzar" on the online/offline map).
+    // That line is the map-matched trace of PAST fixes, refreshed every ~6 s,
+    // so a moving car is always beyond its last vertex — and the segment
+    // projection clamps there. The marker sat pinned on that vertex for up to
+    // 55 m, then jumped when the next match landed. Beyond the end the line
+    // says nothing about the car: hand back untrusted so the display follows
+    // the real motion. A live route (no requireConfidence) still clamps.
+    if (requireConfidence && _pastLineEnd(raw, closest.index)) {
+      return RoadLockFix(
+        point: _lastPoint,
+        bearing: _lastBearing,
+        trusted: false,
+        segmentIndex: -1,
+        distanceM: closest.distance,
+      );
+    }
     final threshold = _trustedLine ? 55.0 : 35.0;
     final trusted = !requireConfidence || closest.distance <= threshold;
     _trustedLine = trusted;
@@ -113,6 +130,21 @@ class DriverRoadLock {
     _segmentIndex = -1;
     _trustedLine = false;
     _revision++;
+  }
+
+  /// True when [raw] lies beyond the last vertex along the last segment's
+  /// direction — the case where the projection is clamped to the end.
+  bool _pastLineEnd(LatLng raw, int segment) {
+    if (segment != _points.length - 2) return false;
+    final a = _points[segment];
+    final b = _points[segment + 1];
+    final cosLat = math.cos(b.latitude * math.pi / 180);
+    final sx = (b.longitude - a.longitude) * cosLat;
+    final sy = b.latitude - a.latitude;
+    if (sx * sx + sy * sy < 1e-14) return false;
+    final rx = (raw.longitude - b.longitude) * cosLat;
+    final ry = raw.latitude - b.latitude;
+    return sx * rx + sy * ry > 0;
   }
 
   static bool _same(LatLng? a, LatLng? b) => a == null || b == null

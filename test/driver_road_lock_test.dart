@@ -147,4 +147,29 @@ void main() {
     expect(driverDisplayPosition(empty, raw).latitude, raw.latitude);
     expect(driverDisplayPosition(empty, raw).longitude, raw.longitude);
   });
+
+  // 2026-10-29 (owner: the arrow moves, stops, moves again online/offline).
+  test('past the end of a confidence line the display follows the car', () {
+    final lock = DriverRoadLock();
+    const line = <LatLng>[a, b]; // map-matched trace, ends at the last fix
+    expect(lock.project(line, a, requireConfidence: true).trusted, isTrue);
+    double? prevLat;
+    for (var k = 1; k <= 6; k++) {
+      final raw = LatLng(33.001 + k * 0.00005, -86.0); // ~5.6 m steps north
+      final fix = lock.project(line, raw, requireConfidence: true);
+      expect(fix.trusted, isFalse, reason: 'must not pin on the end vertex');
+      final shown = driverDisplayPosition(fix, raw);
+      expect(shown.latitude, raw.latitude);
+      if (prevLat != null) expect(shown.latitude, greaterThan(prevLat));
+      prevLat = shown.latitude;
+    }
+  });
+
+  test('a live route still clamps at its end (destination)', () {
+    final lock = DriverRoadLock();
+    const line = <LatLng>[a, b];
+    final fix = lock.project(line, const LatLng(33.0012, -86.0));
+    expect(fix.trusted, isTrue);
+    expect(RouteSplice.haversineM(fix.point!, b), lessThan(0.01));
+  });
 }

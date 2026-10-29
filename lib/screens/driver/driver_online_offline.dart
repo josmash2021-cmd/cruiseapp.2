@@ -1173,6 +1173,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     // pref read at boot: a shift that never closed is resumed, not started.
     // The "You're now online!" intro no longer fires here (2026-10-23 owner
     // spec): it is armed by _enterOnlineMode itself, 10 s into the shift.
+    // The driver's OWN GO (or Dispatch's remote "online", which runs this
+    // same tap): the backend write carries explicit:true (owner spec
+    // 2026-10-29), the only one that lifts a forced-offline latch.
+    _explicitGoPending = true;
     await _enterOnlineMode(resuming: _driverWasOnlineAtBoot);
   }
 
@@ -1612,6 +1616,28 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   // ═══════════════════════════════════════════════════
   //  FLOATING GO BUTTON — inner pulse glow
   // ═══════════════════════════════════════════════════
+  /// What a GO tap does right now. The button and Dispatch's remote
+  /// "online" switch (owner spec 2026-10-29) share it, so every gate applies
+  /// to both. Null = dead button (selfie under review).
+  VoidCallback? _goTapAction() {
+    final restRemaining = _restUntil?.difference(DateTime.now());
+    if (restRemaining != null && restRemaining > Duration.zero) {
+      return () => _showRestRemaining(restRemaining);
+    }
+    if (_goOnlineDisabled) return _showGoOnlineDisabledDialog;
+    final faceState = _faceGateState;
+    if (faceState == 2) return null;
+    if (faceState == 1) return _onFaceVerifyTap;
+    if (_isVerified) return _onGoTap;
+    return () async {
+      // El primer tap no puede morir en "marcar verificado" (user
+      // report 2026-10-16-noche: "al boton de go online hay que
+      // darle dos veces para que se conecte") — verificar y
+      // CONTINUAR al flip en el mismo tap.
+      if (await _ensureVerified()) _onGoTap();
+    };
+  }
+
   Widget _buildGoButton({double radius = 16.0, double morph = 1.0}) {
     final faceState = _faceGateState;
     final now = DateTime.now();
@@ -1625,23 +1651,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       // explains, never flips — and it outranks even the face gate.
       // Face gate (2026-10-23 owner spec): pending review = dead button;
       // verify = the red "Verificar" runs the liveness flow, not the flip.
-      onTap: resting
-          ? () => _showRestRemaining(restRemaining)
-          : _goOnlineDisabled
-          ? _showGoOnlineDisabledDialog
-          : faceState == 2
-              ? null
-              : faceState == 1
-                  ? _onFaceVerifyTap
-              : _isVerified
-                  ? _onGoTap
-                  : () async {
-                      // El primer tap no puede morir en "marcar verificado" (user
-                      // report 2026-10-16-noche: "al boton de go online hay que
-                      // darle dos veces para que se conecte") — verificar y
-                      // CONTINUAR al flip en el mismo tap.
-                      if (await _ensureVerified()) _onGoTap();
-                    },
+      onTap: _goTapAction(),
       child: AnimatedBuilder(
         animation: Listenable.merge([
           if (_goPulseAnim != null) _goPulseAnim!,

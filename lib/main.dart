@@ -691,6 +691,15 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // Driver: Dispatch's online/offline switch (owner spec 2026-10-29) — same
+  // stream as the socket event; the live DriverOnlineScreen runs its own
+  // GO / offline flow on it.
+  if (type == 'dispatch_presence_set') {
+    SocketService.injectDispatchPresence(
+        message.data['online']?.toString() == '1');
+    return;
+  }
+
   // Driver: dispatch rejected the dress-code selfie / approved the pending
   // one (2026-10-23) — dialog + the live screen re-reads the GO gate.
   if (type == 'face_check_rejected') {
@@ -1573,6 +1582,13 @@ Future<void> heavyInit() async {
             final type = message.data['type'] as String? ?? 'general';
             if (type == 'driver_shift_ended') {
               DriverOnlineScreen.shiftEndedNotifier.value++;
+              return;
+            }
+            // Dispatch online/offline switch (2026-10-29): forward to the
+            // socket's stream — the screen shows its own notice, no banner.
+            if (type == 'dispatch_presence_set') {
+              SocketService.injectDispatchPresence(
+                  message.data['online']?.toString() == '1');
               return;
             }
             // For driver ride offers: always use clean title/body — never show price or address

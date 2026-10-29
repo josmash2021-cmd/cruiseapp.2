@@ -2642,11 +2642,17 @@ class ApiService {
   }
 
   /// Update driver's location and online status.
+  ///
+  /// [explicit] marks the driver's OWN GO tap (owner spec 2026-10-29): it is
+  /// the only is_online=true write that lifts a Dispatch/maintenance
+  /// forced-offline latch. Heartbeats, streams and polls must leave it
+  /// false — the backend answers them 403 `dispatch_offline` while latched.
   static Future<Map<String, dynamic>> updateDriverLocation({
     required int driverId,
     required double lat,
     required double lng,
     bool isOnline = true,
+    bool explicit = false,
     int? etaSeconds,
     double? heading,
     double? speedMps,
@@ -2661,6 +2667,7 @@ class ApiService {
             'lat': lat,
             'lng': lng,
             'is_online': isOnline,
+            if (explicit) 'explicit': true,
             if (etaSeconds != null) 'eta_seconds': etaSeconds,
             if (heading != null) 'heading': heading,
             if (speedMps != null) 'speed': speedMps,

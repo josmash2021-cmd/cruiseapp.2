@@ -70,6 +70,8 @@ class SocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   static var _faceCheckReviewController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static var _dispatchPresenceController =
+      StreamController<Map<String, dynamic>>.broadcast();
   static var _pricingUpdatedController =
       StreamController<Map<String, dynamic>>.broadcast();
 
@@ -132,6 +134,24 @@ class SocketService {
   /// on this; the can_go_online payload stays the truth on boot/GO tap.
   static Stream<Map<String, dynamic>> get goOnlineGateStream =>
       _goOnlineGateController.stream;
+
+  /// Dispatch online/offline switch for THIS driver (owner spec 2026-10-29).
+  /// Payload: {online: bool}. Fed by the socket event
+  /// `dispatch_presence_set` and by the FCM push of the same type
+  /// ([injectDispatchPresence]); DriverOnlineScreen runs its own GO /
+  /// offline flow on it.
+  static Stream<Map<String, dynamic>> get dispatchPresenceStream =>
+      _dispatchPresenceController.stream;
+
+  /// Forward a `dispatch_presence_set` push (foreground or tap) into the
+  /// same stream the socket feeds — one handler for both channels.
+  static void injectDispatchPresence(bool online) {
+    if (_dispatchPresenceController.isClosed) {
+      _dispatchPresenceController =
+          StreamController<Map<String, dynamic>>.broadcast();
+    }
+    _dispatchPresenceController.add({'online': online});
+  }
 
   /// Ping pushed when dispatch approves/rejects a driver's dress-code selfie
   /// (2026-10-23, owner report: the reject did NOT disconnect a connected
@@ -376,6 +396,12 @@ class SocketService {
       final map = _toMap(data);
       _goOnlineGateController.add(map);
       debugPrint('[Socket.io] GO gate changed: ${map['disabled']}');
+    });
+
+    _socket!.on('dispatch_presence_set', (data) {
+      final map = _toMap(data);
+      _dispatchPresenceController.add(map);
+      debugPrint('[Socket.io] Dispatch presence set: ${map['online']}');
     });
 
     _socket!.on('face_check_reviewed', (data) {
@@ -640,6 +666,10 @@ class SocketService {
         _faceCheckReviewController =
             StreamController<Map<String, dynamic>>.broadcast();
       }
+      if (_dispatchPresenceController.isClosed) {
+        _dispatchPresenceController =
+            StreamController<Map<String, dynamic>>.broadcast();
+      }
       if (_pricingUpdatedController.isClosed) {
         _pricingUpdatedController =
             StreamController<Map<String, dynamic>>.broadcast();
@@ -702,6 +732,9 @@ class SocketService {
     }
     if (!_faceCheckReviewController.isClosed) {
       _faceCheckReviewController.close();
+    }
+    if (!_dispatchPresenceController.isClosed) {
+      _dispatchPresenceController.close();
     }
     if (!_pricingUpdatedController.isClosed) {
       _pricingUpdatedController.close();

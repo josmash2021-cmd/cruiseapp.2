@@ -1034,6 +1034,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         ));
       }
     });
+    // Dispatch online/offline switch for THIS driver (owner spec
+    // 2026-10-29): socket `dispatch_presence_set` + the push forwarded by
+    // main.dart land on the same stream.
+    _dispatchPresenceSub =
+        SocketService.dispatchPresenceStream.listen(_onDispatchPresenceSet);
     // Dispatch selfie review — instant (2026-10-23 owner report: "le doy
     // rechazar y no desconecta al driver si esta conectado"): before this
     // channel the live app only learned by TAPPING the push banner, so a
@@ -1586,6 +1591,22 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   StreamSubscription<Map<String, dynamic>>? _goOnlineGateSub;
   StreamSubscription<Map<String, dynamic>>? _faceCheckReviewSub;
 
+  // Dispatch online/offline switch (owner spec 2026-10-29).
+  // `dispatch_presence_set` arrives by socket AND by push; the pair below
+  // dedups the second copy of the same flip.
+  StreamSubscription<Map<String, dynamic>>? _dispatchPresenceSub;
+  bool? _lastDispatchPresence;
+  DateTime? _lastDispatchPresenceAt;
+  // Dispatch took the driver offline mid-trip: the trip is never cut — the
+  // exit runs when it ends (clock backstop + trip-end paths).
+  bool _dispatchOfflinePending = false;
+  // Set by the driver's OWN GO (the button, or Dispatch's remote "online"
+  // that runs the same flow) and read by _goOnlineBackend: only that write
+  // carries `explicit: true`, the one that lifts a forced-offline latch. A
+  // boot resume must NOT carry it, or relaunching the app would undo a
+  // Dispatch kick.
+  bool _explicitGoPending = false;
+
   /// Foto real del mapa capturada al entregar la superficie (2026-10-17,
   /// cero negro al volver de otra página). El velo del remount la prefiere
   /// sobre el snapshot estático de red; se limpia cuando el remount
@@ -1855,6 +1876,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _approvalStatusSub?.cancel();
     _goOnlineGateSub?.cancel();
     _faceCheckReviewSub?.cancel();
+    _dispatchPresenceSub?.cancel();
     ZoneService.sectorsChanged.removeListener(_onSectorsChanged);
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);

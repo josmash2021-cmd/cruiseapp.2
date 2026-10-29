@@ -5765,6 +5765,11 @@ class S {
   String get maintenanceClaimBlocked => _es
       ? 'Cruise está en mantenimiento: no se pueden reservar viajes por ahora.'
       : 'Cruise is under maintenance: rides cannot be reserved right now.';
+  // Dispatch online/offline switch (owner spec 2026-10-29).
+  String get dispatchPresenceOffline =>
+      _es ? 'Dispatch te desconectó' : 'Dispatch took you offline';
+  String get dispatchPresenceOnline =>
+      _es ? 'Dispatch te conectó' : 'Dispatch put you online';
   String get rideTakenByAnotherDriver =>
       _es ? 'Otro conductor lo tomó' : 'Another driver took it';
   String get driverRideTakenReturning => _es

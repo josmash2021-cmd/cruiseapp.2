@@ -1256,6 +1256,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// Salir offline (el _goOffline de hoy, sin el pop): se apagan los
   /// canales, el backend queda offline y el mapa ni se entera.
   Future<void> _exitOnlineMode() async {
+    // A GO that never landed must not leave `explicit` armed for a later
+    // non-GO write (e.g. a boot resume).
+    _explicitGoPending = false;
     if (!_driverOnline || !mounted) return;
     // Silence every isOnline:true writer BEFORE the offline write leaves —
     // the other order let a queued heartbeat flip the driver back online.
@@ -1375,6 +1378,129 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     unawaited(_checkVehicleDocStatus());
   }
 
+  /// A trip this driver is driving (or about to): accepted, en route,
+  /// aboard, earnings overlay, or one the trip screen still owns. Dispatch's
+  /// offline switch never cuts it — the exit waits for the trip to end.
+  bool get _hasLiveTrip =>
+      _tripId != null ||
+      _watchedCancelTripId != null ||
+      _activeTripData != null ||
+      (_phase != _Phase.searching && _phase != _Phase.rideRequest);
+
+  /// 403 `dispatch_offline` (owner spec 2026-10-29): Dispatch (or the
+  /// maintenance switch) took this driver offline and the backend refuses
+  /// every is_online=true write that is not the driver's own GO. Terminal,
+  /// same no-retry class as face_review_required: roll back offline in
+  /// silence — the socket/push path already showed the notice, and a dialog
+  /// here would loop on every heartbeat. Mid-trip the exit is deferred.
+  void _onDispatchOfflineKick() {
+    if (!mounted || !_driverOnline) return;
+    if (_hasLiveTrip) {
+      if (!_dispatchOfflinePending) {
+        debugPrint('[DriverOnline] dispatch_offline mid-trip — exit deferred '
+            'until the trip ends');
+      }
+      _dispatchOfflinePending = true;
+      return;
+    }
+    unawaited(_exitOnlineMode());
+  }
+
+  /// Runs a Dispatch "offline" that arrived mid-trip, once the trip is over.
+  /// Called from the trip-end paths and from the 5 s clock as a backstop.
+  void _flushDeferredDispatchOffline() {
+    if (!_dispatchOfflinePending || !mounted || _hasLiveTrip) return;
+    _dispatchOfflinePending = false;
+    debugPrint('[DriverOnline] trip over — applying deferred dispatch offline');
+    if (_driverOnline) unawaited(_exitOnlineMode());
+    _showDispatchPresenceNotice(online: false);
+  }
+
+  /// Dispatch online/offline switch for THIS driver (owner spec 2026-10-29),
+  /// from the socket `dispatch_presence_set` or its push (main.dart).
+  ///
+  /// * online=false: back to this screen (the driver home) and offline — but
+  ///   a live trip is never popped nor cut; the exit waits for it to end.
+  /// * online=true: the same action as tapping GO ([_goTapAction]), so every
+  ///   gate (rest, paused GO, selfie, zone, approval, maintenance) still
+  ///   applies and shows its usual message when it blocks.
+  void _onDispatchPresenceSet(Map<String, dynamic> data) {
+    if (!mounted) return;
+    final raw = data['online'];
+    final online = raw == true || raw == 1 || raw == '1' || raw == 'true';
+    // Socket and push both deliver the same flip — handle it once.
+    final now = DateTime.now();
+    final last = _lastDispatchPresenceAt;
+    if (_lastDispatchPresence == online &&
+        last != null &&
+        now.difference(last) < const Duration(seconds: 10)) {
+      return;
+    }
+    _lastDispatchPresence = online;
+    _lastDispatchPresenceAt = now;
+    debugPrint('[DriverOnline] dispatch presence set: online=$online');
+
+    if (online) {
+      _dispatchOfflinePending = false;
+      if (_driverOnline || _enteringOnline || _isGoingOnline) return;
+      _showDispatchPresenceNotice(online: true);
+      final action = _goTapAction();
+      if (action != null) {
+        action();
+      } else {
+        // Selfie under review: the GO button is dead, so is this.
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+          content: Text(S.of(context).faceReviewPending),
+          duration: const Duration(seconds: 3),
+        ));
+      }
+      return;
+    }
+
+    if (_hasLiveTrip) {
+      _dispatchOfflinePending = true;
+      debugPrint('[DriverOnline] dispatch took the driver offline mid-trip — '
+          'the trip runs to the end, offline after it');
+      return;
+    }
+    _popToDriverHome();
+    if (_driverOnline) unawaited(_exitOnlineMode());
+    _showDispatchPresenceNotice(online: false);
+  }
+
+  /// Pop every route pushed on top of this screen (menu, earnings, sheets,
+  /// dialogs) — this screen IS the driver home. Same popUntil as
+  /// [_handleExternalTripCancel]; maybeOf because this runs from a stream.
+  void _popToDriverHome() {
+    if (!mounted) return;
+    final myRoute = ModalRoute.of(context);
+    final nav = Navigator.maybeOf(context);
+    if (myRoute == null || nav == null || myRoute.isCurrent) return;
+    try {
+      nav.popUntil((r) => r == myRoute || r.isFirst);
+    } catch (e) {
+      debugPrint('[DriverOnline] popUntil on dispatch offline failed: $e');
+    }
+  }
+
+  void _showDispatchPresenceNotice({required bool online}) {
+    // After the pop settles, so it lands on this screen's Scaffold.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      final s = S.of(context);
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+          online ? s.dispatchPresenceOnline : s.dispatchPresenceOffline,
+          textAlign: TextAlign.center,
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ));
+    });
+  }
+
   /// El flag de background del GPS va atado al modo (regla 2026-08-22):
   /// online = background-capable (el driver trabaja con el teléfono
   /// bloqueado); offline = foreground-only (nada de foreground service sin
@@ -1483,13 +1609,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Save last known location for startup pre-caching
     LocalCache.set('last_driver_lat', _pos!.latitude);
     LocalCache.set('last_driver_lng', _pos!.longitude);
+    // explicit: true ONLY for the driver's own GO (owner spec 2026-10-29) —
+    // the one write that lifts a Dispatch/maintenance forced-offline latch.
+    // A boot resume reaches here too and must stay non-explicit.
     ApiService.updateDriverLocation(
       driverId: _driverId!,
       lat: _pos!.latitude,
       lng: _pos!.longitude,
       isOnline: true,
+      explicit: _explicitGoPending,
     ).then((_) {
       _isGoingOnline = false;
+      _explicitGoPending = false;
       debugPrint('[DriverOnline] backend registered this driver online');
       AnalyticsService.instance.logDriverOnline();
       // Idempotent — this is the happy path, but _showOnlinePresence is also
@@ -1574,6 +1705,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         unawaited(_checkVehicleDocStatus());
         return;
       }
+      // dispatch_offline is terminal (owner spec 2026-10-29): Dispatch took
+      // this driver offline and only an explicit GO lifts it — a resume
+      // write lands here. Roll back in silence, never retry.
+      if (e is ApiException && e.message == 'dispatch_offline') {
+        _onDispatchOfflineKick();
+        return;
+      }
       // Retry after 5s so driver doesn't stay silently offline
       Future.delayed(const Duration(seconds: 5), () {
         if (mounted && _phase == _Phase.searching) {
@@ -1656,6 +1794,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         }
         if (e is ApiException && e.message == 'face_review_required') {
           _onFaceReviewKick();
+        }
+        if (e is ApiException && e.message == 'dispatch_offline') {
+          _onDispatchOfflineKick();
         }
       }
     });
@@ -1873,6 +2014,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             }
             if (e is ApiException && e.message == 'face_review_required') {
               _onFaceReviewKick();
+            }
+            if (e is ApiException && e.message == 'dispatch_offline') {
+              _onDispatchOfflineKick();
             }
             return <String, dynamic>{};
           });
@@ -3322,6 +3466,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         if (e is ApiException && e.message == 'face_review_required') {
           _onFaceReviewKick();
         }
+        if (e is ApiException && e.message == 'dispatch_offline') {
+          _onDispatchOfflineKick();
+        }
         return <String, dynamic>{};
       });
     }
@@ -3412,6 +3559,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // a blank lock screen for the whole shift.
       _showOnlinePresence();
       _syncOfferLiveActivity();
+      // A Dispatch offline deferred by a live trip applies once it ends.
+      _flushDeferredDispatchOffline();
     });
   }
 
@@ -4796,6 +4945,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _startPosStream();
     // A ride accepted mid-trip while this one was being driven starts now.
     _handoffChainedOffer();
+    // Dispatch took the driver offline during this trip — apply it now.
+    _flushDeferredDispatchOffline();
   }
 
   Future<void> _complete() async {
@@ -4863,6 +5014,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _loadAllEarnings();
     // A ride accepted mid-trip while this one was being driven starts now.
     _handoffChainedOffer();
+    // Dispatch took the driver offline during this trip — apply it now.
+    _flushDeferredDispatchOffline();
   }
 
   void _goOffline() {
@@ -5116,6 +5269,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // one event the driver must not miss in their periphery, so it lands
     // centred on a semi-dark wash for ~5 s and then fades out of the way.
     _showCancelledNotice(reassigned: reassigned, taken: taken);
+    // Dispatch took the driver offline during this trip — apply it now.
+    _flushDeferredDispatchOffline();
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

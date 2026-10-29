@@ -57,8 +57,14 @@ if not API_KEY or not HMAC_SECRET or not JWT_SECRET:
         logging.warning("[SECURITY] Using auto-generated secrets for LOCAL dev. Set env vars for production.")
 
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = 24
-JWT_REFRESH_HOURS = 168
+# Sessions persist (owner spec 2026-10-29: "si inicio sesion no deberia
+# salirse"). Access 30 days so the app rarely needs a refresh at all —
+# old builds treated a refresh timeout as a logout. Refresh 10 years and
+# rotated on every use, so an active driver never expires. Logout (jti
+# revocation), blocked accounts and the single-session check are
+# enforced per request and are unaffected by these lifetimes.
+JWT_EXPIRE_HOURS = 24 * 30
+JWT_REFRESH_HOURS = 24 * 365 * 10
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -815,7 +821,8 @@ async def _verify_dispatch_key(
 
 # NOTE: API_KEY, HMAC_SECRET, JWT_SECRET, DISPATCH_API_KEY are defined at the top of this file (lines 24-43).
 # Do NOT re-declare them here — it would overwrite the auto-generated dev secrets.
-JWT_REFRESH_HOURS = 168
+# (JWT_REFRESH_HOURS lives at the top too; a second assignment here used to
+# override it silently.)
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

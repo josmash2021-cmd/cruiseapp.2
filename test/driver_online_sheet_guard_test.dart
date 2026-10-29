@@ -192,7 +192,11 @@ void main() {
     test('iOS ends the island when the app is terminated', () {
       expect(appDelegate, contains('override func applicationWillTerminate(_ application: UIApplication) {'));
       final at = appDelegate.indexOf('override func applicationWillTerminate');
-      expect(appDelegate.substring(at, at + 300), contains('CruiseLiveActivityManager.shared.stop()'));
+      final hook = appDelegate.substring(at, at + 600);
+      expect(hook, contains('CruiseLiveActivityManager.shared.stop()'));
+      // The manager is @available(iOS 16.2, *): the call must be guarded
+      // or the whole iOS archive fails (OTA run 2026-10-29).
+      expect(hook, contains('if #available(iOS 16.2, *)'));
     });
   });
 }

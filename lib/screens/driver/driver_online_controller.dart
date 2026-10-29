@@ -2470,6 +2470,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   //  POLLING & CLOCK
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   void _startPolling({bool force = false}) {
+    // Offer polling is an ONLINE-only channel (owner report 2026-10-29:
+    // drivers who went offline still showed as active). Paths like the
+    // remote-cancel reset landed here while offline and _poll's location
+    // write (is_online defaults to true) flipped them back online.
+    if (!_driverOnline) {
+      _pollT?.cancel();
+      return;
+    }
     // ── Debounce: ignore rapid-fire calls within 1s ──
     // `force` skips it for the lifecycle resume: pause cancels _pollT and
     // nothing retries a debounced start, so a quick background→foreground
@@ -3270,6 +3278,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   Future<void> _poll() async {
     if (_isPollingOffers) return;
+    // Belt and braces for the guard in _startPolling: an offline driver is
+    // never polled, never re-registered online, never sent as is_online.
+    if (!_driverOnline || _wentOffline) return;
     _isPollingOffers = true;
     if (_driverId == null) {
       debugPrint(

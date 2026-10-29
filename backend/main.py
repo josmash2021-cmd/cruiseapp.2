@@ -1722,8 +1722,13 @@ async def _rate_limit_check(path: str, method: str, client_ip: str) -> tuple[int
         # This runs BEFORE the global DDoS cap below and provides per-category limits.
         # The limiter may be sync (in-memory) or async (Redis) — handle both.
         try:
-            if "/auth/" in path or path in ("/panel/login", "/dispatch/login"):
-                # Auth endpoints: 20 req/min per IP (prevents brute-force/OTP spam)
+            if path.startswith(_AUTH_CREDENTIAL_PATHS) or path in ("/panel/login", "/dispatch/login"):
+                # Credential endpoints only: 20 req/min per IP (brute-force /
+                # OTP spam). "/auth/" as a whole used to live here, so /auth/me,
+                # /auth/refresh and the other session reads of every driver
+                # behind one carrier IP (CGNAT) burned the bucket in a minute:
+                # 429 on /auth/refresh logged drivers out and 429 on
+                # phone-login read as "error al iniciar sesión" (2026-10-29).
                 _check = _tiered_rate_limiter.check(f"auth:{client_ip}", max_requests=20, window_seconds=60)
             elif "/payments/" in path or "/webhooks/" in path:
                 # Payment endpoints: 30 req/min per IP (prevents charge spam)
@@ -1754,8 +1759,23 @@ async def _rate_limit_check(path: str, method: str, client_ip: str) -> tuple[int
 
 # -- LAYER 4: Request Size Limit (anti-payload bomb) ---
 _MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB max (photos are ~1-2MB base64)
+
+# The only /auth paths that take a credential or a one-time code — the ones
+# worth throttling hard. Everything else under /auth/ is a session read.
+_AUTH_CREDENTIAL_PATHS = (
+    "/auth/login", "/auth/phone-login", "/auth/email-login", "/auth/complete-login",
+    "/auth/send-otp", "/auth/verify-otp", "/auth/register", "/auth/social",
+    "/auth/forgot-password", "/auth/reset-password", "/auth/password-reset",
+    "/auth/set-password", "/auth/web/login",
+)
 _MAX_VERIFY_SIZE = 30 * 1024 * 1024  # 30 MB for verification (photos + video)
-_LARGE_BODY_PATHS = {"/auth/verify-request", "/drivers/documents", "/drivers/documents/upload"}
+_LARGE_BODY_PATHS = {
+    "/auth/verify-request", "/drivers/documents", "/drivers/documents/upload",
+    # The 24 h selfie (2026-10-29): Android cameras post 3-8 MB JPEGs here;
+    # the endpoint itself allows 30 MB but the 5 MB cap answered 413 first,
+    # the stamp never landed and the selfie was asked on every single GO.
+    "/drivers/face-check",
+}
 
 
 def _body_size_limit(path: str, method: str) -> int | None:

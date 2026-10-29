@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
+import '../../../services/local_data_service.dart';
 import '../../../services/socket_service.dart';
 import '../../../services/user_session.dart';
 import '../../../widgets/feathered_image.dart';
@@ -106,7 +107,18 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
     if (status == 'approve' || status == 'approved') {
       _goApproved();
     } else if (status == 'reject' || status == 'rejected') {
-      _load(); // re-list with the rejection reasons on the cards
+      // A rejection naming ONE document re-lists the cards with its reason;
+      // an account-level rejection (the panel's Rechazar →
+      // /auth/dispatch-reject, no item) opens the rejected page live.
+      // Before 2026-10-29 both only re-listed, so a pending driver sitting
+      // on this hub never saw the rejected page unless the FCM push also
+      // landed and was handled (owner report, Android 747).
+      final item = (data['item'] ?? '').toString().trim();
+      if (item.isNotEmpty) {
+        _load();
+      } else {
+        _goRejected(reason: data['reason']?.toString());
+      }
     } else if (status == 'waitlist') {
       _goWaitlisted();
     }
@@ -127,7 +139,9 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
       if (approved) {
         _goApproved();
       } else if (s == 'rejected') {
-        _load();
+        // Same rule as the splash and the login router: an account whose
+        // verification_status is 'rejected' belongs on the rejected page.
+        _goRejected();
       } else if (s == 'waitlist') {
         _goWaitlisted();
       }
@@ -136,6 +150,26 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
 
   bool _navigatedToApproved = false;
   bool _navigatedToWaitlist = false;
+  bool _navigatedToRejected = false;
+
+  /// Dispatch rejected the account — the rejected page, once, with no way
+  /// back to the hub (same destination as the splash / login routing).
+  void _goRejected({String? reason}) {
+    if (_navigatedToRejected || _navigatedToApproved || !mounted) return;
+    _navigatedToRejected = true;
+    _approvalPoll?.cancel();
+    unawaited(LocalDataService.setDriverApprovalStatus('rejected'));
+    if (DriverWaitlistScreen.liveRejected > 0) return; // FCM got there first
+    final nav = Navigator.maybeOf(context);
+    if (nav == null) return;
+    final why = (reason ?? '').trim();
+    nav.pushAndRemoveUntil(
+      slideFromRightRoute(
+        DriverWaitlistScreen.rejected(rejectedReason: why.isEmpty ? null : why),
+      ),
+      (_) => false,
+    );
+  }
 
   /// Dispatch moved the account to the waitlist — open the waitlist page
   /// once. A driver who merely SUBMITTED every document stays on the hub,

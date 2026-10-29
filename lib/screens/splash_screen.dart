@@ -14,6 +14,7 @@ import 'rider_email_screen.dart';
 import 'driver/driver_email_screen.dart';
 import 'driver/driver_name_screen.dart';
 import 'driver/driver_online_screen.dart';
+import 'driver/driver_welcome_screen.dart';
 import 'driver/driver_waitlist_screen.dart';
 import 'driver/onboarding/driver_todo_screen.dart';
 import '../services/api_service.dart';
@@ -410,12 +411,21 @@ class _SplashScreenState extends State<SplashScreen> {
       // a persisted session from a half-finished registration boots to the
       // first incomplete required step — the approval routing below assumes
       // onboarding finished.
-      final driverResume =
-          _driverResumeScreen(await UserSession.getUser());
-      if (driverResume != null) return driverResume;
-
       // ── Read approval status from local cache first (instant) ──
       final cachedStatus = await LocalDataService.getDriverApprovalStatus();
+
+      // ...but only for an account that never reached review: a driver
+      // dispatch is reviewing or already decided on must never boot into
+      // the name / email steps (2026-10-29 Android report — registered
+      // drivers were "asked for everything again" when the cached profile
+      // had no email).
+      final pastSignup =
+          DriverWelcomeScreen.pastSignupStatuses.contains(cachedStatus);
+      if (!pastSignup) {
+        final driverResume =
+            _driverResumeScreen(await UserSession.getUser());
+        if (driverResume != null) return driverResume;
+      }
 
       if (_isApprovedStatus(cachedStatus)) {
         // Verified → go straight to DriverHomeScreen

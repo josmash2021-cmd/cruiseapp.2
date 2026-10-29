@@ -5767,9 +5767,13 @@ class S {
       : 'Cruise is under maintenance: rides cannot be reserved right now.';
   // Dispatch online/offline switch (owner spec 2026-10-29).
   String get dispatchPresenceOffline =>
-      _es ? 'Dispatch te desconectó' : 'Dispatch took you offline';
+      _es ? 'Has sido desconectado' : 'You have been disconnected';
+  String get dispatchPresenceOfflineBody =>
+      _es ? 'No estás recibiendo viajes' : 'You are not receiving rides';
   String get dispatchPresenceOnline =>
-      _es ? 'Dispatch te conectó' : 'Dispatch put you online';
+      _es ? 'Estás conectado' : 'You are online';
+  String get dispatchPresenceOnlineBody =>
+      _es ? 'Disponible para recibir viajes' : 'Available to receive rides';
   String get rideTakenByAnotherDriver =>
       _es ? 'Otro conductor lo tomó' : 'Another driver took it';
   String get driverRideTakenReturning => _es

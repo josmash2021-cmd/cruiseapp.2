@@ -43,9 +43,13 @@ void main() {
 
     test('the completer carries bool? and only 401/403 answer false', () {
       expect(api, contains('static Completer<bool?>? _refreshCompleter;'));
-      expect(body, contains('if (res.statusCode == 401 || res.statusCode == 403)'));
+      // 2026-10-29: a 401/403 is a verdict only when it judges the session
+      // (an IP-ban 403 / signed-request 401 is inconclusive) — see
+      // login_routing_guard_test.dart.
+      expect(body, contains('if ((res.statusCode == 401 || res.statusCode == 403) &&'));
+      expect(body, contains('isSessionVerdict(res.statusCode, res.body)'));
       final rejected = between(body,
-          'if (res.statusCode == 401 || res.statusCode == 403)', 'inconclusive (HTTP');
+          'if ((res.statusCode == 401 || res.statusCode == 403) &&', 'inconclusive (HTTP');
       expect(rejected, contains('_refreshCompleter!.complete(false);'));
       expect(rejected, contains('return false;'));
     });
@@ -91,8 +95,11 @@ void main() {
       expect(body, contains('if (refreshed == false) {'));
       expect(body, isNot(contains('if (!refreshed)')));
       final clearing = between(body, 'if (refreshed == false) {', '} else if');
-      expect(clearing, contains('await clearToken();'));
-      expect(clearing, contains('onUnauthorized?.call();'));
+      expect(clearing, contains('await _endSession();'));
+      final end = between(api, 'static Future<void> _endSession() async {',
+          'static bool isSessionVerdict(');
+      expect(end, contains('await clearToken();'));
+      expect(end, contains('onUnauthorized?.call();'));
       expect(body, contains('else if (refreshed == null)'));
     });
   });

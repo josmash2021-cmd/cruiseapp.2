@@ -59,6 +59,11 @@ class DriverWaitlistScreen extends StatefulWidget {
   final bool startsRejected;
   final String? rejectedReason;
 
+  /// Rejected variants currently mounted. The rejection lands on two
+  /// channels at once (socket → to-do hub, FCM → main.dart): the second one
+  /// must not stack another copy of the page (2026-10-29).
+  static int liveRejected = 0;
+
   @override
   State<DriverWaitlistScreen> createState() => _DriverWaitlistScreenState();
 }
@@ -98,6 +103,7 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
     super.initState();
     _rejected = widget.startsRejected;
     _reason = widget.rejectedReason;
+    if (widget.startsRejected) DriverWaitlistScreen.liveRejected++;
     // The entrance starts on the FIRST PAINTED frame, not at field-init
     // (2026-10-14 user report: "de golpe aparece todo incluso el texto") —
     // fired from the lazy field initializer, the controller could consume
@@ -116,6 +122,7 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
 
   @override
   void dispose() {
+    if (widget.startsRejected) DriverWaitlistScreen.liveRejected--;
     _poll?.cancel();
     _statusSub?.cancel();
     _anim.dispose();

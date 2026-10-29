@@ -38,6 +38,29 @@ class DriverWelcomeScreen extends StatefulWidget {
     return s == 'approved' && isVerified;
   }
 
+  /// Statuses only an account that finished signup can have: dispatch is
+  /// reviewing it (pending — set by /auth/verify-request), or already
+  /// decided (approved / rejected / waitlist).
+  static const Set<String> pastSignupStatuses = {
+    'approved',
+    'pending',
+    'rejected',
+    'waitlist',
+  };
+
+  /// True when the server profile is past the signup steps. Such an account
+  /// is routed by its state, never back through the email / date-of-birth
+  /// steps (2026-10-29 Android report: registered drivers "les pedía todo
+  /// nuevamente como si no estuvieran registrados" — a reviewed driver with
+  /// no email on file was sent to the email step on every login).
+  static bool isPastSignupMap(Map<String, dynamic> user) {
+    final s = (user['verification_status'] ?? 'none')
+        .toString()
+        .toLowerCase()
+        .trim();
+    return user['is_verified'] == true || pastSignupStatuses.contains(s);
+  }
+
   static Future<void> routeExistingDriver(
     BuildContext context,
     Map<String, dynamic> user,
@@ -211,6 +234,11 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
       Navigator.of(context).push(
         onboardingFadeSlideRoute(DriverNameScreen(user: user)),
       );
+      return;
+    }
+    // Reviewed / decided accounts skip the resume rungs below entirely.
+    if (DriverWelcomeScreen.isPastSignupMap(user)) {
+      await DriverWelcomeScreen.routeExistingDriver(context, user);
       return;
     }
     // Same resume ladder as the rider (user spec 2026-09-27): names done

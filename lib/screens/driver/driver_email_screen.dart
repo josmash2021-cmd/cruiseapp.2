@@ -5,6 +5,7 @@ import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
+import '../onboarding_back.dart';
 import 'driver_drive_city_screen.dart';
 import 'onboarding/driver_notifications_screen.dart';
 
@@ -140,7 +141,8 @@ class _DriverEmailScreenState extends State<DriverEmailScreen> {
               child: Row(
                 children: [
                   GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
+                    // Root-safe: the splash can boot INTO this step.
+                    onTap: () => onboardingBack(context),
                     child: const SizedBox(
                       width: 40,
                       height: 40,

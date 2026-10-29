@@ -13,7 +13,10 @@ void main() {
 
   test('the clock-skew 401 is intercepted before the generic 401 path', () {
     final skew = api.indexOf("body['detail'] == 'Timestamp expired'");
-    final generic = api.indexOf('_handleUnauthorized().ignore();');
+    // The generic path inside _parse (the periodic-request helper
+    // _signal401 elsewhere has its own classification).
+    final parseAt = api.indexOf('static Map<String, dynamic> _parse(');
+    final generic = api.indexOf('_handleUnauthorized().ignore();', parseAt);
     expect(skew, isNonNegative);
     expect(generic, greaterThan(skew),
         reason: 'the skew branch must throw before refresh/clearToken runs');

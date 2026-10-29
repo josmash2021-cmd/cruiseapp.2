@@ -579,14 +579,82 @@ class ApiService {
       // problem — the token stays put and the caller just sees its own
       // error. Before this, every one of those signed the driver out.
       if (refreshed == false) {
-        await clearToken();
-        onUnauthorized?.call();
+        await _endSession();
       } else if (refreshed == null) {
         debugPrint('[Api] 401 but refresh inconclusive — keeping session');
       }
     } finally {
       _isHandlingUnauthorized = false;
     }
+  }
+
+  /// The session is definitively over (the refresh token was rejected or
+  /// there is none to send): drop the tokens and let main.dart navigate.
+  static Future<void> _endSession() async {
+    if (_loginInProgress) return;
+    await clearToken();
+    onUnauthorized?.call();
+  }
+
+  /// Whether a 401/403 judges the SESSION (token or account) rather than
+  /// the request around it (2026-10-29). The signed-request gate answers
+  /// 401 to a skewed clock, a replayed nonce or a bad signature, and the IP
+  /// blacklist answers 403 "Access denied" to EVERY call from a banned
+  /// carrier-NAT address — one Android 747 driver got exactly that on
+  /// /auth/me right after a 200 phone-login. None of those says anything
+  /// about the token; reading them as a verdict signed drivers out.
+  static bool isSessionVerdict(int statusCode, String body) {
+    if (statusCode != 401 && statusCode != 403) return false;
+    var detail = '';
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        detail = (decoded['detail'] ?? decoded['error'] ?? '').toString();
+      }
+    } catch (_) {}
+    if (statusCode == 403) {
+      // Only the account-state answers end a session on 403.
+      return detail.startsWith('account_') || detail.startsWith('Account ');
+    }
+    return !_requestLevel401.contains(detail);
+  }
+
+  static const Set<String> _requestLevel401 = {
+    'Timestamp expired',
+    'Invalid timestamp',
+    'Replay detected',
+    'Invalid signature',
+    'Invalid API key',
+  };
+
+  /// 401 from an endpoint that reads its own status code instead of going
+  /// through [_parse] — the pollers that fall back to null / an empty list
+  /// (dashboard, unclaimed trips, scheduled marketplace, notifications).
+  /// Until 2026-10-29 they swallowed the 401: Android 747 drivers looped on
+  /// those GETs with 401 for an hour and the app never once called
+  /// /auth/refresh. Same classification as [_parse]'s 401 branch. A request
+  /// sent without a token is not a session signal (nothing to refresh).
+  static void _signal401(http.Response res) {
+    if (res.statusCode != 401) return;
+    final auth = res.request?.headers['Authorization'] ?? '';
+    if (auth.isEmpty) return;
+    dynamic body;
+    try {
+      body = jsonDecode(res.body);
+    } catch (_) {
+      body = null;
+    }
+    final detail = body is Map ? body['detail']?.toString() : null;
+    if (detail == 'Timestamp expired') {
+      onClockSkew?.call();
+      return;
+    }
+    if (detail == 'session_expired_new_device') {
+      clearToken().ignore();
+      onSessionExpiredNewDevice?.call();
+      return;
+    }
+    _handleUnauthorized().ignore();
   }
 
   /// Attempt to refresh the access token using the refresh token.
@@ -628,7 +696,8 @@ class ApiService {
         _refreshCompleter!.complete(true);
         return true;
       }
-      if (res.statusCode == 401 || res.statusCode == 403) {
+      if ((res.statusCode == 401 || res.statusCode == 403) &&
+          isSessionVerdict(res.statusCode, res.body)) {
         debugPrint('[Api] refresh rejected (${res.statusCode}) — session over');
         _refreshCompleter!.complete(false);
         return false;
@@ -874,9 +943,15 @@ class ApiService {
 
     final data = _parse(res);
 
-    // Persist session token
+    // Persist session token — AND the refresh token the backend has always
+    // returned here (auth.py /auth/register). Without it a driver who signed
+    // up through this path had nothing to refresh with: the first rejected
+    // access token was a dead session (2026-10-29).
     final token = data['access_token'] as String;
     await _saveToken(token);
+    if (data['refresh_token'] != null) {
+      await _saveRefreshToken(data['refresh_token'] as String);
+    }
 
     debugPrint('✅ Registered user ${data['user']?['id']}');
     return data;
@@ -1432,6 +1507,9 @@ class ApiService {
           .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) return true;
       if (res.statusCode == 401 || res.statusCode == 403) {
+        // A request-level refusal (IP ban 403 "Access denied", skewed
+        // clock, replayed nonce) is not a verdict on the token.
+        if (!isSessionVerdict(res.statusCode, res.body)) return null;
         // Give the refresh token its chance before condemning the session.
         // The refresh itself is tri-state: `null` (timeout, 429, 5xx) is
         // NOT a verdict on the session — before 2026-10-29 it was read as
@@ -1446,7 +1524,9 @@ class ApiService {
                 headers: _jsonHeaders(newToken))
             .timeout(const Duration(seconds: 8));
         if (retry.statusCode == 200) return true;
-        if (retry.statusCode == 401 || retry.statusCode == 403) return false;
+        if (retry.statusCode == 401 || retry.statusCode == 403) {
+          return isSessionVerdict(retry.statusCode, retry.body) ? false : null;
+        }
         return null; // refreshed fine, server then misbehaved — inconclusive
       }
       return null; // 5xx, 429, anything else — server's problem, not the token's
@@ -1511,6 +1591,7 @@ class ApiService {
         _dashboardCacheTime = DateTime.now();
         return _dashboardCache;
       }
+      _signal401(res);
       return null;
     } catch (e) {
       debugPrint('\u26a0\ufe0f  getDashboard failed: $e');
@@ -2139,7 +2220,15 @@ class ApiService {
     }
     // Handle 401 gracefully
     if (res.statusCode == 401) {
+      if (!isSessionVerdict(401, res.body)) return 'unknown';
       final refreshed = await refreshAccessToken();
+      if (refreshed == false) {
+        // Refresh token rejected or missing — the session is over. This
+        // path used to return 'unknown' and leave the driver home polling
+        // 401s forever (Android 747, 2026-10-29).
+        await _endSession();
+        return 'unknown';
+      }
       if (refreshed == true) {
         final newToken = await getToken();
         final retry = await _client
@@ -2445,6 +2534,7 @@ class ApiService {
       final list = jsonDecode(res.body) as List;
       return list.cast<Map<String, dynamic>>();
     }
+    _signal401(res);
     throw ApiException(res.statusCode, 'Failed to load scheduled trips');
   }
 
@@ -3792,6 +3882,7 @@ class ApiService {
       final body = jsonDecode(res.body);
       if (body is List) return body.cast<Map<String, dynamic>>();
     }
+    _signal401(res);
     return [];
   }
 
@@ -4535,6 +4626,7 @@ class ApiService {
       final list = jsonDecode(res.body) as List;
       return list.cast<Map<String, dynamic>>();
     }
+    _signal401(res);
     return [];
   }
 

@@ -1103,11 +1103,27 @@ void _handleAccountApproved(bool isDriver) {
 
 /// Navigate to the waitlist screen (rejected variant) after account
 /// rejection — the pending-review page was retired 2026-10-13.
-void _handleAccountRejected(bool isDriver) {
+void _handleAccountRejected(bool isDriver, {int attempt = 0}) {
   if (!isDriver) return; // riders don't have a waitlist screen
+  // The socket already put the to-do hub on the rejected page (2026-10-29):
+  // a second copy would only replay the entrance.
+  if (DriverWaitlistScreen.liveRejected > 0) return;
 
   final nav = _navigatorKey.currentState;
-  if (nav == null) return;
+  // Cold start from the push tap (Android: the tap launches the app): the
+  // tap lands on the first frame while the splash is still on top, and the
+  // splash's pushReplacement would then REPLACE the page pushed here with
+  // its own pick. Wait for the splash to hand over (bounded ~12 s) — same
+  // rule as _navigateToSupportChat.
+  if (nav == null || (attempt < 40 && _isSplashOnTop(nav))) {
+    if (attempt < 40) {
+      Future.delayed(
+        const Duration(milliseconds: 300),
+        () => _handleAccountRejected(isDriver, attempt: attempt + 1),
+      );
+    }
+    return;
+  }
 
   nav.pushAndRemoveUntil(
     MaterialPageRoute(builder: (_) => const DriverWaitlistScreen.rejected()),

@@ -4,6 +4,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
+import 'onboarding_back.dart';
 import 'rider_photo_gender_screen.dart';
 
 /// Rider phone onboarding — step 3, email collection (Lyft-style):
@@ -137,7 +138,8 @@ class _RiderEmailScreenState extends State<RiderEmailScreen> {
               child: Row(
                 children: [
                   GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
+                    // Root-safe: the splash can boot INTO this step.
+                    onTap: () => onboardingBack(context),
                     child: const SizedBox(
                       width: 40,
                       height: 40,

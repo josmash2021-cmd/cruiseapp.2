@@ -2266,9 +2266,16 @@ class ApiService {
     try {
       final me = await getMe();
       final userId = int.tryParse(me?['id']?.toString() ?? '') ?? 0;
+      final role = (me?['role']?.toString() ?? '').toLowerCase();
+      // /auth/me failed (null on 401/502/timeout): we do not know whose
+      // photo this is. Never guess id 0 / "rider" — that path is shared by
+      // everyone who hits this, and the last upload wins. Use the server
+      // upload below, which identifies the user from the token.
+      if (userId <= 0 || (role != 'rider' && role != 'driver')) {
+        throw StateError('owner unknown — server upload instead');
+      }
       final userUid =
           FirebaseAuth.instance.currentUser?.uid ?? userId.toString();
-      final role = (me?['role']?.toString() ?? 'rider').toLowerCase();
       final url = await FirebaseStorageService.uploadProfilePhoto(
           filePath, userId, role);
 

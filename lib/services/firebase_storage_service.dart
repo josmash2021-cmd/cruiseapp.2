@@ -25,6 +25,14 @@ class FirebaseStorageService {
   /// Path: photos/{role}s/{userId}/profile.jpg (riders/123, drivers/456, etc.)
   static Future<String> uploadProfilePhoto(
       String filePath, int userId, String role) async {
+    // Never a shared path (2026-10-29: two drivers, Alexis 370 and Fred 490,
+    // both landed on photos/riders/0/profile.jpg after a failed /auth/me —
+    // the second upload overwrote the first one's face). An unknown owner
+    // is an error; callers fall back to the server upload, which knows the
+    // user from the token.
+    if (userId <= 0 || (role != 'rider' && role != 'driver')) {
+      throw ArgumentError('profile photo owner unknown (id=$userId role=$role)');
+    }
     await _ensureAuth();
     final storagePath = 'photos/${role}s/$userId/profile.jpg';
     final ref = _storage.ref(storagePath);

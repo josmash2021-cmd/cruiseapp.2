@@ -32,6 +32,9 @@ class PhotoRecoveryService {
   /// @param uid User's Firebase UID or SQL ID
   /// @param role 'rider' or 'driver' — ensures role isolation
   static Future<String?> resolvePhotoUrl(String uid, String role) async {
+    // Id 0 / empty is the old shared fallback path — reading it would show
+    // whoever uploaded there last (2026-10-29).
+    if (_isUnknownOwner(uid)) return null;
     if (uid.isEmpty || role.isEmpty) return null;
 
     debugPrint('[PhotoRecovery] Starting resolution for role=$role');
@@ -169,7 +172,13 @@ class PhotoRecoveryService {
   /// @param uid User's Firebase UID or SQL ID
   /// @param role 'rider' or 'driver' — ensures role isolation
   /// @param photoUrl Firebase Storage download URL
+  static bool _isUnknownOwner(String uid) {
+    final u = uid.trim();
+    return u.isEmpty || u == '0' || u == 'null';
+  }
+
   static Future<void> savePhotoEveryWhere(String uid, String role, String photoUrl) async {
+    if (_isUnknownOwner(uid)) return;
     if (uid.isEmpty || role.isEmpty || photoUrl.isEmpty) return;
 
     debugPrint('[PhotoRecovery] Saving photo URL to ALL tiers for role=$role');

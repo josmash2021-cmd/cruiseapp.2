@@ -176,33 +176,46 @@ void main() {
               'mount');
     });
 
-    test('the boot veil never intercepts gestures', () {
+    test('the boot veil absorbs only while loading, released by its own flags',
+        () {
+      // 2026-10-29 (owner: "cuando el mapa está cargando, al tocarlo se
+      // puede mover la flecha con los dedos"). History: an earlier
+      // `AbsorbPointer(absorbing: !_mapMounted)` never released and killed
+      // drags/zone taps (c70b7407 made it IgnorePointer). The rule now: the
+      // veil absorbs EXACTLY while it is visible — same expression as its
+      // opacity — so the moment it fades, gestures pass.
       final widgets = File('lib/screens/driver/driver_online_widgets.dart')
           .readAsStringSync();
-      final start = widgets.indexOf('child: IgnorePointer(');
+      final start = widgets.indexOf(
+          'absorbing: !(_mapStyleLoaded && _firstRenderDone)');
+      expect(start, isNonNegative,
+          reason: 'the veil absorbs under its own visibility condition');
+      final veilStart = widgets.lastIndexOf('Positioned.fill(', start);
       final end = widgets.indexOf('// The marker, painted by Flutter', start);
-      expect(start, isNonNegative);
       expect(end, greaterThan(start));
-      final veil = widgets.substring(start, end);
-      expect(
-        veil,
-        contains('ignoring: true'),
-        reason: 'the entire veil subtree is transparent to hit testing',
-      );
+      final veil = widgets.substring(veilStart, end);
+      expect(veil, contains('AbsorbPointer('));
       expect(
         veil,
         contains('opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0'),
         reason: 'the veil still fades after the first real render',
       );
-      expect(veil, isNot(contains('AbsorbPointer(')));
+      expect(veil, isNot(contains('ignoring: true')),
+          reason: 'IgnorePointer let the finger pan the arrow under the veil');
+      expect(veil, contains('ignoring: _mapStyleLoaded && _firstRenderDone'),
+          reason: 'the faded veil is hit-test transparent: a painted child '
+              'swallows taps inside a Stack even when nothing absorbs');
+      expect(veil, isNot(contains('_mapMounted')),
+          reason: 'the old flag never released — drags and zone taps died');
     });
 
-    testWidgets('the visible veil passes taps and drags to the map',
-        (tester) async {
+    testWidgets('the veil blocks taps/drags while loading and passes them once '
+        'its flags flip', (tester) async {
       var taps = 0;
       var drag = Offset.zero;
-      await tester.pumpWidget(
-        MaterialApp(
+      Widget build({required bool styleLoaded, required bool firstRender}) {
+        final ready = styleLoaded && firstRender;
+        return MaterialApp(
           home: Stack(
             fit: StackFit.expand,
             children: [
@@ -212,18 +225,39 @@ void main() {
                 onPanUpdate: (details) => drag += details.delta,
                 child: const SizedBox.expand(),
               ),
+              // Same shape as the real veil: painted child (the snapshot
+              // fallback is one) — without the outer IgnorePointer it keeps
+              // swallowing taps after the absorb releases.
               IgnorePointer(
-                ignoring: true,
-                child: AnimatedOpacity(
-                  opacity: 1,
-                  duration: Duration.zero,
-                  child: Container(color: const Color(0xFF0A1128)),
+                ignoring: ready,
+                child: AbsorbPointer(
+                  absorbing: !ready,
+                  child: AnimatedOpacity(
+                    opacity: ready ? 0.0 : 1.0,
+                    duration: Duration.zero,
+                    child: Container(color: const Color(0xFF0A1128)),
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-      );
+        );
+      }
+
+      // Loading: veil visible → nothing reaches the map.
+      await tester.pumpWidget(build(styleLoaded: false, firstRender: false));
+      await tester.tapAt(const Offset(200, 300));
+      await tester.dragFrom(const Offset(200, 300), const Offset(64, 32));
+      expect(taps, 0);
+      expect(drag, Offset.zero);
+
+      // Style landed but no frame yet: still veiled, still blocked.
+      await tester.pumpWidget(build(styleLoaded: true, firstRender: false));
+      await tester.tapAt(const Offset(200, 300));
+      expect(taps, 0);
+
+      // Both flags true: veil gone, gestures pass.
+      await tester.pumpWidget(build(styleLoaded: true, firstRender: true));
       await tester.tapAt(const Offset(200, 300));
       await tester.dragFrom(const Offset(200, 300), const Offset(64, 32));
       expect(taps, 1);

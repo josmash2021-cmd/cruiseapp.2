@@ -216,6 +216,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// after its card was first drawn from the haversine fallback.
   void _syncOfferLiveActivity({bool force = false}) {
     if (!mounted) return;
+    // Offline there is no activity to update (and never one to create):
+    // _exitOnlineMode's trailing sync used to push 'online' at an island
+    // the stop had just ended, and a cold start landing offline sent the
+    // same update for nothing (owner spec 2026-10-29).
+    if (!_driverOnline) return;
     // Offers no longer paint the island (product call 2026-10-02, user
     // spec): the ride offer arrives as the FCM banner — the island keeps
     // only the online-presence state.
@@ -1012,6 +1017,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// can all call it.
   void _showOnlinePresence() {
     if (!mounted || _presenceShown) return;
+    // Only an online shift raises the island (owner spec 2026-10-29) — a
+    // boot that lands offline, or a stray backend callback after the
+    // driver went offline, must never start one.
+    if (!_driverOnline) return;
     _presenceShown = true;
     debugPrint('[DriverOnline] raising online presence (live activity)');
     // iOS only — a silent no-op on Android.
@@ -1261,6 +1270,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // del boot sobrevivía y el GO seguía leyendo RESUME para siempre.
     _driverWasOnlineAtBoot = false;
     _stopBackgroundHeartbeat();
+    // The Android foreground notification is the shift's, not the app's:
+    // going offline while backgrounded (12 h cap, dispatch kick, rest)
+    // used to leave "Finding trips nearby" up until the next resume.
+    unawaited(DriverBackgroundService().stop().catchError((_) {}));
     _goOfflineBackend();
     _pollT?.cancel();
     _offerSseSub?.cancel();
@@ -1615,6 +1628,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // This prevents the backend from marking the driver offline due to
     // inactivity while the app is backgrounded.
     _bgHeartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      // Tell the Android foreground service the main isolate is alive. The
+      // service stops itself when the pings stop (background_service.dart):
+      // that is what removes the notification after the app is closed from
+      // the switcher, where the plugin's watchdog would otherwise revive the
+      // service alone, with nothing running behind its "Finding trips".
+      DriverBackgroundService().ping();
       // Never re-assert online after the driver went offline — see
       // _wentOffline. One heartbeat landing after the offline write used
       // to resurrect the driver in the DB and the offers kept coming.

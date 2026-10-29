@@ -69,7 +69,6 @@ import '../../utils/driver_location_settings.dart';
 import '../../utils/driver_shift_clock.dart';
 import '../../utils/gps_fix_policy.dart';
 import '../chat_screen.dart';
-import '../safety_screen.dart';
 import '../../navigation/car_icon_loader.dart';
 import 'driver_earnings_screen.dart';
 import 'driver_promos_screen.dart';
@@ -1738,6 +1737,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         // Start Android foreground service so the OS doesn't kill us
         DriverBackgroundService().start();
       }
+    } else if (state == AppLifecycleState.detached) {
+      // The engine is being torn down (app closed from the switcher, root
+      // Activity destroyed). Nothing of ours survives this — the heartbeat
+      // Timer dies with the main isolate — so neither indicator may outlive
+      // it (owner spec 2026-10-29: the island / notification pill only
+      // while the driver is actually online). Best effort: the platform
+      // may not deliver `detached` on every kill; the service's own
+      // no-ping watchdog and the native stale sweep cover the rest.
+      _stopBackgroundHeartbeat();
+      _islandState = null;
+      _presenceShown = false;
+      unawaited(LiveActivityService.stop().catchError((_) {}));
+      unawaited(DriverBackgroundService().stop().catchError((_) {}));
     } else if (state == AppLifecycleState.resumed) {
       _appInForeground = true;
       // Before anything else: the location stream may not have survived the
@@ -2607,16 +2619,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     // that led this column is gone — it opened the same inbox
                     // the notifications button at the top now owns, and one
                     // destination does not need two doors on one screen.
+                    // 2026-10-29 (owner): this button opens Help & Support —
+                    // the same sheet the driver menu raises.
                     _fab(
                       Icons.health_and_safety_outlined,
                       44,
                       fabBg,
                       fabBorder,
                       fabIcon,
-                      () => Navigator.push(
-                        context,
-                        slideFromRightRoute(const SafetyScreen()),
-                      ),
+                      () => showDriverHelpSheet(context),
                       stagger: 1,
                     ),
                     const SizedBox(height: 10),

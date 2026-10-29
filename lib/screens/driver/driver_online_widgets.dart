@@ -138,11 +138,24 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // onStyleLoaded fires it fades out over 200 ms — the live
               // map underneath is already navy by then. Veil 0.60 matches
               // that navy (2026-08-29): at 0.30 the still itself read grey.
+              // 2026-10-29 (owner: "cuando el mapa está cargando, al tocarlo
+              // se puede mover la flecha con los dedos"): mientras el velo
+              // es VISIBLE absorbe los toques para que no lleguen al mapa de
+              // abajo. La condición es EXACTAMENTE la misma que su opacidad
+              // — en cuanto el velo se desvanece, los gestos pasan. No usar
+              // `!_mapMounted` ni otro flag aparte: el AbsorbPointer previo
+              // (c70b7407) nunca soltaba y mataba drags y taps de zona.
+              // El IgnorePointer exterior (mismos flags, invertidos) hace al
+              // velo desvanecido transparente al hit-test: un hijo pintado
+              // (el fallback StaticMapSnapshot) se traga los toques dentro
+              // del Stack aunque nadie absorba.
               if (!kIsWeb)
                 Positioned.fill(
                   child: IgnorePointer(
-                    ignoring: true,
-                    child: AnimatedOpacity(
+                    ignoring: _mapStyleLoaded && _firstRenderDone,
+                    child: AbsorbPointer(
+                      absorbing: !(_mapStyleLoaded && _firstRenderDone),
+                      child: AnimatedOpacity(
                       opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0,
                       duration: const Duration(milliseconds: 200),
                       // 2026-10-17 (cero negro al volver de otra página): la
@@ -158,6 +171,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                             )
                           : StaticMapSnapshot(
                               center: here, zoom: 16, veilAlpha: 0.60),
+                      ),
                     ),
                   ),
                 ),
@@ -4016,20 +4030,22 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   child: Row(
                     children: [
                       const SizedBox(width: 14),
-                      // Safety on the left, Reserved on the right — only here,
-                      // in the open panel, where each has room for a word.
+                      // Help & Support on the left, Reserved on the right —
+                      // only here, in the open panel, where each has room for
+                      // a word. The left button raises the SAME Help &
+                      // Support sheet the driver menu opens (owner spec
+                      // 2026-10-29); the right one pushes the scheduled-rides
+                      // map ON TOP through the surface handoff
+                      // (_openScheduledRides) — the shift stays online.
                       _panelAction(
                         Icons.health_and_safety_outlined,
                         isDark,
                         textMuted,
                         active: false,
-                        semanticLabel: S.of(context).safetyHub,
+                        semanticLabel: S.of(context).helpAndSupport,
                         onTap: () {
                           HapticService.selectionClick();
-                          Navigator.push(
-                            context,
-                            slideFromRightRoute(const SafetyScreen()),
-                          );
+                          showDriverHelpSheet(context);
                         },
                       ),
                       const Spacer(),

@@ -2355,8 +2355,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       // The visible-state set rides the signature: crossing a state line
       // (or the first fix landing) repaints the look for the new state.
       final visibleIds = _zoneVisibleIds();
-      final visibleSig =
-          '${visibleIds.join('|')}|offer:${_previewingOffer != null}';
+      final visibleSig = _zoneLookSig(visibleIds, visible, online);
       if (_zoneLayersVisible != visible ||
           _zoneLookOnline != online ||
           _zoneDemandSig != demandSig ||
@@ -2413,12 +2412,22 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // Stacking order matters: the dim sits ABOVE the roads (it darkens the
     // street network outside the zone) and BELOW the selection highlight in
     // stacking terms (the chosen zone keeps its gold through the hole).
-    await _guardedStyleWrite(map.style.addLayer(mapbox.FillLayer(
+    // And BELOW every annotation / route layer (owner spec 2026-10-29): the
+    // dim is a tint on the map, never on the pins or a drawn route. The
+    // annotation managers that already exist own layers above the style's
+    // own — anchor under the lowest one; born later they stack on top
+    // anyway.
+    final dimLayer = mapbox.FillLayer(
       id: 'sec-dim',
       sourceId: 'sec-dim-src',
       fillColor: 0xFF000000,
       fillOpacity: 0.0,
-    )));
+    );
+    final dimBelowId = await _zoneAnnotationAnchor(map);
+    await _guardedStyleWrite(dimBelowId == null
+        ? map.style.addLayer(dimLayer)
+        : map.style
+            .addLayerAt(dimLayer, mapbox.LayerPosition(below: dimBelowId)));
     // The selection highlight: one shared source, rewritten with the
     // picked sector — brighter than any demand level ("si seleccionan
     // uno se debe poner mas amarillo"). A fill: it goes under the roads
@@ -2478,6 +2487,22 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       }
     } catch (e) {
       debugPrint('[Zones] style layer scan failed (fills go on top): $e');
+    }
+    return null;
+  }
+
+  /// The lowest annotation-manager layer in the style (Mapbox names them
+  /// `mapbox-<platform>-<kind>Annotation-layer-N`), or null when none
+  /// exists yet. The online dim is pinned under it.
+  Future<String?> _zoneAnnotationAnchor(mapbox.MapboxMap map) async {
+    try {
+      final layers = await map.style.getStyleLayers();
+      for (final l in layers) {
+        final id = l?.id ?? '';
+        if (id.toLowerCase().contains('annotation')) return id;
+      }
+    } catch (e) {
+      debugPrint('[Zones] annotation layer scan failed (dim goes on top): $e');
     }
     return null;
   }
@@ -2636,37 +2661,66 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // prendera en amarillo si no el borde se iluminara") — la selección es
     // ahora el BORDE con la onda viajera (_syncZoneWave). La capa
     // sec-hl-fill se queda creada pero jamás pinta.
-    final sel = _selectedZoneName;
-    // The spotlight (user spec 2026-10-12, REVIVED 2026-10-14 "sí"): online
-    // + a chosen zone → everything OUTSIDE the zone dims to barely-visible.
-    // No selection → no mask.
-    final spotlight =
-        visible && online && sel != null && _previewingOffer == null;
-    await _writeZoneDim(map, spotlight ? ZoneService.sectorById(sel) : null);
+    // The spotlight (user spec 2026-10-12, REVIVED 2026-10-14 "sí", widened
+    // 2026-10-29): online + searching → everything OUTSIDE the driver's
+    // zone(s) dims "un poquito más oscuro, no mucho". Which zones stay
+    // bright is _zoneDimSectors' call; an empty set is mask off.
+    await _writeZoneDim(map, _zoneDimSectors(visible, online));
     try {
       await map.style.setStyleLayerProperty('sec-hl-fill', 'fill-opacity', 0.0);
     } catch (_) {}
   }
 
-  /// The spotlight mask: a world-sized polygon with the chosen sector's
-  /// outer rings as holes. `null` = mask off (every sector visible).
-  Future<void> _writeZoneDim(mapbox.MapboxMap map, Sector? sec) async {
-    final effectiveSec = _previewingOffer == null ? sec : null;
+  /// The look signature the dedup in [_syncZoneLayers] compares: the
+  /// state-visible set, the offer preview, and the dim set — so crossing a
+  /// zone line, picking a zone or a fix landing repaints the mask.
+  String _zoneLookSig(Set<String> visibleIds, bool visible, bool online) {
+    final dim = _zoneDimSectors(visible, online).map((s) => s.id).join(',');
+    return '${visibleIds.join('|')}|offer:${_previewingOffer != null}'
+        '|dim:$dim';
+  }
+
+  /// The sectors that stay BRIGHT under the online dim (owner spec
+  /// 2026-10-29: connected in a zone, outside it the map is a little
+  /// darker). The picked working zone wins; without a pick, the zone the
+  /// driver is standing in; outside every zone, all the zones of the
+  /// driver's state — the same home zones [_fitHomeZones] frames. Empty =
+  /// no dim: offline, in a trip, previewing an offer, or no fix yet.
+  List<Sector> _zoneDimSectors(bool visible, bool online) {
+    if (!visible || !online || _previewingOffer != null) return const [];
+    final sel = _selectedZoneName;
+    if (sel != null) {
+      final s = ZoneService.sectorById(sel);
+      if (s != null) return [s];
+    }
+    final p = _pos;
+    if (p == null) return const [];
+    final here = ZoneService.sectorContaining(p);
+    if (here != null) return [here];
+    return ZoneService.sectorsForState(ZoneService.stateOfPoint(p));
+  }
+
+  /// The spotlight mask: a world-sized polygon with the bright sectors'
+  /// outer rings as holes. An empty list = mask off (every sector visible).
+  /// The web map has no polygon API (markers, polylines, circles only), so
+  /// the dim is native-only — see WebMapController.
+  Future<void> _writeZoneDim(mapbox.MapboxMap map, List<Sector> secs) async {
+    final bright = _previewingOffer == null ? secs : const <Sector>[];
     var fc = <String, dynamic>{
       'type': 'FeatureCollection',
       'features': const [],
     };
-    if (effectiveSec != null) {
-      // Ring 0 of each poly is the sector's outer boundary — each becomes a
-      // hole in the world ring (the sector's own holes stay dimmed: they
-      // are not part of the zone either).
-      final holes = [
-        for (final poly in effectiveSec.polys)
+    // Ring 0 of each poly is a sector's outer boundary — each becomes a
+    // hole in the world ring (a sector's own holes stay dimmed: they are
+    // not part of the zone either).
+    final holes = [
+      for (final sec in bright)
+        for (final poly in sec.polys)
           [
             for (final p in poly.first) [p.longitude, p.latitude]
           ]
-      ];
-      if (holes.isNotEmpty) {
+    ];
+    if (holes.isNotEmpty) {
         fc = {
           'type': 'FeatureCollection',
           'features': [
@@ -2689,17 +2743,20 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             }
           ],
         };
-      }
     }
     try {
       await map.style
           .setStyleSourceProperty('sec-dim-src', 'data', jsonEncode(fc));
       await map.style.setStyleLayerProperty(
-          'sec-dim', 'fill-opacity', effectiveSec == null ? 0.0 : 0.25);
+          'sec-dim', 'fill-opacity', holes.isEmpty ? 0.0 : _kZoneDimOpacity);
     } catch (e) {
       debugPrint('[Zones] dim write failed: $e');
     }
   }
+
+  /// "Un poquito más oscuro, no mucho" (owner 2026-10-29) — a black fill
+  /// at this opacity over everything outside the driver's zone(s).
+  static const double _kZoneDimOpacity = 0.22;
 
   Future<void> _writeSectorLook(
       mapbox.MapboxMap map, Sector s, bool visible, bool online) async {
@@ -2957,10 +3014,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       }
       // The spotlight mask rewrites too — the sector geometry it holes out
       // may have moved, and the online/selection state is of this moment.
-      final sel = _selectedZoneName;
-      final spotlight =
-          visible && online && sel != null && _previewingOffer == null;
-      await _writeZoneDim(map, spotlight ? ZoneService.sectorById(sel) : null);
+      await _writeZoneDim(map, _zoneDimSectors(visible, online));
       try {
         // El fill de selección no pinta NUNCA (2026-10-16) — la selección
         // es el borde con onda viajera.
@@ -2969,8 +3023,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       } catch (_) {}
       _zoneLayersVisible = visible;
       _zoneLookOnline = online;
-      _zoneLookVisibleSig =
-          '${visibleIds.join('|')}|offer:${_previewingOffer != null}';
+      _zoneLookVisibleSig = _zoneLookSig(visibleIds, visible, online);
       _zoneDemandSig = ZoneService.demand.entries
           .map((e) => '${e.key}:${e.value.level}')
           .join('|');

@@ -1502,11 +1502,18 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   /// 2026-10-16). La página de agendados toma la única superficie nativa;
   /// al volver la reclamamos — la misma disciplina del toast de agendados
   /// (driver_online_screen.dart) reforzada por la red `didPopNext`.
+  ///
+  /// También es el botón derecho (calendario) del sheet online (owner spec
+  /// 2026-10-29): la página de agendados se empuja ENCIMA — el modo online
+  /// no se toca (SSE/poll/heartbeat siguen), su mapa toma la superficie vía
+  /// MapSurfaceCoordinator (nuestro onRevoke suelta la nuestra) y al volver
+  /// `_remountMapSurface()` la reclama. Nunca dos MapWidgets vivos.
+  /// `maybeOf`: este onTap puede disparar con el sheet cerrándose.
   void _openScheduledRides() {
     HapticService.selectionClick();
-    Navigator.of(context)
-        .push(slideFromRightRoute(const ScheduledRidesMapScreen()))
-        .then((_) {
+    final nav = Navigator.maybeOf(context);
+    if (nav == null) return;
+    nav.push(slideFromRightRoute(const ScheduledRidesMapScreen())).then((_) {
       if (!mounted) return;
       _fetchScheduledCount();
       _remountMapSurface();

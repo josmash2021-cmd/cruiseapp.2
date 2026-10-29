@@ -259,10 +259,17 @@ void main() {
           File('lib/screens/driver/driver_trip_accept_screen.dart').readAsStringSync();
       final pushes =
           RegExp(r'DriverOnlineScreen\(').allMatches(trip).length;
-      final resumes =
-          RegExp(r'DriverOnlineScreen\((showCancelledNotice: true, )?resuming: true\)')
-              .allMatches(trip)
-              .length;
+      // Each push may carry other flags first (showCancelledNotice /
+      // showReassignedNotice, one per line since 2026-10-28): what matters
+      // is that `resuming: true` sits inside that constructor call.
+      final resumes = RegExp(r'DriverOnlineScreen\(')
+          .allMatches(trip)
+          .where((m) {
+            final close = trip.indexOf(')', m.end);
+            return close > 0 &&
+                trip.substring(m.end, close).contains('resuming: true');
+          })
+          .length;
       expect(resumes, pushes,
           reason: 'every DriverOnlineScreen the trip screen builds is a '
               'return from a trip the driver is still online for — each one '

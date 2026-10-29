@@ -24,6 +24,17 @@ import ActivityKit
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
+  // The driver island belongs to a running shift (owner spec 2026-10-29).
+  // When the user terminates the app from the switcher while it is still
+  // running, end it here — best effort: `end` is async and the system
+  // grants only a few seconds, and a SUSPENDED app killed from the
+  // switcher never receives this callback at all. The stale sweep in
+  // `start(status:)` and the backend's push end cover that case.
+  override func applicationWillTerminate(_ application: UIApplication) {
+    CruiseLiveActivityManager.shared.stop()
+    super.applicationWillTerminate(application)
+  }
+
   // ── Live Activity bridge (driver online → Cruise logo in the Dynamic
   //    Island). Uses the plugin registrar's messenger rather than
   //    window.rootViewController so it works under the UIScene lifecycle

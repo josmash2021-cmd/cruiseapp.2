@@ -890,164 +890,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   // ═══════════════════════════════════════════════════
   //  HELP BOTTOM SHEET
   // ═══════════════════════════════════════════════════
-  void _showHelp(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
-          color: neuBase,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white12,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 24),
-              const Icon(Icons.help_outline_rounded, color: _gold, size: 40),
-              const SizedBox(height: 16),
-              Text(
-                S.of(context).helpAndSupport,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                S.of(context).howCanWeHelp,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 24),
-              _helpRow(
-                Icons.email_rounded,
-                S.of(context).emailUs,
-                'support@cruiseinride.com',
-                () {
-                  Navigator.pop(ctx);
-                  launchUrl(Uri.parse('mailto:support@cruiseinride.com'));
-                },
-              ),
-              _helpRow(
-                Icons.chat_rounded,
-                S.of(context).liveChat,
-                S.of(context).available247,
-                () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    slideFromRightRoute(const CruiseSupportChatScreen()),
-                  );
-                },
-              ),
-              _helpRow(
-                Icons.shield_outlined,
-                S.of(context).safetyCenter,
-                S.of(context).safetySection,
-                () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    slideFromRightRoute(const DriverSafetyScreen()),
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _gold,
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: Text(
-                    S.of(context).close,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _helpRow(IconData icon, String t, String s, [VoidCallback? onTap]) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: neuBox(radius: 16),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: neuBox(radius: 13, pressed: true),
-                child: Icon(icon, color: _gold, size: 19),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      t,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      s,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: Colors.white.withValues(alpha: 0.15),
-                size: 20,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  void _showHelp(BuildContext context) => showDriverHelpSheet(context);
 
   // ═══════════════════════════════════════════════════
   //  SIGN OUT CONFIRMATION
@@ -1142,4 +985,171 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     }
     return null;
   }
+}
+
+
+/// The driver's Help & Support bottom sheet — ONE builder shared by the
+/// menu and by the online sheet's left button (owner spec 2026-10-29: the
+/// safety icon in the online panel opens Help & Support, the same sheet the
+/// menu opens). Top-level so any driver screen can raise it without
+/// instantiating the menu.
+void showDriverHelpSheet(BuildContext context) {
+  const gold = _DriverMenuScreenState._gold;
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: neuBase,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white12,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Icon(Icons.help_outline_rounded, color: gold, size: 40),
+              const SizedBox(height: 16),
+              Text(
+                S.of(context).helpAndSupport,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                S.of(context).howCanWeHelp,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 24),
+              _helpRow(
+                Icons.email_rounded,
+                S.of(context).emailUs,
+                'support@cruiseinride.com',
+                () {
+                  Navigator.pop(ctx);
+                  launchUrl(Uri.parse('mailto:support@cruiseinride.com'));
+                },
+              ),
+              _helpRow(
+                Icons.chat_rounded,
+                S.of(context).liveChat,
+                S.of(context).available247,
+                () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const CruiseSupportChatScreen()),
+                  );
+                },
+              ),
+              _helpRow(
+                Icons.shield_outlined,
+                S.of(context).safetyCenter,
+                S.of(context).safetySection,
+                () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const DriverSafetyScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: gold,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    S.of(context).close,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+  );
+}
+
+Widget _helpRow(IconData icon, String t, String s, [VoidCallback? onTap]) {
+    const gold = _DriverMenuScreenState._gold;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: neuBox(radius: 16),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: neuBox(radius: 13, pressed: true),
+                child: Icon(icon, color: gold, size: 19),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      s,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.15),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
 }

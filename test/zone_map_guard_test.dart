@@ -372,13 +372,17 @@ void main() {
     expect(map, contains('sec-dim-src'), reason: 'the mask source is back');
     expect(map, contains("'sec-dim'"), reason: 'the mask layer is back');
     expect(map, contains('_writeZoneDim'), reason: 'the mask writer is back');
-    expect(map, contains('visible && online && sel != null'),
-        reason: 'spotlight = online + searching + a chosen zone');
-    expect(map, contains('_previewingOffer == null'),
+    // 2026-10-29 (owner): the spotlight follows the chosen zone, else the
+    // zone the driver stands in, else the home-state zones — see
+    // _zoneDimSectors; "un poquito más oscuro, no mucho" = 0.22.
+    expect(map, contains('_writeZoneDim(map, _zoneDimSectors(visible, online))'),
+        reason: 'spotlight = online + searching + the selected/home zone(s)');
+    expect(map, contains('if (!visible || !online || _previewingOffer != null) return const [];'),
         reason: 'an offer preview kills the dim — the route must read');
-    expect(map, contains('effectiveSec == null ? 0.0 : 0.25'),
+    expect(map, contains('static const double _kZoneDimOpacity = 0.22;'),
         reason: 'the outside stays readable instead of a 70% black veil');
-    expect(map, isNot(contains('effectiveSec == null ? 0.0 : 0.70')));
+    expect(map, contains("holes.isEmpty ? 0.0 : _kZoneDimOpacity"));
+    expect(map, isNot(contains('? 0.0 : 0.70')));
     expect(map, contains('moveStyleLayer'),
         reason: 'mode flips keep the fill stacking consistent');
     expect(map, contains('!visible || online'),

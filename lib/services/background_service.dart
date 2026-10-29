@@ -51,6 +51,12 @@ class DriverBackgroundService {
       androidConfiguration: AndroidConfiguration(
         onStart: _onStart,
         autoStart: false,
+        // The plugin's default is TRUE: its BootReceiver restarts the
+        // service after every reboot AND every package update
+        // (ACTION_MY_PACKAGE_REPLACED) — the "Finding trips nearby"
+        // notification came back with the app closed and the driver
+        // offline (owner spec 2026-10-29: the pill only while online).
+        autoStartOnBoot: false,
         isForegroundMode: true,
         notificationChannelId: 'cruise_driver_bg',
         initialNotificationTitle: 'CruiseInRide',
@@ -79,6 +85,21 @@ class DriverBackgroundService {
       await service.startService();
       log('[DriverBackgroundService] Foreground service started');
     }
+    // First pings right away: the service isolate takes a moment to boot
+    // and a ping sent before its listener exists is dropped, so send a few.
+    for (final delay in const [2, 6, 15]) {
+      Timer(Duration(seconds: delay), ping);
+    }
+  }
+
+  /// "The main isolate is alive" — sent on start and by the online
+  /// heartbeat every 30 s. The service isolate stops itself when they stop
+  /// (see [_onStart]); without a running service this is a dropped message.
+  void ping() {
+    if (!_initialized || !AppPlatform.isAndroid) return;
+    try {
+      FlutterBackgroundService().invoke('heartbeat');
+    } catch (_) {}
   }
 
   /// Stop the foreground service.
@@ -131,11 +152,32 @@ void _onStart(ServiceInstance service) async {
   // The actual heartbeat logic is handled by the main app's
   // _startBackgroundHeartbeat() Timer. This service just keeps
   // the process alive so that Timer continues to fire.
-  // We also listen for a keep-alive ping from the main isolate.
+  //
+  // No-ping watchdog (owner spec 2026-10-29: the notification only while
+  // the driver is online). The plugin revives this service on its own after
+  // the app is closed from the switcher (onTaskRemoved → WatchdogReceiver)
+  // and the main isolate — the only thing that does any work — is gone by
+  // then. Without pings from it the service ends itself, which also marks
+  // the stop as manual so the watchdog does not bring it back again.
+  var lastPing = DateTime.now();
+  Timer.periodic(_kBgPingCheckEvery, (t) {
+    final silence = DateTime.now().difference(lastPing);
+    if (silence < _kBgPingTimeout) return;
+    t.cancel();
+    log('[DriverBackgroundService] no ping for ${silence.inSeconds}s — '
+        'main isolate gone, stopping self');
+    unawaited(service.stopSelf());
+  });
   service.on('heartbeat').listen((event) {
-    // Main app is alive — nothing to do
+    lastPing = DateTime.now();
   });
 }
+
+/// The online heartbeat pings every 30 s; four misses in a row means the
+/// main isolate is dead (or the driver went offline through a path that
+/// could not reach `stop()`), not a slow tick.
+const Duration _kBgPingTimeout = Duration(seconds: 120);
+const Duration _kBgPingCheckEvery = Duration(seconds: 15);
 
 /// iOS background fetch handler.
 @pragma('vm:entry-point')

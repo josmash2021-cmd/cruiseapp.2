@@ -2552,11 +2552,10 @@ async def web_upload_photo(request: Request, db: AsyncSession = Depends(get_db))
     return {"photo_url": photo_url}
 
 
-@router.post("/auth/photo", dependencies=[Depends(_verify_api_key)])
-async def upload_photo(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Upload profile photo as base64. Saves file and updates user's photo_url."""
-    body = await request.json()
-    photo_b64 = body.get("photo")
+def decode_profile_photo(photo_b64) -> tuple[bytes, str]:
+    """Validate a base64 (or data-URL) profile photo → (bytes, ext)."""
+    if isinstance(photo_b64, str) and photo_b64.startswith("data:") and "," in photo_b64:
+        photo_b64 = photo_b64.split(",", 1)[1]
     if not photo_b64 or not isinstance(photo_b64, str):
         raise HTTPException(400, "Missing 'photo' field (base64)")
     # Pre-check base64 string size BEFORE decoding (prevents memory exhaustion)
@@ -2577,17 +2576,24 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
         ext = "png"
     else:
         raise HTTPException(400, "Unsupported image format (only JPEG and PNG)")
-    filename = f"user_{user.id}.{ext}"
+    return photo_bytes, ext
+
+
+async def store_profile_photo(db: AsyncSession, user_id: int, photo_bytes: bytes, ext: str) -> str:
+    """Store a profile photo under the user's OWN path (photos/user_{id}) and
+    point users.photo_url + Firestore at it. Shared by the user's own upload
+    and the dispatch panel (2026-10-29)."""
+    filename = f"user_{user_id}.{ext}"
     content_type = "image/jpeg" if ext == "jpg" else "image/png"
     # Upload to Firebase Storage (persistent)
     full_photo_url = None
     if firestore_sync:
-        fb_path = f"photos/user_{user.id}/profile.{ext}"
+        fb_path = f"photos/user_{user_id}/profile.{ext}"
         full_photo_url = firestore_sync.upload_to_firebase_storage(photo_bytes, fb_path, content_type)
     if not full_photo_url:
         raise HTTPException(503, "Photo storage unavailable. Please try again later.")
     # Update user photo_url in DB
-    result = await db.execute(select(User).where(User.id == user.id))
+    result = await db.execute(select(User).where(User.id == user_id))
     db_user = result.scalar_one_or_none()
     if db_user:
         db_user.photo_url = full_photo_url
@@ -2620,7 +2626,15 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
                 )
             except Exception as e:
                 logging.error("Firestore photo sync failed: %s", e)
-    return {"photo_url": full_photo_url}
+    return full_photo_url
+
+
+@router.post("/auth/photo", dependencies=[Depends(_verify_api_key)])
+async def upload_photo(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Upload profile photo as base64. Saves file and updates user's photo_url."""
+    body = await request.json()
+    photo_bytes, ext = decode_profile_photo(body.get("photo"))
+    return {"photo_url": await store_profile_photo(db, user.id, photo_bytes, ext)}
 
 @router.post("/auth/photo-url", dependencies=[Depends(_verify_api_key)])
 async def save_photo_url(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

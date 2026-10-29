@@ -185,6 +185,27 @@ async def admin_update_user_status(user_id: int, status: str = Body(..., embed=T
     _security_audit_log("ADMIN_STATUS_CHANGE", "admin", f"user_id={user_id} new_status={status}")
     return {"status": status, "user": _user_dict(user)}
 
+
+@router.post("/admin/users/{user_id}/photo", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_set_user_photo(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Dispatch replaces any user's profile photo (owner spec 2026-10-29).
+
+    Body: {"photo": "<base64 or data URL>"} — JPEG/PNG, max 3 MB. Stored
+    under that user's own path (photos/user_{id}), same validation and
+    Firestore sync as the user's own upload. The app picks it up from
+    /auth/me on its next open/resume.
+    """
+    from routers.auth import decode_profile_photo, store_profile_photo
+    exists = (await db.execute(select(User.id).where(User.id == user_id))).scalar_one_or_none()
+    if exists is None:
+        raise HTTPException(404, "User not found")
+    body = await request.json()
+    photo_bytes, ext = decode_profile_photo(body.get("photo"))
+    url = await store_profile_photo(db, user_id, photo_bytes, ext)
+    await db.commit()
+    _security_audit_log("ADMIN_PHOTO_CHANGE", "admin", f"user_id={user_id}")
+    return {"ok": True, "user_id": user_id, "photo_url": url}
+
 @router.get("/admin/trips", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_list_trips(
     status: Optional[str] = None,

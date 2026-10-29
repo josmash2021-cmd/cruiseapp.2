@@ -974,8 +974,8 @@ workflows:
           # muerto desde el parche #1 del 17-oct). Shorebird exige los
           # mismos dart-defines del release: sin esto, static maps,
           # geocoding y el mapa nativo mueren en los teléfonos parcheados.
-          shorebird patch android --release-version latest --allow-asset-diffs --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN || echo "⚠️ Android patch no publicado — revisa el log"
-          shorebird patch ios --release-version latest --no-codesign --allow-asset-diffs --allow-native-diffs --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN
+          shorebird patch android --release-version "${ANDROID_RELEASE_VERSION:-latest}" --allow-asset-diffs --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN || echo "⚠️ Android patch no publicado — revisa el log"
+          shorebird patch ios --release-version "${IOS_RELEASE_VERSION:-latest}" --no-codesign --allow-asset-diffs --allow-native-diffs --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN
     publishing:
       email:
         recipients:

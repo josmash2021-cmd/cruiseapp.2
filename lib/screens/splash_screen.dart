@@ -190,11 +190,11 @@ class _SplashScreenState extends State<SplashScreen> {
       unawaited(ZoneService.load());
     });
 
-    // First-run OS permissions, while the animation plays: precise location
-    // and notifications. No-ops on later launches (already granted) and on
-    // web. Not awaited — the dialogs float over the splash and the sequence
-    // keeps its timing either way.
-    unawaited(_requestFirstRunPermissions());
+    // First-run permissions: NOT here for a logged-out boot (2026-10-29,
+    // Android: the system dialog paused the activity on top of the intro
+    // video, the stall watchdog dropped it, and the splash read as black).
+    // Logged-out → asked on the welcome screen once its video is playing;
+    // logged-in → asked below, where no video plays.
 
     // ── Force-update gate (dispatch-controlled, /panel/actualizacion.html) ──
     // Runs in parallel with heavyInit, checked BEFORE any destination
@@ -228,6 +228,14 @@ class _SplashScreenState extends State<SplashScreen> {
       debugPrint('[Splash] stored-session check failed: $e');
     }
     if (_disposed || !mounted) return;
+    // Logged-out: the intro starts NOW, not after the update/maintenance
+    // gate (up to 4 s of black on a slow network, 2026-10-29). If the gate
+    // then says maintenance/update, the route swap disposes the clip.
+    if (loggedIn) {
+      unawaited(_requestFirstRunPermissions());
+    } else {
+      unawaited(_initVideo());
+    }
 
     // The gate answer landed while the session check ran. When dispatch has
     // the switch ON, the store page is the only destination — both the
@@ -296,10 +304,9 @@ class _SplashScreenState extends State<SplashScreen> {
       return;
     }
 
-    // ── Not logged in: play the intro video ("Let's Get You There") ──
-    // The clip's init starts HERE, strictly on the logged-out path —
+    // ── Not logged in: the intro video ("Let's Get You There") was started
+    // right after the session check — strictly on the logged-out path,
     // session boots never create it at all (2026-09-23).
-    unawaited(_initVideo());
 
     // Pre-load GPS, user data, map tiles, images — ALL in parallel
     final preloadFuture = PreloadService.preloadAll(context).timeout(

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
@@ -32,6 +33,34 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   void initState() {
     super.initState();
     _initVideo();
+    unawaited(_askFirstRunPermissions());
+  }
+
+  /// First-run location + notification permissions, moved here from the
+  /// splash (2026-10-29, Android: the system dialog over the intro video
+  /// paused it and the splash went black). Asked once the background clip
+  /// is already playing and past its stall check; the clip is resumed after
+  /// the dialogs, since Android pauses the activity underneath them.
+  /// permission_handler skips the dialog when already decided.
+  Future<void> _askFirstRunPermissions() async {
+    await Future.delayed(const Duration(milliseconds: 3500));
+    if (!mounted) return;
+    try {
+      if (!(await Permission.locationWhenInUse.status).isGranted) {
+        await Permission.locationWhenInUse.request();
+      }
+      if (!mounted) return;
+      if (!(await Permission.notification.status).isGranted) {
+        await Permission.notification.request();
+      }
+    } catch (e) {
+      debugPrint('[Welcome] first-run permission request failed: $e');
+    }
+    if (!mounted) return;
+    final v = _video;
+    if (_videoReady && v != null && !v.value.isPlaying) {
+      unawaited(v.play().catchError((_) {}));
+    }
   }
 
   Future<void> _initVideo() async {

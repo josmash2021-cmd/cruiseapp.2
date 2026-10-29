@@ -106,4 +106,32 @@ void main() {
             .hasMatch(m),
         isTrue);
   });
+
+  // 2026-10-29: logged-out boot on Android read as black.
+  group('logged-out intro', () {
+    final splash = File('lib/screens/splash_screen.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    final run = splash.substring(splash.indexOf('Future<void> _runSequence()'));
+    test('the video starts before the update gate is awaited', () {
+      final video = run.indexOf('unawaited(_initVideo());');
+      final gate = run.indexOf('final gate = await updateGate;');
+      expect(video, isNonNegative);
+      expect(video, lessThan(gate));
+      expect('unawaited(_initVideo());'.allMatches(splash).length, 1);
+    });
+    test('permissions are not asked over the logged-out splash', () {
+      final perm = run.indexOf('unawaited(_requestFirstRunPermissions());');
+      final session = run.indexOf('loggedIn = await UserSession.isLoggedInLocal();');
+      expect(perm, greaterThan(session));
+      expect(run.substring(session, perm), contains('if (loggedIn) {'));
+    });
+    test('welcome asks them once its clip plays, then resumes it', () {
+      final w = File('lib/screens/welcome_screen.dart').readAsStringSync();
+      expect(w, contains('unawaited(_askFirstRunPermissions());'));
+      expect(w, contains('Permission.locationWhenInUse.request()'));
+      expect(w, contains('Permission.notification.request()'));
+      expect(w, contains('v.play()'));
+    });
+  });
 }

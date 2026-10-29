@@ -23,6 +23,9 @@ const double _kOfferCardLift = 12.0;
 /// solamente se puede abrir o cerrar tocando o deslizando desde donde dice
 /// You're offline/online").
 const double _kSheetHeaderStripH = 80.0;
+// Width kept clear of the header tap catcher on each side while online:
+// 14 px margin + 38 px button + 4 px slack.
+const double _kSheetActionGutter = 56.0;
 
 // ══════════════════════════════════════════════════════════════
 //  WIDGETS — UI builders, panels, overlays, cards, sheets
@@ -4222,10 +4225,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             // cerrar tocando o deslizando desde donde dice You're offline/
             // online") — tap toggles resting ↔ open; drags from the strip
             // pass the sheet's drag gate below.
+            //
+            // Online it leaves the two header buttons uncovered (owner report
+            // 2026-10-29: "los toco y solo abre más el sheet", iPhone and
+            // Android). Painted on top, this catcher joined the tap arena
+            // FIRST and won it, so Help & Support and Reserved never fired.
+            // Each button is 38 px wide at 14 px from its edge.
             Positioned(
               top: 0,
-              left: 0,
-              right: 0,
+              left: _driverOnline ? _kSheetActionGutter : 0,
+              right: _driverOnline ? _kSheetActionGutter : 0,
               height: _kSheetHeaderStripH,
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,

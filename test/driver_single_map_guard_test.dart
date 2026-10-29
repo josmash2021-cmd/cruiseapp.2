@@ -14,7 +14,10 @@ import 'package:cruise_app/config/page_transitions.dart';
 ///   * The flip is in-place: no push, no surface handoff, no snapshot gap.
 void main() {
   final ctrl = File('lib/screens/driver/driver_online_controller.dart')
-      .readAsStringSync();
+      .readAsStringSync()
+      // Fixed-size windows below are LF offsets; a CRLF checkout (Windows,
+      // core.autocrlf) must not push a call out of them.
+      .replaceAll('\r\n', '\n');
   final screen =
       File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
 

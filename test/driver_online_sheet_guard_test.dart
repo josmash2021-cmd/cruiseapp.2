@@ -199,4 +199,19 @@ void main() {
       expect(hook, contains('if #available(iOS 16.2, *)'));
     });
   });
+
+  // 2026-10-29 (owner: both header buttons only opened the sheet more).
+  test('the header tap catcher leaves the online buttons uncovered', () {
+    final w = File('lib/screens/driver/driver_online_widgets.dart')
+        .readAsStringSync();
+    final at = w.indexOf('onTap: _onSheetHeaderTap,');
+    expect(at, isNonNegative);
+    final catcher = w.substring(w.lastIndexOf('Positioned(', at), at);
+    expect(catcher, contains('left: _driverOnline ? _kSheetActionGutter : 0,'));
+    expect(catcher, contains('right: _driverOnline ? _kSheetActionGutter : 0,'));
+    expect(w, contains('const double _kSheetActionGutter = 56.0;'));
+    // The buttons must fit inside the gutter: 14 px margin + 38 px wide.
+    final action = w.substring(w.indexOf('Widget _panelAction('));
+    expect(action.substring(0, 900), contains('width: 38,'));
+  });
 }

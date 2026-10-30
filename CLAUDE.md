@@ -471,6 +471,8 @@ Estos son bugs que ya arreglé y patterns que deben mantenerse:
 
 40. **Cuenta de revisión de Apple (2026-10-29):** pasajero 51 (`applereview@cruiseinride.com`, `TEST_MODE_RIDER_IDS=51`). En la web entra con 1234567890 + cualquier código de 6 dígitos (solo pasajero) y ve "Modo prueba"; sus viajes sin PaymentIntent pasan a `funding_source=review_test` y la plataforma paga al conductor. OJO: sus viajes SÍ se ofrecen a conductores reales.
 
+41. **Mapa del conductor sin brújula (2026-10-30, decisión del dueño):** mover o girar el teléfono NO gira la flecha ni la cámara. `HeadingService(useCompass: false)` en [driver_online_screen.dart](lib/screens/driver/driver_online_screen.dart): el rumbo sale solo del recorrido real del carro (medido o derivado) y parado se mantiene. Reemplaza la decisión del 2026-10-16 ("heading-up con brújula"). No reactivar la brújula ni el "giro inmediato" por brújula en pantallas del conductor. Guardias: `driver_gps_rules_guard_test.dart`, `arrow_google_like_test.dart`.
+
 ---
 
 **Última actualización:** 2026-10-30 (flecha/navegación/ubicación como Google, reglas #32-40) — antes 2026-10-28 (reasignación desde dispatch + nota sobre el bundle del panel parcheado a mano) (auditoría Firebase + Railway: pushes perdidos, rate limiter que tumbaba la API, backups efímeros, reglas RTDB/Storage)

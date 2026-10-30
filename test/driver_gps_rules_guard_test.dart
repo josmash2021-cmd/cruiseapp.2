@@ -71,4 +71,13 @@ void main() {
     expect(w, contains('_askPermissionsSoon(); // the clip is really playing'));
     expect(w, contains("ModalRoute.of(context)?.isCurrent != true"));
   });
+
+  // Owner decision 2026-10-30: turning the phone never turns the arrow or
+  // the camera on the driver map.
+  test('the driver map never reads the compass', () {
+    final screen = read(File('lib/screens/driver/driver_online_screen.dart'));
+    expect(screen, contains('HeadingService(useCompass: false)'));
+    final svc = read(File('lib/services/heading_service.dart'));
+    expect(svc, contains('if (!useCompass) return;'));
+  });
 }

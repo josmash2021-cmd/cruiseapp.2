@@ -26,11 +26,21 @@ import '../utils/fix_kinematics.dart';
 /// the two so a car crawling in traffic does not flip back and forth every
 /// few seconds.
 class HeadingService {
-  HeadingService({Stream<double>? compassReadings, DateTime Function()? now})
-      : _compassReadings = compassReadings,
+  HeadingService({
+    Stream<double>? compassReadings,
+    DateTime Function()? now,
+    this.useCompass = true,
+  })  : _compassReadings = compassReadings,
         _now = now ?? DateTime.now;
 
   final Stream<double>? _compassReadings;
+
+  /// False = the phone's orientation never turns the arrow (owner decision
+  /// 2026-10-30 for the driver map: "si giras el teléfono gira la flecha y
+  /// la cámara" — removed). Only the car's real course (measured or derived
+  /// from the track) turns it; parked, it holds. No compass subscription,
+  /// so no turn assist either.
+  final bool useCompass;
   final DateTime Function() _now;
 
   /// Above this ground speed the GPS course is trusted. ~11 km/h — fast
@@ -88,6 +98,7 @@ class HeadingService {
 
   /// Begin listening. Safe to call more than once.
   void start() {
+    if (!useCompass) return;
     if (_compassSub != null) return;
     // flutter_compass is Android and iOS only. On web the platform channel is
     // not registered and the first listen throws MissingPluginException —

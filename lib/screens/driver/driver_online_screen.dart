@@ -714,7 +714,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   ///
   /// _smoothedBearing above is fed from this now instead of straight from
   /// the GPS course, so the arrow keeps turning while the car is stopped.
-  final HeadingService _headingSource = HeadingService();
+  // Course only — turning the phone never turns the arrow or the camera
+  // (owner decision 2026-10-30).
+  final HeadingService _headingSource = HeadingService(useCompass: false);
   StreamSubscription<double>? _headingSub;
   Uint8List? _arrowIconBytes;
 

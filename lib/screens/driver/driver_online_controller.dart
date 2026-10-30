@@ -2559,6 +2559,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // brújula; el "no apunta para el lugar correcto" era la flecha
       // desplazada por el padding viejo, ya corregido con `_kZeroCamPadding`
       // — la flecha queda centrada mientras el mapa gira).
+      //
+      // 2026-10-30 (decisión del dueño, REEMPLAZA lo anterior): mover o
+      // girar el teléfono ya NO gira la flecha ni la cámara. La brújula está
+      // apagada en este mapa (`HeadingService(useCompass: false)`); el rumbo
+      // sale solo del recorrido real del carro y, parado, se mantiene.
       final camBearing = _heading;
       final lastWrittenB = _lastCamWriteBearing;
       // A parked car on a frozen bearing produces the IDENTICAL camera

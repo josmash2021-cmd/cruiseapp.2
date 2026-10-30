@@ -125,4 +125,30 @@ void main() {
       expect(seen.length, before, reason: 'only 1.6 s after a GPS course');
     });
   });
+
+  // Owner decision 2026-10-30 (driver map): compass off.
+  test('with the compass off, turning the phone never turns the arrow', () async {
+    final compass = StreamController<double>();
+    var clock = DateTime(2026, 10, 30, 12);
+    final svc = HeadingService(
+        compassReadings: compass.stream, now: () => clock, useCompass: false);
+    final seen = <double>[];
+    final sub = svc.stream.listen(seen.add);
+    svc.start();
+    compass.add(200);
+    compass.add(90);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, isEmpty, reason: 'parked + phone turned: nothing moves');
+    Position p(double lng) => Position(
+          latitude: 33, longitude: lng, timestamp: clock, accuracy: 5,
+          altitude: 0, altitudeAccuracy: 0, heading: 45, headingAccuracy: 2,
+          speed: 10, speedAccuracy: 0.5);
+    svc.onFix(p(-86));
+    await Future<void>.delayed(Duration.zero);
+    expect(seen.last, closeTo(45, 0.01), reason: 'driving: the real course');
+    await sub.cancel();
+    // Never listened (compass off), so close() would wait forever.
+    unawaited(compass.close());
+    svc.dispose();
+  });
 }

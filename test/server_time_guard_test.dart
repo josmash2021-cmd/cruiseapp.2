@@ -40,4 +40,15 @@ void main() {
         reason: 'use parseServerTime (lib/utils/server_time.dart) — a raw '
             'parse prints UTC as if it were local time');
   });
+
+  // The server sends the driver's reservations with scheduled_at as the
+  // pickup's wall clock (so shipped builds print 1:40 PM); new builds must
+  // swap the real instant back in before parseServerTime reads it as UTC.
+  test('driver reservations read scheduled_at_utc', () {
+    final api = File('lib/services/api_service.dart').readAsStringSync();
+    final fn = api.substring(api.indexOf('getDriverScheduledTrips('));
+    final body = fn.substring(0, fn.indexOf('throw ApiException'));
+    expect(body, contains("final utc = t['scheduled_at_utc'];"));
+    expect(body, contains("{...t, 'scheduled_at': utc}"));
+  });
 }

@@ -22,3 +22,19 @@ def test_reminders_are_spanish_first_with_english_copy():
     ]:
         assert es in _MAIN and en in _MAIN
         assert _MAIN.index(es) < _MAIN.index(en)
+
+
+def test_driver_reservations_carry_pickup_wall_clock():
+    """Shipped 'Mis Reservas' prints scheduled_at as-is: send the pickup's
+    wall clock (1:40 PM Miami, 12:40 PM Birmingham) plus the real instant."""
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from routers.trips import _with_wall_clock_schedule
+
+    at = datetime(2026, 10, 30, 17, 40, tzinfo=timezone.utc)
+    miami = _with_wall_clock_schedule(SimpleNamespace(scheduled_at=at, pickup_lng=-80.2), {})
+    assert miami["scheduled_at"] == "2026-10-30T13:40:00"
+    assert miami["scheduled_at_utc"] == "2026-10-30T17:40:00+00:00"
+    bham = _with_wall_clock_schedule(SimpleNamespace(scheduled_at=at.replace(tzinfo=None), pickup_lng=-86.8), {})
+    assert bham["scheduled_at"] == "2026-10-30T12:40:00"
+    assert _with_wall_clock_schedule(SimpleNamespace(scheduled_at=None, pickup_lng=-80.2), {"x": 1}) == {"x": 1}

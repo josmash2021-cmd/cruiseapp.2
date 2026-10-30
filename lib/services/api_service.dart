@@ -2508,7 +2508,12 @@ class ApiService {
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
-      return list.cast<Map<String, dynamic>>();
+      // scheduled_at here is the pickup's wall clock (for builds <= 750,
+      // which print it as-is); the real instant is scheduled_at_utc.
+      return list.cast<Map<String, dynamic>>().map((t) {
+        final utc = t['scheduled_at_utc'];
+        return utc == null ? t : {...t, 'scheduled_at': utc};
+      }).toList();
     }
     throw ApiException(res.statusCode, 'Failed to load scheduled trips');
   }

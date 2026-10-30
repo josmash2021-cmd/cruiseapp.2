@@ -1,5 +1,6 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
@@ -2397,6 +2398,28 @@ async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_cur
         logging.error(f"get_rider_scheduled_trips error: {e}")
         raise HTTPException(500, f"Failed to load scheduled trips: {str(e)}")
 
+# Reservation clock for the SHIPPED driver app (2026-10-30). Up to 1.1.8+750
+# "Mis Reservas" parses scheduled_at and prints it without toLocal(), so the
+# UTC string showed a 1:40 PM Miami pickup as 5:40 PM. A zone-less wall clock
+# in the pickup's zone parses as phone-local on every shipped screen (the
+# others call toLocal(), a no-op on it). Newer builds read scheduled_at_utc.
+# Service areas: Birmingham (Central) and South Florida (Eastern).
+def _pickup_zone(trip: Trip) -> ZoneInfo:
+    lng = getattr(trip, "pickup_lng", None)
+    return ZoneInfo("America/Chicago" if lng is not None and lng < -85.0 else "America/New_York")
+
+
+def _with_wall_clock_schedule(trip: Trip, d: dict) -> dict:
+    sa = trip.scheduled_at
+    if sa is None:
+        return d
+    if sa.tzinfo is None:
+        sa = sa.replace(tzinfo=timezone.utc)
+    d["scheduled_at_utc"] = sa.isoformat()
+    d["scheduled_at"] = sa.astimezone(_pickup_zone(trip)).replace(tzinfo=None).isoformat()
+    return d
+
+
 @router.get("/trips/scheduled/driver/{driver_id}", dependencies=[Depends(_verify_api_key)])
 async def get_driver_scheduled_trips(driver_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Get all scheduled trips assigned to a driver."""
@@ -2407,7 +2430,7 @@ async def get_driver_scheduled_trips(driver_id: int, user: User = Depends(_get_c
             and_(Trip.driver_id == driver_id, Trip.status.in_(["scheduled", "scheduled_accepted", "scheduled_active", "driver_en_route"]), Trip.scheduled_at.isnot(None))
         ).order_by(Trip.scheduled_at.asc())
     )
-    return [_trip_dict_for_user(t, user) for t in result.scalars().all()]
+    return [_with_wall_clock_schedule(t, _trip_dict_for_user(t, user)) for t in result.scalars().all()]
 
 @router.post("/trips/{trip_id}/cancel", dependencies=[Depends(_verify_api_key)])
 async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

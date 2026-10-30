@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 /// Google Maps-style constant-velocity motion smoother.
 ///
@@ -666,8 +667,24 @@ class SmoothMotion {
       ageSec = _now().difference(_lastTargetAt!).inMilliseconds / 1000.0;
     }
     if (ageSec > _maxExtrapolationSec) return (_lat!, _lng!);
-    final leadSec = ageSec > _maxLeadSec ? _maxLeadSec : ageSec;
+    final leadSec = decayedLeadSec(ageSec);
     return (_targetLat! + _vLat * leadSec, _targetLng! + _vLng * leadSec);
+  }
+
+  /// Seconds of travel the aim leads the last fix by, [ageSec] after it:
+  /// full speed up to [_maxLeadSec], then the SAME linear decay [tick]
+  /// applies to the glide, integrated — so aim and marker ease to a stop
+  /// together at [_maxExtrapolationSec]. The aim used to halt at 2 s and the
+  /// clamp parked the marker on it, so with weak signal the arrow stopped
+  /// dead and then sprinted to the next fix (owner report 2026-10-29: "con
+  /// poca señal la flecha ni se mueve y aparece más adelante").
+  @visibleForTesting
+  static double decayedLeadSec(double ageSec) {
+    if (ageSec <= 0) return 0;
+    if (ageSec <= _maxLeadSec) return ageSec;
+    const span = _maxExtrapolationSec - _maxLeadSec;
+    final d = math.min(ageSec - _maxLeadSec, span);
+    return _maxLeadSec + d - d * d / (2 * span);
   }
 
   /// Advance the rendered position by [dtSec] seconds. Returns true if the
@@ -724,6 +741,38 @@ class SmoothMotion {
       _corrVelLat *= scale;
       _corrVelLng *= scale;
     }
+    // Marker AHEAD of the aim along the direction of travel — a fix landed a
+    // little behind the extrapolation (GPS noise, late delivery, a gentle
+    // brake). The per-axis clamp below zeroed the forward step outright, so
+    // the arrow stopped dead until the aim caught up, once per fix: the
+    // "avanza, se detiene, avanza" stutter (owner report 2026-10-29). Now the
+    // glide eases off in proportion to the lead (stopping only 0.8 s of
+    // travel ahead) and the marker never runs backwards along the road;
+    // sideways correction still applies.
+    var aheadOfAim = false;
+    final gx = vLng * 111320.0 * cosLat;
+    final gy = vLat * 110540.0;
+    final glideMps = math.sqrt(gx * gx + gy * gy);
+    if (glideMps > 0.5) {
+      final ux = gx / glideMps;
+      final uy = gy / glideMps;
+      final along =
+          residualLng * 111320.0 * cosLat * ux + residualLat * 110540.0 * uy;
+      if (along < 0) {
+        aheadOfAim = true;
+        final ease = (1.0 + along / (glideMps * 0.8)).clamp(0.0, 1.0);
+        stepLat *= ease;
+        stepLng *= ease;
+        // Drop the backward along-track part of the spring (its state too,
+        // so it cannot build up and yank the marker once the aim passes).
+        final cAlong = _corrVelLng * 111320.0 * cosLat * ux +
+            _corrVelLat * 110540.0 * uy;
+        if (cAlong < 0) {
+          _corrVelLng -= cAlong * ux / (111320.0 * cosLat);
+          _corrVelLat -= cAlong * uy / 110540.0;
+        }
+      }
+    }
     stepLat += _corrVelLat * dtSec;
     stepLng += _corrVelLng * dtSec;
 
@@ -746,19 +795,22 @@ class SmoothMotion {
     // Never overshoot past the aim point on either axis. The aim point is
     // moving (see above), so this clamps the marker onto the extrapolated
     // lead — not onto the stale fix — and the glide survives.
-    if (residualLat > 0) {
-      if (stepLat > residualLat) stepLat = residualLat;
-      if (stepLat < 0) stepLat = 0;
-    } else if (residualLat < 0) {
-      if (stepLat < residualLat) stepLat = residualLat;
-      if (stepLat > 0) stepLat = 0;
-    }
-    if (residualLng > 0) {
-      if (stepLng > residualLng) stepLng = residualLng;
-      if (stepLng < 0) stepLng = 0;
-    } else if (residualLng < 0) {
-      if (stepLng < residualLng) stepLng = residualLng;
-      if (stepLng > 0) stepLng = 0;
+    // Aim ahead (the normal case): never overshoot it.
+    if (!aheadOfAim) {
+      if (residualLat > 0) {
+        if (stepLat > residualLat) stepLat = residualLat;
+        if (stepLat < 0) stepLat = 0;
+      } else if (residualLat < 0) {
+        if (stepLat < residualLat) stepLat = residualLat;
+        if (stepLat > 0) stepLat = 0;
+      }
+      if (residualLng > 0) {
+        if (stepLng > residualLng) stepLng = residualLng;
+        if (stepLng < 0) stepLng = 0;
+      } else if (residualLng < 0) {
+        if (stepLng < residualLng) stepLng = residualLng;
+        if (stepLng > 0) stepLng = 0;
+      }
     }
 
     final newLat = _lat! + stepLat;

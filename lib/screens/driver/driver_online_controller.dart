@@ -1914,7 +1914,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // the course to be the better source, and publishes the winner on
         // the stream _startHeadingSource listens to.
         _headingSource.onFix(pos);
-        _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
+        _currentSpeedMph =
+            ((measuredSpeedMps(pos) ?? _motion.speedMps) * 2.23694)
+                .clamp(0.0, 200.0);
         // Accuracy gate (user report 2026-09-19, "la flecha aparece en el
         // mar"; tightened 2026-09-25, "la flecha se ve fuera de la linea al
         // hacer zoom"): a fix whose OWN radius of uncertainty is worse than
@@ -1926,15 +1928,29 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // SmoothMotion extrapolates ~5 s, so brief bad spells bridge;
         // presence and RTDB keep flowing either way — the ghost agent
         // needs them; only the display target is gated.
-        final fixUsable = pos.accuracy <= 25;
+        // Weak signal (owner report 2026-10-29, "con poca señal la flecha ni
+        // se mueve"): starving the engine froze the arrow. Once 1.2 s pass
+        // without a 25 m fix, a fix up to 65 m still steers it — the engine
+        // down-weights it by its accuracy and caps its hold ring at 15 m.
+        // The road-matching trace keeps taking only good fixes.
+        final goodFix = pos.accuracy <= 25;
+        final sinceDisplayMs = _lastDisplayFixAt == null
+            ? 1 << 30
+            : DateTime.now().difference(_lastDisplayFixAt!).inMilliseconds;
+        final fixUsable =
+            goodFix || (pos.accuracy <= 65 && sinceDisplayMs > 1200);
         if (!fixUsable) _diagRejectedFixes++;
         if (fixUsable) {
+          _lastDisplayFixAt = DateTime.now();
           // Searching has no route to snap to — feed the road-matching
           // trace (user report 2026-09-27: arrow off the road lines at
           // high zoom). Gated on the map being alive and the app in front:
           // a covered/backgrounded screen never draws the arrow, and
           // matching calls are not free.
-          if (_routePts.length < 2 && _mapMounted && _appInForeground) {
+          if (goodFix &&
+              _routePts.length < 2 &&
+              _mapMounted &&
+              _appInForeground) {
             _roadSnap.onFix(pos);
           }
           // Snap to route polyline — prevents GPS drift off-road
@@ -1942,8 +1958,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _smoothMoveTo(snappedLL, _roadLockBearing ?? _smoothedBearing,
               accuracyM: pos.accuracy,
               timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
-              speedMps:
-                  pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
+              // Measured only: Android sends 0 when it has no Doppler, and
+              // a "parked" reading mid-drive froze the arrow (2026-10-29).
+              speedMps: measuredSpeedMps(pos));
           _trimRouteBehindDriver(snappedLL);
           if (_previewingOffer != null) {
             unawaited(_maybeRefreshOfferRoutePreview(snappedLL));

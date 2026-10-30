@@ -300,13 +300,16 @@ void main() {
   group(
       'GPS accuracy gate (user reports 2026-09-19 "flecha en el mar" and '
       '2026-09-25 "flecha fuera de la linea al hacer zoom")', () {
-    test('a fix that declares itself worse than 25 m never moves the arrow',
-        () {
-      final body = bodyOf(ctrl, 'onPosition: (pos) {', maxLen: 3400);
-      expect(body.contains('pos.accuracy <= 25'), isTrue,
+    test('only a good fix (<= 25 m) moves the arrow — a 25-65 m fix only '
+        'when no good one came for 1.2 s (weak signal, 2026-10-29)', () {
+      final body = bodyOf(ctrl, 'onPosition: (pos) {', maxLen: 6000);
+      expect(body.contains('final goodFix = pos.accuracy <= 25;'), isTrue,
           reason: '65 m killed catastrophic hops, but a ±30-65 m fix still '
-              'floated the arrow over blocks at pinch-zoom — only the '
-              'display target is gated, presence keeps flowing');
+              'floated the arrow over blocks at pinch-zoom');
+      expect(body.contains('goodFix || (pos.accuracy <= 65 && sinceDisplayMs > 1200)'),
+          isTrue,
+          reason: 'with weak signal, starving the engine froze the arrow — '
+              'never past 65 m, and only after 1.2 s without a good fix');
       expect(body.contains('fixUsable'), isTrue);
     });
 

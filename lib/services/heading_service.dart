@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../utils/fix_kinematics.dart';
+
 /// Which way the driver's arrow should point, from whichever sensor can
 /// currently answer.
 ///
@@ -141,9 +143,14 @@ class HeadingService {
 
   /// Feed every GPS fix. Decides which source is in charge from this point on.
   void onFix(Position p) {
-    final speed = p.speed;
-    final course = p.heading;
-    final courseOk = course.isFinite && course >= 0;
+    // Measured values only (2026-10-29): an Android fix without Doppler
+    // reads speed 0 / heading 0 — "parked, facing north" while driving —
+    // which handed the arrow to the in-car compass. Missing readings fall
+    // back to what consecutive fixes show (distance / time, bearing).
+    final derived = _deriveFromTrack(p);
+    final double? speed = measuredSpeedMps(p) ?? derived?.$1;
+    final double? course = measuredCourseDeg(p) ?? derived?.$2;
+    final courseOk = course != null;
 
     // No compass reading — either none has arrived yet, or this device has
     // nothing to give: the browser, a tablet, a dead magnetometer. Then
@@ -155,11 +162,11 @@ class HeadingService {
     // 3.0 below. Falling through would have made a phone with no compass
     // strictly worse than before this service existed.
     if (_compass == null) {
-      if (courseOk && speed.isFinite && speed >= 0.7) _emit(course % 360);
+      if (courseOk && speed != null && speed >= 0.7) _emit(course % 360);
       return;
     }
 
-    if (speed.isFinite && speed >= 0) {
+    if (speed != null) {
       // Hysteresis: two thresholds, and between them whatever was already
       // chosen stays chosen.
       if (speed >= _useCourseAboveMps) {
@@ -179,6 +186,35 @@ class HeadingService {
       // event, so the arrow does not hold the last driving course.
       _emit(_compassEma ?? _compass!, deadBand: _compassDeadBandDeg);
     }
+  }
+
+  double? _trackLat;
+  double? _trackLng;
+  DateTime? _trackAt;
+
+  /// (speed m/s, course deg) from the previous fix to [p], when the step is
+  /// long enough to mean something (>= 6 m and >= half the fix's own error)
+  /// and the spacing is a normal fix interval. Null otherwise.
+  (double, double?)? _deriveFromTrack(Position p) {
+    final prevLat = _trackLat, prevLng = _trackLng, prevAt = _trackAt;
+    final at = p.timestamp;
+    final acc = p.accuracy.isFinite && p.accuracy > 0 ? p.accuracy : 10.0;
+    if (acc > 65) return null; // too vague to anchor the next step on
+    _trackLat = p.latitude;
+    _trackLng = p.longitude;
+    _trackAt = at;
+    if (prevLat == null || prevLng == null || prevAt == null) return null;
+    final dt = at.difference(prevAt).inMilliseconds / 1000.0;
+    if (dt < 0.3 || dt > 6.0) return null;
+    final dist =
+        Geolocator.distanceBetween(prevLat, prevLng, p.latitude, p.longitude);
+    final speed = dist / dt;
+    if (dist < 6.0 || dist < acc * 0.5) {
+      return (speed < 1.0 ? 0.0 : speed, null);
+    }
+    final course =
+        Geolocator.bearingBetween(prevLat, prevLng, p.latitude, p.longitude);
+    return (speed, (course + 360) % 360);
   }
 
   void _emit(double heading, {double deadBand = 0}) {

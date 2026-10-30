@@ -109,6 +109,7 @@ import 'driver_waitlist_screen.dart'; // gate de aprobación en el destino
 import 'scheduled_ride_details_screen.dart';
 import '../../utils/responsive.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../utils/fix_kinematics.dart';
 
 part 'driver_online_controller.dart';
 part 'driver_online_map.dart';
@@ -821,6 +822,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // bajo = ticker muerto; cam/anot bajas con tick alto = canal nativo.
   int _diagFixes = 0, _diagTicks = 0, _diagCamWrites = 0, _diagAnnotUpdates = 0;
   int _diagRejectedFixes = 0;
+  // Last fix that steered the arrow — the weak-signal gate below keys off it.
+  DateTime? _lastDisplayFixAt;
   double _diagLastAccuracyM = 0;
   final ValueNotifier<String> motionDiag = ValueNotifier<String>('');
   bool motionDiagVisible = false;

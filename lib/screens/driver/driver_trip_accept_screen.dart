@@ -60,6 +60,7 @@ import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
 import '../../widgets/offer_countdown_ring.dart';
 import '../../services/firebase_auth_recovery.dart';
+import '../../utils/fix_kinematics.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER TRIP ACCEPT SCREEN  — DoorDash-style trip details sheet
@@ -745,10 +746,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
     _btnFadeAnim = CurvedAnimation(parent: _btnFadeCtrl, curve: Curves.easeOut);
 
-    // Start GPS proximity detection for pickup (only if not already picked up)
-    if (!widget.rideStarted) _startPickupProximityDetection();
-    // Start dropoff proximity detection if ride already started
-    if (widget.rideStarted) _startDropoffProximityDetection();
+    // Pickup / dropoff proximity detection — after the first frame
+    // (2026-10-29): the streams now use the driver's real-time settings,
+    // whose notification copy needs context.
+    WidgetsBinding.instance.endOfFrame.then((_) {
+      if (!mounted) return;
+      if (!widget.rideStarted) _startPickupProximityDetection();
+      if (widget.rideStarted) _startDropoffProximityDetection();
+    });
 
     // Finish overlay fade controller
     _finishFadeCtrl = AnimationController(
@@ -1438,15 +1443,28 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   // ── GPS proximity detection for pickup ──────────────────────────────────
+  /// The ONE location config for every stream this screen opens (owner
+  /// report 2026-10-29, "la flecha no sigue al driver"). geolocator_android
+  /// keeps a single native stream and hands it to every later caller with
+  /// its ORIGINAL settings: the pickup-proximity listener started first with
+  /// a bare 10 m / 5 s config, so the live trip GPS and the nav arrow ran on
+  /// one fix every ~5 s, with no foreground service. Same settings
+  /// everywhere — it no longer matters which listener opens it.
+  LocationSettings _tripGpsSettings() {
+    final s = S.of(context);
+    return driverLocationSettings(
+      distanceFilter: 0,
+      notificationTitle: s.driverLocationNotifTitle,
+      notificationText: s.driverLocationNotifOnTrip,
+    );
+  }
+
   void _startPickupProximityDetection() {
     // Check initial position
     _checkPickupProximity(widget.driverPos);
     // Listen to GPS updates
     _gpsSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
+      locationSettings: _tripGpsSettings(),
     ).listen((pos) {
       if (!mounted || _nearPickup) return;
       _checkPickupProximity(LatLng(pos.latitude, pos.longitude));
@@ -1482,10 +1500,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // Check current driver position first
     _checkDropoffProximity(widget.driverPos);
     _dropoffGpsSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
+      locationSettings: _tripGpsSettings(),
     ).listen((pos) {
       if (!mounted || _nearDropoff) return;
       _checkDropoffProximity(LatLng(pos.latitude, pos.longitude));
@@ -4324,10 +4339,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ));
       _carGpsSub?.cancel();
       _carGpsSub = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 3,
-        ),
+        locationSettings: _tripGpsSettings(),
       ).listen((pos) {
         if (!mounted) return;
         double? brg;
@@ -4342,7 +4354,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             bearing: brg,
             accuracyM: pos.accuracy,
             timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
-            speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
+            speedMps: measuredSpeedMps(pos));
         _ensureCarTicker();
       }, onError: (Object e) {
         debugPrint('[DriverTrip] mini-map car stream error: $e');

@@ -31,6 +31,7 @@ import '../../widgets/gold_location_dot.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/neu_style.dart';
 import '../../widgets/verified_avatar.dart';
+import '../../utils/fix_kinematics.dart';
 
 /// Who owns the navigation camera.
 ///
@@ -831,14 +832,13 @@ class DriverNavViewState extends State<DriverNavView>
       _dot.setTarget(
         display.latitude,
         display.longitude,
-        bearing: onRoute
-            ? _roadLockBearing
-            : (pos.heading >= 0 ? pos.heading : null),
+        bearing: onRoute ? _roadLockBearing : measuredCourseDeg(pos),
         accuracyM: pos.accuracy,
         timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
         // The fix's own speed reading parks the arrow against GPS wander —
         // a parked driver's position jumps but his speed keeps reading ~0.
-        speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null,
+        // Measured only — Android's Doppler-less 0 is "unknown" (2026-10-29).
+        speedMps: measuredSpeedMps(pos),
       );
     }
     // Speed readout (user spec 2026-09-27 — "tiene que ser instantaneo y en
@@ -848,8 +848,7 @@ class DriverNavViewState extends State<DriverNavView>
     // (~2 mph): under that the car is stopped and the box must read 0 THE
     // SAME fix — the old 0.45 floor let a stop sit at 7-10 mph while the
     // extrapolated glide bled off.
-    final rawSpeed =
-        pos.speed.isFinite && pos.speed >= 0 ? pos.speed : _dot.speedMps;
+    final rawSpeed = measuredSpeedMps(pos) ?? _dot.speedMps;
     _speedMps = rawSpeed < 0.9 ? 0.0 : rawSpeed;
     final mph = (_speedMps * 2.23694).round();
     if (mph != _lastMphShown) {

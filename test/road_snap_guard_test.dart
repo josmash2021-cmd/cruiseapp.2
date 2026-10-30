@@ -43,18 +43,20 @@ void main() {
   });
 
   group('searching feed is gated and reset', () {
-    test('the trace only feeds with no route, map alive, app in front', () {
+    test('the trace only feeds good fixes, no route, map alive, app in front',
+        () {
       expect(
-          ctrl.contains(
-              'if (_routePts.length < 2 && _mapMounted && _appInForeground)'),
+          RegExp(r'if \(goodFix &&\s*_routePts\.length < 2 &&\s*_mapMounted &&'
+                  r'\s*_appInForeground\)')
+              .hasMatch(ctrl),
           isTrue,
           reason: 'covered/backgrounded screens must not burn matching '
-              'calls — the arrow is not visible there');
+              'calls; weak-signal fixes steer the arrow but never the trace');
     });
 
     test('offline and dispose forget the trace', () {
       final exitStart = ctrl.indexOf('Future<void> _exitOnlineMode()');
-      final exitBlock = ctrl.substring(exitStart, exitStart + 1400);
+      final exitBlock = ctrl.substring(exitStart, exitStart + 2400);
       expect(exitBlock.contains('_roadSnap.reset();'), isTrue);
       expect(exitBlock.contains('_roadLinePts = const [];'), isTrue);
       final screen =

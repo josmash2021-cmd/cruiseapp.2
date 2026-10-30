@@ -359,7 +359,7 @@ void main() {
       expect(nav.contains('_chaseZoomFast = 17.0'), isTrue);
       expect(nav.contains('_chaseZoomManeuver = 18.0'), isTrue);
       expect(nav.contains('_zoomLerpPerSec = 0.5'), isTrue);
-      final frame = bodyOf(nav, 'void _onDotFrame() {', maxLen: 1600);
+      final frame = bodyOf(nav, 'void _chaseFrame(double dt) {', maxLen: 2400);
       expect(frame.contains('+ 240'), isTrue,
           reason: 'the car rides at ~70% height — more road ahead on screen');
     });

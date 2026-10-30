@@ -111,8 +111,10 @@ void main() {
     expect(api, contains("'captured_at': capturedAt.toUtc().toIso8601String()"));
     final controller =
         File('lib/screens/driver/driver_online_controller.dart').readAsStringSync();
-    expect(controller, contains('heading: pos.heading >= 0'));
-    expect(controller, contains('speedMps: pos.speed >= 0'));
+    // Measured values only (2026-10-29): Android's Doppler-less 0/0 went
+    // out as "stopped, facing north".
+    expect(controller, contains('heading: measuredCourseDeg(pos),'));
+    expect(controller, contains('speedMps: measuredSpeedMps(pos),'));
     expect(controller, contains('capturedAt: pos.timestamp.toUtc()'));
   });
 

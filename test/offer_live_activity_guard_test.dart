@@ -63,7 +63,7 @@ void main() {
           reason: 'the 1s debounce kills the restart after a quick resume '
               'and nothing retries it');
       final start = ctrl.indexOf('void _startPolling(');
-      final body = ctrl.substring(start, start + 700);
+      final body = ctrl.substring(start, start + 1500);
       expect(body.contains('!force'), isTrue,
           reason: 'force must bypass the debounce check');
     });
@@ -113,7 +113,7 @@ void main() {
     test('_startPolling fires a one-shot _poll on every (re)start', () {
       final start = ctrl.indexOf('void _startPolling(');
       expect(start, isNonNegative, reason: '_startPolling not found');
-      final body = ctrl.substring(start, start + 1800);
+      final body = ctrl.substring(start, start + 2600);
       final sse = body.indexOf('_connectSse();');
       expect(sse, isNonNegative, reason: '_connectSse call not found');
       final oneShot = body.indexOf('_poll();', sse);

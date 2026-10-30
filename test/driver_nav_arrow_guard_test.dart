@@ -118,9 +118,12 @@ void main() {
     test('the overlay is drawn at the camera focus, heading-up', () {
       expect(nav.contains('if (_arrowOverlayVisible)'), isTrue);
       final build = bodyOf(nav, 'if (_arrowOverlayVisible)', maxLen: 2200);
-      expect(build.contains('const GoldLocationDotOverlay(bearing: 0)'), isTrue,
-          reason: 'the camera carries the arrow bearing, so on screen the '
-              'arrow always points up');
+      // 2026-10-30: the camera follows the arrow's bearing on a damped
+      // spring; the overlay shows the not-yet-turned difference (0 when the
+      // map has caught up — heading-up at rest).
+      expect(build.contains('valueListenable: _arrowScreenBearing,'), isTrue);
+      expect(build.contains('bearing: rel,'), isTrue,
+          reason: 'the arrow rotates by what the camera has not turned yet');
       expect(build.contains('c.maxHeight / 2 + topPad / 2'), isTrue,
           reason: 'same focal point the chase camera writes (top padding '
               'pushes the car below centre)');
@@ -222,9 +225,13 @@ void main() {
     });
 
     test('the chase zoom glide paces on the ticker dt', () {
-      final frame = bodyOf(nav, 'void _onDotFrame() {', maxLen: 1600);
-      expect(frame.contains('final dt = _dot.lastFrameDtSec;'), isTrue);
-      expect(frame, isNot(contains('DateTime.now()')));
+      // The dot's frames feed the chase with the TICKER dt; the settle
+      // ticker passes its own ticker dt. Wall clock only marks "a dot frame
+      // just ran", never paces the glide.
+      expect(nav.contains('void _onDotFrame() => _chaseFrame(_dot.lastFrameDtSec);'),
+          isTrue);
+      final frame = bodyOf(nav, 'void _chaseFrame(double dt) {', maxLen: 2400);
+      expect(frame.contains('final maxStep = _zoomLerpPerSec * dt;'), isTrue);
     });
   });
 }

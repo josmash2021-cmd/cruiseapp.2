@@ -298,6 +298,96 @@ class DriverNavViewState extends State<DriverNavView>
   // Chase tilt: 55° (audit D6, same spec as the zoom above).
   static const _chasePitch = 55.0;
 
+  // Owner request 2026-10-30: "la flecha un poco más grande" on the
+  // navigation map — overlay and native annotation alike.
+  static const double _kNavArrowScale = 1.2;
+
+  // Google-style chase (owner request 2026-10-30): the MAP turns on a
+  // critically damped spring toward the arrow's bearing (~1 s settle, no
+  // overshoot), so a kink in the route line no longer whips the whole map
+  // around; the arrow shows the remaining difference instantly. The dot
+  // only ticks while it moves, so a settle ticker finishes a turn the car
+  // stopped in the middle of. Null bearing = snap on the next frame.
+  static const double _camBearingOmega = 4.5;
+  double? _camBearing;
+  double _camBearingVel = 0;
+  final ValueNotifier<double> _arrowScreenBearing = ValueNotifier<double>(0);
+  Ticker? _camSettleTicker;
+  Duration _camSettleLast = Duration.zero;
+  DateTime _lastChaseFrameAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  static double _shortestArc(double from, double to) {
+    var d = (to - from) % 360;
+    if (d > 180) d -= 360;
+    if (d < -180) d += 360;
+    return d;
+  }
+
+  bool get _camBearingSettled {
+    final cur = _camBearing;
+    if (cur == null) return true;
+    return _shortestArc(cur, _dot.bearing).abs() < 0.1 &&
+        _camBearingVel.abs() < 0.5;
+  }
+
+  /// Advances the camera bearing one frame and publishes the arrow's
+  /// on-screen rotation (arrow bearing minus camera bearing).
+  double _stepCamBearing(double target, double dt) {
+    final cur = _camBearing;
+    if (cur == null || dt <= 0) {
+      _camBearing = target % 360;
+      _camBearingVel = 0;
+    } else {
+      final err = _shortestArc(cur, target);
+      final acc = _camBearingOmega * _camBearingOmega * err -
+          2 * _camBearingOmega * _camBearingVel;
+      _camBearingVel += acc * dt;
+      _camBearing = (cur + _camBearingVel * dt + 360) % 360;
+    }
+    final rel = _shortestArc(_camBearing!, target);
+    if ((rel - _arrowScreenBearing.value).abs() > 0.05) {
+      _arrowScreenBearing.value = rel;
+    }
+    return _camBearing!;
+  }
+
+  /// Camera pinned straight to the arrow (snaps, recenter blend end).
+  void _snapCamBearing(double bearing) {
+    _camBearing = bearing % 360;
+    _camBearingVel = 0;
+    _arrowScreenBearing.value = 0;
+  }
+
+  void _ensureCamSettle() {
+    if (_camBearingSettled) return;
+    final t = _camSettleTicker ??= createTicker(_onCamSettleTick);
+    if (!t.isActive) {
+      _camSettleLast = Duration.zero;
+      t.start();
+    }
+  }
+
+  void _onCamSettleTick(Duration elapsed) {
+    final dt = _camSettleLast == Duration.zero
+        ? 0.0
+        : ((elapsed - _camSettleLast).inMicroseconds / 1e6).clamp(0.0, 0.05);
+    _camSettleLast = elapsed;
+    if (!mounted ||
+        _camState != _CamState.following ||
+        _overview ||
+        !_mapMounted ||
+        _camBearingSettled) {
+      _camSettleTicker?.stop();
+      return;
+    }
+    // The dot's own frames drive the chase while it moves.
+    if (DateTime.now().difference(_lastChaseFrameAt) <
+        const Duration(milliseconds: 40)) {
+      return;
+    }
+    if (dt > 0) _chaseFrame(dt);
+  }
+
   // ── Route + maneuvers ──
   List<LatLng> _routePts = [];
 
@@ -457,6 +547,11 @@ class DriverNavViewState extends State<DriverNavView>
     // Drives the marker and hands the per-frame callbacks: onTick writes the
     // annotation (throttled by GoldLocationDot), onFrame chases the camera.
     _dot.build(this, _onDotTick, onFrame: _onDotFrame);
+    // The offer-preview shrink (0.8) is shared and animated on the ONLINE
+    // screen's ticker, which is muted once the trip screen covers it — the
+    // grow-back could stall mid-way and the nav arrow opened small. The
+    // navigation always shows it full size.
+    GoldLocationDot.animateOfferMarkerScale(this, 1.0, durationMs: 0);
     _riderTicker = createTicker(_onRiderTick)..start();
     _listenRiderLocation();
     // Localizations and the first stage sync need a built context.
@@ -517,6 +612,8 @@ class DriverNavViewState extends State<DriverNavView>
     _arrowHandoffTimer?.cancel();
     _recenterTicker?.dispose();
     _riderTicker?.dispose();
+    _camSettleTicker?.dispose();
+    _arrowScreenBearing.dispose();
     _dot.dispose();
     _roadLock.reset();
     super.dispose();
@@ -1891,17 +1988,20 @@ class DriverNavViewState extends State<DriverNavView>
   /// the marker never moves on screen — the map slides under it — so the
   /// camera is the only thing to write per frame. In freeLook / recentering
   /// / overview the chase writes nothing at all.
-  void _onDotFrame() {
+  void _onDotFrame() => _chaseFrame(_dot.lastFrameDtSec);
+
+  void _chaseFrame(double dt) {
     if (_camState != _CamState.following || _overview || !_mapMounted) {
+      _camBearing = null; // the next follow frame starts from the arrow
       return;
     }
+    _lastChaseFrameAt = DateTime.now();
     final lat = _renderPos?.latitude ?? _dot.lat;
     final lng = _renderPos?.longitude ?? _dot.lng;
     if (lat == null || lng == null) return;
     // Zoom lerps toward its target at ≤0.5/sec — a speed or maneuver change
     // is felt as a glide, never as a cut. dt is the dot ticker's own vsync
     // delta (already capped at 50 ms), never a wall clock read mid-frame.
-    final dt = _dot.lastFrameDtSec;
     final target = _zoomTarget();
     final maxStep = _zoomLerpPerSec * dt;
     if ((_chaseZoom - target).abs() <= maxStep) {
@@ -1917,13 +2017,13 @@ class DriverNavViewState extends State<DriverNavView>
     _writeCamera(mapbox.CameraOptions(
       center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
       zoom: _chaseZoom,
-      // One source of truth for rotation, like the online map (2026-09-30):
-      // the camera carries the arrow's bearing as-is — every smoothing
-      // decision lives in the arrow itself.
-      bearing: _dot.bearing,
+      // The map follows the arrow's bearing on a damped spring (2026-10-30,
+      // "como Google"); the overlay arrow shows the difference.
+      bearing: _stepCamBearing(_dot.bearing, dt),
       pitch: _chasePitch,
       padding: mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
     ));
+    _ensureCamSettle();
   }
 
   /// One explicit chase-pose write, for the moments the per-frame chase is
@@ -1939,6 +2039,7 @@ class DriverNavViewState extends State<DriverNavView>
     final lng = _renderPos?.longitude ?? _dot.lng;
     if (lat == null || lng == null) return;
     final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 240;
+    _snapCamBearing(_dot.bearing);
     _writeCamera(mapbox.CameraOptions(
       center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
       zoom: _chaseZoom,
@@ -2080,7 +2181,7 @@ class DriverNavViewState extends State<DriverNavView>
               iconSize: GoldLocationDot.driverAnnotationIconSize(
                 devicePixelRatio: dpr,
                 highRes: _dot.currentBytesHiRes != null,
-                scale: GoldLocationDot.driverIconSize,
+                scale: GoldLocationDot.driverIconSize * _kNavArrowScale,
               ),
               iconAnchor: mapbox.IconAnchor.CENTER,
               iconRotate: bearing,
@@ -2655,7 +2756,7 @@ class DriverNavViewState extends State<DriverNavView>
             child: IgnorePointer(
               child: LayoutBuilder(
                 builder: (ctx, c) {
-                  const sz = GoldLocationDot.driverOverlaySize;
+                  const sz = GoldLocationDot.driverOverlaySize * _kNavArrowScale;
                   // Same focal point the chase camera writes: Mapbox centres
                   // the car inside the padded viewport, i.e. topPad/2 below
                   // the screen centre.
@@ -2677,7 +2778,15 @@ class DriverNavViewState extends State<DriverNavView>
                             ..rotateX(_chasePitch * math.pi / 180),
                           // Heading-up chase: the camera carries the arrow's
                           // bearing, so on screen the arrow always points up.
-                          child: const GoldLocationDotOverlay(bearing: 0),
+                          // Heading-up chase with a damped map: the arrow
+                          // shows what the camera has not turned yet.
+                          child: ValueListenableBuilder<double>(
+                            valueListenable: _arrowScreenBearing,
+                            builder: (_, rel, __) => GoldLocationDotOverlay(
+                              bearing: rel,
+                              size: sz,
+                            ),
+                          ),
                         ),
                       ),
                     ],

@@ -101,6 +101,40 @@ void main() {
     expect(SmoothMotion.decayedLeadSec(9.0), closeTo(3.5, 1e-9));
   });
 
+  // 2026-10-30: back from the background the arrow glided a straight line
+  // across blocks toward the car. Far behind -> snap; near -> glide.
+  test('back from the background: far behind snaps to the car', () {
+    final m = engine();
+    const speed = 25.0; // highway
+    var carM = 0.0;
+    for (var i = 0; i < 3; i++) {
+      carM += speed;
+      m.setTarget(north(carM), lng0, bearing: 0, accuracyM: 5, speedMps: speed,
+          timestampMs: now.millisecondsSinceEpoch.toDouble());
+      run(m, 1.0);
+    }
+    // 30 s in the background: fixes keep arriving, no frames are drawn.
+    for (var i = 0; i < 30; i++) {
+      now = now.add(const Duration(seconds: 1));
+      carM += speed;
+      m.setTarget(north(carM), lng0, bearing: 0, accuracyM: 5, speedMps: speed,
+          timestampMs: now.millisecondsSinceEpoch.toDouble());
+    }
+    final before = metresOf(m);
+    expect(carM - before, greaterThan(500), reason: 'arrow left far behind');
+    run(m, 1 / 60);
+    expect((carM - metresOf(m)).abs(), lessThan(40),
+        reason: 'first frame back puts the arrow at the car, no cross-map glide');
+  });
+
+  test('a small correction still glides (no teleport for 20 m)', () {
+    final m = engine();
+    m.setTarget(north(20), lng0, bearing: 0, accuracyM: 5, speedMps: 0.5,
+        timestampMs: now.millisecondsSinceEpoch.toDouble());
+    final steps = run(m, 0.1);
+    expect(steps.reduce((a, b) => a > b ? a : b), lessThan(3.1));
+  });
+
   Position fix({
     required double lat,
     required double lng,

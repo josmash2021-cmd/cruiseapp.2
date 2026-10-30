@@ -824,6 +824,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   int _diagRejectedFixes = 0;
   // Last fix that steered the arrow — the weak-signal gate below keys off it.
   DateTime? _lastDisplayFixAt;
+  // When the app last went to the background (resume resets the road trace).
+  DateTime? _pausedAt;
   double _diagLastAccuracyM = 0;
   final ValueNotifier<String> motionDiag = ValueNotifier<String>('');
   bool motionDiagVisible = false;
@@ -1742,6 +1744,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     if (!mounted) return;
     if (state == AppLifecycleState.paused) {
       _appInForeground = false;
+      _pausedAt = DateTime.now();
       // Keep SSE alive in background so driver still receives offers.
       // Only cancel polling timer (REST fallback) — SSE is more efficient.
       _pollT?.cancel();
@@ -1776,6 +1779,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       unawaited(DriverBackgroundService().stop().catchError((_) {}));
     } else if (state == AppLifecycleState.resumed) {
       _appInForeground = true;
+      // Back after a while (owner report 2026-10-30, "se sale de las
+      // autopistas"): the road-matching trace still holds fixes from before
+      // the app left, and projecting the arrow onto that stale line drags it
+      // off the road. Start the trace over; the engine snaps the arrow to
+      // the car when it is far (SmoothMotion._snapBeyondM).
+      final away = _pausedAt == null
+          ? Duration.zero
+          : DateTime.now().difference(_pausedAt!);
+      _pausedAt = null;
+      if (away > const Duration(seconds: 5)) {
+        _roadSnap.reset();
+        _roadLinePts = const [];
+        _roadLock.reset();
+      }
       // Before anything else: the location stream may not have survived the
       // background. Everything on this screen — the dot, the heartbeat that
       // keeps the driver online, the offers that depend on being findable —

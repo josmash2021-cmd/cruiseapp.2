@@ -85,6 +85,23 @@ class SmoothMotion {
   // the first fix after pulling away — was eaten in under half a second at
   // highway speed: the short teleport the driver saw (2026-10-28 audit D9).
   static const double _posSpringOmega = 6.0;
+
+  /// Beyond this distance (or 5 s of travel, whichever is larger) the
+  /// marker is SNAPPED to the aim instead of glided there. Owner report
+  /// 2026-10-30: back from the background — fixes kept arriving, frames did
+  /// not — the arrow glided a straight line across blocks and off the
+  /// highway toward the car. A navigation app puts the arrow where the car
+  /// is; short corrections still glide.
+  static const double _snapBeyondM = 120.0;
+
+  // The snap needs proof the car really is there: frames resumed after a
+  // pause (the app was in the background), or two DIFFERENT far fixes in a
+  // row. A single far fix still glides — one bad reading must not throw
+  // the arrow hundreds of metres and back.
+  DateTime? _lastTickAt;
+  double? _farSeenLat;
+  double? _farSeenLng;
+  int _farTargets = 0;
   // Bearing spring keeps 10 rad/s: a turn must land, not drift in.
   static const double _brgSpringOmega = 10.0;
   double _corrVelLat = 0;
@@ -717,6 +734,36 @@ class SmoothMotion {
     final aim = _aimPoint();
     final residualLat = aim.$1 - _lat!;
     final residualLng = aim.$2 - _lng!;
+    {
+      final tickAt = _now();
+      final resumed = _lastTickAt != null &&
+          tickAt.difference(_lastTickAt!) > const Duration(seconds: 1);
+      _lastTickAt = tickAt;
+      final c = math.cos(_targetLat! * math.pi / 180.0);
+      final gapM = math.sqrt(math.pow(residualLng * 111320.0 * c, 2) +
+          math.pow(residualLat * 110540.0, 2));
+      final far = gapM > math.max(_snapBeyondM, speedMps * 5);
+      if (!far) {
+        _farTargets = 0;
+      } else if (_targetLat != _farSeenLat || _targetLng != _farSeenLng) {
+        _farSeenLat = _targetLat;
+        _farSeenLng = _targetLng;
+        _farTargets++;
+      }
+      if (far && (resumed || _farTargets >= 2)) {
+        _farTargets = 0;
+        _lat = aim.$1;
+        _lng = aim.$2;
+        _corrVelLat = 0;
+        _corrVelLng = 0;
+        _bearing = _targetBearing;
+        _corrVelBrg = 0;
+        if (_feedState == MotionFeedState.reacquiring) {
+          _feedState = MotionFeedState.tracking;
+        }
+        return true;
+      }
+    }
     final aLat = _posSpringOmega * _posSpringOmega * residualLat -
         2 * _posSpringOmega * _corrVelLat;
     _corrVelLat += aLat * dtSec;

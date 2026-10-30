@@ -124,7 +124,9 @@ void main() {
       final perm = run.indexOf('unawaited(_requestFirstRunPermissions());');
       final session = run.indexOf('loggedIn = await UserSession.isLoggedInLocal();');
       expect(perm, greaterThan(session));
-      expect(run.substring(session, perm), contains('if (loggedIn) {'));
+      expect(run.substring(session, perm), contains('if (!loggedIn) {'));
+      expect(run.substring(session, perm), contains('} else {'),
+          reason: 'permissions only in the logged-in branch');
     });
     test('welcome asks them once its clip plays, then resumes it', () {
       final w = File('lib/screens/welcome_screen.dart').readAsStringSync();

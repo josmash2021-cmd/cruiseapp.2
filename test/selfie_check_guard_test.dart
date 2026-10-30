@@ -109,7 +109,7 @@ void main() {
         reason: 'the camera step is navy like the license page, never '
             'full-bleed black');
     expect(screen, contains('2 => _buildVerifying()'));
-    expect(screen, contains('ApiService.submitFaceCheck(photoPath)'),
+    expect(screen, contains('ApiService.submitFaceCheck(photoPath, bytes: bytes)'),
         reason: 'the upload moved INSIDE the screen');
     expect(screen, contains("resp['pending_review'] != true"),
         reason: 'auto-approve pops approved on the spot');
@@ -142,8 +142,9 @@ void main() {
     expect(screen, contains('ResolutionPreset.ultraHigh'),
         reason: 'iOS ultraHigh, NEVER max — the .max still closes the app '
             'on iOS 16+ (native NSException)');
-    expect(screen, contains('AppPlatform.isIOS ? ResolutionPreset.ultraHigh : ResolutionPreset.max'),
-        reason: 'Android keeps max; the doc-comment says why');
+    expect(screen, contains('AppPlatform.isIOS ? ResolutionPreset.ultraHigh : ResolutionPreset.high'),
+        reason: 'Android high since 2026-10-29: a full-sensor max shot blew '
+            'the 5 MB body cap (413) and the selfie came back every connect');
     expect(screen, contains('final c = _ctrl;\n    _ctrl = null;\n    c?.dispose();'),
         reason: 'dispose null-swap — the route exit animation rebuilds '
             'AFTER dispose (Crashlytics 2026-10-17)');

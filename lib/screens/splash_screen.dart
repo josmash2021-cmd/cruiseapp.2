@@ -231,10 +231,10 @@ class _SplashScreenState extends State<SplashScreen> {
     // Logged-out: the intro starts NOW, not after the update/maintenance
     // gate (up to 4 s of black on a slow network, 2026-10-29). If the gate
     // then says maintenance/update, the route swap disposes the clip.
-    if (loggedIn) {
-      unawaited(_requestFirstRunPermissions());
-    } else {
+    if (!loggedIn) {
       unawaited(_initVideo());
+    } else {
+      unawaited(_requestFirstRunPermissions());
     }
 
     // The gate answer landed while the session check ran. When dispatch has

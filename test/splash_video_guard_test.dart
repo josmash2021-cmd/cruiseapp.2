@@ -52,11 +52,15 @@ void main() {
     expect(initState.contains('_initVideo('), isFalse,
         reason: 'with an active session the splash must not even TRY to '
             'appear — no clip init, no play glyph over home');
-    final fastReturn = src.indexOf('if (loggedIn) {');
+    // 2026-10-29: the clip starts right after the session check (not after
+    // the update gate) — but ONLY inside the logged-out branch.
     final initCall = src.indexOf('unawaited(_initVideo())');
-    expect(initCall, greaterThan(fastReturn),
-        reason: 'the clip initializes strictly on the logged-out path, '
-            'after the session check');
+    expect(initCall, isNonNegative);
+    expect('unawaited(_initVideo())'.allMatches(src).length, 1);
+    final guard = src.lastIndexOf('if (!loggedIn) {', initCall);
+    expect(guard, isNonNegative);
+    expect(src.substring(guard, initCall).contains('}'), isFalse,
+        reason: 'the init sits directly inside if (!loggedIn) { ... }');
   });
 
   test('routing logic untouched', () {

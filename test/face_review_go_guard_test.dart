@@ -59,7 +59,9 @@ void main() {
         reason: 'the verify state says Verificar/Verify');
     expect(offline, contains('S.of(context).faceReviewPending'),
         reason: 'the pending state says Selfie en revisión');
-    expect(offline, contains(': faceState == 2\n              ? null'),
+    // GO routes every tap through _goTapAction() (2026-10-29): pending
+    // review returns null = dead button.
+    expect(offline, contains('if (faceState == 2) return null;'),
         reason: 'pending review = dead button (onTap null) — the dispatch '
             'GO gate outranks it but never resurrects the flip');
     expect(offline, isNot(contains("const Color(0xFFD32F2F)")),
@@ -73,7 +75,7 @@ void main() {
     expect(compactOffline,
         contains('faceState != 0 ? const Color(0xFF4A4A4F)'),
         reason: 'grey gradient bottom too');
-    expect(offline, contains('? _onFaceVerifyTap'),
+    expect(offline, contains('if (faceState == 1) return _onFaceVerifyTap;'),
         reason: 'verify routes to the selfie flow, never the flip');
   });
 

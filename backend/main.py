@@ -2285,13 +2285,16 @@ async def _dispatch_reserved_scheduled_rides(db, now):
         if 28 <= minutes_until <= 32 and trip.reminder_sent_at is None:
             trip.reminder_sent_at = now
             await db.commit()
-            hora = sched_at.strftime("%I:%M %p")
+            # No clock time in the copy: sched_at is UTC and the server has
+            # no per-driver timezone (1:40 PM Miami went out as "05:40 PM").
             if driver.fcm_token:
                 try:
                     _send_fcm_push(
                         token=driver.fcm_token,
-                        title=f"Tienes una reserva a las {hora}",
+                        title="Tienes una reserva en 30 minutos",
                         body="Tu viaje reservado es en 30 minutos — conéctate para tomarlo o lo asignaremos a otro conductor.",
+                        title_en="You have a reservation in 30 minutes",
+                        body_en="Your reserved ride is in 30 minutes — go online to take it or we'll assign it to another driver.",
                         data={
                             "type": "scheduled_reminder",
                             "trip_id": str(trip.id),
@@ -3074,8 +3077,10 @@ async def _scheduled_ride_reminder_loop():
                                 rider_name = (rider.first_name or "").strip() or "Rider"
                                 _send_fcm_push(
                                     token=rider.fcm_token,
-                                    title="Your scheduled ride starts soon",
-                                    body=f"{rider_name}, your ride starts in 30 minutes. Your driver is on the way.",
+                                    title="Tu viaje reservado empieza pronto",
+                                    body=f"{rider_name}, tu viaje empieza en 30 minutos. Ya tienes conductor asignado.",
+                                    title_en="Your scheduled ride starts soon",
+                                    body_en=f"{rider_name}, your ride starts in 30 minutes. Your driver is assigned.",
                                     data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "rider_30m"},
                                 )
                                 trip_reminders.add("rider_30m")
@@ -3089,8 +3094,10 @@ async def _scheduled_ride_reminder_loop():
                     if 10 <= minutes_until <= 18 and "15m" not in trip_reminders:
                         _send_fcm_push(
                             token=driver.fcm_token,
-                            title="Head to the pickup point now",
-                            body=f"{driver_name}, your scheduled ride starts in 15 minutes. Head to {pickup} now to arrive on time.",
+                            title="Ve al punto de recogida",
+                            body=f"{driver_name}, tu viaje reservado empieza en 15 minutos. Ve a {pickup} para llegar a tiempo.",
+                            title_en="Head to the pickup point now",
+                            body_en=f"{driver_name}, your scheduled ride starts in 15 minutes. Head to {pickup} now to arrive on time.",
                             data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "15m"},
                         )
                         trip_reminders.add("15m")
@@ -3107,8 +3114,10 @@ async def _scheduled_ride_reminder_loop():
                                 rider_name2 = (rider2.first_name or "").strip() or "Rider"
                                 _send_fcm_push(
                                     token=rider2.fcm_token,
-                                    title="Your ride starts in 15 minutes",
-                                    body=f"{rider_name2}, your driver {driver_name} is on the way. Your scheduled ride starts in 15 minutes.",
+                                    title="Tu viaje empieza en 15 minutos",
+                                    body=f"{rider_name2}, tu conductor {driver_name} va en camino. Tu viaje reservado empieza en 15 minutos.",
+                                    title_en="Your ride starts in 15 minutes",
+                                    body_en=f"{rider_name2}, your driver {driver_name} is on the way. Your scheduled ride starts in 15 minutes.",
                                     data={
                                         "type": "scheduled_trip_starting",
                                         "trip_id": str(trip.id),

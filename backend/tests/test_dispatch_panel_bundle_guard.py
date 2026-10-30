@@ -57,6 +57,9 @@ def test_panel_miami_time_and_reservation_reassign():
     dt = (assets / "datetime-DACJH46P.js").read_text(encoding="utf-8")
     assert 'timeZone:"America/New_York"' in dt
     assert 'e(miaWall(a),"d MMM yyyy, HH:mm"' in dt
+    entry = ENTRY.read_text(encoding="utf-8")
+    assert "scheduledAtDate:S(t.scheduledAt)??S(t.scheduled_at)??null" in entry, (
+        "the trip model must carry the reservation time or the detail shows nothing")
     detail = (assets / "index-B68rRA9U.js").read_text(encoding="utf-8")
     assert 'label:"Reserva (hora Miami)"' in detail
     assert "reservation:t.scheduledAtDate!=null" in detail

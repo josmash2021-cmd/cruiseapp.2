@@ -260,7 +260,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         final user = await UserSession.getUser();
         // No guessed role (2026-10-29): a driver filed as "rider" lands in
         // the wrong folder. Unknown role → the server upload above is enough.
-        final role = (user?['role'] ?? '').toString();
+        final role = (user?['role'] ?? '').toString().toLowerCase();
         if (role != 'rider' && role != 'driver') return;
         try {
           final firebaseUrl = await FirebaseStorageService.uploadProfilePhoto(

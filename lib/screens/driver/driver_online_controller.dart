@@ -1941,7 +1941,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             goodFix || (pos.accuracy <= 65 && sinceDisplayMs > 1200);
         if (!fixUsable) _diagRejectedFixes++;
         if (fixUsable) {
-          _lastDisplayFixAt = DateTime.now();
+          // Only a GOOD fix resets the weak-signal clock: refreshing it on
+          // weak fixes let only every other one through, ~2 s apart, right
+          // on the engine's reacquire threshold (review 2026-10-30).
+          if (goodFix) _lastDisplayFixAt = DateTime.now();
           // Searching has no route to snap to — feed the road-matching
           // trace (user report 2026-09-27: arrow off the road lines at
           // high zoom). Gated on the map being alive and the app in front:

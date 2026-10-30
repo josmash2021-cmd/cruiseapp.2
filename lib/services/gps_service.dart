@@ -39,10 +39,19 @@ class GpsService {
   double get reportedHeading => _currentHeading;
   @visibleForTesting
   double get reportedSpeed => _currentSpeed;
+  /// The next position goes out at once — the first fix after a stream
+  /// gap (replaces re-pushing the stale pre-gap position, review 2026-10-30).
+  void resetUploadThrottle() {
+    _lastSocketIOAt = null;
+    _lastRTDBAt = null;
+  }
+
   @visibleForTesting
   void debugResetReported() {
     _currentPos = null;
     _currentPosAt = null;
+    _trackAnchorPos = null;
+    _trackAnchorAt = null;
     _currentHeading = 0;
     _currentSpeed = 0;
     _currentAccuracyM = null;
@@ -74,6 +83,8 @@ class GpsService {
   double _currentSpeed = 0;
   int? _currentCapturedAtMs;
   DateTime? _currentPosAt;
+  LatLng? _trackAnchorPos;
+  DateTime? _trackAnchorAt;
   double? _currentAccuracyM;
   DateTime? _lastGoodFixAt;
   String? _activeDriverId;
@@ -157,21 +168,45 @@ class GpsService {
         arrived.difference(_lastGoodFixAt!) < const Duration(seconds: 8)) {
       return; // keep reporting the last good position
     }
-    if (acc == null || acc <= 25) _lastGoodFixAt = arrived;
+    // Only a fix that DECLARES a good accuracy opens the 8 s window — a
+    // re-pushed position with no accuracy opened it and the fresh fix after
+    // a stream recovery was dropped (review 2026-10-30).
+    if (acc != null && acc <= 25) _lastGoodFixAt = arrived;
     double? h = heading != null && heading.isFinite && heading >= 0
         ? heading % 360
         : null;
     double? v = speed != null && speed.isFinite && speed >= 0 ? speed : null;
-    final prev = _currentPos, prevAt = _currentPosAt;
-    if (prev != null && prevAt != null && (h == null || v == null)) {
-      final dt = arrived.difference(prevAt).inMilliseconds / 1000.0;
-      if (dt >= 0.3 && dt <= 10) {
-        final d = _haversineMeters(
-            prev.latitude, prev.longitude, pos.latitude, pos.longitude);
-        // Under the fix's own error it is GPS wander, not motion.
-        final minMove = max(2.0, (acc ?? 10.0) * 0.4);
-        v ??= d < minMove ? 0.0 : d / dt;
-        if (h == null && d >= 6) h = _bearingDeg(prev, pos);
+    // Derived from a HELD anchor (review 2026-10-30): Android fixes come
+    // every 0.5 s and a city-speed car does not clear the noise radius
+    // between two of them — every step read 0 m/s. The anchor moves only
+    // once the car has clearly moved (then speed + course) or 3 s passed
+    // inside the radius (then parked); in between it is unknown (null →
+    // the last value stays).
+    final a = _trackAnchorPos, aAt = _trackAnchorAt;
+    if (h != null && v != null) {
+      _trackAnchorPos = pos;
+      _trackAnchorAt = arrived;
+    } else if (a == null || aAt == null) {
+      _trackAnchorPos = pos;
+      _trackAnchorAt = arrived;
+    } else {
+      final dt = arrived.difference(aAt).inMilliseconds / 1000.0;
+      final d = _haversineMeters(
+          a.latitude, a.longitude, pos.latitude, pos.longitude);
+      // Under the fix's own error it is GPS wander, not motion.
+      final minMove = max(2.0, (acc ?? 10.0) * 0.4);
+      if (dt > 10) {
+        _trackAnchorPos = pos;
+        _trackAnchorAt = arrived;
+      } else if (d >= minMove && dt >= 0.3) {
+        v ??= d / dt;
+        if (h == null && d >= 6) h = _bearingDeg(a, pos);
+        _trackAnchorPos = pos;
+        _trackAnchorAt = arrived;
+      } else if (dt >= 3) {
+        v ??= 0.0;
+        _trackAnchorPos = pos;
+        _trackAnchorAt = arrived;
       }
     }
     _currentPos = pos;

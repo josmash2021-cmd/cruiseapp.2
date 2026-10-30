@@ -93,14 +93,27 @@ void main() {
     test('the arrow starts turning before the next GPS fix', () async {
       expect(svc.usingCourse, isTrue);
       expect(seen.last, closeTo(10, 0.01));
-      await sensor(215); // car turned 15° right
-      expect(seen.last, closeTo(25, 0.01),
-          reason: 'course + sensor change, not the sensor\'s absolute 215°');
+      for (var i = 0; i < 8; i++) {
+        await sensor(215); // car turned 15 degrees right
+      }
+      expect(seen.last, greaterThan(20),
+          reason: 'course + (smoothed) sensor change, not the absolute 215');
+      expect(seen.last, lessThanOrEqualTo(25.01));
     });
 
-    test('a phone spun in the hand is capped at 60°', () async {
-      await sensor(320); // +120°
+    test('a phone spun in the hand is capped at 60 degrees', () async {
+      for (var i = 0; i < 12; i++) {
+        await sensor(320); // +120
+      }
       expect(seen.last, closeTo(70, 0.01));
+    });
+
+    test('compass noise on a straight road never wobbles the arrow', () async {
+      final before = seen.length;
+      for (var i = 0; i < 12; i++) {
+        await sensor(i.isEven ? 201.5 : 198.5); // +-1.5 jitter
+      }
+      expect(seen.length, before, reason: 'under the 3 degree gate: no emits');
     });
 
     test('jitter under 1° does nothing; stale window does nothing', () async {

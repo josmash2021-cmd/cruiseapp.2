@@ -1299,9 +1299,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // Push the first fix after a gap straight out instead of waiting for
       // the upload throttle — the passenger has been watching a frozen car.
       onFirstFixAfterGap: () {
-        final p = _lastDriverPos;
-        // Unknown heading/speed — never "0 km/h facing north" (2026-10-29).
-        if (p != null) _gpsService.updatePosition(p, null, null);
+        // Send the FRESH fix that follows at once instead of re-pushing the
+        // stale pre-gap position (review 2026-10-30: that stale push opened
+        // the 8 s good-fix window and the fresh fix was dropped).
+        _gpsService.resetUploadThrottle();
       },
       onPosition: (pos) {
         if (!mounted) return;

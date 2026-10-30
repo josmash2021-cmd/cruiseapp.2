@@ -453,8 +453,8 @@ void main() {
       expect(svc.contains('_compassDeadBandDeg = 0.02'), isTrue,
           reason: 'slow phone turns are not swallowed by the old 0.5° gate');
       expect(
-          bodyOf(svc, 'if (usingCourse) {', maxLen: 300)
-              .contains('_emit(_course!)'),
+          bodyOf(svc, 'if (usingCourse) {', maxLen: 600)
+              .contains('_emit(_course!, force: true)'),
           isTrue,
           reason: 'the driving course stays RAW — pre-lagging it poisoned '
               'SmoothMotion turn-rate measurement (2026-09-25)');

@@ -33,7 +33,23 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   void initState() {
     super.initState();
     _initVideo();
-    unawaited(_askFirstRunPermissions());
+  }
+
+  bool _permissionsAsked = false;
+
+  /// Fires once, AFTER the clip is really playing (or was dropped) — never
+  /// on a fixed timer: a slow decoder still initialising when an Android
+  /// dialog paused the activity got dropped by the stall watchdog, the very
+  /// failure moved off the splash (review 2026-10-30). Skipped if another
+  /// screen (login) is already on top.
+  void _askPermissionsSoon() {
+    if (_permissionsAsked) return;
+    _permissionsAsked = true;
+    Future<void>.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      if (ModalRoute.of(context)?.isCurrent != true) return;
+      unawaited(_askFirstRunPermissions());
+    });
   }
 
   /// First-run location + notification permissions, moved here from the
@@ -43,8 +59,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   /// the dialogs, since Android pauses the activity underneath them.
   /// permission_handler skips the dialog when already decided.
   Future<void> _askFirstRunPermissions() async {
-    await Future.delayed(const Duration(milliseconds: 3500));
-    if (!mounted) return;
     try {
       if (!(await Permission.locationWhenInUse.status).isGranted) {
         await Permission.locationWhenInUse.request();
@@ -82,7 +96,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       _videoStallTimer = Timer(_videoStallTimeout, () {
         if (!mounted) return;
         final v = _video;
-        if (v != null && v.value.position > Duration.zero) return;
+        if (v != null && v.value.position > Duration.zero) {
+          _askPermissionsSoon(); // the clip is really playing
+          return;
+        }
         _dropVideo('no progress after ${_videoStallTimeout.inMilliseconds} ms');
       });
     } catch (e) {
@@ -112,6 +129,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       unawaited(c.dispose().catchError((_) {}));
     }
     if (mounted && _videoReady) setState(() => _videoReady = false);
+    // No clip after all — the poster is on screen, safe to ask now.
+    _askPermissionsSoon();
   }
 
   @override

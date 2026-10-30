@@ -51,4 +51,24 @@ void main() {
           reason: '${f.path}: after a gap send null, never "0 km/h north"');
     }
   });
+
+  // Review 2026-10-30.
+  test('weak-signal clock only resets on a GOOD fix', () {
+    final ctrl = read(File('lib/screens/driver/driver_online_controller.dart'));
+    expect(ctrl, contains('if (goodFix) _lastDisplayFixAt = DateTime.now();'));
+  });
+
+  test('after a GPS gap the uploader sends the FRESH fix, not the stale one', () {
+    final trip = read(File('lib/screens/driver/driver_trip_accept_screen.dart'));
+    expect(trip, contains('_gpsService.resetUploadThrottle();'));
+    final gps = read(File('lib/services/gps_service.dart'));
+    expect(gps, contains('if (acc != null && acc <= 25) _lastGoodFixAt = arrived;'));
+  });
+
+  test('welcome asks permissions only once its clip plays (or drops)', () {
+    final w = read(File('lib/screens/welcome_screen.dart'));
+    expect(w, isNot(contains('Duration(milliseconds: 3500)')));
+    expect(w, contains('_askPermissionsSoon(); // the clip is really playing'));
+    expect(w, contains("ModalRoute.of(context)?.isCurrent != true"));
+  });
 }

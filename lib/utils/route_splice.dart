@@ -57,9 +57,6 @@ class RouteSplice {
     return best;
   }
 
-  /// Index i of the segment [i → i+1] of [polyline] whose projection is
-  /// closest to [p]. This is the "deviation point": where the driver left
-  /// the route.
   /// Walks [meters] forward along [line] from the projection of [from] and
   /// returns that point with the bearing of the segment it lands on. Clamps
   /// at the end of the line. Null for a line with fewer than two points.
@@ -93,6 +90,9 @@ class RouteSplice {
     return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
   }
 
+  /// Index i of the segment [i → i+1] of [polyline] whose projection is
+  /// closest to [p]. This is the "deviation point": where the driver left
+  /// the route.
   static int closestSegmentIndex(List<LatLng> polyline, LatLng p) {
     if (polyline.length < 2) return 0;
     var best = double.infinity;

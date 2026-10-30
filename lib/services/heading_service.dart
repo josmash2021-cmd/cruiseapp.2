@@ -138,6 +138,17 @@ class HeadingService {
       if (delta < -180) delta += 360;
       _compassEma = (ema + delta * _compassAlpha) % 360;
     }
+    // Light smoothing for the turn assist only: raw samples carry ~1-3° of
+    // noise at up to 20 Hz, and SmoothMotion reads each step as a turn rate.
+    final ac = _assistCompass;
+    if (ac == null) {
+      _assistCompass = _compass;
+    } else {
+      var d = (_compass! - ac) % 360;
+      if (d > 180) d -= 360;
+      if (d < -180) d += 360;
+      _assistCompass = (ac + d * 0.3 + 360) % 360;
+    }
     if (!usingCourse) {
       _emit(_compassEma!, deadBand: _compassDeadBandDeg);
       return;
@@ -157,15 +168,25 @@ class HeadingService {
   static const double _turnAssistMaxDeg = 60;
   double? _compassAtCourse;
   DateTime? _courseAt;
+  double? _assistCompass;
+  DateTime? _lastAssistAt;
+  static const Duration _turnAssistEvery = Duration(milliseconds: 200);
+  static const double _turnAssistMinDeg = 3.0;
 
   void _turnAssist() {
     final course = _course, at = _courseAt, base = _compassAtCourse;
-    final now = _compass;
+    final now = _assistCompass;
     if (course == null || at == null || base == null || now == null) return;
-    if (_now().difference(at) > _turnAssistWindow) return;
+    final t = _now();
+    if (t.difference(at) > _turnAssistWindow) return;
+    if (_lastAssistAt != null && t.difference(_lastAssistAt!) < _turnAssistEvery) {
+      return;
+    }
     var delta = (now - base) % 360;
     if (delta > 180) delta -= 360;
-    if (delta.abs() < 1.0) return; // sensor noise, not a turn
+    if (delta < -180) delta += 360;
+    if (delta.abs() < _turnAssistMinDeg) return; // noise, not a turn
+    _lastAssistAt = t;
     delta = delta.clamp(-_turnAssistMaxDeg, _turnAssistMaxDeg).toDouble();
     _emit((course + delta + 360) % 360, deadBand: 0.5);
   }
@@ -205,12 +226,20 @@ class HeadingService {
       }
     }
 
-    _course = courseOk ? course % 360 : null;
+    // Moving fast with no course this fix (short step): keep the last one
+    // instead of handing the arrow to the in-car compass (review 2026-10-30).
+    if (courseOk) {
+      _course = course % 360;
+    } else if (!_movingFast) {
+      _course = null;
+    }
 
     if (usingCourse) {
-      _compassAtCourse = _compass;
+      _compassAtCourse = _assistCompass ?? _compass;
       _courseAt = _now();
-      _emit(_course!);
+      // The once-per-fix re-anchor on the real course must never be eaten
+      // by the throttle a compass sample just used (review 2026-10-30).
+      _emit(_course!, force: true);
     } else if (_compass != null) {
       // Dropping back to the compass at a standstill: send its current
       // reading straight away rather than waiting for the sensor's next
@@ -226,33 +255,53 @@ class HeadingService {
   /// (speed m/s, course deg) from the previous fix to [p], when the step is
   /// long enough to mean something (>= 6 m and >= half the fix's own error)
   /// and the spacing is a normal fix interval. Null otherwise.
+  /// The anchor is HELD until the car has moved past the step threshold
+  /// (or 3 s pass): Android fixes come every 0.5 s, and a car under ~12 m/s
+  /// never covered 6 m between two consecutive fixes — every derived speed
+  /// read 0 and the arrow fell back to the in-car compass (review
+  /// 2026-10-30). A short step is "unknown" (null), not "parked".
   (double, double?)? _deriveFromTrack(Position p) {
-    final prevLat = _trackLat, prevLng = _trackLng, prevAt = _trackAt;
     final at = p.timestamp;
     final acc = p.accuracy.isFinite && p.accuracy > 0 ? p.accuracy : 10.0;
     if (acc > 65) return null; // too vague to anchor the next step on
-    _trackLat = p.latitude;
-    _trackLng = p.longitude;
-    _trackAt = at;
-    if (prevLat == null || prevLng == null || prevAt == null) return null;
-    final dt = at.difference(prevAt).inMilliseconds / 1000.0;
-    if (dt < 0.3 || dt > 6.0) return null;
-    final dist =
-        Geolocator.distanceBetween(prevLat, prevLng, p.latitude, p.longitude);
-    final speed = dist / dt;
-    if (dist < 6.0 || dist < acc * 0.5) {
-      return (speed < 1.0 ? 0.0 : speed, null);
+    final aLat = _trackLat, aLng = _trackLng, aAt = _trackAt;
+    void anchorHere() {
+      _trackLat = p.latitude;
+      _trackLng = p.longitude;
+      _trackAt = at;
     }
-    final course =
-        Geolocator.bearingBetween(prevLat, prevLng, p.latitude, p.longitude);
-    return (speed, (course + 360) % 360);
+
+    if (aLat == null || aLng == null || aAt == null) {
+      anchorHere();
+      return null;
+    }
+    final dt = at.difference(aAt).inMilliseconds / 1000.0;
+    if (dt <= 0) return null;
+    if (dt > 6.0) {
+      anchorHere();
+      return null;
+    }
+    final dist = Geolocator.distanceBetween(aLat, aLng, p.latitude, p.longitude);
+    if (dist >= 6.0 && dist >= acc * 0.5) {
+      anchorHere();
+      final course = Geolocator.bearingBetween(aLat, aLng, p.latitude, p.longitude);
+      return (dist / dt, (course + 360) % 360);
+    }
+    if (dt >= 3.0) {
+      anchorHere();
+      return (0.0, null); // 3 s inside the noise radius: parked
+    }
+    return null;
   }
 
-  void _emit(double heading, {double deadBand = 0}) {
+
+  void _emit(double heading, {double deadBand = 0, bool force = false}) {
     if (_controller.isClosed) return;
 
     final now = _now();
-    if (_lastEmitAt != null && now.difference(_lastEmitAt!) < _minInterval) {
+    if (!force &&
+        _lastEmitAt != null &&
+        now.difference(_lastEmitAt!) < _minInterval) {
       return;
     }
 

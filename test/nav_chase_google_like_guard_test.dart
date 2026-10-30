@@ -43,4 +43,13 @@ void main() {
     expect(nav, contains(
         'GoldLocationDot.animateOfferMarkerScale(this, 1.0, durationMs: 0);'));
   });
+
+  // Review 2026-10-30.
+  test('recenter ends with the camera on the arrow; tunnel keys on usable fixes', () {
+    expect(nav, contains('if (to == _CamState.following) _snapCamBearing(_dot.bearing);'));
+    expect(nav, contains('final last = _lastUsableFixAt ?? _lastGpsFixAt;'));
+    final gate = nav.indexOf('if (pos.accuracy > 30) return;');
+    final usable = nav.indexOf('_lastUsableFixAt = DateTime.now();');
+    expect(usable, greaterThan(gate), reason: 'only fixes past the 30 m gate');
+  });
 }

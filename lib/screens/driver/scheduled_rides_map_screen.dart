@@ -95,6 +95,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   double? _lastQLat;
   double? _lastQLng;
   mapbox.CoordinateBounds? _lastQBbox;
+  String? _lastAvailJson;
   mapbox.PointAnnotationManager? _bubbleMgr;
   mapbox.PointAnnotationManager? _dotMgr;
   mapbox.PointAnnotation? _dotAnnot;
@@ -326,9 +327,18 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         maxLng: bbox?.northeast.coordinates.lng.toDouble(),
       );
       if (!mounted) return;
+      // Same list as on screen (the 15 s poll's usual case): nothing to
+      // redraw. Re-syncing deleted and re-created every bubble each poll —
+      // the map blinked every 15 s (review 2026-10-30).
+      final freshJson = jsonEncode(trips);
+      if (_freshLoaded && freshJson == _lastAvailJson) {
+        _loadingAvail = false;
+        return;
+      }
+      _lastAvailJson = freshJson;
       // Save to cache for next open.
       SharedPreferences.getInstance()
-          .then((p) => p.setString(_cacheKey, jsonEncode(trips)));
+          .then((p) => p.setString(_cacheKey, freshJson));
       setState(() {
         _available = trips;
         _loadingAvail = false;

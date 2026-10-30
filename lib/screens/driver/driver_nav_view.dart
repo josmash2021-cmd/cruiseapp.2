@@ -468,6 +468,7 @@ class DriverNavViewState extends State<DriverNavView>
   // ROUTE at the last speed — virtual fixes every 0.5 s, up to 30 s. The
   // first real fix takes over. Off-route or slower than 3 m/s: no guessing.
   Timer? _tunnelTimer;
+  DateTime? _lastUsableFixAt;
   LatLng? _tunnelAnchor;
   DateTime? _tunnelAnchorAt;
   double _tunnelSpeed = 0;
@@ -857,7 +858,7 @@ class DriverNavViewState extends State<DriverNavView>
 
   void _tunnelTick() {
     if (!mounted) return;
-    final last = _lastGpsFixAt;
+    final last = _lastUsableFixAt ?? _lastGpsFixAt;
     final pts = _routePts;
     final now = DateTime.now();
     if (last == null || pts.length < 2) {
@@ -944,7 +945,6 @@ class DriverNavViewState extends State<DriverNavView>
   void _onGpsFix(Position pos) {
     if (!mounted || !_gpsFixPolicy.accept(pos)) return;
     _lastGpsFixAt = DateTime.now();
-    _tunnelAnchor = null; // a real fix ends tunnel mode
     if (_gpsDown) {
       _gpsDown = false;
       _recomputeNavPhase();
@@ -954,6 +954,10 @@ class DriverNavViewState extends State<DriverNavView>
     // arrival latch — with the arrow snapped to the line, a 65 m fix only
     // yanked the road-lock bearing around at crossings.
     if (pos.accuracy > 30) return;
+    // Tunnel mode keys on USABLE fixes: a stream of > 30 m fixes kept
+    // _lastGpsFixAt fresh and the tunnel never engaged (review 2026-10-30).
+    _lastUsableFixAt = DateTime.now();
+    _tunnelAnchor = null; // a real fix ends tunnel mode
     final fixLL = LatLng(pos.latitude, pos.longitude);
     // Display vs measurement (user specs 2026-09-19, "la flecha fuera de
     // las lineas del mapa", y 2026-09-27, "la flecha no puede salirse de
@@ -2631,6 +2635,9 @@ class DriverNavViewState extends State<DriverNavView>
     if (_camState == _CamState.recentering) {
       setState(() => _camState = to);
     }
+    // The blend landed on the arrow's bearing: the spring starts from there
+    // and the overlay arrow points straight up (review 2026-10-30).
+    if (to == _CamState.following) _snapCamBearing(_dot.bearing);
     _syncArrowOwner();
   }
 

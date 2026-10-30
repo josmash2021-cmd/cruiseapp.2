@@ -822,7 +822,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // bajo = ticker muerto; cam/anot bajas con tick alto = canal nativo.
   int _diagFixes = 0, _diagTicks = 0, _diagCamWrites = 0, _diagAnnotUpdates = 0;
   int _diagRejectedFixes = 0;
-  // Last fix that steered the arrow — the weak-signal gate below keys off it.
+  // Last GOOD (<= 25 m) fix that steered the arrow — the weak-signal gate
+  // keys off it.
   DateTime? _lastDisplayFixAt;
   // When the app last went to the background (resume resets the road trace).
   DateTime? _pausedAt;

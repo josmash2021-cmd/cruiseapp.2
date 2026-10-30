@@ -132,7 +132,10 @@ class GoldLocationDot {
     int durationMs = 450,
     VoidCallback? onFrame,
   }) {
-    if (target == _offerScaleTarget) return;
+    // An immediate set (durationMs 0) always applies — it is how a screen
+    // forces the value when the animating ticker was muted mid-way
+    // (review 2026-10-30: the nav reset returned early and stayed small).
+    if (target == _offerScaleTarget && durationMs > 0) return;
     _offerScaleTarget = target;
     _offerScaleTicker?.stop();
     _offerScaleTicker?.dispose();

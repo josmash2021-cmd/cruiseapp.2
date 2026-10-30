@@ -99,6 +99,7 @@ class SmoothMotion {
   // row. A single far fix still glides — one bad reading must not throw
   // the arrow hundreds of metres and back.
   DateTime? _lastTickAt;
+  int _fixesSinceTick = 0;
   double? _farSeenLat;
   double? _farSeenLng;
   int _farTargets = 0;
@@ -298,6 +299,7 @@ class SmoothMotion {
         fixTsMs <= _lastTargetTsMs!) {
       return;
     }
+    _fixesSinceTick++;
     if (_lat != null && _targetLat != null && _lastTargetAt != null) {
       final gapSec = now.difference(_lastTargetAt!).inMilliseconds / 1000.0;
       if (gapSec > _maxLeadSec) {
@@ -319,7 +321,7 @@ class SmoothMotion {
       _targetLat = lat;
       _targetLng = lng;
       _lastTargetAt = now;
-      _lastTargetTsMs = fixTsMs ?? _lastTargetTsMs;
+      _lastTargetTsMs = fixTsMs; // no timestamp = no stale base (review 2026-10-30)
       final cosLat = math.cos(_lat! * math.pi / 180.0);
       final dLat = lat - _lat!;
       final dLng = lng - _lng!;
@@ -589,7 +591,11 @@ class SmoothMotion {
       setBearing(bearing);
     }
     _lastTargetAt = now;
-    _lastTargetTsMs = fixTsMs ?? _lastTargetTsMs;
+    // A fix without a capture time (nav tunnel virtual fixes) must not
+    // leave the previous real fix's time as the base: the next real fix
+    // read its distance over the whole gap and the glide dropped from
+    // 15 to 6 m/s (review 2026-10-30).
+    _lastTargetTsMs = fixTsMs;
     _targetLat = lat;
     _targetLng = lng;
 
@@ -736,9 +742,14 @@ class SmoothMotion {
     final residualLng = aim.$2 - _lng!;
     {
       final tickAt = _now();
+      // "Resumed" = frames paused while fixes KEPT ARRIVING (>= 2). A screen
+      // that parks its ticker at the target and then gets one far fix is
+      // not a resume — that single reading still glides (review 2026-10-30).
       final resumed = _lastTickAt != null &&
-          tickAt.difference(_lastTickAt!) > const Duration(seconds: 1);
+          tickAt.difference(_lastTickAt!) > const Duration(seconds: 1) &&
+          _fixesSinceTick >= 2;
       _lastTickAt = tickAt;
+      _fixesSinceTick = 0;
       final c = math.cos(_targetLat! * math.pi / 180.0);
       final gapM = math.sqrt(math.pow(residualLng * 111320.0 * c, 2) +
           math.pow(residualLat * 110540.0, 2));
@@ -805,7 +816,11 @@ class SmoothMotion {
       final uy = gy / glideMps;
       final along =
           residualLng * 111320.0 * cosLat * ux + residualLat * 110540.0 * uy;
-      if (along < 0) {
+      // Only a SMALL lead (< 0.8 s of travel) eases without going back.
+      // Farther ahead — a tunnel guess the car did not follow, a brake in a
+      // fix gap — the classic clamp + spring brings the arrow back to the
+      // car (review 2026-10-30: unbounded, it waited up to 119 m ahead).
+      if (along < 0 && along > -glideMps * 0.8) {
         aheadOfAim = true;
         final ease = (1.0 + along / (glideMps * 0.8)).clamp(0.0, 1.0);
         stepLat *= ease;

@@ -566,7 +566,7 @@ void main() {
   group('user spec 2026-09-19: tangent steering, route erase, imperial bar, '
       'road furniture', () {
     test('the route tangent steers the arrow at EVERY speed on-route', () {
-      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 4200);
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 5400);
       expect(body.contains('bearing: onRoute'), isTrue);
       expect(body.contains('_roadLockBearing'), isTrue,
           reason: 'user report: GPS headings arrive once a second and the '
@@ -581,7 +581,7 @@ void main() {
 
     test('STOPPED the tangent never re-aims the arrow — only a fix that '
         'genuinely moved does (user report: stoplight pre-rotation)', () {
-      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 4200);
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 5400);
       expect(body.contains('_headingSetAt'), isTrue,
           reason: 'user report: "parado en el semaforo, sin haber girado, la '
               'flecha ya se puso de lado y la camara giro" — the turn AHEAD '

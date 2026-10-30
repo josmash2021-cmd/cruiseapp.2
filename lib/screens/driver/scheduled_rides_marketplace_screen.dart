@@ -8,6 +8,7 @@ import '../../config/app_theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../utils/debounced.dart';
+import '../../utils/server_time.dart';
 
 /// Marketplace screen where drivers browse and claim available scheduled rides.
 class ScheduledRidesMarketplaceScreen extends StatefulWidget {
@@ -192,7 +193,7 @@ class _ScheduledRidesMarketplaceScreenState
     final distKm = (trip['distance_km'] as num?)?.toDouble() ?? 0;
     final vehicleType = trip['vehicle_type'] ?? 'standard';
     final scheduledAt = trip['scheduled_at'] != null
-        ? DateTime.tryParse(trip['scheduled_at'])
+        ? parseServerTime(trip['scheduled_at'])
         : null;
 
     final now = DateTime.now().toUtc();

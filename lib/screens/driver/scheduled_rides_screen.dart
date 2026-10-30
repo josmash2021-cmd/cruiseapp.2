@@ -28,6 +28,7 @@ import '../../services/notification_service.dart';
 import '../../widgets/tier_badge.dart';
 import 'driver_rest_gate_mixin.dart';
 import 'scheduled_ride_details_screen.dart';
+import '../../utils/server_time.dart';
 
 /// Unified scheduled rides screen with two tabs:
 ///   0 = Available  (marketplace — claim a ride)
@@ -622,7 +623,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     DateTime? scheduledAt;
     if (trip['scheduled_at'] != null) {
       try {
-        scheduledAt = DateTime.parse(trip['scheduled_at']);
+        scheduledAt = parseServerTime(trip['scheduled_at']);
       } catch (_) {}
     }
 
@@ -1243,7 +1244,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
         trip['scheduled_at'] ?? trip['scheduled_time'] ?? trip['pickup_time'];
     if (rawTime != null) {
       try {
-        scheduledAt = DateTime.parse(rawTime.toString());
+        scheduledAt = parseServerTime(rawTime);
       } catch (_) {}
     }
 

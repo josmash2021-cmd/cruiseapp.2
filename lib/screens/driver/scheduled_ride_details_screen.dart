@@ -14,6 +14,7 @@ import '../../services/masked_call_service.dart';
 import '../../utils/trip_stops.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_trip_accept_screen.dart';
+import '../../utils/server_time.dart';
 
 /// Full-screen countdown + details for an upcoming scheduled ride.
 /// Shown when driver is "locked" (<=30 min before pickup).
@@ -321,7 +322,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     final riderPhoto = trip['rider_photo_url']?.toString() ?? '';
     final vehicleType = trip['vehicle_type'] ?? 'standard';
     final scheduledAt = trip['scheduled_at'] != null
-        ? DateTime.tryParse(trip['scheduled_at'])
+        ? parseServerTime(trip['scheduled_at'])
         : null;
     final dateStr = scheduledAt != null
         ? DateFormat('EEEE d MMMM, h:mm a').format(scheduledAt.toLocal())

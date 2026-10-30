@@ -27,6 +27,7 @@ import '../../widgets/gold_location_dot.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_rest_gate_mixin.dart';
 import 'scheduled_rides_screen.dart';
+import '../../utils/server_time.dart';
 
 /// Full-screen map marketplace for scheduled rides (Lyft structure, Cruise
 /// visual language): navy map, compact "$N" price bubbles at each pickup,
@@ -453,7 +454,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     final raw = trip['scheduled_at'];
     if (raw == null) return null;
     try {
-      return DateTime.parse(raw.toString());
+      return parseServerTime(raw);
     } catch (_) {
       return null;
     }

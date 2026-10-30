@@ -2186,7 +2186,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // purple accent; immediate bookings fall through to the normal layout.
     final scheduledAtRaw = offer['scheduled_at'];
     final DateTime? scheduledAt = scheduledAtRaw != null
-        ? DateTime.tryParse(scheduledAtRaw.toString())?.toLocal()
+        ? parseServerTime(scheduledAtRaw)
         : null;
     final bool isScheduled = scheduledAt != null &&
         scheduledAt.difference(DateTime.now()).inMinutes >= 3;

@@ -9,6 +9,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../widgets/neu_style.dart';
 import '../../services/notification_service.dart';
+import '../../utils/server_time.dart';
 
 /// Premium Scheduled Trips screen for drivers.
 /// Shows upcoming assigned rides with airport indicators and pickup zone info.
@@ -94,7 +95,8 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
       final rawTime = trip['scheduled_time'] ?? trip['pickup_time'] ?? trip['created_at'];
       if (rawTime == null) continue;
       try {
-        final scheduledAt = DateTime.parse(rawTime.toString());
+        final scheduledAt = parseServerTime(rawTime);
+        if (scheduledAt == null) continue;
         final notifyAt = scheduledAt.subtract(const Duration(hours: 2));
         if (notifyAt.isAfter(DateTime.now())) {
           final pickup = trip['pickup_address']?.toString() ?? 'pickup';
@@ -268,7 +270,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
     DateTime? scheduledAt;
     if (trip['scheduled_at'] != null) {
       try {
-        scheduledAt = DateTime.parse(trip['scheduled_at'] as String);
+        scheduledAt = parseServerTime(trip['scheduled_at']);
       } catch (_) {}
     }
 

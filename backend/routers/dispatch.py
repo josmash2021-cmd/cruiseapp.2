@@ -3187,7 +3187,9 @@ async def release_trip(
 
 _REASSIGNABLE_STATUSES = ("requested", "accepted", "driver_en_route")
 # A reservation before its dispatch window: claimed or still unclaimed.
-_RESERVATION_REASSIGNABLE = ("scheduled", "scheduled_accepted")
+# scheduled_active = the 30-min lockout before pickup; the driver has not
+# left yet, so dispatch can still release or move it (2026-10-30).
+_RESERVATION_REASSIGNABLE = ("scheduled", "scheduled_accepted", "scheduled_active")
 
 
 async def _reassign_reservation(db, trip, mode: str, body) -> dict:

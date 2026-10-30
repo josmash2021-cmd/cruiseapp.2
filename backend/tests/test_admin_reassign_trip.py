@@ -404,6 +404,18 @@ async def test_reservation_put_available_opens_it_to_everyone(
     assert trip.scheduled_target_driver_id is None
 
 
+async def test_reservation_in_30_min_lockout_can_still_be_released(
+        client, db, test_trip, quiet_dispatch):
+    # 2026-10-30, #776: "Poner disponible" refused scheduled_active.
+    old = await _driver(db, "old-res3@test.com", "+13055551204", *NEAR)
+    trip = await _reservation(db, test_trip, old, status="scheduled_active")
+    resp = await client.post(f"/admin/trips/{trip.id}/reassign",
+                             json={"mode": "nearest"}, headers=_dh())
+    assert resp.status_code == 200, resp.text
+    await db.refresh(trip)
+    assert trip.status == "scheduled" and trip.driver_id is None
+
+
 async def test_reservation_rejects_unapproved_target(
         client, db, test_trip, quiet_dispatch):
     old = await _driver(db, "old-res3@test.com", "+13055551204", *NEAR)

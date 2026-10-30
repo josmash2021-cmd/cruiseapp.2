@@ -797,73 +797,65 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final safePage = _earningsPage.clamp(0, pageCount - 1);
 
     Widget pillPage(double amount, double prevAmount, String label) {
-      return ClipRRect(
+      // Frosted grey glass (owner spec 2026-10-30) — it had a blur all
+      // along, under an opaque neu fill that hid it.
+      return GlassSurface(
         borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            decoration: isDark
-                ? neuBox(radius: 20, borderColor: pillBorder)
-                : BoxDecoration(
-                    color: pillBg,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: pillBorder),
-                  ),
-            child: Column(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        tint: isDark ? null : pillBg,
+        borderColor: isDark ? null : pillBorder,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TweenAnimationBuilder<double>(
+              key: ValueKey<double>(amount),
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.easeOutCubic,
+              tween: Tween<double>(begin: prevAmount, end: amount),
+              // The figure, or a bare $ standing in for it.
+              //
+              // This chip sits at the top of the map and is the most
+              // legible thing on the screen from a back seat, which is
+              // why the switch in Earnings exists and why this is what
+              // it covers.
+              builder: (_, val, __) => Text(
+                EarningsPrivacy.format(val),
+                style: TextStyle(
+                  color: pillText,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+            const SizedBox(height: 1),
+            Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TweenAnimationBuilder<double>(
-                  key: ValueKey<double>(amount),
-                  duration: const Duration(milliseconds: 900),
-                  curve: Curves.easeOutCubic,
-                  tween: Tween<double>(begin: prevAmount, end: amount),
-                  // The figure, or a bare $ standing in for it.
-                  //
-                  // This chip sits at the top of the map and is the most
-                  // legible thing on the screen from a back seat, which is
-                  // why the switch in Earnings exists and why this is what
-                  // it covers.
-                  builder: (_, val, __) => Text(
-                    EarningsPrivacy.format(val),
-                    style: TextStyle(
-                      color: pillText,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: pillSub,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
                   ),
                 ),
-                const SizedBox(height: 1),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: pillSub,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.5,
-                      ),
+                const SizedBox(width: 6),
+                for (int i = 0; i < pageCount; i++) ...[
+                  Container(
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: i == safePage ? dotActive : dotInactive,
                     ),
-                    const SizedBox(width: 6),
-                    for (int i = 0; i < pageCount; i++) ...[
-                      Container(
-                        width: 4,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: i == safePage ? dotActive : dotInactive,
-                        ),
-                      ),
-                      if (i < pageCount - 1) const SizedBox(width: 3),
-                    ],
-                  ],
-                ),
+                  ),
+                  if (i < pageCount - 1) const SizedBox(width: 3),
+                ],
               ],
             ),
-          ),
+          ],
         ),
       );
     }
@@ -3972,38 +3964,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 : null,
             child: child,
           ),
-          child: Container(
-            // Raised neumorphic sheet. neuBox() can't be used directly here —
-            // the corner radius animates with the drag fraction — so the neu
-            // tokens and its shadow pair are applied by hand.
-            decoration: BoxDecoration(
-              color: isDark ? neuSurface : surface,
-              borderRadius: radius,
-              border: isDark
-                  ? Border.all(color: Colors.white.withValues(alpha: 0.04))
-                  : null,
-              boxShadow: isDark
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        offset: const Offset(6, 6),
-                        blurRadius: 14,
-                      ),
-                      BoxShadow(
-                        color: Colors.white.withValues(alpha: 0.045),
-                        offset: const Offset(-4, -4),
-                        blurRadius: 10,
-                      ),
-                    ]
-                  : [
-                      BoxShadow(
-                        color: shadowC,
-                        blurRadius: 20,
-                        offset: const Offset(0, -4),
-                      ),
-                    ],
-            ),
-            clipBehavior: Clip.antiAlias,
+          child: GlassSurface(
+            // Frosted grey glass, not a grey slab (owner spec 2026-10-30:
+            // "que sea transparente pero blurry, manteniendo que se vea
+            // gris"). The heavy blur keeps the text readable over streets;
+            // no drop shadow — under a translucent fill it reads as dirt.
+            borderRadius: radius,
+            blur: kGlassSheetBlur,
+            tint: isDark ? glassSheetTint : surface.withValues(alpha: 0.72),
             child: Stack(
               children: [
                 Column(
@@ -4266,7 +4234,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: isDark
-          ? neuBox(radius: 18)
+          ? glassInnerBox(radius: 18)
           : BoxDecoration(
               color: Colors.black.withValues(alpha: 0.03),
               borderRadius: BorderRadius.circular(18),
@@ -4277,7 +4245,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           Container(
             width: 30,
             height: 30,
-            decoration: neuBox(radius: 10, pressed: true),
+            decoration: glassInnerBox(radius: 10, pressed: true),
             alignment: Alignment.center,
             child: Icon(icon, size: 15, color: _gold),
           ),
@@ -4376,7 +4344,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: isDark
-          ? neuBox(radius: 18)
+          ? glassInnerBox(radius: 18)
           : BoxDecoration(
               color: Colors.black.withValues(alpha: 0.03),
               borderRadius: BorderRadius.circular(18),
@@ -4591,7 +4559,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           height: 34,
           alignment: Alignment.center,
           decoration: isDark
-              ? neuBox(
+              ? glassInnerBox(
                   radius: 14,
                   pressed: true,
                   borderColor: active ? _gold.withValues(alpha: 0.45) : null,
@@ -4609,30 +4577,19 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             alignment: Alignment.center,
             children: [
               Icon(icon, size: 19, color: tint),
-              if (badge > 0)
-                Positioned(
-                  top: -3,
-                  right: -5,
-                  child: Container(
-                    constraints: const BoxConstraints(minWidth: 15),
-                    height: 15,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: _gold,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$badge',
-                      style: const TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Color(0xFF0B0B0F),
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
+              // Always mounted: it pops in when reservations appear and
+              // shrinks away when the last one goes (owner spec 2026-10-30).
+              Positioned(
+                top: -3,
+                right: -5,
+                child: AnimatedCountBadge(
+                  count: badge,
+                  height: 15,
+                  fontSize: 9.5,
+                  color: _gold,
+                  textColor: const Color(0xFF0B0B0F),
                 ),
+              ),
             ],
           ),
         ),
@@ -4967,50 +4924,38 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         HapticService.lightImpact();
         tap();
       },
-      child: Container(
+      // Frosted grey glass (owner spec 2026-10-30). The count pill sits in
+      // the Stack beside the glass, outside its clip.
+      child: SizedBox(
         width: sz,
         height: sz,
-        decoration: isDark
-            ? neuBox(radius: sz / 2, borderColor: border)
-            : BoxDecoration(
-                color: bg,
-                shape: BoxShape.circle,
-                border: Border.all(color: border),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            GlassSurface(
+              circle: true,
+              width: sz,
+              height: sz,
+              tint: isDark ? null : bg,
+              borderColor: border,
+              child: Icon(ic, color: iconColor, size: sz * 0.44),
+            ),
+            // Same gold count pill the panel's calendar action wears
+            // (user spec 2026-08-28) — one count, same look.
+            Positioned(
+              top: -5,
+              right: -7,
+              child: AnimatedCountBadge(
+                count: badge,
+                height: 15,
+                fontSize: 9.5,
+                color: _gold,
+                textColor: const Color(0xFF0B0B0F),
               ),
-        child: badge > 0
-            ? Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  Icon(ic, color: iconColor, size: sz * 0.44),
-                  // Same gold count pill the panel's calendar action wears
-                  // (user spec 2026-08-28) — one count, same look.
-                  Positioned(
-                    top: -5,
-                    right: -7,
-                    child: Container(
-                      constraints: const BoxConstraints(minWidth: 15),
-                      height: 15,
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: _gold,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '$badge',
-                        style: const TextStyle(
-                          fontFamily: 'Poppins',
-                          color: Color(0xFF0B0B0F),
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            : Icon(ic, color: iconColor, size: sz * 0.44),
+            ),
+          ],
+        ),
       ),
     );
     // Entrance stagger: side FABs fade+scale in one after another.
@@ -5180,7 +5125,10 @@ class _RecenterFabState extends State<_RecenterFab>
           ignoring: !widget.visible,
           child: Opacity(
             opacity: t,
+            // Off at rest: an ImageFiltered layer would hand the glass
+            // below an empty backdrop instead of the map.
             child: ImageFiltered(
+              enabled: t < 1.0,
               imageFilter: ui.ImageFilter.blur(
                   sigmaX: (1 - t) * 6, sigmaY: (1 - t) * 6),
               child: Transform.scale(
@@ -5193,25 +5141,16 @@ class _RecenterFabState extends State<_RecenterFab>
       },
       child: GestureDetector(
         onTap: widget.onTap,
-        child: Container(
+        // Misma especificación que los `_fab` de la columna (2026-10-15,
+        // spec "el botón de help alineado con los que están a la
+        // derecha"): mismo vidrio gris, mismo borde dorado sutil
+        // (vidrio desde 2026-10-30).
+        child: GlassSurface(
+          circle: true,
           width: widget.size,
           height: widget.size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFF1A1A22),
-            // Misma especificación que los `_fab` de la columna (2026-10-15,
-            // spec "el botón de help alineado con los que están a la
-            // derecha"): mismo disco oscuro, mismo borde dorado sutil.
-            border:
-                Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.18), width: 1.2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
+          borderColor: const Color(0xFFE8C547).withValues(alpha: 0.18),
+          borderWidth: 1.2,
           child: Icon(
             Icons.navigation_rounded,
             color: Colors.white,

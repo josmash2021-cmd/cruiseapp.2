@@ -30,6 +30,9 @@ import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/glass_style.dart';
+import '../../widgets/animated_count_badge.dart';
+import '../../services/scheduled_board_watcher.dart';
 import '../../widgets/offer_countdown_ring.dart';
 import '../../widgets/route_connector_line.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
@@ -1088,6 +1091,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     WidgetsBinding.instance.addObserver(this);
     NotificationService.scheduledRideRefreshNotifier
         .addListener(_onScheduledRidePush);
+    // Live board: a booking anywhere refreshes this screen at once.
+    ScheduledBoardWatcher.acquire();
     _startScheduledPoll();
     _startMotionDiag();
     // The trip screen handed us a cancelled trip: show the notice as soon
@@ -1912,6 +1917,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         .removeListener(_applyRemoveInjectedOffer);
     NotificationService.scheduledRideRefreshNotifier
         .removeListener(_onScheduledRidePush);
+    ScheduledBoardWatcher.release();
     DriverOnlineScreen.shiftEndedNotifier.removeListener(_onShiftEndedPush);
     DriverOnlineScreen.faceReviewNotifier.removeListener(_onFaceReviewPush);
     _faceReviewTimer?.cancel();
@@ -2467,40 +2473,29 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                           slideFromRightRoute(const DriverInboxScreen()),
                         );
                       },
-                      child: Container(
+                      // Frosted grey glass (owner spec 2026-10-30), the
+                      // unread state keeps its gold rim. The count lives in
+                      // the Stack, outside the glass clip.
+                      child: SizedBox(
                         width: 48,
                         height: 48,
-                        decoration: isDark && _unreadCount == 0
-                            ? neuBox(radius: 24, borderColor: fabBorder)
-                            : BoxDecoration(
-                                color: fabBg,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: _unreadCount > 0
-                                      ? const Color(0xFFE8C547)
-                                          .withValues(alpha: 0.6)
-                                      : fabBorder,
-                                  width: 1,
-                                ),
-                                boxShadow: _unreadCount > 0
-                                    ? [
-                                        BoxShadow(
-                                          color: const Color(0xFFE8C547)
-                                              .withValues(alpha: 0.25),
-                                          blurRadius: 10,
-                                          spreadRadius: 1,
-                                        ),
-                                      ]
-                                    : null,
-                              ),
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            Center(
-                              child: Icon(
-                                Icons.notifications_none_rounded,
-                                size: 22,
-                                color: fabIcon,
+                            GlassSurface(
+                              circle: true,
+                              width: 48,
+                              height: 48,
+                              borderColor: _unreadCount > 0
+                                  ? const Color(0xFFE8C547)
+                                      .withValues(alpha: 0.6)
+                                  : fabBorder,
+                              child: Center(
+                                child: Icon(
+                                  Icons.notifications_none_rounded,
+                                  size: 22,
+                                  color: fabIcon,
+                                ),
                               ),
                             ),
                             if (_unreadCount > 0)
@@ -2562,25 +2557,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         _remountMapSurface();
                       });
                     },
-                    child: Container(
+                    child: GlassSurface(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1D24),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: const Color(0xFFE8C547).withValues(alpha: 0.4),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                const Color(0xFFE8C547).withValues(alpha: 0.15),
-                            blurRadius: 12,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      borderColor:
+                          const Color(0xFFE8C547).withValues(alpha: 0.4),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

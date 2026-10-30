@@ -25,6 +25,7 @@ import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/scheduled_board_watcher.dart';
 import '../../widgets/tier_badge.dart';
 import 'driver_rest_gate_mixin.dart';
 import 'scheduled_ride_details_screen.dart';
@@ -91,6 +92,8 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     initDriverRestGate();
     NotificationService.scheduledRideRefreshNotifier
         .addListener(_onScheduledRidePush);
+    // Live board: a booking anywhere refreshes this screen at once.
+    ScheduledBoardWatcher.acquire();
     _tabCtrl = TabController(
       length: 2,
       vsync: this,
@@ -108,6 +111,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   void dispose() {
     NotificationService.scheduledRideRefreshNotifier
         .removeListener(_onScheduledRidePush);
+    ScheduledBoardWatcher.release();
     disposeDriverRestGate();
     _tabCtrl.dispose();
     _countdownTimer?.cancel();

@@ -342,9 +342,14 @@ void main() {
     test('the GO calendar wears the animated available-rides count', () {
       expect(off, contains('count: _scheduledAvailCount'));
       expect(off, contains('bounceAnimation: _scheduledBounceAnim'));
-      expect(off, contains('if (count > 0)'));
-      expect(off, contains('AnimatedSwitcher('));
-      expect(off, contains("count > 99 ? '99+' : '\$count'"));
+      // Always mounted since 2026-10-30 (owner: "aparecerá de forma
+      // animada … y al quitarse de forma smooth"): AnimatedCountBadge pops
+      // in and shrinks away instead of blinking behind `if (count > 0)`.
+      expect(off, contains('child: AnimatedCountBadge('));
+      final badge = File('lib/widgets/animated_count_badge.dart')
+          .readAsStringSync();
+      expect(badge, contains('AnimatedSwitcher('));
+      expect(badge, contains("_shown > 99 ? '99+' : '\$_shown'"));
     });
 
     test('scheduled counts refresh by push in both modes and latest-wins', () {
@@ -450,8 +455,12 @@ void main() {
       expect(openStart, isNonNegative);
       expect(openEnd, greaterThan(openStart));
       final open = off.substring(openStart, openEnd);
-      expect(open, contains('slideFromLeftRoute(const DriverMenuScreen())'),
-          reason: 'the hamburger opens the classic full-screen menu');
+      // See-through since 2026-10-30: the glass menu blurs the live map.
+      expect(
+          open,
+          contains(
+              'slideFromLeftRoute(const DriverMenuScreen(), opaque: false)'),
+          reason: 'the hamburger opens the full-screen glass menu');
       expect(open, contains('if (_menuRouteOpen) return;'),
           reason: 'a double tap cannot push two menu routes');
       expect(open, contains('finally {'),
@@ -476,8 +485,11 @@ void main() {
       expect(routeStart, isNonNegative);
       final route = transitions.substring(routeStart, routeStart + 1200);
       expect(route, contains('PageRouteBuilder<T>('));
-      expect(route, contains('opaque: true'),
+      // Opaque by default — a full page, not a drawer. Only the glass
+      // menu over the map asks for see-through (2026-10-30).
+      expect(route, contains('bool opaque = true'),
           reason: 'this is a full page, not a transparent drawer');
+      expect(route, contains('opaque: opaque,'));
       expect(route, contains('begin: const Offset(-1, 0)'),
           reason: 'the page enters from the left edge');
       expect(route, contains('Curves.easeOutCubic'));

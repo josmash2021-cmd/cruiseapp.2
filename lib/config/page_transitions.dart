@@ -76,9 +76,13 @@ Route<T> slideFromRightRoute<T>(Widget page, {int durationMs = 320}) {
 }
 
 /// Full-screen route that enters smoothly from the left.
-Route<T> slideFromLeftRoute<T>(Widget page, {int durationMs = 320}) {
+///
+/// [opaque] false keeps the page below painted — for a glass page (the
+/// driver menu) that has to blur what it slides over.
+Route<T> slideFromLeftRoute<T>(Widget page,
+    {int durationMs = 320, bool opaque = true}) {
   return PageRouteBuilder<T>(
-    opaque: true,
+    opaque: opaque,
     transitionDuration: Duration(milliseconds: durationMs),
     reverseTransitionDuration:
         Duration(milliseconds: (durationMs * 0.8).round()),

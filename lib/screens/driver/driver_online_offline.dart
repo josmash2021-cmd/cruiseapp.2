@@ -2339,7 +2339,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 const SizedBox(height: 12),
                 // ── Recommendation items — raised neu group ──
                 Container(
-                  decoration: neuBox(radius: 20),
+                  decoration: glassInnerBox(radius: 20),
                   child: Column(
                     children: [
                       _recommendItem(
@@ -2462,7 +2462,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: neuBox(radius: 18),
+            decoration: glassInnerBox(radius: 18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -2562,7 +2562,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
             Container(
               width: 40,
               height: 40,
-              decoration: neuBox(radius: 14, pressed: true),
+              decoration: glassInnerBox(radius: 14, pressed: true),
               child: Icon(icon, color: _offlineGold, size: 22),
             ),
             const SizedBox(width: 14),
@@ -2602,13 +2602,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       },
       child: Container(
         padding: EdgeInsets.all(Responsive.w(14)),
-        decoration: neuBox(radius: 20),
+        decoration: glassInnerBox(radius: 20),
         child: Row(
           children: [
             Container(
               width: Responsive.w(38),
               height: Responsive.w(38),
-              decoration: neuBox(radius: 12, pressed: true),
+              decoration: glassInnerBox(radius: 12, pressed: true),
               child: Icon(Icons.workspace_premium_rounded,
                   color: _offlineGold, size: Responsive.sp(19)),
             ),
@@ -2685,13 +2685,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     onTap: _openScheduledRides,
                     child: Container(
                       padding: const EdgeInsets.all(16),
-                      decoration: neuBox(radius: 20),
+                      decoration: glassInnerBox(radius: 20),
                       child: Row(
                         children: [
                           Container(
                             width: 44,
                             height: 44,
-                            decoration: neuBox(radius: 14, pressed: true),
+                            decoration: glassInnerBox(radius: 14, pressed: true),
                             child: const Icon(
                               Icons.event_available_rounded,
                               color: Color(0xFFE8C547),
@@ -2747,7 +2747,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     return Container(
       padding: EdgeInsets.fromLTRB(Responsive.w(14), Responsive.h(12),
           Responsive.w(14), Responsive.h(10)),
-      decoration: neuBox(radius: 20),
+      decoration: glassInnerBox(radius: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2823,7 +2823,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(
             horizontal: Responsive.w(14), vertical: Responsive.h(7)),
-        decoration: neuBox(radius: 14, pressed: !selected),
+        decoration: glassInnerBox(radius: 14, pressed: !selected),
         child: Text(
           label,
           style: TextStyle(
@@ -3062,8 +3062,9 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     if (_menuRouteOpen) return;
     _menuRouteOpen = true;
     try {
+      // See-through: the glass menu blurs the live map beneath it.
       await Navigator.of(context)
-          .push(slideFromLeftRoute(const DriverMenuScreen()));
+          .push(slideFromLeftRoute(const DriverMenuScreen(), opaque: false));
     } finally {
       _menuRouteOpen = false;
       if (mounted) unawaited(_remountMapSurface());
@@ -3198,21 +3199,13 @@ class _GoScheduleButton extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Container(
+          // Frosted grey glass (owner spec 2026-10-30), same as the GO
+          // pill's other neighbours on the map.
+          GlassSurface(
+            circle: true,
             width: 46,
             height: 46,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFF141420),
-              border: Border.all(color: _offlineGold.withValues(alpha: 0.4)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
+            borderColor: _offlineGold.withValues(alpha: 0.4),
             child: const Center(
               child: Icon(
                 Icons.calendar_month_rounded,
@@ -3221,42 +3214,22 @@ class _GoScheduleButton extends StatelessWidget {
               ),
             ),
           ),
-          if (count > 0)
-            Positioned(
-              top: -4,
-              right: -4,
-              child: ScaleTransition(
-                scale: bounceAnimation ??
-                    const AlwaysStoppedAnimation<double>(1.0),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 250),
-                  transitionBuilder: (child, animation) => ScaleTransition(
-                    scale: animation,
-                    child: FadeTransition(opacity: animation, child: child),
-                  ),
-                  child: Container(
-                    key: ValueKey(count),
-                    constraints: const BoxConstraints(minWidth: 20),
-                    height: 20,
-                    padding: const EdgeInsets.symmetric(horizontal: 5),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: _offlineGold,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.black, width: 1.5),
-                    ),
-                    child: Text(
-                      count > 99 ? '99+' : '$count',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
+          // Always mounted, so it can ARRIVE and LEAVE (owner spec
+          // 2026-10-30: "aparecerá de forma animada … y al quitarse el
+          // badge de forma animada y smooth") instead of blinking on/off.
+          Positioned(
+            top: -4,
+            right: -4,
+            child: ScaleTransition(
+              scale: bounceAnimation ??
+                  const AlwaysStoppedAnimation<double>(1.0),
+              child: AnimatedCountBadge(
+                count: count,
+                color: _offlineGold,
+                borderColor: Colors.black,
               ),
             ),
+          ),
         ],
       ),
     );

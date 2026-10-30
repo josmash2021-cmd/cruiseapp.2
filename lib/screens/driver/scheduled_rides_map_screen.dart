@@ -22,6 +22,7 @@ import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
 import '../../services/haptic_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/scheduled_board_watcher.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/neu_style.dart';
@@ -165,6 +166,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     initDriverRestGate();
     NotificationService.scheduledRideRefreshNotifier
         .addListener(_onScheduledRidePush);
+    // Live board: a booking anywhere refreshes this screen at once.
+    ScheduledBoardWatcher.acquire();
     _pendingSelectTripId = widget.initialTripId;
     _seedInitialCenter();
     _loadAvailable();
@@ -188,6 +191,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   void dispose() {
     NotificationService.scheduledRideRefreshNotifier
         .removeListener(_onScheduledRidePush);
+    ScheduledBoardWatcher.release();
     disposeDriverRestGate();
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _countdownTimer?.cancel();

@@ -12,6 +12,7 @@ import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/glass_style.dart';
 import '../welcome_screen.dart';
 import '../splash_screen.dart';
 import '../help_screen.dart';
@@ -315,18 +316,26 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     final top = MediaQuery.of(context).padding.top;
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: neuBase,
-      // Same dotted backdrop as the rider's home. On a flat neuBase the
-      // neumorphic cards float on nothing; the dots give the surface they
-      // are pressed into, which is the whole point of the style.
+      // Frosted grey glass over the map (owner spec 2026-10-30: "también el
+      // menú"). The route is pushed see-through from the map screen
+      // (_openDriverMenu), so the blur has the live map to work on; pushed
+      // over an opaque page it settles to a dark grey, like the old base.
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          const Positioned.fill(child: NeuDotsBackdrop()),
+          const Positioned.fill(
+            child: GlassSurface(
+              blur: kGlassSheetBlur,
+              tint: glassSheetTint,
+              border: Border(),
+              child: SizedBox.expand(),
+            ),
+          ),
           Column(
         children: [
           // ── Top bar ──
           Container(
-            color: neuBase,
+            color: Colors.transparent,
             padding: EdgeInsets.only(
               top: top + 8,
               bottom: 12,
@@ -340,7 +349,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   child: Container(
                     width: Responsive.w(40),
                     height: Responsive.w(40),
-                    decoration: neuBox(radius: 14, pressed: true),
+                    decoration: glassInnerBox(radius: 14, pressed: true),
                     child: Icon(
                       Icons.close_rounded,
                       color: _text,
@@ -532,7 +541,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
       },
       child: Container(
         padding: EdgeInsets.all(Responsive.w(18)),
-        decoration: neuBox(radius: 22),
+        decoration: glassInnerBox(radius: 22),
         child: Row(
           children: [
             // Avatar
@@ -763,7 +772,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: neuBox(radius: 18),
+          decoration: glassInnerBox(radius: 18),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -807,7 +816,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   /// Raised neumorphic card holding a group of menu rows, hairline-divided.
   Widget _sectionCard(List<Widget> rows) {
     return Container(
-      decoration: neuBox(radius: 20),
+      decoration: glassInnerBox(radius: 20),
       child: Column(
         children: [
           for (var i = 0; i < rows.length; i++) ...[
@@ -850,7 +859,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
             Container(
               width: 40,
               height: 40,
-              decoration: neuBox(radius: 14, pressed: true),
+              decoration: glassInnerBox(radius: 14, pressed: true),
               child: Icon(icon, color: accentColor, size: 21),
             ),
             const SizedBox(width: 14),
@@ -999,12 +1008,12 @@ void showDriverHelpSheet(BuildContext context) {
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
-    builder: (ctx) => Container(
+    // Frosted grey glass, like the map chrome it rises over (2026-10-30).
+    builder: (ctx) => GlassSurface(
         padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
-          color: neuBase,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        blur: kGlassSheetBlur,
+        tint: glassSheetTint,
         child: SafeArea(
           top: false,
           child: Column(
@@ -1110,13 +1119,13 @@ Widget _helpRow(IconData icon, String t, String s, [VoidCallback? onTap]) {
         behavior: HitTestBehavior.opaque,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: neuBox(radius: 16),
+          decoration: glassInnerBox(radius: 16),
           child: Row(
             children: [
               Container(
                 width: 38,
                 height: 38,
-                decoration: neuBox(radius: 13, pressed: true),
+                decoration: glassInnerBox(radius: 13, pressed: true),
                 child: Icon(icon, color: gold, size: 19),
               ),
               const SizedBox(width: 14),

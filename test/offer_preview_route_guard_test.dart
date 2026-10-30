@@ -85,7 +85,11 @@ void main() {
     });
 
     test('the zone look signature includes the preview state', () {
-      expect(map.split(r'|offer:${_previewingOffer != null}').length - 1, 2,
+      // One shared signature (2026-10-29 rewrite) used by BOTH the normal
+      // sync and the animated sector swap.
+      expect(map.split(r'|offer:${_previewingOffer != null}').length - 1, 1);
+      expect('_zoneLookSig(visibleIds, visible, online)'.allMatches(map).length,
+          2,
           reason: 'normal sync and the animated sector swap must both '
               'repaint when an offer opens or closes');
     });
@@ -95,9 +99,11 @@ void main() {
       expect(start, isNonNegative);
       final body = map.substring(start, start + 2300);
       expect(body,
-          contains('effectiveSec = _previewingOffer == null ? sec : null'));
-      expect(body, contains('if (effectiveSec != null)'));
-      expect(body, contains('effectiveSec == null ? 0.0 : 0.25'));
+          contains('final bright = _previewingOffer == null ? secs : const <Sector>[];'),
+          reason: 'an open offer leaves no zone bright...');
+      expect(body, contains('holes.isEmpty ? 0.0 : _kZoneDimOpacity'),
+          reason: '...and with nothing bright the dim is OFF — the offer '
+              'route is never darkened');
     });
 
     test('a sector swap re-syncs after releasing its guard', () {

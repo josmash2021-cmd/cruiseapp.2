@@ -373,6 +373,14 @@ class DriverNavViewState extends State<DriverNavView>
   bool _gpsDown = false;
   bool _gpsDiagnosing = false;
   Timer? _gpsWatchdog;
+  // Tunnel mode (owner request 2026-10-29, "como Google"): with no fix for
+  // 1.5 s while on the route and moving, the arrow keeps driving ALONG THE
+  // ROUTE at the last speed — virtual fixes every 0.5 s, up to 30 s. The
+  // first real fix takes over. Off-route or slower than 3 m/s: no guessing.
+  Timer? _tunnelTimer;
+  LatLng? _tunnelAnchor;
+  DateTime? _tunnelAnchorAt;
+  double _tunnelSpeed = 0;
   static const _gpsStaleSecs = 6;
 
   // Network health: a failed fetch with a line on the map keeps everything
@@ -500,6 +508,7 @@ class DriverNavViewState extends State<DriverNavView>
     _sheetCtrl.dispose();
     unawaited(_gps?.stop());
     _gpsWatchdog?.cancel();
+    _tunnelTimer?.cancel();
     _offlineRetryTimer?.cancel();
     _riderLocSub?.cancel();
     _riderStaleTimer?.cancel();
@@ -744,6 +753,43 @@ class DriverNavViewState extends State<DriverNavView>
     }
     _lastGpsFixAt = DateTime.now(); // warm-up grace for the first fix
     _armGpsWatchdog();
+    _tunnelTimer?.cancel();
+    _tunnelTimer = Timer.periodic(
+        const Duration(milliseconds: 500), (_) => _tunnelTick());
+  }
+
+  void _tunnelTick() {
+    if (!mounted) return;
+    final last = _lastGpsFixAt;
+    final pts = _routePts;
+    final now = DateTime.now();
+    if (last == null || pts.length < 2) {
+      _tunnelAnchor = null;
+      return;
+    }
+    final age = now.difference(last);
+    if (age < const Duration(milliseconds: 1500) ||
+        age > const Duration(seconds: 30)) {
+      if (age < const Duration(milliseconds: 1500)) _tunnelAnchor = null;
+      return;
+    }
+    if (_tunnelAnchor == null) {
+      final lat = _dot.lat, lng = _dot.lng;
+      final speed = _speedMps;
+      if (lat == null || lng == null || speed < 3) return;
+      final here = LatLng(lat, lng);
+      if (RouteSplice.distanceToPolylineM(pts, here) > 40) return;
+      _tunnelAnchor = here;
+      _tunnelAnchorAt = now;
+      _tunnelSpeed = speed;
+      debugPrint('[DriverNav] no GPS — following the route at '
+          '${speed.toStringAsFixed(1)} m/s');
+    }
+    final sec = now.difference(_tunnelAnchorAt!).inMilliseconds / 1000.0;
+    final step = RouteSplice.pointAlong(pts, _tunnelAnchor!, _tunnelSpeed * sec);
+    if (step == null) return;
+    _dot.setTarget(step.$1.latitude, step.$1.longitude,
+        bearing: step.$2, accuracyM: 10, speedMps: _tunnelSpeed);
   }
 
   /// The GPS-down detector. ResilientPositionStream resubscribes on its own,
@@ -801,6 +847,7 @@ class DriverNavViewState extends State<DriverNavView>
   void _onGpsFix(Position pos) {
     if (!mounted || !_gpsFixPolicy.accept(pos)) return;
     _lastGpsFixAt = DateTime.now();
+    _tunnelAnchor = null; // a real fix ends tunnel mode
     if (_gpsDown) {
       _gpsDown = false;
       _recomputeNavPhase();

@@ -138,7 +138,36 @@ class HeadingService {
       if (delta < -180) delta += 360;
       _compassEma = (ema + delta * _compassAlpha) % 360;
     }
-    if (!usingCourse) _emit(_compassEma!, deadBand: _compassDeadBandDeg);
+    if (!usingCourse) {
+      _emit(_compassEma!, deadBand: _compassDeadBandDeg);
+      return;
+    }
+    _turnAssist();
+  }
+
+  /// Instant turns while driving (owner request 2026-10-29: "como Google").
+  /// The GPS course updates about once a second, so the arrow used to start
+  /// a turn up to a second late. The phone's heading sensor is fused with
+  /// the gyroscope: its ABSOLUTE value is wrong inside a car (metal, mount),
+  /// but how much it CHANGES is the car turning. Between fixes the arrow
+  /// shows course + that change; the next fix re-anchors on the real
+  /// course. Bounded to ±[_turnAssistMaxDeg] and [_turnAssistWindow] after
+  /// the fix, so a phone moved in the hand can never spin the arrow.
+  static const Duration _turnAssistWindow = Duration(milliseconds: 1600);
+  static const double _turnAssistMaxDeg = 60;
+  double? _compassAtCourse;
+  DateTime? _courseAt;
+
+  void _turnAssist() {
+    final course = _course, at = _courseAt, base = _compassAtCourse;
+    final now = _compass;
+    if (course == null || at == null || base == null || now == null) return;
+    if (_now().difference(at) > _turnAssistWindow) return;
+    var delta = (now - base) % 360;
+    if (delta > 180) delta -= 360;
+    if (delta.abs() < 1.0) return; // sensor noise, not a turn
+    delta = delta.clamp(-_turnAssistMaxDeg, _turnAssistMaxDeg).toDouble();
+    _emit((course + delta + 360) % 360, deadBand: 0.5);
   }
 
   /// Feed every GPS fix. Decides which source is in charge from this point on.
@@ -179,6 +208,8 @@ class HeadingService {
     _course = courseOk ? course % 360 : null;
 
     if (usingCourse) {
+      _compassAtCourse = _compass;
+      _courseAt = _now();
       _emit(_course!);
     } else if (_compass != null) {
       // Dropping back to the compass at a standstill: send its current

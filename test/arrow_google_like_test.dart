@@ -1,0 +1,115 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:geolocator/geolocator.dart';
+
+import 'package:cruise_app/models/lat_lng.dart';
+import 'package:cruise_app/services/heading_service.dart';
+import 'package:cruise_app/utils/route_splice.dart';
+
+/// Owner request 2026-10-29: the arrow should behave like Google's —
+/// turn the moment the car turns, and keep going along the route through
+/// a tunnel.
+void main() {
+  group('route walking (tunnel mode)', () {
+    const a = LatLng(33.0, -86.0);
+    const b = LatLng(33.001, -86.0); // ~110.5 m north
+    const c = LatLng(33.001, -85.998); // then ~186 m east
+    const route = [a, b, c];
+
+    test('walks past a corner onto the next leg with its bearing', () {
+      final r = RouteSplice.pointAlong(route, a, 150)!;
+      expect(RouteSplice.haversineM(b, r.$1), closeTo(150 - 110.54, 1.0));
+      expect(r.$2, closeTo(90, 1));
+    });
+
+    test('stays on the first leg before the corner, heading north', () {
+      final r = RouteSplice.pointAlong(route, a, 50)!;
+      expect(RouteSplice.haversineM(a, r.$1), closeTo(50, 0.5));
+      expect(r.$2, closeTo(0, 1));
+    });
+
+    test('clamps at the destination', () {
+      final r = RouteSplice.pointAlong(route, a, 5000)!;
+      expect(RouteSplice.haversineM(c, r.$1), lessThan(0.01));
+    });
+
+    test('nav view drives the tunnel mode safely', () {
+      final nav = File('lib/screens/driver/driver_nav_view.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+      expect(nav, contains('_tunnelTimer?.cancel();'));
+      expect(nav, contains('_tunnelAnchor = null; // a real fix ends tunnel mode'));
+      expect(nav, contains('age > const Duration(seconds: 30)'));
+      expect(nav, contains('speed < 3'));
+      expect(nav, contains('RouteSplice.distanceToPolylineM(pts, here) > 40'));
+    });
+  });
+
+  group('instant turns from the heading sensor', () {
+    late StreamController<double> compass;
+    late HeadingService svc;
+    late DateTime clock;
+    final seen = <double>[];
+
+    Position fix(double course) => Position(
+          latitude: 33,
+          longitude: -86,
+          timestamp: clock,
+          accuracy: 5,
+          altitude: 0,
+          altitudeAccuracy: 0,
+          heading: course,
+          headingAccuracy: 2,
+          speed: 12,
+          speedAccuracy: 0.5,
+        );
+
+    Future<void> sensor(double h) async {
+      clock = clock.add(const Duration(milliseconds: 100));
+      compass.add(h);
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    setUp(() async {
+      seen.clear();
+      clock = DateTime(2026, 10, 29, 12);
+      compass = StreamController<double>();
+      svc = HeadingService(compassReadings: compass.stream, now: () => clock);
+      svc.stream.listen(seen.add);
+      svc.start();
+      await sensor(200); // wrong absolute value inside the car
+      clock = clock.add(const Duration(seconds: 1));
+      svc.onFix(fix(10)); // driving, real course 10°
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    tearDown(() async {
+      svc.dispose();
+      await compass.close();
+    });
+
+    test('the arrow starts turning before the next GPS fix', () async {
+      expect(svc.usingCourse, isTrue);
+      expect(seen.last, closeTo(10, 0.01));
+      await sensor(215); // car turned 15° right
+      expect(seen.last, closeTo(25, 0.01),
+          reason: 'course + sensor change, not the sensor\'s absolute 215°');
+    });
+
+    test('a phone spun in the hand is capped at 60°', () async {
+      await sensor(320); // +120°
+      expect(seen.last, closeTo(70, 0.01));
+    });
+
+    test('jitter under 1° does nothing; stale window does nothing', () async {
+      final before = seen.length;
+      await sensor(200.5);
+      expect(seen.length, before);
+      clock = clock.add(const Duration(seconds: 2));
+      await sensor(240);
+      expect(seen.length, before, reason: 'only 1.6 s after a GPS course');
+    });
+  });
+}

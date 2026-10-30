@@ -60,6 +60,39 @@ class RouteSplice {
   /// Index i of the segment [i → i+1] of [polyline] whose projection is
   /// closest to [p]. This is the "deviation point": where the driver left
   /// the route.
+  /// Walks [meters] forward along [line] from the projection of [from] and
+  /// returns that point with the bearing of the segment it lands on. Clamps
+  /// at the end of the line. Null for a line with fewer than two points.
+  /// Used to keep the nav arrow on the route through a tunnel (2026-10-29).
+  static (LatLng, double)? pointAlong(
+      List<LatLng> line, LatLng from, double meters) {
+    if (line.length < 2) return null;
+    var i = closestSegmentIndex(line, from);
+    var p = projectOnSegment(from, line[i], line[i + 1]);
+    var left = meters.isFinite && meters > 0 ? meters : 0.0;
+    while (true) {
+      final b = line[i + 1];
+      final seg = haversineM(p, b);
+      if (left <= seg || i + 2 >= line.length) {
+        final t = seg <= 1e-6 ? 1.0 : (left / seg).clamp(0.0, 1.0);
+        final pt = LatLng(p.latitude + (b.latitude - p.latitude) * t,
+            p.longitude + (b.longitude - p.longitude) * t);
+        return (pt, _bearingDeg(line[i], b));
+      }
+      left -= seg;
+      p = b;
+      i++;
+    }
+  }
+
+  static double _bearingDeg(LatLng a, LatLng b) {
+    final la = a.latitude * math.pi / 180, lb = b.latitude * math.pi / 180;
+    final dl = (b.longitude - a.longitude) * math.pi / 180;
+    final y = math.sin(dl) * math.cos(lb);
+    final x = math.cos(la) * math.sin(lb) - math.sin(la) * math.cos(lb) * math.cos(dl);
+    return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
+  }
+
   static int closestSegmentIndex(List<LatLng> polyline, LatLng p) {
     if (polyline.length < 2) return 0;
     var best = double.infinity;

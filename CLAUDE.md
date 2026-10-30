@@ -473,6 +473,8 @@ Estos son bugs que ya arreglé y patterns que deben mantenerse:
 
 41. **Mapa del conductor sin brújula (2026-10-30, decisión del dueño):** mover o girar el teléfono NO gira la flecha ni la cámara. `HeadingService(useCompass: false)` en [driver_online_screen.dart](lib/screens/driver/driver_online_screen.dart): el rumbo sale solo del recorrido real del carro (medido o derivado) y parado se mantiene. Reemplaza la decisión del 2026-10-16 ("heading-up con brújula"). No reactivar la brújula ni el "giro inmediato" por brújula en pantallas del conductor. Guardias: `driver_gps_rules_guard_test.dart`, `arrow_google_like_test.dart`.
 
+42. **Robot del chat de soporte (2026-10-30, revisión de 110 chats):** corre en `gpt-5.5` ([openai_support_service.py](backend/services/openai_support_service.py)). Con gpt-5.x en `/v1/chat/completions`, las tools solo funcionan con `reasoning_effort: "none"` — con cualquier otro valor OpenAI responde 400, el código apaga las tools para toda la vida del proceso y **el robot deja de poder pasar chats al agente**. Decisión del dueño: el robot **nunca** menciona los contratos legales (`_BOT_HIDDEN_ITEMS` los saca del contexto; si preguntan, pasa al agente). El historial que ve el modelo incluye los mensajes del agente (`[Agente especializado]: …`) — sin eso, al retomar un chat contradecía al agente. Guardia: `backend/tests/test_support_bot_review.py`.
+
 ---
 
 **Última actualización:** 2026-10-30 (flecha/navegación/ubicación como Google, reglas #32-40) — antes 2026-10-28 (reasignación desde dispatch + nota sobre el bundle del panel parcheado a mano) (auditoría Firebase + Railway: pushes perdidos, rate limiter que tumbaba la API, backups efímeros, reglas RTDB/Storage)

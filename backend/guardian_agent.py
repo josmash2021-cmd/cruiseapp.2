@@ -336,6 +336,13 @@ class DataGuardian:
                       AND t.scheduled_at IS NULL
                       AND t.driver_id IS NULL
                       AND t.created_at < NOW() - INTERVAL '10 minutes'
+                      -- Dispatch still working it (2026-10-30, #775/#778):
+                      -- no auto-cancel within 10 min of the LAST offer sent.
+                      AND NOT EXISTS (
+                          SELECT 1 FROM dispatch_offers o
+                          WHERE o.trip_id = t.id
+                            AND o.created_at > NOW() - INTERVAL '10 minutes'
+                      )
                 """))
                 stuck = result.fetchall()
 
@@ -482,6 +489,13 @@ class DataGuardian:
                       AND t.driver_id IS NULL
                       AND t.scheduled_at > NOW()
                       AND t.scheduled_at <= NOW() + INTERVAL '30 minutes'
+                      -- Dispatch still working it (2026-10-30, #775/#778):
+                      -- no auto-cancel within 10 min of the LAST offer sent.
+                      AND NOT EXISTS (
+                          SELECT 1 FROM dispatch_offers o
+                          WHERE o.trip_id = t.id
+                            AND o.created_at > NOW() - INTERVAL '10 minutes'
+                      )
                 """))
                 sched_stuck = sched_result.fetchall()
 

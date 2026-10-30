@@ -38,7 +38,8 @@ void main() {
     expect(usersModule, contains('/go-online-gate'));
     expect(usersModule, contains('{disabled:t}'),
         reason: 'the body is {"disabled": bool} per the backend contract');
-    expect(usersModule, contains('setGoOnlineGate};'),
+    expect(RegExp(r'export\{[^}]*setGoOnlineGate[^}]*\}').hasMatch(usersModule),
+        isTrue,
         reason: 'exported for the person page chunk');
   });
 

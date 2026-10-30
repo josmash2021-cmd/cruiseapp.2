@@ -66,7 +66,9 @@ void main() {
         reason: 'account/vehicle/background cards never get the button');
     expect(personPage, contains('children:"Actualizar"'));
     expect(personPage, contains('replaceDocPhoto(kind,vehicleId)'));
-    expect(personPage, contains('reviewBtns("document",d.id,d.vehicleId)'),
+    // 2026-10-29: the button uploads with the card's REAL doc_type.
+    expect(personPage, contains('replaceDocPhoto(docType||kind,vehicleId)'));
+    expect(personPage, contains('reviewBtns("document",d.id,d.vehicleId,d.docType)'),
         reason: 'the id travels from the selected vehicle card to the upload');
   });
 }

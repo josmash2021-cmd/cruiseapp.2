@@ -64,7 +64,7 @@ void main() {
     expect(
         personPage,
         contains(
-            'isSelfie?selfieBtns(d.id):reviewBtns("document",d.id,d.vehicleId)'),
+            'isSelfie?selfieBtns(d.id):reviewBtns("document",d.id,d.vehicleId,d.docType)'),
         reason: 'selfie_check cards replace the generic approve/reject row; '
             'account/vehicle/background cards never reach docCard');
     expect(personPage, contains('children:"Aprobar"'));

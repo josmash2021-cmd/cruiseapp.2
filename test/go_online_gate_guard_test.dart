@@ -56,13 +56,15 @@ void main() {
             '      return;\n'
             '    }'));
     final compactOffline = offline.replaceAll(RegExp(r'\s+'), ' ');
-    expect(
-      compactOffline,
-      contains(
-        'onTap: resting ? () => _showRestRemaining(restRemaining) '
-        ': _goOnlineDisabled ? _showGoOnlineDisabledDialog',
-      ),
-    );
+    // _goTapAction() (2026-10-29): rest first, then the paused-GO dialog —
+    // neither flips the driver online.
+    final rest = compactOffline
+        .indexOf('return () => _showRestRemaining(restRemaining);');
+    final gate = compactOffline
+        .indexOf('if (_goOnlineDisabled) return _showGoOnlineDisabledDialog;');
+    expect(rest, isNonNegative);
+    expect(gate, greaterThan(rest));
+    expect(compactOffline, contains('onTap: _goTapAction(),'));
     expect(offline, contains('void _showGoOnlineDisabledDialog()'));
   });
 

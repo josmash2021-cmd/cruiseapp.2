@@ -52,9 +52,12 @@ void main() {
         '{ _showRestRemaining(restRemaining); return; }',
       ),
     );
+    // The GO button routes every tap through _goTapAction() (2026-10-29);
+    // the rest check is its FIRST branch.
+    expect(compactOffline, contains('onTap: _goTapAction(),'));
     expect(
       compactOffline,
-      contains('onTap: resting ? () => _showRestRemaining(restRemaining)'),
+      contains('return () => _showRestRemaining(restRemaining);'),
     );
   });
 

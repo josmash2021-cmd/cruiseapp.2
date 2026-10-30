@@ -17,7 +17,7 @@ void main() {
 
   group('a cancelled trip hands the chained booking back', () {
     test('_resetToSearchingOnRemoteCancel consumes the handoff', () {
-      final start = ctrl.indexOf('void _resetToSearchingOnRemoteCancel()');
+      final start = ctrl.indexOf('void _resetToSearchingOnRemoteCancel(');
       expect(start, isNonNegative);
       final body = ctrl.substring(start, start + 2200);
       expect(body.contains('_handoffChainedOffer()'), isTrue,
@@ -45,7 +45,7 @@ void main() {
   group('every return to searching restarts the GPS stream', () {
     test('both paths call _startPosStream', () {
       for (final marker in [
-        'void _resetToSearchingOnRemoteCancel()',
+        'void _resetToSearchingOnRemoteCancel(',
         'void _decline()',
       ]) {
         final start = ctrl.indexOf(marker);

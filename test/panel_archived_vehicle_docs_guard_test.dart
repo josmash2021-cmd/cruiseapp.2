@@ -32,7 +32,7 @@ void main() {
       'Vehículos archivados (solo historial)',
       'const docCard=(d,readOnly=false)=>',
       'const vehicleCard=(d,readOnly=false)=>',
-      '!readOnly&&(isSelfie?selfieBtns(d.id):reviewBtns("document",d.id,d.vehicleId))',
+      '!readOnly&&(isSelfie?selfieBtns(d.id):reviewBtns("document",d.id,d.vehicleId,d.docType))',
       '!readOnly&&reviewBtns("vehicle",d.id)',
       'vdocs.map(g=>docCard(g,readOnly))',
       'archivedVehicles.map(d=>vehicleCard(d,!0))',
@@ -47,7 +47,7 @@ void main() {
     for (final needle in [
       'driverDocs.map(d=>docCard(d))',
       'vehicles.map(d=>vehicleCard(d))',
-      'reviewBtns("document",d.id,d.vehicleId)',
+      'reviewBtns("document",d.id,d.vehicleId,d.docType)',
       'reviewBtns("vehicle",d.id)',
       'children:"Aprobar"',
       'children:"Rechazar"',

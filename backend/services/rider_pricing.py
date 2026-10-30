@@ -280,7 +280,11 @@ def _is_current(grant: RiderPromotionGrant, now: datetime) -> bool:
 
 
 def _allowed(grant: RiderPromotionGrant, tier: str) -> bool:
-    if tier not in PROMO_TIERS:
+    # VIP stays out of every promotion EXCEPT a grant aimed at named riders
+    # that lists it explicitly (owner decision 2026-10-30: one rider rides
+    # free, VIP included). A platform-wide grant never reaches VIP.
+    vip_for_named = tier == "vip" and not grant.all_riders
+    if tier not in PROMO_TIERS and not vip_for_named:
         return False
     try:
         tiers = json.loads(grant.allowed_tiers or "[]")

@@ -50,7 +50,7 @@ class PromotionGrantIn(BaseModel):
     @classmethod
     def validate_tiers(cls, values):
         result = list(dict.fromkeys(canonical_tier(value) for value in values))
-        if not result or any(value not in PROMO_TIERS for value in result):
+        if not result or any(value not in (*PROMO_TIERS, "vip") for value in result):
             raise ValueError("Promotions are limited to Standard through Premium")
         return result
 
@@ -64,6 +64,9 @@ class PromotionGrantIn(BaseModel):
             raise ValueError("Select at least one rider or all riders")
         if self.all_riders and self.rider_ids:
             raise ValueError("Do not combine all riders with individual recipients")
+        # VIP only for named riders (2026-10-30) — never platform-wide.
+        if "vip" in self.allowed_tiers and self.all_riders:
+            raise ValueError("VIP can only be granted to selected riders")
         self.rider_ids = list(dict.fromkeys(self.rider_ids))
         if self.starts_at and self.expires_at:
             start = self.starts_at if self.starts_at.tzinfo else self.starts_at.replace(tzinfo=timezone.utc)

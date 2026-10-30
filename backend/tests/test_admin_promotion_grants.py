@@ -68,9 +68,10 @@ async def test_dispatch_promotion_rejects_invalid_audience_tiers_and_roles(clien
     )
     assert response.status_code == 422
 
+    # VIP: never platform-wide (owner decision 2026-10-30) ...
     response = await client.post(
         "/admin/promotion-grants",
-        json=_body(rider.id, allowed_tiers=["vip"]),
+        json=_body(rider.id, all_riders=True, rider_ids=[], allowed_tiers=["vip"]),
         headers=_headers(),
     )
     assert response.status_code == 422
@@ -88,3 +89,34 @@ async def test_dispatch_promotion_rejects_invalid_audience_tiers_and_roles(clien
         headers=_headers(),
     )
     assert response.status_code == 400
+
+
+async def test_vip_free_only_for_named_riders(client, test_rider):
+    """Owner decision 2026-10-30: one named rider rides free, VIP included;
+    a platform-wide grant still never reaches VIP."""
+    import json as _json
+    from types import SimpleNamespace
+    from services.rider_pricing import _select_promotion
+
+    rider, _ = test_rider
+    with patch("routers.admin_promotions._notify_grant", new=AsyncMock()):
+        response = await client.post(
+            "/admin/promotion-grants",
+            json=_body(rider.id, max_miles=500,
+                       allowed_tiers=["standard", "compact", "electric_pro", "premium", "vip"]),
+            headers=_headers(),
+        )
+    assert response.status_code == 200, response.text
+    assert "vip" in response.json()["allowed_tiers"]
+
+    def grant(all_riders):
+        return SimpleNamespace(
+            id=1, kind="free", percent=30, fallback_percent=0, max_miles=500,
+            allowed_tiers=_json.dumps(["standard", "premium", "vip"]),
+            uses_per_rider=10, all_riders=all_riders,
+            starts_at=None, expires_at=None, is_active=True)
+
+    named = _select_promotion([grant(False)], {}, "vip", 120.0, 31000)
+    assert named["is_free"] is True and named["promo_total_cents"] == 0
+    everyone = _select_promotion([grant(True)], {}, "vip", 120.0, 31000)
+    assert everyone["is_free"] is False and everyone["promo_total_cents"] == 31000

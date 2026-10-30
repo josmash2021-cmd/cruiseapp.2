@@ -9,24 +9,28 @@ void main() {
         file.readAsStringSync().contains('guard-pin panel_trip_cost_breakdown_guard_test'),
   );
   final panel = panelFile.readAsStringSync().replaceAll('\r\n', '\n');
-  test('detail mounts a snapshot-only breakdown and keeps the legacy information card', () {
+  // 2026-10-30: el desglose es simple (quién paga, cobrado, conductor,
+  // plataforma, propina) y también sale para viajes viejos con solo fare.
+  test('detail mounts the simple breakdown and keeps the information card', () {
     final sectionStart = panel.indexOf('/*! guard-pin panel_trip_cost_breakdown_guard_test');
     final sectionEnd = panel.indexOf('function la({tripId', sectionStart);
     expect(sectionStart, isNonNegative);
     expect(sectionEnd, greaterThan(sectionStart));
     final section = panel.substring(sectionStart, sectionEnd);
     for (final needle in [
-      'Tarifa anterior',
-      'Descuento',
-      'Total promocional',
+      'const title="Desglose del pago"',
+      'label:"Precio del viaje"',
+      'label:"Quién paga"',
+      'label:"Cobrado al pasajero"',
+      'label:"Estado del cobro"',
+      'label:final?"Para el conductor":"Para el conductor (aprox.)"',
+      'label:"Para la plataforma"',
+      'label:"Propina"',
+      '"Se verá al terminar el viaje"',
+      '(100% para el conductor)',
+      'Plataforma (cortesía)',
       'Cruise Cash',
-      'Cobrado al rider',
-      'Base driver',
-      'Ganancia driver',
-      'Costo plataforma esperado',
-      'Costo plataforma aplicado',
-      'snapshot.driverEarnings===null?"Pendiente"',
-      'snapshot.platformCreditApplied===null?"Pendiente"',
+      'final=(done||st==="cancelled")&&sn.driverEarnings!==null',
       'e.jsx(TripCostBreakdown,{state:costState})',
       'useTripCostSnapshot(c.backendId??tripBackendId(s))',
       'title:"Información del viaje"',
@@ -94,7 +98,12 @@ const close = (actual, expected, label) => {
   close(discounted.driverBase, 14, 'driver base');
   close(discounted.driverEarnings, 12.6, 'driver earnings');
   if (discounted.platformCreditApplied !== null) throw new Error('pending credit must not become a real zero');
-  if (tripCostSnapshot({fare: 20, status: 'completed'}) !== null) throw new Error('legacy trip must not get a snapshot card');
+  const legacy = tripCostSnapshot({fare: 20, status: 'completed', tip_amount: 3, payment_status: 'paid'});
+  close(legacy.originalFare, 20, 'legacy fare');
+  close(legacy.riderCharge, 20, 'legacy rider charge');
+  close(legacy.tipAmount, 3, 'legacy tip');
+  if (legacy.tripStatus !== 'completed' || legacy.paymentStatus !== 'paid') throw new Error('legacy status lost');
+  if (tripCostSnapshot({status: 'completed'}) !== null) throw new Error('a trip without any price must not get a card');
   if (tripBackendId('sql_777') !== 777 || tripBackendId('firestore-doc') !== null) throw new Error('wrong backend id parsing');
   console.log(JSON.stringify({free, discounted, calls: calls.length}));
 })().catch(error => { console.error(error); process.exit(1); });

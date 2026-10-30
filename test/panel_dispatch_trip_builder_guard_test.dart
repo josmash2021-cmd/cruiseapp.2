@@ -93,9 +93,8 @@ void main() {
       'row.target_driver_id',
       'row.target_driver_name',
       'label:"Reserva dirigida a"',
-      'label:"Propina (dispatch)"',
-      'label:"Propina la paga"',
-      'label:"Estado de la propina"',
+      'label:"Propina de Dispatch"',
+      'la paga \${{rider:"el pasajero",platform:"la plataforma"}',
       'children:DISPATCH_TRIP_TIERS.map(tier=>e.jsx("option",{value:tier.value,children:tier.label},tier.value))',
     ]) {
       expect(panel, contains(needle), reason: needle);

@@ -973,6 +973,12 @@ async def _start_scheduler_agents() -> None:
             await asyncio.sleep(600)
     _safe_create_task(_support_bot_watchdog())
 
+    # Live scheduled-ride board (owner 2026-10-30): bumps the Firestore doc
+    # the driver app listens to whenever an open reservation appears or
+    # leaves, so the GO-side badge and the scheduled page refresh at once.
+    from services.scheduled_board import scheduled_board_loop
+    _safe_create_task(scheduled_board_loop(lambda: _is_scheduler_leader))
+
     _spawn_background(_cache_sweep(), "cache_sweep")
 
     logging.info("🚀 Cruise backend FULLY OPERATIONAL — all agents active")

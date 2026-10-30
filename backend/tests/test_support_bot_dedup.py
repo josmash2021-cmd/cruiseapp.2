@@ -9,8 +9,8 @@ silently the moment a newer message exists.
 
 Also pinned: the 10 s read-settle (people send follow-ups 5-15 s apart),
 the anti-flood cap (max 2 bot bubbles / 2 split parts per answer), and the
-contracts prompt fix (the bot demanded drivers "send the contracts" and
-invented an upload flow — they are signed in the app, never uploaded).
+contracts rule: the bot never talks about them (owner, 2026-10-30) — it
+demanded drivers "send the contracts" and invented an upload flow.
 """
 import asyncio
 
@@ -240,21 +240,22 @@ def test_close_paths_silence_the_chat():
     assert '_state[1] != "open"' in src
 
 
-# ── Source pins: the prompt must explain contracts, never invent app steps ──
+# ── Source pins: the bot never talks about contracts, never invents steps ──
 
-def test_contracts_are_explained_not_invented():
+def test_bot_never_talks_about_contracts():
     import inspect
     from services import openai_support_service as ai_svc
     src = inspect.getsource(ai_svc)
-    assert "contratos legales" in src
-    assert "Aceptar y firmar" in src
-    assert "never sent or uploaded" in src
+    assert "NEVER mention legal contracts" in src
+    # The old walkthrough is gone — nothing left for the model to recite.
+    assert "Aceptar y firmar" not in src
+    assert "Contratos legales\" →" not in src
     # Hard rules against the prod failure modes (chat 134).
     assert "NEVER invent step-by-step app navigation" in src
     assert "ONE short message" in src
 
-    from routers.support import _DOC_LABELS
-    assert "contracts" in _DOC_LABELS
+    from routers.support import _BOT_HIDDEN_ITEMS
+    assert "contracts" in _BOT_HIDDEN_ITEMS
 
 
 def test_settle_window_covers_fast_followups():
@@ -304,9 +305,12 @@ def test_specialized_agent_naming_and_contracts_tone():
     assert "as help not demand" in src
     # The escalation tool no longer echoes "human supervisor" to the model.
     assert "specialized agent (a human dispatcher)" in src
-    # The owner's own voice is the house standard, and the waitlist answer
-    # matches the exact copy of the waitlist screen.
-    assert "OWNER'S OWN VOICE" in src
+    # The house standard stays, but the bot speaks as itself — the old
+    # "soy un agente especializado del equipo" example made it claim to be
+    # one (prod chats 161/199). The waitlist answer matches the screen copy.
+    assert "THE HOUSE STANDARD" in src
+    assert "NEVER present yourself" in src
+    assert "soy un agente especializado del equipo, permíteme" not in src
     assert "Te notificaremos en cuanto" in src
 
 

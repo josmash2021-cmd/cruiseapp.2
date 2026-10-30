@@ -62,10 +62,15 @@ async def test_bug_report_creates_chat_message_and_email(client, db, test_driver
     assert "ios" in report[0].message
     assert "1.2.3+456" in report[0].message
 
-    # The email task was queued by the endpoint; run it now and verify.
-    assert len(pending) == 1
+    # The endpoint queues the email AND the bot's answer to the report (it
+    # used to wait for the 3-min stuck-chat sweep). Run the email only.
+    names = sorted(c.cr_code.co_name for c in pending)
+    assert names == ["_background_bot_reply", "_send_bug_email_bg"]
     for coro in pending:
-        await coro
+        if coro.cr_code.co_name == "_send_bug_email_bg":
+            await coro
+        else:
+            coro.close()
     assert len(sent_emails) == 1
     assert sent_emails[0]["to"] == "josmash2021@gmail.com"
     assert "Map Issue" in sent_emails[0]["subject"]

@@ -118,11 +118,12 @@ async def test_tool_call_fallback_speaks_the_chats_language(monkeypatch):
         SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions())))
 
     out = await svc._openai_completion([{"role": "user", "content": "ok"}], [], "es")
-    assert out["response"] == "Te ayudo con eso ahora mismo."
+    # A transfer with no text reads as a transfer (2026-10-30 review).
+    assert out["response"] == "Te paso con un agente especializado para que lo revise contigo aquí mismo."
     assert out["function_call"]["name"] == "escalate_to_human"
 
     out = await svc._openai_completion([{"role": "user", "content": "ok"}], [], "en")
-    assert out["response"] == "I'll help you with that right away."
+    assert out["response"] == "I'm passing this to a specialized agent who will review it with you right here."
 
 
 async def test_no_provider_fallback_speaks_spanish(monkeypatch):
@@ -132,7 +133,9 @@ async def test_no_provider_fallback_speaks_spanish(monkeypatch):
         {"user": {"id": 1}, "messages": [], "lang": "es"},
     )
     assert out["escalate"] is True
-    assert "agente humano" in out["response"]
+    # Rule 13: the user hears "agente especializado", never "humano".
+    assert "agente especializado" in out["response"]
+    assert "humano" not in out["response"]
 
 
 async def test_provider_error_fallback_speaks_spanish(monkeypatch):
@@ -147,7 +150,7 @@ async def test_provider_error_fallback_speaks_spanish(monkeypatch):
         {"user": {"id": 1}, "messages": [], "lang": "es"},
     )
     assert out["escalate"] is True
-    assert "dificultades técnicas" in out["response"]
+    assert "problema técnico" in out["response"]
 
 
 async def test_english_chat_keeps_the_english_fallbacks(monkeypatch):
@@ -158,7 +161,7 @@ async def test_english_chat_keeps_the_english_fallbacks(monkeypatch):
         {"user": {"id": 1}, "messages": [], "lang": "en"},
     )
     assert out["escalate"] is True
-    assert out["response"].startswith("I'm having trouble connecting")
+    assert out["response"].startswith("I'm having a technical problem")
 
 
 async def test_plain_text_mentioning_a_supervisor_does_not_escalate(monkeypatch):

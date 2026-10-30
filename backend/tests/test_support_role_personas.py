@@ -429,12 +429,17 @@ async def test_a_long_message_ending_in_gracias_goes_to_the_ai(db, test_rider, m
 
 async def test_a_short_gracias_still_gets_the_closing(db, test_rider, monkeypatch):
     """The gate must not kill the real goodbye: a short "muchas gracias"
-    still closes the conversation without waking the AI up."""
+    right after the "¿algo más?" beat still closes the conversation without
+    waking the AI up. (Before that beat, the thanks goes to the AI — prod
+    chat 159 got a goodbye with the bank still failing.)"""
     from routers import support as support_router
+    from models.database import SupportMessage
     rider, _ = test_rider
     chat = await _open_chat_in_phase(rider, db, "agent_active")
     chat.locale = "es"
     db.add(chat)
+    db.add(SupportMessage(chat_id=chat.id, sender_id=None, sender_role="bot",
+                          message="Listo. ¿Hay algo más en lo que te pueda ayudar?"))
     await db.commit()
 
     ai_calls = []

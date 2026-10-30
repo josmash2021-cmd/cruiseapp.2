@@ -196,7 +196,12 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
         ctx["user"] = {
             "id": user.id,
             "name": f"{user.first_name} {user.last_name}".strip(),
+            "first_name": user.first_name or "",
             "role": user.role or "rider",
+            "referral_code": (
+                getattr(user, "driver_referral_code", None)
+                if (user.role or "") == "driver"
+                else getattr(user, "referral_code", None)),
             "email": user.email,
             "phone": user.phone,
             "created_at": user.created_at.isoformat() if user.created_at else None,
@@ -407,6 +412,10 @@ _DOC_LABELS = {
 }
 
 
+# Onboarding items the bot never sees, so it can never quote them.
+_BOT_HIDDEN_ITEMS = frozenset({"contracts"})
+
+
 async def _driver_context_block(user_id: int, db: AsyncSession) -> dict:
     """The driver's work picture for the prompt: earnings, next payout,
     vehicle + tier, and document statuses. Fail-soft on every piece."""
@@ -467,7 +476,8 @@ async def _driver_context_block(user_id: int, db: AsyncSession) -> dict:
             items = await _derive_onboarding_items(db, db_user)
             out["docs"] = [
                 {"type": k, "status": (v or {}).get("status", "unknown")}
-                for k, v in (items or {}).items() if isinstance(v, dict)
+                for k, v in (items or {}).items()
+                if isinstance(v, dict) and k not in _BOT_HIDDEN_ITEMS
             ]
             # Activation summary (2026-10-12): the same onboarding items
             # regrouped the way a "actívame la cuenta" question needs them —
@@ -482,7 +492,10 @@ async def _driver_context_block(user_id: int, db: AsyncSession) -> dict:
             missing, under_review, rejected, approved = [], [], [], []
             if not _waitlisted:
                 for k, v in (items or {}).items():
-                    if not isinstance(v, dict):
+                    # Contracts are never the bot's topic (owner, 2026-10-30:
+                    # "no quiero que hable de contratos legales") — kept out
+                    # of what it can quote, so it cannot bring them up.
+                    if not isinstance(v, dict) or k in _BOT_HIDDEN_ITEMS:
                         continue
                     entry = {"item": k, "label": _DOC_LABELS.get(k, (k, k))}
                     st = v.get("status")
@@ -820,7 +833,7 @@ _FALLBACK_FIRST_EN = [
 _FALLBACK_FOLLOWUP_ES = [
     "Gracias por la informacion, {name}. Ya estoy trabajando en tu caso.\n\nVoy a asegurarme de que se resuelva lo antes posible. Hay algo mas que necesites?",
     "Perfecto, {name}. He registrado todo. Nuestro equipo ya esta al tanto y daremos seguimiento.\n\nPuedo ayudarte con algo mas?",
-    "Todo anotado, {name}. Voy a dar seguimiento a tu caso personalmente.\n\nSi surge algo mas, aqu estoy. Necesitas algo adicional?",
+    "Todo anotado, {name}. Voy a dar seguimiento a tu caso.\n\n¿Necesitas algo adicional?",
 ]
 _FALLBACK_FOLLOWUP_EN = [
     "Thanks for the info, {name}. I'm already working on your case.\n\nI'll make sure it gets resolved as soon as possible. Is there anything else you need?",
@@ -829,12 +842,12 @@ _FALLBACK_FOLLOWUP_EN = [
 ]
 
 _CLOSING_RESPONSES_ES = [
-    "Me alegra poder ayudarte, {name} No dudes en escribirnos si necesitas algo. Que tengas un excelente dia!",
-    "Con gusto, {name}! Estamos aqu para lo que necesites. Que tengas un gran dia!",
-    "Ha sido un placer atenderte, {name}. Si necesitas algo en el futuro, aqu estaremos. Cudate mucho!",
+    "Me alegra poder ayudarte, {name}. Estamos a la orden, que tengas un excelente día.",
+    "Con gusto, {name}. Estamos a la orden para lo que necesites, que tengas un gran día.",
+    "Ha sido un placer atenderte, {name}. Aquí estaremos cuando nos necesites, cuídate mucho.",
 ]
 _CLOSING_RESPONSES_EN = [
-    "Happy to help, {name} Don't hesitate to reach out if you need anything. Have a great day!",
+    "Happy to help, {name}. Don't hesitate to reach out if you need anything. Have a great day!",
     "My pleasure, {name}! We're here for whatever you need. Have an awesome day!",
     "It's been great helping you, {name}. If you need anything in the future, we'll be here. Take care!",
 ]
@@ -1202,10 +1215,13 @@ def _attachment_note(text: str, lang: str) -> str:
 # at the choke point where bot replies are persisted, so the guarantee does
 # not depend on prompt obedience.
 _MD_BOLD_RE = re.compile(r"(\*\*|__)(.+?)\1", re.S)
+# Headers and bullet markers at the start of a line ("## Pasos", "- SSN",
+# "• Seguro") — same reason: the app shows the raw characters.
+_MD_LINE_MARK_RE = re.compile(r"^[ \t]*(?:#{1,6}[ \t]+|[-*•][ \t]+)", re.M)
 
 
 def _strip_markdown(text: str) -> str:
-    return _MD_BOLD_RE.sub(r"\2", text)
+    return _MD_LINE_MARK_RE.sub("", _MD_BOLD_RE.sub(r"\2", text))
 
 
 async def _get_chat_history(chat_id: int, db: AsyncSession, limit: int = 10, lang: str = "en") -> list[dict[str, str]]:
@@ -1224,7 +1240,38 @@ async def _get_chat_history(chat_id: int, db: AsyncSession, limit: int = 10, lan
             history.append({"role": "user", "content": content})
         elif m.sender_role == "bot":
             history.append({"role": "assistant", "content": content})
+        elif m.sender_role == "dispatch":
+            history.append({"role": "assistant",
+                            "content": f"[Agente especializado]: {content}"})
     return history
+
+
+_TRANSFER_NOTICES = ("se conectará en breve", "will connect shortly",
+                     "se conectara en breve")
+_JOINED_NOTICES = ("se ha conectado", "has joined")
+
+
+async def _handoff_state(chat_id: int, db: AsyncSession) -> str | None:
+    """Whether a person is already on this chat: "agent_in_chat" once a
+    dispatcher has written in it, "transfer_requested" when the transfer
+    notice is out but nobody has written yet, None otherwise. The bot that
+    resumes such a chat must not offer the transfer again (prod chats 140,
+    168, 181: "¿quieres que te pase con un agente?" with one already there)."""
+    human = (await db.execute(
+        select(func.count()).select_from(SupportMessage).where(
+            SupportMessage.chat_id == chat_id,
+            SupportMessage.sender_role == "dispatch"))).scalar_one()
+    sys_rows = [(t or "").lower() for t in (await db.execute(
+        select(SupportMessage.message).where(
+            SupportMessage.chat_id == chat_id,
+            SupportMessage.sender_role == "system"))).scalars().all()]
+    # "se ha conectado" / "has joined": a person took the chat, even if
+    # they have not typed yet.
+    if human or any(j in t for t in sys_rows for j in _JOINED_NOTICES):
+        return "agent_in_chat"
+    if any(n in t for t in sys_rows for n in _TRANSFER_NOTICES):
+        return "transfer_requested"
+    return None
 
 
 # _call_claude_api removed -- replaced by cruise_ai_engine.py
@@ -1471,15 +1518,20 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
             # Tell user their request is being reviewed
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
             chat = chat_r.scalar_one_or_none()
-            # A chat waiting for or owned by a human keeps the bot silent.
+            # A chat waiting for or owned by a human keeps the bot silent —
+            # and a transfer is not a "request under review": the agent
+            # answers in the chat itself (prod chats 140/141, 2026-10-22: the
+            # driver read "le notificaremos por correo… menos de 1 hora"
+            # twice while waiting for the agent).
             if (chat and chat.status == "open"
+                    and ar.action_type not in ("escalate-priority", "escalate_to_human")
                     and (chat.bot_phase or "") not in ("escalated", "dispatch_takeover")):
                 lang = getattr(chat, "locale", "en") or "en"
                 agent = chat.agent_name or "Agente"
                 if lang.startswith("es"):
-                    msg = "Su solicitud est siendo revisada por un supervisor. Le notificaremos por correo electronico cuando sea procesada. Normalmente toma menos de 1 hora."
+                    msg = "Tu solicitud está en revisión con el equipo. Te avisamos aquí mismo en cuanto esté lista."
                 else:
-                    msg = "Your request is being reviewed by a supervisor. We'll notify you by email when it's processed. It typically takes less than 1 hour."
+                    msg = "Your request is being reviewed by the team. We'll let you know right here as soon as it's done."
                 bot_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="bot", message=msg)
                 db.add(bot_msg)
                 await db.commit()
@@ -1581,8 +1633,10 @@ async def _generate_ai_response(
             "role": h.get("role", "user"),
             "content": h.get("content", ""),
         })
-    # Add current message
-    messages.append({"role": "user", "content": user_msg})
+    # The current message is normally the last history row already (it is
+    # saved before the reply task starts) — only add it when it is not.
+    if not messages or messages[-1].get("content") != user_msg:
+        messages.append({"role": "user", "content": user_msg})
 
     # Build user context
     ctx = await _get_user_context(chat.user_id, db, lang)
@@ -1592,6 +1646,7 @@ async def _generate_ai_response(
     # rider whose profile said English but who wrote in Spanish was answered
     # in English by the model and in Spanish by the fallback.
     ctx["lang"] = lang
+    ctx["handoff"] = await _handoff_state(chat.id, db)
 
     # Try the configured LLM first (Moonshot; OpenAI path dormant)
     try:
@@ -1651,7 +1706,7 @@ async def _generate_ai_response(
         return fallback, []
 
     if lang.startswith("es"):
-        return f"Entiendo, {user_name}. Podria darme un poco mas de detalle sobre lo que necesita?", []
+        return f"Entiendo, {user_name}. ¿Me das un poco más de detalle sobre lo que necesitas?", []
     return f"I understand, {user_name}. Could you give me a bit more detail?", []
 
 
@@ -1746,6 +1801,23 @@ _HANDLED_BOT_PHASES = {
 # and there is no tool-result round-trip, so they must never become
 # ActionRequests in the dispatch queue.
 _READ_ONLY_TOOL_CALLS = {"get_trip_details", "get_user_trips"}
+
+
+_CLOSING_CUES = ("algo más", "algo mas", "anything else", "a la orden")
+
+
+async def _conversation_was_closing(chat_id: int, db: AsyncSession) -> bool:
+    """True when the bot's last message was the "anything else?" beat — the
+    only moment a short "gracias" is a goodbye. Otherwise the thanks goes to
+    the model, which says what happens next (prod chat 159)."""
+    last_bot = (await db.execute(
+        select(SupportMessage.message).where(
+            SupportMessage.chat_id == chat_id,
+            SupportMessage.sender_role == "bot")
+        .order_by(SupportMessage.created_at.desc(), SupportMessage.id.desc())
+        .limit(1))).scalar_one_or_none()
+    text = (last_bot or "").lower()
+    return any(c in text for c in _CLOSING_CUES)
 
 
 async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSession):
@@ -1872,19 +1944,27 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
 
         # Gather user context for smarter responses
         ctx = await _get_user_context(chat.user_id, db, lang)
+        # A person already on this chat (or already called): no second
+        # transfer notice, no "I'm connecting you" as if for the first time.
+        handoff = await _handoff_state(chat.id, db)
 
         # 1) Frustration auto-escalation  angry user gets supervisor fast
         if _detect_frustration(user_msg) and not _match_keywords(user_msg, _THANK_KEYWORDS):
             chat.needs_escalation = True
             chat.bot_phase = "escalated"
             if lang.startswith("es"):
-                esc = f"Lamento mucho esta experiencia, {user_name}. Entiendo tu frustracion y quiero que recibas la mejor atencion posible. Voy a conectarte de inmediato con un supervisor que podra resolver tu caso directamente."
-                sys_msg = "Caso escalado automaticamente por urgencia. Un supervisor se conectara en breve."
+                esc = (f"Lamento la situación, {user_name}. Ya le avisé a tu agente especializado, que te responde aquí mismo."
+                       if handoff else
+                       f"Lamento la situación, {user_name}. Te paso ahora mismo con un agente especializado que lo revisa contigo aquí mismo.")
+                sys_msg = "Un agente especializado se conectará en breve."
             else:
-                esc = f"I'm truly sorry about this experience, {user_name}. I completely understand your frustration and I want you to get the best possible attention. I'm connecting you right away with a supervisor who can resolve your case directly."
-                sys_msg = "Case automatically escalated due to urgency. A supervisor will connect shortly."
+                esc = (f"I'm sorry about this, {user_name}. I've let your specialized agent know, and they'll answer you right here."
+                       if handoff else
+                       f"I'm sorry about this, {user_name}. I'm passing you right now to a specialized agent who will review it with you right here.")
+                sys_msg = "A specialized agent will connect shortly."
             replies.append({"role": "bot", "message": esc, "sender_name": agent})
-            replies.append({"role": "system", "message": sys_msg, "sender_name": "Sistema" if lang.startswith("es") else "System"})
+            if not handoff:
+                replies.append({"role": "system", "message": sys_msg, "sender_name": "Sistema" if lang.startswith("es") else "System"})
             if _HAS_FIRESTORE:
                 # Build case summary for dispatch
                 try:
@@ -1919,15 +1999,22 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             # The exact acknowledgment (user spec 2026-10-04): reassure and
             # say the transfer is already happening — no fake ETA.
             if lang.startswith("es"):
-                esc = (f"No te preocupes, {user_name}. Ya te transfiero a un "
+                esc = (f"No te preocupes, {user_name}. Ya le avisé a tu agente "
+                       "especializado, que te responde aquí mismo."
+                       if handoff else
+                       f"No te preocupes, {user_name}. Ya te transfiero a un "
                        "agente especializado que te atenderá personalmente.")
                 sys_msg = "Un agente especializado se conectará en breve."
             else:
-                esc = (f"Don't worry, {user_name}. I'm transferring you to a "
+                esc = (f"Don't worry, {user_name}. I've let your specialized "
+                       "agent know, and they'll answer you right here."
+                       if handoff else
+                       f"Don't worry, {user_name}. I'm transferring you to a "
                        "specialized agent who will assist you personally.")
                 sys_msg = "A specialized agent will connect shortly."
             replies.append({"role": "bot", "message": esc, "sender_name": agent})
-            replies.append({"role": "system", "message": sys_msg, "sender_name": "Sistema" if lang.startswith("es") else "System"})
+            if not handoff:
+                replies.append({"role": "system", "message": sys_msg, "sender_name": "Sistema" if lang.startswith("es") else "System"})
             if _HAS_FIRESTORE:
                 # Build case summary for dispatch
                 try:
@@ -1971,7 +2058,9 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
         # (user report 2026-10-14).
         elif (len(user_msg.strip()) <= 40 and "?" not in user_msg
               and "¿" not in user_msg
-              and _match_keywords(user_msg, _THANK_KEYWORDS)):
+              and _match_keywords(user_msg, _THANK_KEYWORDS)
+              and not handoff
+              and await _conversation_was_closing(chat.id, db)):
             closing = _CLOSING_RESPONSES_ES if lang.startswith("es") else _CLOSING_RESPONSES_EN
             close = _rng.choice(closing).format(name=user_name)
             replies.append({"role": "bot", "message": close, "sender_name": agent})
@@ -2052,7 +2141,7 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             # flag or the escalate_to_human tool): say so IN the chat like
             # the scripted escalations do, so the transfer is something the
             # user sees happen — not a promise with nothing behind it.
-            if chat.bot_phase == "escalated":
+            if chat.bot_phase == "escalated" and not handoff:
                 sys_text = ("Un agente especializado se conectará en breve."
                             if lang.startswith("es")
                             else "A specialized agent will connect shortly.")
@@ -2255,8 +2344,8 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str,
             # (the transfer lines), so it stays exempt.
             if not replies and (chat.bot_phase or "") != "escalated":
                 _lang0 = (getattr(chat, "locale", "en") or "en")
-                _fb0 = (f"Entiendo, {user_name}. Podria darme un poco mas de "
-                        "detalle sobre lo que necesita?" if _lang0.startswith("es")
+                _fb0 = (f"Entiendo, {user_name}. ¿Me das un poco más de "
+                        "detalle sobre lo que necesitas?" if _lang0.startswith("es")
                         else f"I understand, {user_name}. Could you give me a "
                              "bit more detail?")
                 replies = [{"role": "bot", "message": _fb0,
@@ -2374,8 +2463,8 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str,
                                                 True):
                         return
                     _lang2 = (getattr(chat2, "locale", "en") or "en")
-                    _fb2 = (f"Entiendo, {user_name}. Podria darme un poco mas "
-                            "de detalle sobre lo que necesita?"
+                    _fb2 = (f"Entiendo, {user_name}. ¿Me das un poco más "
+                            "de detalle sobre lo que necesitas?"
                             if _lang2.startswith("es")
                             else f"I understand, {user_name}. Could you give "
                                  "me a bit more detail?")
@@ -3316,7 +3405,11 @@ async def submit_bug_report(body: "BugReportBody", user: User = Depends(_get_cur
 
     category = body.category.strip()[:50]
     description = body.description.strip()
-    chat = await _get_or_create_support_chat(user, db, subject=f"Bug report: {category}")
+    # The account's language (the report form sends none): a Spanish driver
+    # was greeted "Hi José" on every report (12 prod chats, Oct 2026).
+    chat = await _get_or_create_support_chat(
+        user, db, subject=f"Bug report: {category}",
+        locale=(user.locale or "es")[:5])
     chat_id = chat["id"]
 
     meta_bits = [b for b in (body.platform.strip(), body.app_version.strip()) if b]
@@ -3365,6 +3458,18 @@ async def submit_bug_report(body: "BugReportBody", user: User = Depends(_get_cur
         _safe_create_task(_send_bug_email_bg())
     else:
         logging.warning("[bug-report] BUG_REPORT_EMAIL not set — report %s only in support chat", msg.id)
+
+    # The bot answers the report right away, like any chat message — it used
+    # to wait for the 3-minute stuck-chat sweep, so drivers sat 5-13 min with
+    # no answer (prod chats 164/165/193/198).
+    if chat_row and (chat_row.bot_phase or "") not in ("dispatch_takeover", "escalated"):
+        _old = _reply_tasks.pop(chat_id, None)
+        if _old is not None and not _old.done():
+            _old.cancel()
+        _reply_task_started[chat_id] = time.monotonic()
+        _reply_tasks[chat_id] = _safe_create_task(
+            _background_bot_reply(chat_id, report_text, user.first_name or "Cliente",
+                                  chat_row.bot_phase or "welcome", anchor_msg_id=msg.id))
 
     return {"ok": True, "chat_id": chat_id, "message_id": msg.id}
 

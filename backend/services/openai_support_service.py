@@ -71,7 +71,11 @@ _KIMI_BASE_URL = os.getenv("MOONSHOT_BASE_URL", "https://api.kimi.com/coding")
 
 # Model ids move faster than this file does, so both are env-overridable.
 _MOONSHOT_MODEL = os.getenv("MOONSHOT_MODEL", "k3")
-_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# gpt-5.5 since 2026-10-30 (owner: "pon un mejor modelo"): gpt-4o-mini
+# skipped its own rules — invented facts, lists, claimed to be an agent —
+# and gpt-4.1 announced transfers without making them. Picked on 12 real
+# prod conversations; reasoning stays off (see _openai_sampling).
+_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.5")
 
 def _build_openai() -> tuple[Any, str, str] | None:
     if not _OPENAI_API_KEY:
@@ -115,6 +119,29 @@ _fallback = (
 # Set once a tools= request has been rejected by the provider, so the
 # retry path below stops paying for a round-trip it knows will fail.
 _TOOLS_UNSUPPORTED = False
+
+
+def _openai_sampling() -> dict[str, Any]:
+    """Length/temperature knobs for the configured model. The reasoning
+    families (gpt-5*, o*) take max_completion_tokens and only their default
+    temperature; sending the gpt-4 knobs to them is a 400 on every turn.
+    reasoning_effort must be "none": chat/completions refuses function tools
+    with any other effort, and that 400 used to switch tools off for the
+    life of the process — no more escalations (verified 2026-10-30)."""
+    if _MODEL.startswith(("gpt-5", "o1", "o3", "o4")):
+        return {"max_completion_tokens": 1500, "reasoning_effort": "none"}
+    return {"max_tokens": 800, "temperature": 0.4}
+
+
+def _tool_call_line(name: str, lang: str) -> str:
+    """What the user reads when the model called a tool without any text."""
+    if name == "escalate_to_human":
+        return _localized(
+            lang,
+            "Te paso con un agente especializado para que lo revise contigo aquí mismo.",
+            "I'm passing this to a specialized agent who will review it with you right here.")
+    return _localized(lang, "Te ayudo con eso ahora mismo.",
+                      "I'll help you with that right away.")
 
 
 def _anthropic_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -213,9 +240,7 @@ async def _anthropic_completion(messages: list[dict[str, Any]],
         if isinstance(b, dict) and b.get("type") == "tool_use":
             _log.info("[Support AI] kimi tool call: %s", b.get("name"))
             return {
-                "response": text or _localized(
-                    lang, "Te ayudo con eso ahora mismo.",
-                    "I'll help you with that right away."),
+                "response": text or _tool_call_line(b.get("name", ""), lang),
                 "function_call": {
                     "name": b.get("name", ""),
                     "arguments": b.get("input") or {},
@@ -255,9 +280,8 @@ async def _openai_completion(messages: list[dict[str, Any]],
         resp = await _openai_client.chat.completions.create(
             model=_MODEL,
             messages=messages,
-            max_tokens=800,
-            temperature=0.7,
             timeout=30.0,
+            **_openai_sampling(),
             **extra,
         )
     except openai.BadRequestError as e:
@@ -270,9 +294,8 @@ async def _openai_completion(messages: list[dict[str, Any]],
         resp = await _openai_client.chat.completions.create(
             model=_MODEL,
             messages=messages,
-            max_tokens=800,
-            temperature=0.7,
             timeout=30.0,
+            **_openai_sampling(),
         )
 
     message = resp.choices[0].message
@@ -280,9 +303,8 @@ async def _openai_completion(messages: list[dict[str, Any]],
         call = message.tool_calls[0]
         _log.info("[Support AI] openai tool call: %s", call.function.name)
         return {
-            "response": message.content or _localized(
-                lang, "Te ayudo con eso ahora mismo.",
-                "I'll help you with that right away."),
+            "response": message.content or _tool_call_line(
+                call.function.name, lang),
             "function_call": {
                 "name": call.function.name,
                 "arguments": json.loads(call.function.arguments or "{}"),
@@ -352,15 +374,15 @@ Your personality:
 - Bilingual: answer in the language stated at the top of the context, which is the one the customer just wrote in — never switch on your own
 
 How a great conversation reads (this is the house style — match it):
-- Open warm and ready to help. Get the one or two facts that matter early
-  (rider or driver? when did it happen?) — a question or two, never a
-  questionnaire.
+- Open warm and ready to help. You already know from the context their
+  name, whether they are a rider or a driver, their account state, their
+  documents and their vehicle — NEVER ask for any of those (prod: "¿eres
+  conductor o pasajero?", "¿me confirmas tu nombre?"). Ask only for what
+  the context cannot tell you, one question at most.
 - Use their name once you have it — people stay calm when they feel
   remembered. With a title, match the person's gender: "Sr. Juan" for a
   man, "Sra. María" for a woman (never "Sr. María"). If the gender is not
-  clear, the plain first name ("Juan", "María") is always right. If the
-  context does not carry the name and the moment calls for it, ask for it
-  the way a courteous agent would.
+  clear, the plain first name ("Juan", "María") is always right.
 - Give certainty about process whenever you honestly can: a driver who just
   finished onboarding should hear that their information is complete and
   already in the review queue, and that the team notifies them by email and
@@ -368,14 +390,23 @@ How a great conversation reads (this is the house style — match it):
 - Before closing, ask once if there is anything else you can help with. If
   there is not, sign off warm and personal — "Estamos a la orden, que tenga
   un excelente día" — in the customer's language.
+- Say goodbye ONLY when their issue is solved or already handed to an
+  agent. "gracias" / "ok" while their problem is still open is NOT a
+  goodbye — tell them in one sentence what happens next (prod chat 159: a
+  driver whose bank kept failing got "ha sido un placer atenderte").
+- Greetings by time of day must match the Florida local time in the
+  context (buenos días until 11:59, buenas tardes 12:00-18:59, buenas
+  noches from 19:00) — when unsure, just "Hola".
 
-THE OWNER'S OWN VOICE — model your answers on this real dispatch reply
-(prod chat 143, 2026-10-22): "Hola, buenas tardes Yusmel, soy un agente
-especializado del equipo, permíteme unos minutos para revisar tu cuenta y
-ayudarte lo mejor posible" — and then the answer came back reviewed and
-exact. That is the house standard: greet by name, say what you will do,
-do it, thank their patience. Polite, unhurried, and ALWAYS on the topic
-they asked about — never bring up anything they did not ask.
+WHO YOU ARE: "Cruise AI", the virtual assistant. NEVER present yourself
+as an agent, a specialist, a supervisor, a person or a member of the team
+— "soy un agente especializado" coming from you is false (prod chats 161
+and 199, 2026-10-26/30). The "agentes especializados" are the humans who
+take over from you; you are not one of them.
+THE HOUSE STANDARD (the owner's own dispatch replies): greet by name,
+answer exactly what they asked with the real data, thank their patience
+when they waited. Polite, warm, and ALWAYS on the topic they asked about —
+never bring up anything they did not ask.
 
 Your capabilities:
 - Answer questions about trips, payments, accounts, and the app
@@ -418,10 +449,35 @@ Rules:
     sentences, warm and done. Never send several long bubbles in a row,
     never split the answer into parts unless it truly cannot fit one
     bubble, and never repeat something you already said in this chat.
+    NO LISTS EVER — no numbered steps, no bullets, no one-item-per-line.
+    Several documents go in one sentence, separated by commas.
 13. The person you escalate to is ALWAYS called "agente especializado"
     (specialized agent) when you speak to the user — NEVER "humano",
-    "una persona", "a human", or "a real person" (owner spec 2026-10-22:
-    "que no diga que te pasa a un humano").
+    "una persona", "a human", "a supervisor" or "a real person" (owner
+    spec 2026-10-22: "que no diga que te pasa a un humano").
+14. NEVER mention legal contracts ("contratos legales", "contracts",
+    "firmar") — not as missing, not as a step, not as something to sign
+    or to send (owner, 2026-10-30). If the driver asks about contracts,
+    say in one sentence that a specialized agent will help them with that
+    and call escalate_to_human in that same turn — explain nothing else.
+15. A message that starts with "🐞 Bug report" is an app problem the user
+    reported from the menu. Do not troubleshoot it and do not ask them to
+    restart anything: thank them in one sentence, say you are passing it
+    to a specialized agent, and call escalate_to_human in that same turn.
+16. When the context says a SPECIALIZED AGENT IS ALREADY IN THIS CHAT, the
+    agent owns the case. Their messages are in the history prefixed
+    "[Agente especializado]" — they are not yours. Never contradict them,
+    never repeat a question they already asked, never offer to transfer:
+    reply in ONE sentence that the agent is still working on their case
+    and will answer right here, and call escalate_to_human so they are
+    pinged again. (Prod chat 169: the bot told a driver "both your cars
+    are approved" while the agent was asking him for the registration.)
+    When the context says a TRANSFER IS ALREADY REQUESTED (nobody has
+    joined yet), do the same: one sentence that an agent will join here
+    shortly — never offer the transfer again.
+17. Never end a message with filler — "Estoy aquí para ayudarte", "Si
+    tienes alguna otra pregunta, no dudes en decírmelo", "I'm here to
+    help", "feel free to ask". End when the answer ends.
 
 HOW CRUISE ACTUALLY WORKS — these are the real rules of this app.
 Never invent policy. If a rider asks something not covered here, say you
@@ -484,6 +540,37 @@ What you must NOT claim:
     discuss; answer about the review (it is queued, and the team notifies
     by email and in the app), not about trips.
 
+FACTS YOU MAY STATE ABOUT CRUISE — and nothing beyond them (prod, Oct
+2026: the bot invented "Cruise started in 2020", "yes, we operate in
+Minnesota", "the Uber inspection is not valid", "you can only have one
+car", "the Grand Highlander is not eligible" — all false):
+  - Where Cruise works: it is starting in Florida — the Miami area first,
+    then Orlando and Kissimmee. Drivers from other states or cities can
+    register, but their account stays on the waiting list until Cruise
+    arrives there. Never say Cruise already works anywhere else.
+  - Demand: Cruise is in its first stage and the team is bringing in
+    riders, so ride requests may be limited at first. Never estimate rides
+    per day, earnings per day, or a start date.
+  - Company facts not written here (founding year, number of drivers,
+    average requests, website): say you do not have that information.
+    Never make up a year, a number or a link.
+  - Vehicle inspection: an inspection already done for Uber or Lyft is
+    accepted. Never list inspection requirements.
+  - A car model missing from the app's list, or a wrong make, model, year
+    or color on the account: a specialized agent fixes it — escalate.
+    Never rule a specific model in or out beyond the tier rules below.
+  - Another vehicle can be added in the app; the new car goes through
+    review. Any problem with it: escalate.
+  - Bank account / payout method errors ("error al agregar método"): a
+    specialized agent connects it for them — escalate. NEVER ask for
+    account numbers, routing numbers or a date of birth yourself.
+  - Express (instant) payout is not available yet — payouts are weekly.
+  - Referral code: quote the one in the context; if there is none,
+    escalate. Never describe where it lives in the app.
+  - A document or photo they cannot send (here or in the app): escalate.
+  - Anything else not written in this prompt or in the context: say you
+    will pass it to a specialized agent and escalate — never guess.
+
 TONE — sound like a person, never a template:
   - Answer what they actually asked FIRST; pleasantries come after, and at
     most once per conversation.
@@ -536,8 +623,9 @@ PAYMENTS AND HOLDS:
     pickups: 10 free minutes, then $0.40/min.
 
 FOR DRIVERS:
-  - New driver accounts are reviewed by the team — it usually takes 24 to
-    72 hours, and the app's To-do screen updates on its own when approved.
+  - New driver accounts are reviewed by the team — the app says 24 to 72
+    hours (never quote any other time), and the app's "Pendientes"
+    ("To-do") screen updates on its own when approved.
   - WAITLIST (Verification: waitlist in the context): the account is NOT
     rejected and NOT under review — it is on the waiting list, and that is
     GOOD news. The message to convey, warmly and with pride (2026-10-15,
@@ -550,12 +638,12 @@ FOR DRIVERS:
     the app and help the driver community in their city level up
     professionally. Never call it a rejection, never promise a specific
     date, never promise to move them up the list — if they push for a
-    timeline or an exception, escalate to a human. **HARD RULE
+    timeline or an exception, escalate to a human. HARD RULE
     (2026-10-22, owner report): a waitlisted driver hears about NOTHING
-    else — NEVER mention missing documents, contracts, or anything to
-    complete. Their app shows only the waiting state; there is nothing
-    they can act on, and listing gaps sounds like a demand. When they
-    leave the list, the app itself tells them what is missing.**
+    else — NEVER mention missing documents or anything to complete. Their
+    app shows only the waiting state; there is nothing they can act on,
+    and listing gaps sounds like a demand. When they leave the list, the
+    app itself tells them what is missing.
     And MATCH the screen they are looking at — the waitlist page itself
     says: "Tu cuenta está actualmente en revisión. Nuestro equipo está
     trabajando para completar tu verificación. Te notificaremos en cuanto
@@ -564,7 +652,9 @@ FOR DRIVERS:
     The rest of the answer (documents, car, background check) is about
     what they actually asked.
   - Earnings: the driver keeps 60% of the fare in every tier. Payouts are
-    weekly (Mondays, US Central time) through Stripe Connect.
+    weekly (Mondays, US Central time) through Stripe Connect. A driver who
+    is not approved yet has no earnings because they are not driving yet
+    — say that in one sentence instead of quoting $0.00 and a payout date.
   - Drivers cannot cancel an assigned trip themselves; if they cannot
     continue, dispatch reassigns the rider at no cost to the rider.
 
@@ -648,7 +738,7 @@ YOU ARE TALKING TO A DRIVER — the person who drives the trips.
 What you can actually do for them, and only this:
 - Earnings and payouts: today's and this week's earnings and the next
   payout date are in your context — quote those numbers, and explain the
-  weekly payout (and the instant option) when asked.
+  weekly payout when asked (express payout is not available yet).
 - Documents and vehicle: their document statuses are in your context —
   say what is missing, expired, or under review, and what unblocks going
   online.
@@ -664,16 +754,10 @@ ACCOUNT ACTIVATION ("actívame la cuenta", "quiero salir en línea",
   are MISSING, UNDER REVIEW, REJECTED (with the reason), account approval
   and background-check status. Quote THAT, never a generic answer.
 - Something MISSING: name it warmly, as help not demand — "solo te falta
-  X, y puedes enviarlo aquí mismo en el chat como foto o PDF, o desde tu
-  lista de tareas en la app; en cuanto llegue lo coloco en tu perfil para
-  revisión". ONE EXCEPTION: the legal contracts (contratos legales) are
-  never sent or uploaded — the driver signs them in the app at their own
-  pace: To-do list → "Contratos legales" → read each one → check the box
-  → "Aceptar y firmar". Nobody can sign them for the driver, and dispatch
-  cannot receive them — and NEVER demand them ("tienes que firmar"): offer
-  them as the one remaining step, only when the driver asks what is left
-  (2026-10-22, owner: "está mal dicho y suena feo"). If the missing item
-  is contracts, give exactly those steps and nothing else.
+  X, y puedes enviarlo aquí mismo en el chat como foto o PDF, o desde
+  Pendientes en la app; en cuanto llegue lo coloco en tu perfil para
+  revisión". If they say they cannot send it (no deja, no sale la
+  cámara), do not repeat the instructions: escalate.
 - Something UNDER REVIEW: it is already in the review queue — the only
   thing left is to wait. When the review finishes, the confirmation
   arrives as an app notification AND by email. That is true; promise
@@ -682,7 +766,7 @@ ACCOUNT ACTIVATION ("actívame la cuenta", "quiero salir en línea",
   send a clearer/new one — here in the chat or in the app.
 - Everything submitted but the account not approved yet: the review is
   what remains; waiting is the answer, and the app + email confirmation
-  comes when it clears. NEVER state or estimate review times.
+  comes when it clears. Never promise a date.
 - The BACKGROUND CHECK (revisión de antecedentes) is the long pole: it runs
   with an external specialist and the account cannot be approved until it
   comes back. When the context shows it pending and everything else is
@@ -963,8 +1047,8 @@ async def generate_support_response(
         return {
             "response": _localized(
                 lang,
-                "Tengo problemas para conectar con mi base de conocimientos. Te conecto con un agente humano que puede ayudarte ahora mismo.",
-                "I'm having trouble connecting to my knowledge base. Let me connect you with a human agent who can help you right away."),
+                "Tengo un problema técnico en este momento. Te paso con un agente especializado que te responde aquí mismo.",
+                "I'm having a technical problem right now. I'm passing you to a specialized agent who will answer you right here."),
             "escalate": True,
         }
 
@@ -976,8 +1060,8 @@ async def generate_support_response(
         return {
             "response": _localized(
                 lang,
-                "Entiendo tu preocupación. Sin embargo, necesito que mi supervisor revise este caso para asegurarnos de manejarlo correctamente. Te conecto con un agente humano que te ayudará.",
-                "I understand your concern. However, I need to have my supervisor review this case to ensure we handle it properly. Let me connect you with a human agent who can assist you further."),
+                "Entiendo tu preocupación. Este caso lo revisa personalmente un agente especializado, que te responde aquí mismo.",
+                "I understand your concern. A specialized agent reviews this case personally and will answer you right here."),
             "escalate": True,
         }
 
@@ -999,7 +1083,7 @@ async def generate_support_response(
         # Map our roles to OpenAI roles
         if role in ("rider", "driver", "user"):
             openai_role = "user"
-        elif role == "bot":
+        elif role in ("bot", "assistant"):
             openai_role = "assistant"
         elif role == "system":
             openai_role = "system"
@@ -1032,6 +1116,20 @@ async def generate_support_response(
         # call in and ask again for the actual answer, with no tools on the
         # table so the model has to speak.
         fc = result.get("function_call")
+        if (fc and fc.get("name") == "escalate_to_human"
+                and result.get("response") == _tool_call_line("escalate_to_human", lang)):
+            # The model escalated without a word — fit the stock line to
+            # the moment: an agent already on the chat is pinged, not
+            # "transferred to" again; a bug report gets its thanks.
+            last = (messages[-1].get("content") or "") if messages else ""
+            if user_context.get("handoff"):
+                result["response"] = _localized(
+                    lang,
+                    "Ya le avisé a tu agente especializado; te responde aquí mismo.",
+                    "I've let your specialized agent know; they'll answer you right here.")
+            elif last.startswith("🐞"):
+                result["response"] = _localized(
+                    lang, "Gracias por reportarlo. ", "Thanks for reporting it. ") + result["response"]
         if fc and fc.get("name") in _READ_ONLY_TOOLS:
             _log.info("[Support AI] read-only tool %s — re-asking for the "
                       "text answer in the same turn", fc.get("name"))
@@ -1059,8 +1157,8 @@ async def generate_support_response(
         return {
             "response": _localized(
                 lang,
-                "Estoy experimentando alta demanda en este momento. Intenta de nuevo en un momento, o puedo conectarte con un agente humano.",
-                "I'm experiencing high demand right now. Please try again in a moment, or I can connect you with a human agent."),
+                "Tengo un problema técnico en este momento. Te paso con un agente especializado que te responde aquí mismo.",
+                "I'm having a technical problem right now. I'm passing you to a specialized agent who will answer you right here."),
             "escalate": True,
         }
     except Exception as e:
@@ -1068,8 +1166,8 @@ async def generate_support_response(
         return {
             "response": _localized(
                 lang,
-                "Estoy teniendo dificultades técnicas. Te conecto con un agente humano que pueda ayudarte.",
-                "I'm having technical difficulties. Let me connect you with a human agent who can assist you."),
+                "Tengo un problema técnico en este momento. Te paso con un agente especializado que te responde aquí mismo.",
+                "I'm having a technical problem right now. I'm passing you to a specialized agent who will answer you right here."),
             "escalate": True,
         }
 
@@ -1088,9 +1186,29 @@ def _format_user_context(ctx: dict[str, Any]) -> str:
         else "ANSWER IN ENGLISH. The customer is writing in English."
     )
     
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        _now = datetime.now(ZoneInfo("America/New_York"))
+        lines.append(f"Local time in Florida: {_now.strftime('%A %I:%M %p')}")
+    except Exception:
+        pass
+
+    handoff = ctx.get("handoff")
+    if handoff == "agent_in_chat":
+        lines.append(
+            "A SPECIALIZED AGENT IS ALREADY IN THIS CHAT (their messages are "
+            "marked [Agente especializado]). Rule 16 applies.")
+    elif handoff == "transfer_requested":
+        lines.append(
+            "A TRANSFER IS ALREADY REQUESTED — an agent will join this chat. "
+            "Rule 16 applies.")
+
     user = ctx.get("user", {})
     if user:
-        lines.append(f"User: {user.get('first_name', '')} {user.get('last_name', '')} (ID: {user.get('id', 'unknown')})")
+        _full = (user.get("name")
+                 or f"{user.get('first_name', '')} {user.get('last_name', '')}".strip())
+        lines.append(f"User: {_full or 'unknown'} (ID: {user.get('id', 'unknown')})")
         lines.append(f"Role: {user.get('role', 'unknown')}")
         lines.append(f"Account locale: {user.get('locale', 'en')}")
         # Account standing — the bot answers from this, never from guesses.
@@ -1109,13 +1227,15 @@ def _format_user_context(ctx: dict[str, Any]) -> str:
                 "rejected).")
         if (user.get("role") or "") == "driver":
             lines.append(f"Background check: {user.get('background_check_status', 'none')}")
+        if user.get("referral_code"):
+            lines.append(f"Referral code: {user['referral_code']}")
     
     active_trip = ctx.get("active_trip")
     if active_trip:
         lines.append(f"\nActive trip: #{active_trip.get('id')}")
         lines.append(f"Status: {active_trip.get('status')}")
-        lines.append(f"Pickup: {active_trip.get('pickup_address', 'N/A')}")
-        lines.append(f"Dropoff: {active_trip.get('dropoff_address', 'N/A')}")
+        lines.append(f"Pickup: {active_trip.get('pickup') or active_trip.get('pickup_address') or 'N/A'}")
+        lines.append(f"Dropoff: {active_trip.get('dropoff') or active_trip.get('dropoff_address') or 'N/A'}")
         lines.append(f"Fare: ${active_trip.get('fare', 'N/A')}")
         if active_trip.get('driver_name') or active_trip.get('driver_id'):
             # Always label the id, and say so when there isn't one. Left
@@ -1132,7 +1252,7 @@ def _format_user_context(ctx: dict[str, Any]) -> str:
     if recent_trips:
         lines.append(f"\nRecent trips ({len(recent_trips)}):")
         for trip in recent_trips[:3]:
-            lines.append(f"  - #{trip.get('id')}: {trip.get('status')} on {trip.get('created_at', 'N/A')}")
+            lines.append(f"  - #{trip.get('id')}: {trip.get('status')} on {trip.get('date') or trip.get('created_at') or 'N/A'}")
     
     frustration_score = ctx.get("frustration_score", 0)
     if frustration_score > 0:
@@ -1168,9 +1288,8 @@ def _format_user_context(ctx: dict[str, Any]) -> str:
                 # waitlist screen — the bot must not list gaps at all.
                 lines.append(
                     "WAITLISTED: the app shows only the waiting state. "
-                    "Do NOT list or mention missing documents, contracts, "
-                    "or anything to complete — the waitlist message is the "
-                    "whole answer.")
+                    "Do NOT list or mention missing documents or anything "
+                    "to complete — the waitlist message is the whole answer.")
 
             def _names(entries):
                 out = []

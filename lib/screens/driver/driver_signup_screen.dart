@@ -26,6 +26,7 @@ import '../privacy_policy_screen.dart';
 import 'driver_agreement_screen.dart';
 import 'driver_contracts_screen.dart';
 import 'onboarding/driver_todo_screen.dart';
+import '../../utils/pdf_pick.dart';
 import '../../utils/ssn_validator.dart';
 import 'license_guidelines_screen.dart';
 
@@ -852,6 +853,28 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                   Navigator.pop(ctx);
                   final path = await _pickGallery();
                   if (path != null) onPicked(path);
+                },
+              ),
+              // Insurance / registration often come as the insurer's PDF.
+              if (pdfPickSupported) const SizedBox(height: 10),
+              if (pdfPickSupported) _sheetOption(
+                icon: Icons.picture_as_pdf_rounded,
+                label: S.of(context).uploadPdf,
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    final path = await pickPdfDocument();
+                    if (path != null) onPicked(path);
+                  } on PdfTooLargeException {
+                    if (!mounted) return;
+                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                      SnackBar(
+                        content: Text(S.of(context).pdfTooLarge),
+                        backgroundColor: Colors.red,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
                 },
               ),
             ],
@@ -2420,6 +2443,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               child: done
                   ? (kIsWeb
                         ? CachedNetworkImage(imageUrl: filePath, fit: BoxFit.cover, fadeInDuration: const Duration(milliseconds: 200))
+                        : isPdfPath(filePath)
+                        ? const Icon(Icons.picture_as_pdf_rounded, color: _gold, size: 24)
                         : Image.file(
                             File(filePath),
                             fit: BoxFit.cover,

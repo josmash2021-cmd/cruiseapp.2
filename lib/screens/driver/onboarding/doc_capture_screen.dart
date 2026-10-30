@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
+import '../../../utils/pdf_pick.dart';
 import '../../../widgets/capture_camera_view.dart';
 import '../../../widgets/doc_guidelines_view.dart';
 import 'onboarding_items.dart';
@@ -87,6 +88,18 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
     }
   }
 
+  Future<void> _pickPdf() async {
+    try {
+      final path = await pickPdfDocument();
+      if (path != null && mounted) setState(() => _photoPath = path);
+    } on PdfTooLargeException {
+      if (!mounted) return;
+      showOnboardingError(context, S.of(context).pdfTooLarge);
+    } catch (e) {
+      debugPrint('⚠️ PDF pick failed: $e');
+    }
+  }
+
   /// "Take photo" opens the SHARED in-app camera (owner spec 2026-10-23:
   /// every document camera wears the license-capture design — rounded
   /// preview card, X inside, shutter + flash). Gallery stays native.
@@ -149,6 +162,21 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
                 _pick(ImageSource.gallery);
               },
             ),
+            if (pdfPickSupported)
+              ListTile(
+                leading: const Icon(
+                  Icons.picture_as_pdf_outlined,
+                  color: kOnboardingGold,
+                ),
+                title: Text(
+                  s.uploadPdf,
+                  style: const TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickPdf();
+                },
+              ),
           ],
         ),
       ),
@@ -270,7 +298,55 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
                   const SizedBox(height: 20),
 
                   // ── Upload area / picked photo (full-bleed, own aspect) ──
-                  if (_photoPath != null)
+                  if (_photoPath != null && isPdfPath(_photoPath))
+                    GestureDetector(
+                      onTap: _showPickOptions,
+                      child: Container(
+                        width: double.infinity,
+                        height: 160,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: kOnboardingGold.withValues(alpha: 0.45),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.picture_as_pdf_outlined,
+                              color: kOnboardingGold,
+                              size: 44,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              s.pdfReady,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child: Text(
+                                _photoPath!.split(Platform.pathSeparator).last,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else if (_photoPath != null)
                     Image.file(
                       File(_photoPath!),
                       width: double.infinity,

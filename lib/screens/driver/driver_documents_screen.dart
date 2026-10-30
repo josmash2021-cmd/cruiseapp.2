@@ -6,6 +6,7 @@ import '../../services/haptic_service.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
+import '../../utils/pdf_pick.dart';
 import '../../services/socket_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/feathered_image.dart';
@@ -1694,6 +1695,35 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                   if (img != null) _uploadFile(img.path, docType ?? 'other');
                 },
               ),
+              // The car's papers often come as the insurer's PDF.
+              if (pdfPickSupported &&
+                  (docType == null ||
+                      const {'insurance', 'registration', 'vehicle_inspection'}
+                          .contains(docType))) ...[
+                const SizedBox(height: 12),
+                _uploadOption(
+                  ctx,
+                  Icons.picture_as_pdf_rounded,
+                  S.of(ctx).uploadPdf,
+                  S.of(ctx).uploadPdfHint,
+                  () async {
+                    Navigator.pop(ctx);
+                    try {
+                      final path = await pickPdfDocument();
+                      if (path != null) _uploadFile(path, docType ?? 'other');
+                    } on PdfTooLargeException {
+                      if (!mounted) return;
+                      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                        SnackBar(
+                          content: Text(S.of(context).pdfTooLarge),
+                          backgroundColor: Colors.red,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
               const SizedBox(height: 20),
               TextButton(
                 onPressed: () => Navigator.pop(ctx),

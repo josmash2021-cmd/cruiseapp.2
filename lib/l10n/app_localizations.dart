@@ -355,6 +355,14 @@ class S {
       _es ? 'Selecciona de tus fotos' : 'Select from photos';
   String get chooseFromGallery =>
       _es ? 'Seleccionar de la Galería' : 'Choose from Gallery';
+  // Documents as PDF (2026-10-30: drivers could only send photos).
+  String get uploadPdf => _es ? 'Subir PDF' : 'Upload PDF';
+  String get uploadPdfHint =>
+      _es ? 'Póliza o documento en PDF' : 'Policy or document as PDF';
+  String get pdfReady => _es ? 'Documento PDF listo' : 'PDF document ready';
+  String get pdfTooLarge => _es
+      ? 'El PDF pesa más de 10 MB. Envía uno más liviano.'
+      : 'The PDF is larger than 10 MB. Send a smaller one.';
 
   // ── Profile Review ────────────────────────────────────────────────────────
   String get everythingLookGood =>

@@ -3038,6 +3038,9 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         logging.warning("[Verify] Cannot create uploads dir: %s", e)
         docs_dir = None
 
+    # Insurance and registration often come as the insurer's PDF
+    # (2026-10-30: drivers could not register with one). Max 10 MB.
+    pdf_labels = {"insurance", "registration", "vehicle_registration"}
     photo_fields = [
         ("license_front", "license_front"),
         ("license_back", "license_back"),
@@ -3063,10 +3066,18 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
             ext = "jpg"
         elif decoded[:8] == b'\x89PNG\r\n\x1a\n':
             ext = "png"
+        elif decoded[:4] == b'%PDF' and label in pdf_labels:
+            ext = "pdf"
         else:
+            logging.warning("[Verify] %s of user %s is not a supported file — dropped",
+                            field, db_user.id)
             continue
-        validate_image_bytes(decoded)
-        if len(decoded) > 4 * 1024 * 1024:
+        if ext == "pdf":
+            if len(decoded) > 10 * 1024 * 1024:
+                raise HTTPException(413, "PDF too large (max 10MB)")
+        else:
+            validate_image_bytes(decoded)
+        if ext != "pdf" and len(decoded) > 4 * 1024 * 1024:
             # Never lose a real photo over the size cap (driver 141's licence
             # front vanished silently, 2026-10-06): shrink it instead. If
             # Pillow can't, store the original rather than dropping it.
@@ -3078,7 +3089,7 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
                     "[Verify] %s of user %s could not be recompressed — storing original",
                     field, db_user.id,
                 )
-        content_type = "image/jpeg" if ext == "jpg" else "image/png"
+        content_type = {"jpg": "image/jpeg", "png": "image/png"}.get(ext, "application/pdf")
         fname = f"verify_{db_user.id}_{label}_{int(time.time())}.{ext}"
         # Upload to Firebase Storage (persistent)
         fb_url = None

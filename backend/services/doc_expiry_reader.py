@@ -92,6 +92,9 @@ async def suggest_expiry_from_photo(file_path: str, doc_type: str,
     client = _client()
     if client is None:
         return None
+    # A PDF is not an image the vision call accepts; dispatch reads it.
+    if (file_path or "").split("?")[0].lower().endswith(".pdf"):
+        return None
     url = _public_url(file_path)
     if url is None:
         return None

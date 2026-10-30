@@ -3748,14 +3748,14 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     file_path = None
     photo_b64 = body.get("photo")
     if photo_b64:
-        if not isinstance(photo_b64, str) or len(photo_b64) > 6 * 1024 * 1024:
-            raise HTTPException(413, "Document image too large (max ~4.5MB)")
+        if not isinstance(photo_b64, str) or len(photo_b64) > 14 * 1024 * 1024:
+            raise HTTPException(413, "Document too large (max 4MB photo, 10MB PDF)")
         try:
             decoded = base64.b64decode(photo_b64, validate=True)
         except Exception:
             raise HTTPException(400, "Invalid base64 data")
-        if len(decoded) > 4 * 1024 * 1024:
-            raise HTTPException(413, "Decoded document too large (max 4MB)")
+        if len(decoded) > (10 if decoded[:4] == b'%PDF' else 4) * 1024 * 1024:
+            raise HTTPException(413, "Document too large (max 4MB photo, 10MB PDF)")
         # Validate magic bytes
         if decoded[:2] == b'\xff\xd8':
             ext, ct = "jpg", "image/jpeg"
@@ -3841,8 +3841,9 @@ async def _store_driver_document(
     gets it onto their profile through the exact same path). Raises
     HTTPException on invalid data, like the endpoint always did.
     """
-    if len(data) > 4 * 1024 * 1024:
-        raise HTTPException(413, "Document too large (max 4MB)")
+    # PDFs (insurer's policy) up to 10 MB; photos stay at 4 MB.
+    if len(data) > (10 if data[:4] == b'%PDF' else 4) * 1024 * 1024:
+        raise HTTPException(413, "Document too large (max 4MB photo, 10MB PDF)")
 
     # Validate magic bytes
     jpeg_sig = bytes([0xFF, 0xD8])

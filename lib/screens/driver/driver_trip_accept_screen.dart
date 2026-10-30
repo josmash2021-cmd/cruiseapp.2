@@ -1300,16 +1300,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // the upload throttle — the passenger has been watching a frozen car.
       onFirstFixAfterGap: () {
         final p = _lastDriverPos;
-        if (p != null) _gpsService.updatePosition(p, 0, 0);
+        // Unknown heading/speed — never "0 km/h facing north" (2026-10-29).
+        if (p != null) _gpsService.updatePosition(p, null, null);
       },
       onPosition: (pos) {
         if (!mounted) return;
         _lastDriverPos = LatLng(pos.latitude, pos.longitude);
         _gpsService.updatePosition(
           LatLng(pos.latitude, pos.longitude),
-          pos.heading,
-          pos.speed,
+          measuredCourseDeg(pos),
+          measuredSpeedMps(pos),
           capturedAt: pos.timestamp,
+          accuracyM: pos.accuracy,
         );
         // Refresh the distance chip. The stream already only fires every 5 m,
         // and rebuilding is skipped unless the rounded label would change —
@@ -1358,9 +1360,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         if (lastPos != null) {
           _gpsService.updatePosition(
             LatLng(lastPos.latitude, lastPos.longitude),
-            lastPos.heading,
-            lastPos.speed,
+            measuredCourseDeg(lastPos),
+            measuredSpeedMps(lastPos),
             capturedAt: lastPos.timestamp,
+            accuracyM: lastPos.accuracy,
           );
         }
       }

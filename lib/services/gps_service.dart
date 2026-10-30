@@ -29,7 +29,25 @@ class GpsService {
   factory GpsService() => _instance;
   GpsService._internal();
 
-  final _database = FirebaseDatabase.instance;
+  // Resolved on use (same singleton) so the position logic is testable
+  // without a Firebase app.
+  FirebaseDatabase get _database => FirebaseDatabase.instance;
+
+  @visibleForTesting
+  LatLng? get reportedPos => _currentPos;
+  @visibleForTesting
+  double get reportedHeading => _currentHeading;
+  @visibleForTesting
+  double get reportedSpeed => _currentSpeed;
+  @visibleForTesting
+  void debugResetReported() {
+    _currentPos = null;
+    _currentPosAt = null;
+    _currentHeading = 0;
+    _currentSpeed = 0;
+    _currentAccuracyM = null;
+    _lastGoodFixAt = null;
+  }
 
   // ── Intervals ───────────────────────────────────────────────────────
   // Adaptive Socket.io interval: fast (300ms) while the driver is on an
@@ -55,6 +73,9 @@ class GpsService {
   double _currentHeading = 0;
   double _currentSpeed = 0;
   int? _currentCapturedAtMs;
+  DateTime? _currentPosAt;
+  double? _currentAccuracyM;
+  DateTime? _lastGoodFixAt;
   String? _activeDriverId;
   String? _activeTripId;
   bool _presenceSetUp = false;
@@ -117,15 +138,51 @@ class GpsService {
   /// [capturedAt] is the fix's own `Position.timestamp` — it travels to the
   /// rider as `captured_at` so the car's glide is paced by when the fix was
   /// taken, not by when the upload throttle happened to send it.
-  void updatePosition(LatLng pos, double heading, double speed,
-      {DateTime? capturedAt}) {
+  /// [heading] / [speed]: what the platform MEASURED, or null. Owner report
+  /// 2026-10-29 ("no reportaba la ubicación exacta"): Android sends 0 for
+  /// both when it has no Doppler, and those zeros went out as "stopped,
+  /// facing north" — the rider's car pointed north, its animation parked
+  /// and jumped, and the socket feed skipped "slow" updates of a car that
+  /// was moving. Missing values are now derived from the track; a vague
+  /// fix (> 50 m) right after a good one does not replace it.
+  void updatePosition(LatLng pos, double? heading, double? speed,
+      {DateTime? capturedAt, double? accuracyM}) {
+    final arrived = DateTime.now();
+    final acc = accuracyM != null && accuracyM.isFinite && accuracyM > 0
+        ? accuracyM
+        : null;
+    if (acc != null &&
+        acc > 50 &&
+        _lastGoodFixAt != null &&
+        arrived.difference(_lastGoodFixAt!) < const Duration(seconds: 8)) {
+      return; // keep reporting the last good position
+    }
+    if (acc == null || acc <= 25) _lastGoodFixAt = arrived;
+    double? h = heading != null && heading.isFinite && heading >= 0
+        ? heading % 360
+        : null;
+    double? v = speed != null && speed.isFinite && speed >= 0 ? speed : null;
+    final prev = _currentPos, prevAt = _currentPosAt;
+    if (prev != null && prevAt != null && (h == null || v == null)) {
+      final dt = arrived.difference(prevAt).inMilliseconds / 1000.0;
+      if (dt >= 0.3 && dt <= 10) {
+        final d = _haversineMeters(
+            prev.latitude, prev.longitude, pos.latitude, pos.longitude);
+        // Under the fix's own error it is GPS wander, not motion.
+        final minMove = max(2.0, (acc ?? 10.0) * 0.4);
+        v ??= d < minMove ? 0.0 : d / dt;
+        if (h == null && d >= 6) h = _bearingDeg(prev, pos);
+      }
+    }
     _currentPos = pos;
-    _currentHeading = heading;
-    _currentSpeed = speed;
+    _currentPosAt = arrived;
+    _currentAccuracyM = acc;
+    if (h != null) _currentHeading = h;
+    if (v != null) _currentSpeed = v;
     _currentCapturedAtMs = capturedAt?.millisecondsSinceEpoch;
 
     // Adapt upload cadence to trip state / speed.
-    _adaptSocketIOInterval(speed);
+    _adaptSocketIOInterval(_currentSpeed);
 
     final now = DateTime.now();
 
@@ -346,6 +403,7 @@ class GpsService {
       // this over `timestamp` to pace the car's glide: server write time
       // reflects the upload cadence, not the fix spacing.
       if (_currentCapturedAtMs != null) 'captured_at': _currentCapturedAtMs,
+      if (_currentAccuracyM != null) 'accuracy': _currentAccuracyM,
       'status': 'online',
     };
 
@@ -423,6 +481,14 @@ class GpsService {
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────
+
+  static double _bearingDeg(LatLng a, LatLng b) {
+    final la = a.latitude * pi / 180, lb = b.latitude * pi / 180;
+    final dl = (b.longitude - a.longitude) * pi / 180;
+    final y = sin(dl) * cos(lb);
+    final x = cos(la) * sin(lb) - sin(la) * cos(lb) * cos(dl);
+    return (atan2(y, x) * 180 / pi + 360) % 360;
+  }
 
   static double _haversineMeters(
     double lat1,

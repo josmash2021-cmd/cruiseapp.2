@@ -1968,8 +1968,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         }
 
         // Feed GpsService for RTDB upload (800ms throttled)
-        _gpsService.updatePosition(newLL, pos.heading, pos.speed,
-            capturedAt: pos.timestamp);
+        // Measured values only — Android's Doppler-less 0/0 went out as
+        // "stopped, facing north" to the rider and dispatch (2026-10-29).
+        _gpsService.updatePosition(
+            newLL, measuredCourseDeg(pos), measuredSpeedMps(pos),
+            capturedAt: pos.timestamp, accuracyM: pos.accuracy);
 
         _checkOffRouteHysteresis();
 
@@ -2033,10 +2036,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             lat: pos.latitude,
             lng: pos.longitude,
             etaSeconds: _navEta > 0 ? _navEta * 60 : null,
-            heading: pos.heading >= 0 && pos.heading <= 360
-                ? pos.heading
-                : null,
-            speedMps: pos.speed >= 0 ? pos.speed : null,
+            heading: measuredCourseDeg(pos),
+            speedMps: measuredSpeedMps(pos),
             capturedAt: pos.timestamp.toUtc(),
           ).catchError((e) {
             // face_review_required 403 (2026-10-23, owner report): this 5 s

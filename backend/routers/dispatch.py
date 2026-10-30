@@ -3186,6 +3186,133 @@ async def release_trip(
 # released again much later goes back to the normal reach.
 
 _REASSIGNABLE_STATUSES = ("requested", "accepted", "driver_en_route")
+# A reservation before its dispatch window: claimed or still unclaimed.
+_RESERVATION_REASSIGNABLE = ("scheduled", "scheduled_accepted")
+
+
+async def _reassign_reservation(db, trip, mode: str, body) -> dict:
+    """Dispatch moves a reservation (owner request 2026-10-30).
+
+    Like a driver's own drop (scheduled.py), the reservation returns to the
+    marketplace as `scheduled` with no driver:
+      - mode="driver": aimed at the chosen driver (scheduled_target_driver_id)
+        — only they see it and get the push; it is theirs once they accept.
+        Any approved, active driver; being online is not required.
+      - mode="nearest": open to every eligible driver in the state.
+    The previous driver is told without naming dispatch; the rider is told a
+    new driver is being assigned.
+    """
+    target = None
+    if mode == "driver":
+        if not body.driver_id:
+            raise HTTPException(400, "driver_id es obligatorio en modo 'driver'")
+        if trip.driver_id == body.driver_id:
+            raise HTTPException(400, "Ese conductor ya tiene esta reserva")
+        target = (await db.execute(
+            select(User).where(User.id == body.driver_id)
+        )).scalar_one_or_none()
+        if not target or target.role != "driver":
+            raise HTTPException(404, "Driver not found")
+        if (target.status not in ACTIVE_ACCOUNT_STATUSES
+                or target.verification_status != "approved"):
+            raise HTTPException(400, "Ese conductor no está aprobado para recibir viajes")
+    previous_driver_id = trip.driver_id
+    trip.driver_id = None
+    trip.rider_approach_notified_at = None
+    trip.status = "scheduled"
+    trip.scheduled_target_driver_id = target.id if target else None
+    trip.updated_at = datetime.now(timezone.utc)
+    pending = await db.execute(
+        select(DispatchOffer).where(
+            DispatchOffer.trip_id == trip.id, DispatchOffer.status == "pending",
+        )
+    )
+    for offer in pending.scalars().all():
+        offer.status = "canceled"
+    await db.commit()
+    await db.refresh(trip)
+    logging.warning(
+        "[ReassignReservation] trip=%d previous_driver=%s mode=%s target=%s",
+        trip.id, previous_driver_id, mode, target.id if target else None,
+    )
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_scheduled_ride(
+                trip_id=trip.id, rider_id=trip.rider_id, status="scheduled",
+                driver_id=None, scheduled_at=trip.scheduled_at,
+                pickup_address=trip.pickup_address or "",
+                dropoff_address=trip.dropoff_address or "",
+                pickup_lat=trip.pickup_lat or 0, pickup_lng=trip.pickup_lng or 0,
+                dropoff_lat=trip.dropoff_lat or 0, dropoff_lng=trip.dropoff_lng or 0,
+                fare=trip.fare or 0,
+            )
+        except Exception as e:
+            logging.warning("[ReassignReservation] Firestore sync failed: %s", e)
+        try:
+            from routers.scheduled import _bg_mirror_trip_released
+            _safe_create_task(_bg_mirror_trip_released(trip.id, "scheduled"),
+                              name=f"reservation_release_{trip.id}")
+        except Exception as e:
+            logging.warning("[ReassignReservation] release mirror failed: %s", e)
+    if previous_driver_id is not None:
+        old_driver = (await db.execute(
+            select(User).where(User.id == previous_driver_id)
+        )).scalar_one_or_none()
+        if old_driver is not None:
+            try:
+                db.add(Notification(
+                    user_id=old_driver.id,
+                    title="Reserva reasignada",
+                    body="Esta reserva fue asignada a otro conductor.",
+                    notif_type="scheduled_ride_reassigned",
+                    data=json.dumps({"trip_id": trip.id}),
+                ))
+                await db.commit()
+            except Exception as e:
+                logging.warning("[ReassignReservation] inbox row failed: %s", e)
+            if old_driver.fcm_token:
+                _safe_create_task(_send_fcm_push_async(
+                    old_driver.fcm_token,
+                    title="Reserva reasignada",
+                    body="Esta reserva fue asignada a otro conductor.",
+                    title_en="Reservation reassigned",
+                    body_en="This reservation was assigned to another driver.",
+                    locale=user_lang(old_driver),
+                    data={"type": "scheduled_ride_reassigned", "trip_id": str(trip.id)},
+                ))
+        rider = (await db.execute(
+            select(User).where(User.id == trip.rider_id)
+        )).scalar_one_or_none() if trip.rider_id else None
+        if rider is not None and rider.fcm_token:
+            _safe_create_task(_send_fcm_push_async(
+                rider.fcm_token,
+                title="Actualización de reserva",
+                body="Estamos asignando un nuevo conductor a tu reserva.",
+                title_en="Reservation update",
+                body_en="A new driver is being assigned to your reservation.",
+                locale=user_lang(rider),
+                data={"type": "ride_reassigned", "trip_id": str(trip.id)},
+            ))
+    from services.scheduled_broadcast import notify_new_scheduled_ride
+    _safe_create_task(notify_new_scheduled_ride(trip.id),
+                      name=f"reservation_reassign_broadcast_{trip.id}")
+    if target is not None:
+        name = _driver_display_name(target)
+        message = f"Reserva ofrecida a {name}. Queda asignada cuando la acepte."
+    else:
+        message = "La reserva quedó disponible para los conductores."
+    return {
+        "status": "scheduled",
+        "trip_id": trip.id,
+        "previous_driver_id": previous_driver_id,
+        "mode": mode,
+        "reservation": True,
+        "requeued": True,
+        "offered_driver": (
+            {"id": target.id, "name": _driver_display_name(target)} if target else None
+        ),
+        "message": message,
+    }
 _REASSIGN_DEFAULT_RADIUS_MILES = 5.0
 _REASSIGN_RADIUS_TTL_SECONDS = 15 * 60
 _MILES_PER_KM = 0.621371
@@ -3256,6 +3383,12 @@ async def admin_reassign_trip(
     )).scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
+    # Reservations (owner report 2026-10-30: "no me deja cambiar de
+    # conductor" on a reservation) have their own path: no live offer, the
+    # reservation goes back to the marketplace — aimed at the chosen driver
+    # or open to every eligible one.
+    if trip.scheduled_at is not None and trip.status in _RESERVATION_REASSIGNABLE:
+        return await _reassign_reservation(db, trip, mode, body)
     if trip.status not in _REASSIGNABLE_STATUSES:
         raise HTTPException(
             409,

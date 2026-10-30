@@ -48,7 +48,7 @@ def quiet_dispatch(monkeypatch):
 
     pushes: list[dict] = []
 
-    def _collect(coro):
+    def _collect(coro, **_kw):
         if asyncio.iscoroutine(coro):
             coro.close()
         return None
@@ -346,3 +346,73 @@ async def test_radius_override_caps_and_expires(monkeypatch):
     now[0] += dispatch._REASSIGN_RADIUS_TTL_SECONDS + 1
     assert dispatch._radius_for_trip(77, 32.0) == 32.0
     assert 77 not in dispatch._trip_radius_override
+
+
+# ── Reservations (owner report 2026-10-30: "no me deja cambiar de conductor") ──
+
+async def _reservation(db, test_trip, driver, status="scheduled_accepted"):
+    from datetime import timedelta as _td
+    trip = test_trip
+    trip.scheduled_at = datetime.now(timezone.utc) + _td(hours=3)
+    trip.status = status
+    trip.driver_id = driver.id if driver else None
+    await db.commit()
+    await db.refresh(trip)
+    return trip
+
+
+async def test_reservation_change_driver_aims_it_at_the_new_one(
+        client, db, test_trip, quiet_dispatch, monkeypatch):
+    from services import scheduled_broadcast
+    sent = []
+
+    async def _broadcast(trip_id):
+        sent.append(trip_id)
+    monkeypatch.setattr(scheduled_broadcast, "notify_new_scheduled_ride", _broadcast)
+    old = await _driver(db, "old-res@test.com", "+13055551201", *NEAR)
+    new = await _driver(db, "new-res@test.com", "+13055551202", *FAR,
+                        online=False, first="Yoan", last="Paz")
+    trip = await _reservation(db, test_trip, old)
+
+    resp = await client.post(f"/admin/trips/{trip.id}/reassign",
+                             json={"mode": "driver", "driver_id": new.id}, headers=_dh())
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["reservation"] is True
+    assert body["offered_driver"]["id"] == new.id
+    await db.refresh(trip)
+    assert trip.status == "scheduled"
+    assert trip.driver_id is None
+    assert trip.scheduled_target_driver_id == new.id, "only the chosen driver sees it"
+    titles = [p["title"] for p in quiet_dispatch]
+    assert "Reserva reasignada" in titles
+    assert all("ispatch" not in p["body"] for p in quiet_dispatch)
+    notif = (await db.execute(select(Notification).where(
+        Notification.user_id == old.id))).scalars().all()
+    assert any(n.notif_type == "scheduled_ride_reassigned" for n in notif)
+
+
+async def test_reservation_put_available_opens_it_to_everyone(
+        client, db, test_trip, quiet_dispatch):
+    old = await _driver(db, "old-res2@test.com", "+13055551203", *NEAR)
+    trip = await _reservation(db, test_trip, old)
+    resp = await client.post(f"/admin/trips/{trip.id}/reassign",
+                             json={"mode": "nearest"}, headers=_dh())
+    assert resp.status_code == 200, resp.text
+    await db.refresh(trip)
+    assert trip.status == "scheduled" and trip.driver_id is None
+    assert trip.scheduled_target_driver_id is None
+
+
+async def test_reservation_rejects_unapproved_target(
+        client, db, test_trip, quiet_dispatch):
+    old = await _driver(db, "old-res3@test.com", "+13055551204", *NEAR)
+    bad = await _driver(db, "pending-res@test.com", "+13055551205", *NEAR)
+    bad.verification_status = "pending"
+    await db.commit()
+    trip = await _reservation(db, test_trip, old)
+    resp = await client.post(f"/admin/trips/{trip.id}/reassign",
+                             json={"mode": "driver", "driver_id": bad.id}, headers=_dh())
+    assert resp.status_code == 400
+    await db.refresh(trip)
+    assert trip.driver_id == old.id, "nothing changes on a rejected target"

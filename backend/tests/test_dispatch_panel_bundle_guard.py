@@ -65,3 +65,13 @@ def test_panel_miami_time_and_reservation_reassign():
     assert "reservation:t.scheduledAtDate!=null" in detail
     assert "return miamiWallToIso(scheduledAt);" in detail
     assert 'label:"Fecha y hora de la reserva (hora Miami)"' in detail
+
+
+def test_panel_opens_pdf_documents():
+    """2026-10-30: drivers upload the insurer's PDF; the panel drew every
+    document as <img>, so a PDF showed broken. Hand-patched (CLAUDE.md #30)."""
+    people = (ENTRY.parent / "index-azyIyM-i.js").read_text(encoding="utf-8")
+    assert 'function isPdfUrl(u){return String(u||"").split("?")[0].toLowerCase().endsWith(".pdf")}' in people
+    assert "isPdfUrl(i.url)?" in people, "gallery thumbnail"
+    assert 'isPdfUrl(a.url)?e.jsx("a",{href:a.url,target:"_blank"' in people, "gallery viewer"
+    assert people.count("isPdfUrl(url)?") == 1, "review card"

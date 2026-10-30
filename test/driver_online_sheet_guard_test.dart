@@ -58,6 +58,11 @@ void main() {
       expect(fn, contains('ZoneService.sectorsForState(ZoneService.stateOfPoint(p))'));
     });
 
+    // Owner 2026-10-30: "quita el borde cuando está online".
+    test('online, no zone border is painted', () {
+      expect(map, contains("'sec-line-\$sid', 'line-opacity', visible && !online ? 0.85 : 0.0)"));
+    });
+
     test('"un poquito más oscuro, no mucho": black at 0.22, off when empty', () {
       expect(map, contains('static const double _kZoneDimOpacity = 0.22;'));
       expect(map, contains("'sec-dim', 'fill-opacity', holes.isEmpty ? 0.0 : _kZoneDimOpacity"));

@@ -2537,9 +2537,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         .addSource(mapbox.GeoJsonSource(id: 'sec-src-$sid', data: emptyFc)));
   }
 
-  /// Offline every sector paints one of four gold demand opacities; online
-  /// only the borders remain. Active borders are gold; a sector switched
-  /// off by Dispatch is gray instead.
+  /// Offline every sector paints one of four gold demand opacities plus its
+  /// border; online nothing is painted. Active borders are gold; a sector
+  /// switched off by Dispatch is gray instead.
   List<Future<void>> _addSectorLayers(mapbox.MapboxMap map, Sector s,
       [String? fillBelowId]) {
     final sid = s.id;
@@ -2642,8 +2642,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   /// Offline fills go from the faintest gold (Sin viajes) to the strongest
-  /// semi-transparent gold (Muy ocupado). Online only borders remain: gold
-  /// for active sectors, gray for a sector switched off by Dispatch.
+  /// semi-transparent gold (Muy ocupado), with gold borders (gray for a
+  /// sector switched off by Dispatch). Online neither fill nor border.
   Future<void> _writeZoneVisibility(mapbox.MapboxMap map, bool visible,
       bool online, Set<String> visibleIds) async {
     // The fill stacking follows the mode (offline on top / online under the
@@ -2768,7 +2768,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     const gray = 0xFF7F858E;
     final color = off ? gray : gold;
     // Offline: Sin viajes 8%, Lento 18%, Ocupado 32%, Muy ocupado 48%.
-    // Online solo quedan los bordes. El apagado manual siempre gana: gris.
+    // Online no queda ni el borde (owner 2026-10-30: "quita el borde cuando
+    // está online"). El apagado manual siempre gana: gris.
     final fillOpacity = !visible || online
         ? 0.0
         : off
@@ -2787,7 +2788,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             'sec-fill-$sid', 'fill-opacity', fillOpacity),
         map.style.setStyleLayerProperty('sec-line-$sid', 'line-color', color),
         map.style.setStyleLayerProperty(
-            'sec-line-$sid', 'line-opacity', visible ? 0.85 : 0.0),
+            'sec-line-$sid', 'line-opacity', visible && !online ? 0.85 : 0.0),
         map.style.setStyleLayerProperty('sec-shadow-$sid', 'line-opacity', 0.0),
         map.style.setStyleLayerProperty('sec-glow-$sid', 'line-opacity', 0.0),
       ]);

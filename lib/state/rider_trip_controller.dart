@@ -1680,6 +1680,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   /// Translate a backend `cancel_reason` code into a user-friendly string.
   /// The UI also receives the raw code via `state.cancelCode` so it can
   /// choose a different visual treatment (toast vs dialog).
+  static final RegExp _internalCancelReason = RegExp(
+      r'dispatch|despacho|operador|operator|admin|^[a-z0-9_:]+$');
+
   String _userFriendlyCancelReason(String? raw) {
     if (raw == null || raw.isEmpty) return 'Your trip was cancelled.';
     switch (raw) {
@@ -1690,10 +1693,16 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       case RiderTripCancelCodes.autoGuardianGhost:
         return 'Your trip was stopped by the system. Please contact support.';
       default:
-        // Pass through cancel reasons written by dispatch or the old
-        // scheduler paths so operators can still communicate context.
-        if (raw.toLowerCase().contains('no driver')) {
+        // Pass through cancel reasons written by the old scheduler paths
+        // so context still reaches the rider — but never one that names
+        // dispatch or an operator, and never a machine code (owner rule
+        // 2026-10-31: nothing a rider sees may say dispatch cancelled).
+        final lower = raw.toLowerCase();
+        if (lower.contains('no driver')) {
           return "We couldn't find a driver. Please try again.";
+        }
+        if (_internalCancelReason.hasMatch(lower)) {
+          return 'Your trip was cancelled.';
         }
         return raw;
     }

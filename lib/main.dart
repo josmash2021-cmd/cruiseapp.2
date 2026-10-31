@@ -182,7 +182,7 @@ String _riderNotifTitle(String type) {
     // ── Driver notifications ──
     'trip_offer' || 'new_offer' => isEs ? 'Nueva Oferta de Viaje' : 'New Ride Offer',
     'rider_cancelled'    => isEs ? 'Viaje Cancelado' : 'Ride Cancelled',
-    'trip_canceled' || 'trip_cancelled' => isEs ? 'Viaje Cancelado por Dispatch' : 'Trip Cancelled by Dispatch',
+    'trip_canceled' || 'trip_cancelled' => isEs ? 'Viaje Cancelado' : 'Trip Cancelled',
     'trip_reassigned'    => isEs ? 'Viaje reasignado' : 'Trip reassigned',
     'scheduled_cancelled' => isEs ? 'Viaje Programado Cancelado' : 'Scheduled Ride Cancelled',
     'tip_received'       => isEs ? '¡Recibiste una Propina!' : 'You Got a Tip!',
@@ -216,7 +216,7 @@ String _riderNotifBody(String type) {
     // ── Driver notifications ──
     'trip_offer' || 'new_offer' => isEs ? 'Un pasajero necesita un viaje — abre Cruise para aceptar.' : 'A rider needs a ride — open Cruise to accept.',
     'rider_cancelled'    => isEs ? 'El pasajero canceló el viaje.' : 'The rider has cancelled the ride.',
-    'trip_canceled' || 'trip_cancelled' => isEs ? 'El viaje fue cancelado por dispatch.' : 'The trip has been cancelled by dispatch.',
+    'trip_canceled' || 'trip_cancelled' => isEs ? 'El viaje fue cancelado.' : 'The trip has been cancelled.',
     'trip_reassigned'    => isEs ? 'Este viaje fue asignado a otro conductor. Sigues en línea.' : 'This trip was assigned to another driver. You are still online.',
     'scheduled_cancelled' => isEs ? 'Un viaje programado ha sido cancelado por el pasajero.' : 'A scheduled ride has been cancelled by the rider.',
     'tip_received'       => isEs ? 'Un pasajero te dejó una propina. ¡Sigue así!' : 'A rider left you a tip. Keep up the great work!',
@@ -764,7 +764,7 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
-  // ── Trip cancelled by dispatch ──
+  // ── Trip cancelled from the panel ──
   // Backend sends 'trip_canceled' (1 l) when dispatch cancels a trip.
   // The Firestore watcher on each screen handles the actual UI update,
   // but the notification tap should refresh the home screen so the user

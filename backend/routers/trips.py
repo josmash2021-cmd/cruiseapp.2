@@ -1896,7 +1896,7 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
             )
             raise HTTPException(
                 403,
-                "Only the rider or dispatch can cancel a trip here. "
+                "Only the rider or Cruise support can cancel a trip here. "
                 "Drivers: use /trips/{id}/driver-cancel.",
             )
 
@@ -2457,8 +2457,8 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         )
         raise HTTPException(
             403,
-            "Only the rider or dispatch can cancel a trip. "
-            "Drivers must contact dispatch to request a cancellation.",
+            "Only the rider or Cruise support can cancel a trip. "
+            "Drivers must contact support to request a cancellation.",
         )
     # Rider may cancel instantly at any point BEFORE pickup — even with a
     # driver assigned. The old policy forced the rider through
@@ -3091,7 +3091,7 @@ async def request_cancel_trip(
     return {
         "ok": True,
         "action_request_id": ar.id,
-        "message": "Tu solicitud fue enviada a dispatch",
+        "message": "Tu solicitud fue enviada a nuestro equipo",
     }
 
 # ---====================================================

@@ -35,7 +35,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
     _user_dict, _trip_dict, _doc_dict, _vehicle_dict, _haversine, _resolve_rider_display, _safe_create_task,
-    _abs_photo_url, user_lang, _driver_cancel_copy,
+    _abs_photo_url, user_lang, _driver_cancel_copy, rider_safe_cancel_reason,
     SETTABLE_ACCOUNT_STATUSES, ACTIVE_ACCOUNT_STATUSES, normalise_account_status,
     _strip_accents,
 )
@@ -470,7 +470,7 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
     for t in trips:
         had_driver = bool(t.driver_id or t.driver_assigned_at)
         t.status = "cancelled"
-        t.cancel_reason = "admin_bulk_cleanup"
+        t.cancel_reason = "cancelled"
         await settle_promotion_on_cancel(db, t, had_driver=had_driver)
         canceled.append(t.id)
     await db.commit()
@@ -480,7 +480,7 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
                 firestore_sync.sync_trip_status(
                     trip_id=trip_id,
                     status="cancelled",
-                    cancel_reason="admin_bulk_cleanup",
+                    cancel_reason="cancelled",
                     cancelled_by="admin",
                 )
             except Exception as e:
@@ -501,7 +501,7 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
                 trip_id=t.id,
                 status="cancelled",
                 extra={
-                    "cancel_reason": "admin_bulk_cleanup",
+                    "cancel_reason": "cancelled",
                     "cancelled_by": "admin",
                 },
             ))
@@ -513,7 +513,7 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
             _safe_create_task(_ev_bus.push_trip_update(t.id, {
                 "status": "cancelled",
                 "trip_id": t.id,
-                "cancel_reason": "admin_bulk_cleanup",
+                "cancel_reason": "cancelled",
                 "cancelled_by": "admin",
             }))
         except Exception as _sse_err:
@@ -526,8 +526,11 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
                 if rider and rider.fcm_token:
                     _safe_create_task(_send_fcm_push_async(
                         rider.fcm_token,
-                        "Trip Canceled",
-                        "Your trip has been canceled by dispatch.",
+                        title="Viaje cancelado",
+                        body="Tu viaje fue cancelado.",
+                        title_en="Trip Canceled",
+                        body_en="Your trip has been canceled.",
+                        locale=user_lang(rider),
                         data={"type": "trip_canceled", "trip_id": str(t.id)},
                     ))
             if t.driver_id:
@@ -561,12 +564,15 @@ async def admin_cancel_trip(trip_id: int, body: AdminCancelTripIn, db: AsyncSess
     if trip.status in ("completed", "cancelled", "canceled"):
         raise HTTPException(400, f"Trip already in terminal state '{trip.status}'")
     had_driver = bool(trip.driver_id or trip.driver_assigned_at)
-    # A RESERVATION cancelled by dispatch just disappears from the driver's
+    # A RESERVATION cancelled from the panel just disappears from the driver's
     # app — no push (owner spec 2026-10-31). A live trip still tells them.
     was_reservation = trip.status in (
         "scheduled", "scheduled_accepted", "scheduled_active")
     trip.status = "cancelled"
-    trip.cancel_reason = reason or "admin_cancel"
+    # The rider app shows cancel_reason as-is (older builds verbatim): it
+    # must never name dispatch, an operator or admin (owner rule
+    # 2026-10-31) — the panel's default "Cancelado por dispatch" included.
+    trip.cancel_reason = rider_safe_cancel_reason(reason)
     from services.promotion_redemptions import settle_promotion_on_cancel
     await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
     await db.commit()
@@ -619,8 +625,11 @@ async def admin_cancel_trip(trip_id: int, body: AdminCancelTripIn, db: AsyncSess
         if rider and rider.fcm_token:
             _safe_create_task(_send_fcm_push_async(
                 rider.fcm_token,
-                "Trip Canceled",
-                "Your trip has been canceled by dispatch.",
+                title="Viaje cancelado",
+                body="Tu viaje fue cancelado.",
+                title_en="Trip Canceled",
+                body_en="Your trip has been canceled.",
+                locale=user_lang(rider),
                 data={"type": "trip_canceled", "trip_id": str(trip.id)},
             ))
         if trip.driver_id and not was_reservation:

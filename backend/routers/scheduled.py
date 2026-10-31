@@ -815,7 +815,7 @@ async def drop_scheduled_trip(
     if trip.status not in _DROP_ALLOWED_STATUSES:
         raise HTTPException(
             400,
-            f"Cannot drop scheduled ride in status '{trip.status}' — contact dispatch",
+            f"Cannot drop scheduled ride in status '{trip.status}' — contact support",
         )
     _require_cancel_notice_window(trip)
 

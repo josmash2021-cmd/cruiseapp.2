@@ -456,16 +456,16 @@ def _notify_rider_booking(trip: Trip, rider: User) -> None:
     if trip.scheduled_at is not None:
         title = "Viaje agendado 📅" if es else "Ride scheduled 📅"
         body = (
-            "Tu operador de Cruise agendó tu viaje. Abre la app para verlo."
+            "Tu viaje quedó agendado. Abre la app para verlo."
             if es else
-            "Your Cruise operator scheduled your ride. Open the app to view it."
+            "Your ride is scheduled. Open the app to view it."
         )
     else:
         title = "Viaje creado 🚗" if es else "Trip created 🚗"
         body = (
-            "Tu operador de Cruise creó tu viaje. Abre la app para seguirlo."
+            "Tu viaje está listo. Abre la app para seguirlo."
             if es else
-            "Your Cruise operator booked your ride. Open the app to follow it."
+            "Your ride is booked. Open the app to follow it."
         )
     payload = {"type": "trip_created", "trip_id": str(trip.id)}
     try:

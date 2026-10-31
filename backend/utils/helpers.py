@@ -104,6 +104,19 @@ def _resolve_rider_display(trip, rider=None) -> tuple[str, str]:
     return "Rider", ""
 
 
+# Nothing a rider or driver sees may say dispatch, an operator or admin did
+# it (owner rule 2026-10-31). The rider app shows cancel_reason verbatim, so
+# an operator-written reason that names them is stored as plain "cancelled".
+_INTERNAL_REASON = re.compile(r"dispatch|despacho|operador|operator|admin", re.I)
+
+
+def rider_safe_cancel_reason(reason: str | None) -> str:
+    text = (reason or "").strip()
+    if not text or _INTERNAL_REASON.search(text):
+        return "cancelled"
+    return text
+
+
 def _driver_cancel_copy(trip, in_trip_full_fare=False) -> dict[str, str]:
     """Bilingual driver-facing cancellation text, with airport-specific copy."""
     if in_trip_full_fare:

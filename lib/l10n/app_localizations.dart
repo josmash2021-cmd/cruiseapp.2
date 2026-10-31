@@ -553,14 +553,14 @@ class S {
   String get locationSharing =>
       _es ? 'Compartir Ubicación' : 'Location Sharing';
   String get locationSharingDesc => _es
-      ? 'Comparte tu ubicación con conductores durante viajes y tu ubicación aproximada con Dispatch solo mientras la app está abierta.'
-      : 'Share your location with drivers during rides and your approximate location with Dispatch only while the app is open.';
+      ? 'Comparte tu ubicación con conductores durante viajes y tu ubicación aproximada con Cruise solo mientras la app está abierta.'
+      : 'Share your location with drivers during rides and your approximate location with Cruise only while the app is open.';
   String get riderPresenceConsentTitle => _es
       ? 'Compartir tu ubicación aproximada'
       : 'Share your approximate location';
   String get riderPresenceConsentBody => _es
-      ? 'Con tu permiso, Dispatch podrá ver tu ubicación aproximada para coordinar viajes solo mientras la app esté abierta. No se comparte en segundo plano. Puedes desactivarlo en Privacidad.'
-      : 'With your permission, Dispatch can see your approximate location to coordinate rides only while the app is open. It is not shared in the background. You can turn this off in Privacy.';
+      ? 'Con tu permiso, Cruise podrá ver tu ubicación aproximada para coordinar viajes solo mientras la app esté abierta. No se comparte en segundo plano. Puedes desactivarlo en Privacidad.'
+      : 'With your permission, Cruise can see your approximate location to coordinate rides only while the app is open. It is not shared in the background. You can turn this off in Privacy.';
   String get riderPresenceConsentAccept => _es ? 'Permitir' : 'Allow';
   String get riderPresenceConsentDecline => _es ? 'No, gracias' : 'No thanks';
   // Android foreground-service notification shown while the driver's
@@ -1961,8 +1961,8 @@ class S {
   String get applicationUnderReview =>
       _es ? 'Solicitud en Revisión' : 'Application Under Review';
   String get reviewDescription => _es
-      ? 'Nuestro equipo de despacho está revisando tu solicitud y documentos. Esto normalmente tarda 24–48 horas.'
-      : 'Our dispatch team is reviewing your application and documents. This typically takes 24–48 hours.';
+      ? 'Nuestro equipo está revisando tu solicitud y documentos. Esto normalmente tarda 24–48 horas.'
+      : 'Our team is reviewing your application and documents. This typically takes 24–48 hours.';
   String get applicationSubmitted =>
       _es ? 'Solicitud enviada' : 'Application submitted';
   String get allDocsReceived =>
@@ -1974,7 +1974,7 @@ class S {
       : 'Identity documents verified';
   String get finalReview => _es ? 'Revisión final' : 'Final review';
   String get dispatchApprovalPending =>
-      _es ? 'Aprobación de despacho pendiente' : 'Dispatch approval pending';
+      _es ? 'Aprobación pendiente' : 'Approval pending';
   String get checkingForUpdates =>
       _es ? 'Verificando actualizaciones...' : 'Checking for updates...';
   String welcomeCruiseInRideTitle(String firstName) => _es
@@ -3363,8 +3363,8 @@ class S {
   String get keepRide => _es ? 'Mantener viaje' : 'Keep Ride';
   String get cancelButton => _es ? 'Cancelar' : 'Cancel';
   String get tripCancelledByOperator => _es
-      ? 'Tu viaje ha sido cancelado por el operador. Por favor solicita un nuevo viaje.'
-      : 'Your trip has been cancelled by the operator. Please request a new ride.';
+      ? 'Tu viaje ha sido cancelado. Por favor solicita un nuevo viaje.'
+      : 'Your trip has been cancelled. Please request a new ride.';
   String get okButton => _es ? 'OK' : 'OK';
   // Welcome push — shown once, the moment the account is approved (never
   // on a signup timer, no promo code).
@@ -3577,12 +3577,12 @@ class S {
       ? 'Este vehículo aún no está aprobado para usarse.'
       : 'This vehicle is not approved for use yet.';
   String get vehicleAwaitingApprovalHint => _es
-      ? 'Podrás usarlo cuando dispatch apruebe el vehículo y sus documentos.'
-      : 'You can use it once dispatch approves the vehicle and its documents.';
+      ? 'Podrás usarlo cuando aprobemos el vehículo y sus documentos.'
+      : 'You can use it once we approve the vehicle and its documents.';
   String get docsPendingReviewTitle => _es ? 'En revisión' : 'Under review';
   String get docsPendingReviewSubtitle => _es
-      ? 'Dispatch está revisando los documentos de este vehículo.'
-      : "Dispatch is reviewing this vehicle's documents.";
+      ? 'Estamos revisando los documentos de este vehículo.'
+      : "We're reviewing this vehicle's documents.";
   String get licensePlateLabel =>
       _es ? 'Número de placa' : 'License plate number';
   String get vehicleRequirements => _es
@@ -3768,7 +3768,7 @@ class S {
       _es ? 'Identidad verificada ✓' : 'Identity verified ✓';
   String get finalReviewDone => _es ? 'Revisión final' : 'Final review';
   String get approvedByDispatch =>
-      _es ? 'Aprobado por despacho ✓' : 'Approved by dispatch ✓';
+      _es ? 'Aprobado ✓' : 'Approved ✓';
   String get applicationRejected =>
       _es ? 'Verificación Rechazada' : 'Verification Rejected';
   String get rejectionDescription => _es
@@ -4181,7 +4181,7 @@ class S {
   String get tapToUpdateDocuments =>
       _es ? 'Toca para actualizar documentos' : 'Tap to update documents';
   String get notAssigned => _es ? 'No asignado' : 'Not assigned';
-  String get setByDispatch => _es ? 'Asignado por despacho' : 'Set by dispatch';
+  String get setByDispatch => _es ? 'Asignado por Cruise' : 'Set by Cruise';
 
   // ── Documents Screen ───────────────────────────────────────────────────────
   String get documentsLockedNote => _es
@@ -5924,8 +5924,8 @@ class S {
   // Shown when the driver app could not take the trip it had just been
   // assigned, so the trip was handed back to dispatch for another driver.
   String get tripReturnedToDispatch => _es
-      ? 'No pudimos abrir el viaje. Lo devolvimos a despacho.'
-      : "We couldn't open the trip. It went back to dispatch.";
+      ? 'No pudimos abrir el viaje. Quedó libre para otro conductor.'
+      : "We couldn't open the trip. It was released to another driver.";
 
   // Generic fallback labels used by offer cards when the trip payload
   // is missing addresses or names. These are visible in the offer

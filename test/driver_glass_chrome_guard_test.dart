@@ -26,12 +26,33 @@ void main() {
       File('lib/screens/driver/driver_menu_screen.dart').readAsStringSync();
 
   group('glass surface', () {
-    testWidgets('a circle is clipped round and blurs what is behind it',
+    testWidgets('the sheet glass is clipped and blurs what is behind it',
         (tester) async {
       await tester.pumpWidget(const Directionality(
         textDirection: TextDirection.ltr,
         child: Center(
           child: GlassSurface(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+            width: 200,
+            height: 120,
+            child: SizedBox(),
+          ),
+        ),
+      ));
+      expect(find.byType(ClipRRect), findsOneWidget);
+      final f = tester.widget<BackdropFilter>(find.byType(BackdropFilter));
+      expect(f.filter,
+          ui.ImageFilter.blur(sigmaX: kGlassSheetBlur, sigmaY: kGlassSheetBlur));
+    });
+
+    testWidgets('a map control is the button alone: no blur, soft shadow',
+        (tester) async {
+      // Owner 2026-10-31: on iOS the blur behind a round control showed as
+      // a blurred SQUARE around it. Controls never blur.
+      await tester.pumpWidget(const Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: MapChipSurface(
             circle: true,
             width: 48,
             height: 48,
@@ -39,10 +60,12 @@ void main() {
           ),
         ),
       ));
-      expect(find.byType(ClipOval), findsOneWidget);
-      final f = tester.widget<BackdropFilter>(find.byType(BackdropFilter));
-      expect(f.filter,
-          ui.ImageFilter.blur(sigmaX: kGlassChipBlur, sigmaY: kGlassChipBlur));
+      expect(find.byType(BackdropFilter), findsNothing);
+      final box = tester.widget<Container>(find.byType(Container));
+      final deco = box.decoration! as BoxDecoration;
+      expect(deco.shape, BoxShape.circle);
+      expect(deco.boxShadow, isNotEmpty);
+      expect(mapChipTint.a, lessThan(0.8));
     });
 
     test('tints are translucent grey, inner cards barely there', () {
@@ -53,19 +76,22 @@ void main() {
     });
 
     test('the sheet is glass with the heavy blur, no neu slab', () {
-      expect(widgets, contains('blur: kGlassSheetBlur,'));
+      expect(widgets, contains('blur: kGlassSheetBlur +'));
       expect(widgets, isNot(contains('// Raised neumorphic sheet.')));
       expect(widgets, contains('? glassInnerBox(radius: 18)'));
+      // The sheet is the ONLY glass on the map screen.
+      expect(RegExp(r'GlassSurface\(').allMatches(widgets).length, 1);
+      expect(RegExp(r'GlassSurface\(').allMatches(screen).length, 0);
     });
 
-    test('map buttons, pill, bell and GO-side calendar are glass', () {
+    test('map buttons, pill, bell and GO-side calendar are shadowed chips', () {
       // _fab (menu, zone compass, help), recentre, earnings pill.
-      expect(RegExp(r'GlassSurface\(').allMatches(widgets).length,
-          greaterThanOrEqualTo(4));
+      expect(RegExp(r'MapChipSurface\(').allMatches(widgets).length, 3);
       // Bell + scheduled toast.
-      expect(RegExp(r'GlassSurface\(').allMatches(screen).length,
-          greaterThanOrEqualTo(2));
+      expect(RegExp(r'MapChipSurface\(').allMatches(screen).length, 2);
       expect(offline, contains('class _GoScheduleButton'));
+      expect(offline, contains('MapChipSurface('));
+      expect(offline, isNot(contains('GlassSurface(')));
       expect(offline, isNot(contains('color: const Color(0xFF141420)')));
       // The recentre's entrance blur is OFF at rest — an ImageFiltered
       // layer would hand the glass an empty backdrop instead of the map.
@@ -81,12 +107,15 @@ void main() {
           contains('slideFromLeftRoute(const DriverMenuScreen())'));
     });
 
-    test('the open sheet is solid: nothing shows through it', () {
-      // "cuando se abren no pueden verse detrás ni la flecha ni los
-      // botones" (owner 2026-10-31): glass at rest, opaque when open…
-      expect(glassSheetSolid.a, 1.0);
+    test('the open sheet stays glass but hides what is behind it', () {
+      // Owner 2026-10-31: "estilo vidrio borroso, pero que no se vea los
+      // botones del mapa ni la flecha detrás" — NOT a flat grey. Denser
+      // tint and a much heavier blur as it opens, still translucent…
+      expect(glassSheetOpenTint.a, lessThan(1.0));
+      expect(glassSheetOpenTint.a, greaterThan(glassSheetTint.a));
+      expect(kGlassSheetBlurOpen, greaterThan(kGlassSheetBlur * 1.5));
       expect(widgets,
-          contains('Color.lerp(glassSheetTint, glassSheetSolid, solidT)!'));
+          contains('Color.lerp(glassSheetTint, glassSheetOpenTint, openT)!'));
       expect(widgets,
           contains('((t - _kSheetRestFrac) / 0.33).clamp(0.0, 1.0)'));
       // …and the side buttons parked above the collapsed sheet step away.

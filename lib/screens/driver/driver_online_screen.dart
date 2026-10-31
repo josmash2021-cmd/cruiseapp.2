@@ -2473,16 +2473,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                           slideFromRightRoute(const DriverInboxScreen()),
                         );
                       },
-                      // Frosted grey glass (owner spec 2026-10-30), the
-                      // unread state keeps its gold rim. The count lives in
-                      // the Stack, outside the glass clip.
+                      // Translucent grey with a soft shadow, no blur (owner
+                      // 2026-10-31); the unread state keeps its gold rim.
+                      // The count lives in the Stack beside it.
                       child: SizedBox(
                         width: 48,
                         height: 48,
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            GlassSurface(
+                            MapChipSurface(
                               circle: true,
                               width: 48,
                               height: 48,
@@ -2557,7 +2557,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         _remountMapSurface();
                       });
                     },
-                    child: GlassSurface(
+                    child: MapChipSurface(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 10),
                       borderRadius: BorderRadius.circular(14),

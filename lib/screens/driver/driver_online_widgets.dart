@@ -797,9 +797,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final safePage = _earningsPage.clamp(0, pageCount - 1);
 
     Widget pillPage(double amount, double prevAmount, String label) {
-      // Frosted grey glass (owner spec 2026-10-30) — it had a blur all
-      // along, under an opaque neu fill that hid it.
-      return GlassSurface(
+      // Translucent grey with a soft shadow, no blur (owner 2026-10-31: on
+      // iOS the blur behind it showed as a square around the pill).
+      return MapChipSurface(
         borderRadius: BorderRadius.circular(20),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         tint: isDark ? null : pillBg,
@@ -3885,7 +3885,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final botPad = MediaQuery.of(context).padding.bottom;
     final t = _panelFrac.clamp(0.0, 1.0);
     // 0 at (or below) the resting height, 1 three-quarters of the way open.
-    final solidT = ((t - _kSheetRestFrac) / 0.33).clamp(0.0, 1.0);
+    final openT = ((t - _kSheetRestFrac) / 0.33).clamp(0.0, 1.0);
 
     // Collapsed pill height + expanded max height.
     //
@@ -3972,12 +3972,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             // gris"). The heavy blur keeps the text readable over streets;
             // no drop shadow — under a translucent fill it reads as dirt.
             borderRadius: radius,
-            blur: kGlassSheetBlur,
-            // Glass up to the resting height, then solid by the time it is
-            // open — the map and the buttons under it stop showing through.
+            // Glass all the way (owner 2026-10-31: "estilo vidrio borroso"),
+            // but frosted harder as it opens: the arrow under the open sheet
+            // dissolves instead of showing through. The side buttons step
+            // away on their own (_hideUnderOpenSheet).
+            blur: kGlassSheetBlur + (kGlassSheetBlurOpen - kGlassSheetBlur) * openT,
             tint: isDark
-                ? Color.lerp(glassSheetTint, glassSheetSolid, solidT)!
-                : Color.lerp(surface.withValues(alpha: 0.72), surface, solidT)!,
+                ? Color.lerp(glassSheetTint, glassSheetOpenTint, openT)!
+                : Color.lerp(surface.withValues(alpha: 0.72),
+                    surface.withValues(alpha: 0.88), openT)!,
             child: Stack(
               children: [
                 Column(
@@ -4946,8 +4949,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         HapticService.lightImpact();
         tap();
       },
-      // Frosted grey glass (owner spec 2026-10-30). The count pill sits in
-      // the Stack beside the glass, outside its clip.
+      // Translucent grey with a soft 3D shadow (owner 2026-10-31 — no
+      // blur: on iOS it framed the button in a blurred square). The count
+      // pill sits in the Stack beside it.
       child: SizedBox(
         width: sz,
         height: sz,
@@ -4955,7 +4959,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
-            GlassSurface(
+            MapChipSurface(
               circle: true,
               width: sz,
               height: sz,
@@ -5166,8 +5170,8 @@ class _RecenterFabState extends State<_RecenterFab>
         // Misma especificación que los `_fab` de la columna (2026-10-15,
         // spec "el botón de help alineado con los que están a la
         // derecha"): mismo vidrio gris, mismo borde dorado sutil
-        // (vidrio desde 2026-10-30).
-        child: GlassSurface(
+        // (gris translúcido con sombra, sin desenfoque, desde 2026-10-31).
+        child: MapChipSurface(
           circle: true,
           width: widget.size,
           height: widget.size,

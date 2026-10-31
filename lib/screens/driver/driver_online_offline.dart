@@ -3198,9 +3198,9 @@ class _GoScheduleButton extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Frosted grey glass (owner spec 2026-10-30), same as the GO
-          // pill's other neighbours on the map.
-          GlassSurface(
+          // Translucent grey with a soft shadow, no blur (owner 2026-10-31),
+          // same as the other controls on the map.
+          MapChipSurface(
             circle: true,
             width: 46,
             height: 46,

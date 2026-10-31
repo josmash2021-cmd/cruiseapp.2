@@ -1769,6 +1769,7 @@ async def _online_riders_snapshot(db: AsyncSession):
             "lat": round(user.lat, 2),
             "lng": round(user.lng, 2),
             "last_seen": last_seen.isoformat(),
+            "photo_url": _abs_photo_url(user.photo_url) or None,
         })
     return riders
 
@@ -1816,6 +1817,7 @@ async def _online_drivers_snapshot(db: AsyncSession):
             "id": user.id,
             "name": f"{user.first_name or ''} {user.last_name or ''}".strip(),
             "phone": user.phone,
+            "photo_url": _abs_photo_url(user.photo_url) or None,
             "lat": user.lat,
             "lng": user.lng,
             "rating": rating_by_driver.get(user.id, 0.0),
@@ -1856,6 +1858,11 @@ async def stream_live_drivers(
             yield f"event: snapshot\ndata: {json.dumps(snapshot)}\n\n"
             while True:
                 if await request.is_disconnected():
+                    break
+                # A queue the bus dropped (full) never gets another event:
+                # end the stream so the panel reconnects with a fresh
+                # snapshot instead of trusting a line that only pings.
+                if not event_bus.is_dispatch_subscribed(queue) and queue.empty():
                     break
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=10.0)
@@ -1915,6 +1922,7 @@ def _live_trip_payload(trip: Trip, rider: User | None,
             "name": rider_name or "Rider",
             "phone": rider_phone or "",
             "is_guest": is_web,
+            "photo_url": (_abs_photo_url(rider.photo_url) or None) if rider else None,
         },
         "driver": driver_info,
         "fare": trip.fare,

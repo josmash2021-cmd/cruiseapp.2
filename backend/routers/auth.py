@@ -27,7 +27,7 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE, user_lang, ACTIVE_ACCOUNT_STATUSES
+from utils.helpers import _abs_photo_url, _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE, user_lang, ACTIVE_ACCOUNT_STATUSES
 from utils.image_validation import validate_image_bytes, shrink_image_bytes
 from services import vehicle_tiers
 from services.fcm_service import _send_fcm_push_async
@@ -1867,6 +1867,7 @@ async def update_rider_presence(
             lat=user.lat,
             lng=user.lng,
             last_seen=now.isoformat(),
+            photo_url=_abs_photo_url(user.photo_url) or None,
         )
     else:
         await event_bus.push_dispatch_rider_presence(user.id, active=False)

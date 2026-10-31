@@ -161,7 +161,33 @@ function normalizeDriver(raw) {
     speed: numberOrNull(raw?.speed),
     heading: numberOrNull(raw?.heading),
     capturedAt: asText(raw?.captured_at),
+    photoUrl: asText(raw?.photo_url ?? raw?.photoUrl),
   };
+}
+
+// While the live stream is up it owns positions; the 20 s refresh only
+// brings trip, vehicle and photo data. It used to replace every position
+// with the DB copy and markers stepped back (2026-10-31). A DB row clearly
+// newer than the live one still wins (live events were missed).
+function mergeLivePositions(current, fresh) {
+  const live = new Map(current.map((driver) => [driver.id, driver]));
+  return fresh.map((driver) => {
+    const known = live.get(driver.id);
+    if (!known || known.position === null) return driver;
+    const dbAt = Date.parse(driver.lastUpdated);
+    const liveAt = Date.parse(known.lastUpdated);
+    if (Number.isFinite(dbAt) && Number.isFinite(liveAt) && dbAt > liveAt + 5000) {
+      return driver;
+    }
+    return {
+      ...driver,
+      position: known.position,
+      lastUpdated: known.lastUpdated,
+      speed: known.speed,
+      heading: known.heading,
+      capturedAt: known.capturedAt,
+    };
+  });
 }
 
 function normalizeDrivers(payload) {
@@ -198,6 +224,7 @@ function normalizeRiderPresence(raw, fallbackLastSeen = null) {
     name: asText(raw?.name).trim() || "Rider",
     position,
     lastSeen,
+    photoUrl: asText(raw?.photo_url ?? raw?.photoUrl),
   };
 }
 
@@ -235,6 +262,7 @@ function normalizeTrip(raw) {
         (rider?.is_guest === true ? "Rider invitado" : "Rider"),
       phone: asText(rider?.phone),
       isGuest: rider?.is_guest === true,
+      photoUrl: asText(rider?.photo_url),
     },
     hasDriver: driver !== null && typeof driver === "object",
     driverId: driver ? asText(driver.id) : null,
@@ -495,8 +523,12 @@ function useLiveMapData(refreshKey) {
           ...raw,
           on_trip: current?.onTrip,
           trip_id: current?.tripId,
-          last_updated: raw.captured_at ??
-            (raw.ts ? new Date(raw.ts * 1000).toISOString() : current?.lastUpdated),
+          // Server receive time orders updates — the same clock as the
+          // snapshot's last_active_at. captured_at is the PHONE's clock
+          // (2026-10-31: mixing them made markers step back or stall).
+          last_updated: raw.ts
+            ? new Date(raw.ts * 1000).toISOString()
+            : (raw.captured_at ?? current?.lastUpdated),
         });
         return {
           ...previous,
@@ -599,11 +631,13 @@ function useLiveMapData(refreshKey) {
           apiGet("/admin/trips/active", { signal: controller.signal }),
         ]);
         if (disposed || sequence !== requestSequence) return;
-        const drivers = normalizeDrivers(driverPayload);
+        const fresh = normalizeDrivers(driverPayload);
         const trips = normalizeTrips(tripPayload);
         setSnapshot((previous) => ({
           ...previous,
-          drivers,
+          drivers: liveConnected
+            ? mergeLivePositions(previous.drivers, fresh)
+            : fresh,
           trips,
           loading: false,
           loaded: true,
@@ -1279,6 +1313,7 @@ function presencePopupOwner(riderId) {
 
 function buildPresencePopup(rider) {
   const content = document.createElement("div");
+  if (rider.photoUrl) content.append(popupPhoto(rider.photoUrl));
   content.append(
     popupLine(rider.name, { bold: true, color: "#ffffff" }),
     popupLine("En línea", { bold: true, color: RIDER_PRESENCE_COLOR }),
@@ -1312,8 +1347,26 @@ function popupLine(text, { color = "rgba(255,255,255,0.65)", bold = false } = {}
   return line;
 }
 
+function popupPhoto(url) {
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = "";
+  Object.assign(img.style, {
+    width: "44px",
+    height: "44px",
+    borderRadius: "50%",
+    objectFit: "cover",
+    border: `2px solid ${GOLD}`,
+    display: "block",
+    marginBottom: "6px",
+  });
+  img.addEventListener("error", () => img.remove());
+  return img;
+}
+
 function buildRiderPopup(trip) {
   const content = document.createElement("div");
+  if (trip.rider.photoUrl) content.append(popupPhoto(trip.rider.photoUrl));
   content.append(
     popupLine(trip.rider.name, { bold: true, color: "#ffffff" }),
     popupLine(trip.phase.label, { color: GOLD }),
@@ -1848,14 +1901,31 @@ function FleetMap({ token }) {
       const selected = driver.id === selectedDriverId;
       const existing = driverMarkersRef.current.get(driver.id);
       if (existing) {
-        if (!isStaleDriverUpdate(existing.lastUpdated, driver.lastUpdated) &&
-            !isImpossibleDriverJump(
-              existing.rawPosition,
-              driver.position,
-              existing.lastUpdated,
-              driver.lastUpdated,
-            )) {
-          retargetDriverMotion(driver, existing);
+        if (!isStaleDriverUpdate(existing.lastUpdated, driver.lastUpdated)) {
+          if (!isImpossibleDriverJump(
+            existing.rawPosition,
+            driver.position,
+            existing.lastUpdated,
+            driver.lastUpdated,
+          )) {
+            existing.pendingJump = null;
+            retargetDriverMotion(driver, existing);
+          } else if (
+            existing.pendingJump &&
+            existing.pendingJump.lastUpdated !== driver.lastUpdated &&
+            haversineM(existing.pendingJump.position, driver.position) < 300
+          ) {
+            // Two readings agree on the far spot: it is real — go there.
+            existing.pendingJump = null;
+            existing.motion = nextDriverMotion(null, driver.position, performance.now());
+            existing.lastUpdated = driver.lastUpdated;
+            existing.rawPosition = driver.position;
+          } else if (existing.pendingJump?.lastUpdated !== driver.lastUpdated) {
+            existing.pendingJump = {
+              position: driver.position,
+              lastUpdated: driver.lastUpdated,
+            };
+          }
         }
         updateDriverElement(existing.element, driver, selected);
       } else {
@@ -2135,7 +2205,7 @@ function FleetMap({ token }) {
               }),
               jsxRuntime.jsx(StatPill, {
                 dotClass: "bg-primary",
-                label: `${trips.length} riders activos`,
+                label: `${trips.length} viajes activos`,
               }),
               jsxRuntime.jsx(StatPill, {
                 dotStyle: { background: RIDER_PRESENCE_COLOR },
@@ -2298,6 +2368,41 @@ function FleetMap({ token }) {
                 jsxRuntime.jsxs("div", {
                   className: "min-w-0",
                   children: [
+                    selectedDriver.photoUrl !== ""
+                      ? jsxRuntime.jsx("img", {
+                          src: selectedDriver.photoUrl,
+                          alt: "",
+                          style: {
+                            width: 56,
+                            height: 56,
+                            borderRadius: "50%",
+                            objectFit: "cover",
+                            border: "2px solid rgba(232,197,71,0.55)",
+                            marginBottom: 8,
+                            display: "block",
+                          },
+                          onError: (event) => {
+                            event.currentTarget.style.display = "none";
+                          },
+                        })
+                      : jsxRuntime.jsx("div", {
+                          "aria-hidden": "true",
+                          style: {
+                            width: 56,
+                            height: 56,
+                            borderRadius: "50%",
+                            marginBottom: 8,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            border: "2px solid rgba(232,197,71,0.35)",
+                            background: "rgba(232,197,71,0.10)",
+                            color: GOLD,
+                            fontWeight: 700,
+                            fontSize: 20,
+                          },
+                          children: selectedDriver.name.trim().charAt(0).toUpperCase(),
+                        }),
                     jsxRuntime.jsx("h2", {
                       className: "truncate text-base font-bold text-white",
                       children: selectedDriver.name,

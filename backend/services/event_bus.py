@@ -320,11 +320,19 @@ class EventBus:
     # ── Dispatch live map streams ─────────────────────────────
 
     def subscribe_dispatch(self) -> "asyncio.Queue[dict[str, Any]]":
-        q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=50)
+        # 500, not 50 (2026-10-31): eight drivers at ~1 fix/s filled 50 in a
+        # few seconds of browser stall, the queue was dropped, and the panel
+        # sat on a stream that only sent pings — "no reporta en vivo".
+        q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=500)
         self._dispatch_queues.add(q)
         self._queue_last_active[id(q)] = time.time()
         self._total_connections += 1
         return q
+
+    def is_dispatch_subscribed(self, queue: "asyncio.Queue[dict[str, Any]]") -> bool:
+        """False once a full queue was dropped: the stream must end so the
+        panel reconnects and gets a fresh snapshot."""
+        return queue in self._dispatch_queues
 
     def unsubscribe_dispatch(self, queue: "asyncio.Queue[dict[str, Any]]"):
         self._dispatch_queues.discard(queue)
@@ -380,7 +388,7 @@ class EventBus:
     async def push_dispatch_rider_presence(
         self, rider_id: int, active: bool, name: str | None = None,
         lat: float | None = None, lng: float | None = None,
-        last_seen: str | None = None,
+        last_seen: str | None = None, photo_url: str | None = None,
     ):
         data: dict[str, Any] = {
             "id": rider_id,
@@ -399,6 +407,8 @@ class EventBus:
                 "active": True,
                 "ts": data["ts"],
             }
+            if photo_url:
+                data["photo_url"] = photo_url
         self._deliver_dispatch_rider_presence(data)
         await self._publish({"kind": "dispatch_rider_presence", "data": data})
 

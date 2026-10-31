@@ -415,13 +415,16 @@ async def test_snapshot_filters_riders_and_returns_only_approximate_presence(
     assert len(snapshot["drivers"]) == 1
     assert len(riders) == 1
     row = riders[0]
-    assert set(row) == {"id", "name", "lat", "lng", "last_seen"}
+    # Still approximate (2 decimals, no phone); the photo is the owner's
+    # 2026-10-31 ask for the map popup.
+    assert set(row) == {"id", "name", "lat", "lng", "last_seen", "photo_url"}
     assert row == {
         "id": rider.id,
         "name": "Test Rider",
         "lat": 25.77,
         "lng": -80.19,
         "last_seen": now.isoformat(),
+        "photo_url": None,
     }
 
 
@@ -542,6 +545,7 @@ async def test_live_stream_snapshot_and_rider_presence_events(
             "lat": 25.76,
             "lng": -80.19,
             "last_seen": now.isoformat(),
+            "photo_url": None,
         }]
 
         await event_bus.push_dispatch_rider_presence(

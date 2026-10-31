@@ -245,6 +245,8 @@ async def test_live_stream_snapshot_live_event_and_disconnect(
         assert set(row) == {
             "id", "name", "phone", "lat", "lng", "rating", "vehicle",
             "on_trip", "trip_id", "last_updated",
+            # Owner 2026-10-31: tapping a driver on the map shows the photo.
+            "photo_url",
         }
         assert row["id"] == driver.id
         assert row["rating"] == 5.0

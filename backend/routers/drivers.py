@@ -3308,25 +3308,85 @@ async def driver_face_check(request: Request,
     validate_image_bytes(decoded)
     from utils.image_validation import shrink_image_bytes
     decoded = shrink_image_bytes(decoded)
-    fb_path = f"drivers/{user.id}/face_check_{int(_time.time())}.jpg"
-    fb_url = firestore_sync.upload_to_firebase_storage(decoded, fb_path, "image/jpeg")
+    # Unique per shot: two selfies in the same second used to share a name,
+    # and replacing the older one would have deleted the newer one's file.
+    fb_path = (f"drivers/{user.id}/face_check_"
+               f"{int(_time.time() * 1000)}_{secrets.token_hex(3)}.jpg")
+    # Off the event loop: upload + make_public are two blocking round-trips
+    # to Google, and inline they froze every other request on this worker
+    # while a driver sat on the "verifying" loader (2026-10-31).
+    fb_url = await asyncio.to_thread(
+        firestore_sync.upload_to_firebase_storage, decoded, fb_path, "image/jpeg")
     if not fb_url:
         raise HTTPException(503, "Document storage unavailable. Please try again later.")
     # Dispatch review (2026-10-23, owner spec): the selfie AUTO-APPROVES by
     # default; a driver dispatch rejected once is on manual review — their
     # selfie stays PENDING (no stamp, no connect) until dispatch approves.
     if user.face_review_required:
-        db.add(Document(user_id=user.id, doc_type="selfie_check",
-                        status="pending", file_path=fb_url))
+        doc = Document(user_id=user.id, doc_type="selfie_check",
+                       status="pending", file_path=fb_url)
+        db.add(doc)
+        await db.flush()
+        stale = await _drop_older_selfies(db, user.id, keep_id=doc.id)
         await db.commit()
+        _delete_selfie_files(user.id, stale, keep=fb_url)
         return {"ok": True, "pending_review": True}
     user.last_face_verified_at = utc_now()
-    # Informational row — dispatch sees the daily checks in the person file.
-    db.add(Document(user_id=user.id, doc_type="selfie_check",
-                    status="approved", file_path=fb_url))
+    # Informational row — dispatch sees the latest check in the person file.
+    doc = Document(user_id=user.id, doc_type="selfie_check",
+                   status="approved", file_path=fb_url)
+    db.add(doc)
+    await db.flush()
+    stale = await _drop_older_selfies(db, user.id, keep_id=doc.id)
     await db.commit()
+    _delete_selfie_files(user.id, stale, keep=fb_url)
     return {"ok": True, "pending_review": False,
             "last_face_verified_at": user.last_face_verified_at.isoformat()}
+
+
+async def _drop_older_selfies(db: AsyncSession, user_id: int, keep_id: int) -> list[str]:
+    """ONE selfie per driver — the newest replaces the rest (owner spec
+    2026-10-31: "que no se guarden, que se reemplace con la última que se
+    tomó"; Fabio's person file had piled up a card per day). Deletes the
+    older selfie_check rows in this transaction and returns their file
+    URLs, so the storage objects go once the commit lands."""
+    rows = (await db.execute(select(Document).where(
+        Document.user_id == user_id,
+        Document.doc_type == "selfie_check",
+        Document.id != keep_id,
+    ))).scalars().all()
+    urls = [r.file_path for r in rows if r.file_path]
+    for r in rows:
+        await db.delete(r)
+    return urls
+
+
+def _delete_selfie_files(user_id: int, urls: list[str], keep: str = "") -> None:
+    """Best-effort storage cleanup, off the request. Only this driver's own
+    face_check objects are ever touched — the path is checked, not trusted."""
+    from urllib.parse import urlparse
+    prefix = f"drivers/{user_id}/face_check_"
+    paths = []
+    for u in urls:
+        if u == keep:
+            continue  # never the file the newest selfie points at
+        # Public URL = https://storage.googleapis.com/<bucket>/<path>; the
+        # object path starts at the driver's own prefix.
+        url_path = urlparse(u).path
+        i = url_path.find(prefix)
+        if i >= 0:
+            paths.append(url_path[i:])
+    if not paths:
+        return
+
+    def _run():
+        for path in paths:
+            firestore_sync.delete_from_firebase_storage(path)
+
+    try:
+        asyncio.get_running_loop().run_in_executor(None, _run)
+    except RuntimeError:
+        _run()
 
 
 @router.post("/drivers/vehicle/plate", dependencies=[Depends(_verify_api_key)])

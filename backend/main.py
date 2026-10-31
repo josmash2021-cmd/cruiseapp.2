@@ -71,6 +71,9 @@ from ghost_driver_agent import ghost_driver_agent
 from safety_monitor_agent import safety_monitor_agent
 from document_expiry_agent import document_expiry_agent
 from background_recheck_agent import background_recheck_agent
+# Registers the listener that renews a document's date when its photo is
+# replaced (the panel prints it on every photo card — 2026-10-31).
+import services.document_photo_time  # noqa: F401
 from document_approval_agent import document_approval_agent
 from rating_moderator_agent import rating_moderator_agent
 from cruise_level_agent import cruise_level_agent

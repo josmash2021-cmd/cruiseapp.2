@@ -466,3 +466,59 @@ async def test_heartbeat_cannot_undo_the_kick(client, db, test_driver):
     assert res.status_code == 200, res.text
     await db.refresh(driver)
     assert driver.is_online is True
+
+
+async def test_new_selfie_replaces_the_older_ones(client, db, test_driver, monkeypatch):
+    """Owner 2026-10-31: selfies are not kept — the newest replaces the rest
+    (row AND storage object), whatever the review state."""
+    _fake_storage(monkeypatch)
+    deleted = []
+    monkeypatch.setattr(
+        "routers.drivers.firestore_sync.delete_from_firebase_storage",
+        lambda path: deleted.append(path) or True)
+    driver, token = test_driver
+
+    for _ in range(3):
+        # Fresh signed headers each call — the nonce is single-use.
+        headers = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+        res = await client.post("/drivers/face-check", headers=headers,
+                                json={"photo_b64": _png_b64()})
+        assert res.status_code == 200, res.text
+
+    docs = (await db.execute(select(Document).where(
+        Document.user_id == driver.id,
+        Document.doc_type == "selfie_check"))).scalars().all()
+    assert len(docs) == 1, "only the newest selfie stays"
+    # The two replaced objects were deleted — only this driver's own files.
+    import asyncio as _a
+    await _a.sleep(0.05)
+    assert len(deleted) == 2
+    assert all(p.startswith(f"drivers/{driver.id}/face_check_") for p in deleted)
+    assert docs[0].file_path.split("storage.test/")[1] not in deleted
+
+
+async def test_replacing_a_document_photo_renews_its_date(db, test_driver):
+    """The panel prints created_at as the photo's date and time (owner
+    2026-10-31) — a photo replaced in place must carry the NEW date."""
+    from datetime import timedelta
+    import services.document_photo_time  # noqa: F401  (registers listener)
+
+    driver, _ = test_driver
+    old = datetime.now(timezone.utc) - timedelta(days=5)
+    doc = Document(user_id=driver.id, doc_type="insurance", status="approved",
+                   file_path="https://storage.test/a.jpg", created_at=old)
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+
+    doc.status = "pending"  # a status change alone keeps the photo's date
+    await db.commit()
+    await db.refresh(doc)
+    stamp = doc.created_at if doc.created_at.tzinfo else doc.created_at.replace(tzinfo=timezone.utc)
+    assert abs((stamp - old).total_seconds()) < 1
+
+    doc.file_path = "https://storage.test/b.jpg"  # a NEW photo
+    await db.commit()
+    await db.refresh(doc)
+    stamp = doc.created_at if doc.created_at.tzinfo else doc.created_at.replace(tzinfo=timezone.utc)
+    assert (datetime.now(timezone.utc) - stamp).total_seconds() < 60

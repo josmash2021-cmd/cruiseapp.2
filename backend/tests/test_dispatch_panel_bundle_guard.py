@@ -75,3 +75,16 @@ def test_panel_opens_pdf_documents():
     assert "isPdfUrl(i.url)?" in people, "gallery thumbnail"
     assert 'isPdfUrl(a.url)?e.jsx("a",{href:a.url,target:"_blank"' in people, "gallery viewer"
     assert people.count("isPdfUrl(url)?") == 1, "review card"
+
+
+def test_panel_photo_cards_show_date_and_12h_time():
+    """2026-10-31 (owner): "cada foto quiero que tenga fecha y hora para todos
+    los drivers y la hora no sea 24h si no 12". Hand-patched (CLAUDE.md #30):
+    the mapper keeps created_at and every photo card prints it in Florida
+    time, 12-hour clock."""
+    people = (ENTRY.parent / "index-azyIyM-i.js").read_text(encoding="utf-8")
+    assert 'createdAt:typeof t.created_at==="string"?t.created_at:null' in people
+    assert "function photoStamp(iso)" in people
+    assert 'timeZone:"America/New_York"' in people
+    assert "hour12:!0" in people
+    assert people.count("children:photoStamp(d.createdAt)") == 1, "one stamp per card"

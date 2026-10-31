@@ -23,6 +23,7 @@ import '../../widgets/neu_style.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
+import '../../utils/friendly_load_error.dart';
 import '../../services/directions_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/scheduled_board_watcher.dart';
@@ -173,12 +174,13 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       setState(() {
         _available = trips;
         _loadingAvail = false;
+        _errorAvail = null; // data arrived — the old failure goes away
       });
     } catch (e) {
       if (!mounted) return;
       if (_available.isEmpty) {
         setState(() {
-          _errorAvail = e.toString();
+          _errorAvail = friendlyLoadError(context, e, pendingOn403: true);
           _loadingAvail = false;
         });
       } else {
@@ -233,12 +235,13 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       setState(() {
         _myRides = trips;
         _loadingMine = false;
+        _errorMine = null; // data arrived — the old failure goes away
       });
     } catch (e) {
       if (!mounted) return;
       if (_myRides.isEmpty) {
         setState(() {
-          _errorMine = e.toString();
+          _errorMine = friendlyLoadError(context, e);
           _loadingMine = false;
         });
       } else {

@@ -23,6 +23,7 @@ import '../../services/directions_service.dart';
 import '../../services/haptic_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/scheduled_board_watcher.dart';
+import '../../utils/friendly_load_error.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/neu_style.dart';
@@ -343,6 +344,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       final freshJson = jsonEncode(trips);
       if (_freshLoaded && freshJson == _lastAvailJson) {
         _loadingAvail = false;
+        // The signal came back with the same list: the error goes away.
+        if (_errorAvail != null) setState(() => _errorAvail = null);
         return;
       }
       _lastAvailJson = freshJson;
@@ -353,6 +356,9 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         _available = trips;
         _loadingAvail = false;
         _freshLoaded = true;
+        // Data arrived: an earlier failure must not keep covering it
+        // (2026-10-31 — the error stayed up after the signal came back).
+        _errorAvail = null;
       });
       _syncBubbles();
       _tryConsumePendingSelect();
@@ -364,11 +370,9 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
           // "ApiException" and think the marketplace is down. The server
           // already sends the reason; a 403 here means the account is not
           // approved yet (waitlist/pending), not a server failure.
-          _errorAvail = e is ApiException
-              ? (e.statusCode == 403
-                  ? S.of(context).accountPendingDesc
-                  : e.message)
-              : e.toString();
+          // 2026-10-31: no signal printed the raw "ClientException with
+          // SocketException…" — never the exception text, ever.
+          _errorAvail = friendlyLoadError(context, e, pendingOn403: true);
           _loadingAvail = false;
         });
       } else {

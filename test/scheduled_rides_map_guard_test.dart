@@ -139,8 +139,12 @@ void main() {
 
   group('browse error surfaces the real reason (2026-10-26)', () {
     test('never raw ApiException; 403 reads as account under review', () {
-      expect(screen, contains('_errorAvail = e is ApiException'));
-      expect(screen, contains('S.of(context).accountPendingDesc'));
+      // Since 2026-10-31 through the shared friendlyLoadError (no signal
+      // printed "ClientException with SocketException…" — the non-API
+      // branch still fell through to e.toString()).
+      expect(screen, contains('friendlyLoadError(context, e, pendingOn403: true)'));
+      final helper = File('lib/utils/friendly_load_error.dart').readAsStringSync();
+      expect(helper, contains('return s.accountPendingDesc;'));
       expect(screen, isNot(contains('_errorAvail = e.toString();')),
           reason: 'raw wrapper made drivers think the marketplace was down');
     });

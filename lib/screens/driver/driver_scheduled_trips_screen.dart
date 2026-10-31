@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../utils/friendly_load_error.dart';
 import '../../widgets/neu_style.dart';
 import '../../services/notification_service.dart';
 import '../../utils/server_time.dart';
@@ -82,7 +83,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyLoadError(context, e);
         _loading = false;
       });
     }

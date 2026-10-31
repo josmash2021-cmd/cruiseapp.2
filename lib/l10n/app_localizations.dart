@@ -2877,6 +2877,11 @@ class S {
       ? 'PayPal no pudo procesar el pago. Intenta con otro método.'
       : 'PayPal could not process the payment. Try another method.';
   String get networkError => _es ? 'Error de conexión' : 'Network error';
+  // A ride list that could not load (no signal, timeout, server restarting)
+  // — 2026-10-31: replaces the raw exception text drivers were reading.
+  String get loadRidesFailed => _es
+      ? 'No pudimos cargar los viajes. Revisa tu señal e intenta de nuevo.'
+      : "We couldn't load the rides. Check your signal and try again.";
   String get networkErrorMsg => _es
       ? 'Hubo un problema de conexión. Verifica tu internet e intenta de nuevo.'
       : 'There was a connection problem. Check your internet and try again.';

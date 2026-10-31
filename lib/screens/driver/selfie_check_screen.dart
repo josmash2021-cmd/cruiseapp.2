@@ -71,6 +71,28 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   String? _reviewPhotoPath;
   bool _reviewDone = false;
 
+  /// True from the shutter until the server answers. The X in that window
+  /// CANCELS (no GO) — it used to pop "pending", which parked the driver on
+  /// a grey "selfie en revisión" GO for a review nobody had opened
+  /// (2026-10-31). Only the real manual-review wait pops "pending".
+  bool _uploading = false;
+
+  /// Timings of this attempt, reported once (ApiService.logClientEvent) so
+  /// the next "se queda cargando" is read in the server log, not guessed.
+  final Stopwatch _attemptClock = Stopwatch();
+  final List<String> _attemptLog = [];
+
+  void _mark(String what) {
+    _attemptLog.add('$what@${_attemptClock.elapsedMilliseconds}ms');
+  }
+
+  void _report(String outcome) {
+    if (_attemptLog.isEmpty) return;
+    ApiService.logClientEvent(
+        'face_check', '$outcome ${_attemptLog.join(' ')}');
+    _attemptLog.clear();
+  }
+
   /// Capture preset — copied from license_scanner_screen.dart's
   /// doc-comment: iOS runs ultraHigh, NEVER max (the plugin's .max branch
   /// overrides the active format AND sets `isHighResolutionPhotoEnabled`
@@ -81,8 +103,13 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   /// the selfie came back on EVERY connect. A liveness selfie needs a face,
   /// not 48 MP — `high` (720p) plus the downscale in [_shrinkSelfieForUpload]
   /// keeps every phone well under the cap.
+  /// iOS ran ultraHigh (4K) until 2026-10-31: the pure-Dart downscale of an
+  /// 8 MP still took long enough on older iPhones that drivers gave up on the
+  /// "verifying" loader (Fabio, iOS 26.5.2: "se queda cargando"). veryHigh
+  /// (1080p) is a plain session preset — still above the 1280 px upload
+  /// side, a quarter of the pixels to decode.
   static ResolutionPreset get _capturePreset =>
-      AppPlatform.isIOS ? ResolutionPreset.ultraHigh : ResolutionPreset.high;
+      AppPlatform.isIOS ? ResolutionPreset.veryHigh : ResolutionPreset.high;
 
   @override
   void initState() {
@@ -216,12 +243,27 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
     if (_ctrl == null || !_ctrl!.value.isInitialized || _capturing) return;
     setState(() => _capturing = true);
     HapticService.mediumImpact();
+    _attemptClock
+      ..reset()
+      ..start();
+    _attemptLog.clear();
     try {
-      final xFile = await _ctrl!.takePicture();
+      // Bounded: a camera that never hands the shot back used to leave the
+      // shutter spinning for good.
+      final xFile =
+          await _ctrl!.takePicture().timeout(const Duration(seconds: 10));
       if (!mounted) return;
+      _mark('shot');
       _uploadAndVerify(xFile.path);
-    } catch (_) {
-      if (mounted) setState(() => _capturing = false);
+    } catch (e) {
+      _mark('shot_failed:${e.runtimeType}');
+      _report('fail');
+      if (!mounted) return;
+      setState(() => _capturing = false);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        content: Text(S.of(context).faceCheckShotFailed),
+        duration: const Duration(seconds: 3),
+      ));
     }
   }
 
@@ -246,17 +288,25 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
       _step = 2;
       _reviewPhotoPath = photoPath;
       _reviewDone = false;
+      _uploading = true;
     });
     // Downscale off the UI thread BEFORE the base64: the payload must land
     // well under the backend's 5 MB body cap on every Android phone.
+    // Bounded (2026-10-31): past 12 s the raw 1080p shot goes as it is —
+    // the backend shrinks it too, a slow phone must not stall the loader.
     Uint8List? bytes;
     try {
-      bytes = await compute(_shrinkSelfieForUpload, photoPath);
+      bytes = await compute(_shrinkSelfieForUpload, photoPath)
+          .timeout(const Duration(seconds: 12));
+      _mark('shrink');
     } catch (e) {
+      _mark('shrink_skipped:${e.runtimeType}');
       debugPrint('[SelfieCheck] downscale failed, uploading raw: $e');
     }
     if (!mounted || _reviewDone) return;
     final resp = await ApiService.submitFaceCheck(photoPath, bytes: bytes);
+    _uploading = false;
+    _mark('upload:${resp == null ? 'null' : resp['ok'] == false ? 'HTTP${resp['status']}' : 'ok'}');
     if (!mounted || _reviewDone) return;
     if (resp == null || resp['ok'] == false) {
       // Upload failed — the callers stay fail-open: bare photo pops and
@@ -267,14 +317,17 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
           ? 'null response'
           : 'HTTP ${resp['status']} ${resp['detail'] ?? ''}'.trim();
       debugPrint('[SelfieCheck] upload failed: $reason');
+      _report('fail');
       _reviewDone = true;
       Navigator.of(context).pop({'photo': photoPath, 'error': reason});
       return;
     }
     if (resp['pending_review'] != true) {
+      _report('ok');
       _finishReview(true);
       return;
     }
+    _report('pending_review');
     _startReviewWait();
   }
 
@@ -299,6 +352,18 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
     _reviewTimeout = Timer(const Duration(seconds: 90), () {
       _finishReview(null);
     });
+  }
+
+  /// The X while the shot is still uploading: a plain cancel (the caller
+  /// reads null = no GO). The upload itself is left to finish — if it lands,
+  /// the stamp is there and the next GO skips the selfie.
+  void _cancelUpload() {
+    if (_reviewDone) return;
+    _reviewDone = true;
+    _mark('cancelled');
+    _report('cancel');
+    if (!mounted) return;
+    Navigator.of(context).pop(null);
   }
 
   /// One outcome, once: true approved · false rejected · null still pending
@@ -377,15 +442,16 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
               ),
             ),
           ),
-          // Escape hatch (never trapped): pops "pending" — the caller's
-          // grey review GO + 30 s poll take it from there.
+          // Escape hatch (never trapped). While the shot is still going up
+          // it CANCELS — no GO, nothing pending; only during a real manual
+          // review does it pop "pending" (grey review GO + 30 s poll).
           Positioned(
             top: 0,
             left: 0,
             child: Padding(
               padding: const EdgeInsets.only(left: 8, top: 4),
               child: IconButton(
-                onPressed: () => _finishReview(null),
+                onPressed: _uploading ? _cancelUpload : () => _finishReview(null),
                 icon: const Icon(Icons.close_rounded,
                     color: Colors.white, size: 24),
               ),

@@ -162,9 +162,11 @@ void main() {
   });
 
   group('the daily selfie lands under the 5 MB body cap', () {
-    test('Android captures at high, iOS keeps ultraHigh (never max)', () {
+    // iOS 1080p since 2026-10-31: the 4K still made the downscale crawl on
+    // older iPhones and drivers gave up on the loader ("se queda cargando").
+    test('Android captures at high, iOS at veryHigh (never max)', () {
       expect(selfie,
-          contains('AppPlatform.isIOS ? ResolutionPreset.ultraHigh : ResolutionPreset.high;'));
+          contains('AppPlatform.isIOS ? ResolutionPreset.veryHigh : ResolutionPreset.high;'));
       expect(selfie, isNot(contains('ResolutionPreset.max')));
     });
 

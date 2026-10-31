@@ -123,8 +123,12 @@ void main() {
         reason: 'the 90 s ceiling — nobody is trapped on the loader');
     expect(screen, contains("if (approved == null) 'pending': true else 'approved': approved"),
         reason: 'the three-way result contract');
-    expect(screen, contains('onPressed: () => _finishReview(null)'),
-        reason: 'the escape X pops pending (grey review GO takes over)');
+    // 2026-10-31: during the UPLOAD the X cancels (pop null = no GO);
+    // only the real manual-review wait pops pending. Popping pending from
+    // the upload parked Fabio on a grey "en revisión" GO nobody reviewed.
+    expect(screen,
+        contains('onPressed: _uploading ? _cancelUpload : () => _finishReview(null),'),
+        reason: 'the escape X: cancel while uploading, pending in review');
     expect(screen, contains('s.faceCheckVerifyingTitle'));
     expect(screen, contains('s.faceCheckVerifyingBody'),
         reason: '"revisando… vestimenta correcta y profesional"');
@@ -139,12 +143,13 @@ void main() {
   });
 
   test('the known camera traps are pinned in place', () {
-    expect(screen, contains('ResolutionPreset.ultraHigh'),
-        reason: 'iOS ultraHigh, NEVER max — the .max still closes the app '
-            'on iOS 16+ (native NSException)');
-    expect(screen, contains('AppPlatform.isIOS ? ResolutionPreset.ultraHigh : ResolutionPreset.high'),
-        reason: 'Android high since 2026-10-29: a full-sensor max shot blew '
-            'the 5 MB body cap (413) and the selfie came back every connect');
+    expect(screen, isNot(contains('ResolutionPreset.max')),
+        reason: 'NEVER max — the .max still closes the app on iOS 16+ '
+            '(native NSException)');
+    expect(screen, contains('AppPlatform.isIOS ? ResolutionPreset.veryHigh : ResolutionPreset.high'),
+        reason: 'iOS 1080p since 2026-10-31 (4K made the pure-Dart downscale '
+            'crawl on older iPhones — "se queda cargando"); Android high '
+            'since 2026-10-29 (a full-sensor max shot blew the 5 MB cap)');
     expect(screen, contains('final c = _ctrl;\n    _ctrl = null;\n    c?.dispose();'),
         reason: 'dispose null-swap — the route exit animation rebuilds '
             'AFTER dispose (Crashlytics 2026-10-17)');
@@ -208,4 +213,19 @@ void main() {
         reason: 'the old title died on every selfie-verification page');
     expect(l10n, isNot(contains("'Selfie Verification'")));
   });
+
+  test('2026-10-31: no wait in the selfie flow is unbounded', () {
+    // "se toman la selfie y se queda cargando" (Fabio, iOS 26.5.2).
+    expect(screen,
+        contains('takePicture().timeout(const Duration(seconds: 10))'),
+        reason: 'a camera that never hands the shot back resets the shutter');
+    expect(screen, contains('S.of(context).faceCheckShotFailed'));
+    expect(screen, contains('.timeout(const Duration(seconds: 12));'),
+        reason: 'past 12 s the downscale is skipped, the shot goes raw');
+    expect(screen, contains('void _cancelUpload()'));
+    expect(screen, contains("'face_check', '\$outcome"),
+        reason: 'every attempt reports its timings to the server log');
+    expect(l10n, contains('String get faceCheckShotFailed =>'));
+  });
 }
+

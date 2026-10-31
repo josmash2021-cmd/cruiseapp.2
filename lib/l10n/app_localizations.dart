@@ -3636,6 +3636,11 @@ class S {
   String get faceCheckUploadFailed => _es
       ? 'No se pudo verificar la selfie, se volverá a pedir'
       : 'The selfie could not be verified, it will be asked again';
+  // The camera never handed the shot back (2026-10-31): the shutter used
+  // to spin forever — now it resets and says so.
+  String get faceCheckShotFailed => _es
+      ? 'No se pudo tomar la foto, intenta de nuevo'
+      : "The photo couldn't be taken, please try again";
   // The verifying wait inside the selfie screen (2026-10-23, owner spec):
   // after the retaken photo the page does NOT close — it holds this loading
   // until dispatch's decision lands, then closes already-connecting.

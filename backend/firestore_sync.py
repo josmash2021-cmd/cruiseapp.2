@@ -464,8 +464,8 @@ def _offload(fn, *args, **kwargs):
 
 
 def sync_support_chat(chat_id: int, user_id: int, first_name: str, last_name: str,
-                       photo_url: str = None, role: str = "rider",
-                       subject: str = "", status: str = "open",
+                       photo_url: str = None, role: str | None = None,
+                       subject: str | None = None, status: str = "open",
                        needs_escalation: bool = False, bot_phase: str = "welcome"):
     """Upsert a support chat into the Firestore `support_chats` collection —
     off the calling thread (see _offload)."""
@@ -478,30 +478,43 @@ def sync_support_chat(chat_id: int, user_id: int, first_name: str, last_name: st
 
 
 def _sync_support_chat_now(chat_id: int, user_id: int, first_name: str, last_name: str,
-                       photo_url: str = None, role: str = "rider",
-                       subject: str = "", status: str = "open",
+                       photo_url: str = None, role: str | None = None,
+                       subject: str | None = None, status: str = "open",
                        needs_escalation: bool = False, bot_phase: str = "welcome"):
     _ensure_init()
     if _db is None:
         return
     doc_id = f"chat_{chat_id}"
+    # A field the caller does not know is NOT written (2026-10-31): the
+    # escalation syncs pass only the first name and no role, and the old
+    # `role or "rider"` turned every escalated DRIVER chat into a rider one
+    # on the panel (and blanked the photo and subject).
     data = {
         "chatId": chat_id,
         "userId": user_id,
-        "userName": f"{first_name} {last_name}".strip(),
-        "userPhoto": photo_url,
-        "userRole": role or "rider",
-        "subject": subject,
         "status": status,
         "needsEscalation": needs_escalation,
         "botPhase": bot_phase,
         "lastUpdated": _ts(),
     }
+    name = f"{first_name or ''} {last_name or ''}".strip()
+    if photo_url is not None:
+        data["userPhoto"] = photo_url
+    if role:
+        data["userRole"] = role
+    if subject is not None:
+        data["subject"] = subject
     try:
         ref = _db.collection("support_chats").document(doc_id)
         existing = ref.get()
         if not existing.exists:
             data["createdAt"] = _ts()
+            data.setdefault("userRole", "rider")
+            data.setdefault("subject", "")
+            if name:
+                data["userName"] = name
+        elif name and (last_name or not (existing.to_dict() or {}).get("userName")):
+            data["userName"] = name
         ref.set(data, merge=True)
         log.info("🔄 Synced support chat %d → Firestore", chat_id)
     except Exception as e:

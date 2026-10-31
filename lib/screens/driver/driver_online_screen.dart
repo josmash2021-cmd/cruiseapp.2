@@ -325,6 +325,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final _gpsService = GpsService();
   DateTime _lastNavSetState = DateTime(0);
   DateTime _lastBackendLocSend = DateTime(0);
+  // The last REAL GPS fix (owner report 2026-10-31: drivers jumping on the
+  // dispatch map). Heartbeats upload THIS with its own captured_at — never
+  // `_pos`, which is the drawn arrow: smoothed, projected ahead, snapped to
+  // the road, and frozen whenever the map is handed to the trip screen.
+  Position? _lastRawFix;
   bool _lastStyleDark = true;
   // One-shot re-apply of the navy/gold theme after onMapCreated. On a fresh
   // install onStyleLoaded can fire before `_map` is stored (or not reach the

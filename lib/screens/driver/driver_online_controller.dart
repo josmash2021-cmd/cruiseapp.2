@@ -1793,12 +1793,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // to resurrect the driver in the DB and the offers kept coming.
       if (_wentOffline) return;
       if (_driverId == null || _pos == null) return;
+      final fix = _lastRawFix;
       try {
         await ApiService.updateDriverLocation(
           driverId: _driverId!,
-          lat: _pos!.latitude,
-          lng: _pos!.longitude,
+          lat: fix?.latitude ?? _pos!.latitude,
+          lng: fix?.longitude ?? _pos!.longitude,
           isOnline: true,
+          capturedAt: fix?.timestamp.toUtc(),
         );
         debugPrint('[DriverOnline] Background heartbeat sent');
       } catch (e) {
@@ -1970,6 +1972,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           }
         }
 
+        _lastRawFix = pos;
         // Feed GpsService for RTDB upload (800ms throttled)
         // Measured values only — Android's Doppler-less 0/0 went out as
         // "stopped, facing north" to the rider and dispatch (2026-10-29).
@@ -2252,14 +2255,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (_nearPickupNotified || _phase != _Phase.enRouteToPickup) return;
     _nearPickupNotified = true;
     HapticService.heavyImpact();
-    // Send final position to backend so rider sees driver at pickup
-    if (_driverId != null) {
-      ApiService.updateDriverLocation(
-        driverId: _driverId!,
-        lat: _pickupLL.latitude,
-        lng: _pickupLL.longitude,
-      ).catchError((_) => <String, dynamic>{});
-    }
+    // No upload of the pickup coordinates here: that put the driver AT the
+    // pickup on the rider's and dispatch's map before they were there
+    // (2026-10-31). The real GPS stream reports the arrival.
     // Show ARRIVED button
     _setState(() {});
   }
@@ -2268,14 +2266,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (_nearDropoffNotified || _phase != _Phase.inTrip) return;
     _nearDropoffNotified = true;
     HapticService.heavyImpact();
-    // Send final position to backend so rider sees driver at dropoff
-    if (_driverId != null) {
-      ApiService.updateDriverLocation(
-        driverId: _driverId!,
-        lat: _dropoffLL.latitude,
-        lng: _dropoffLL.longitude,
-      ).catchError((_) => <String, dynamic>{});
-    }
+    // No upload of the dropoff coordinates — same reason as _onNearPickup.
     // Show FINISH TRIP button in panel
     _setState(() {});
   }
@@ -3526,10 +3517,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _pos != null &&
         now.difference(_lastBackendLocSend).inSeconds >= 2) {
       _lastBackendLocSend = now;
+      final fix = _lastRawFix;
       ApiService.updateDriverLocation(
         driverId: _driverId!,
-        lat: _pos!.latitude,
-        lng: _pos!.longitude,
+        lat: fix?.latitude ?? _pos!.latitude,
+        lng: fix?.longitude ?? _pos!.longitude,
+        capturedAt: fix?.timestamp.toUtc(),
       ).catchError((e) {
         // Same terminal face-check 403 as the 5 s GPS stream (2026-10-23).
         if (e is ApiException && e.message == 'shift_rest_required') {

@@ -2655,6 +2655,12 @@ async def _scheduled_ride_dispatcher():
                     # --------------------------------------------------
                     _needs_hold = bool(trip.stripe_payment_intent_id) or (
                         (trip.payment_status or "unpaid") in ("unpaid", "held"))
+                    # App Store review rider (test mode): never held, never
+                    # charged — the platform pays the driver at completion.
+                    from services.platform_earnings import review_tester_ids
+                    if (not trip.stripe_payment_intent_id
+                            and trip.rider_id in review_tester_ids()):
+                        _needs_hold = False
                     if _needs_hold:
                         from config import _HAS_STRIPE, _stripe_mod
                         if _HAS_STRIPE:

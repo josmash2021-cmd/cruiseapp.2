@@ -56,7 +56,11 @@ def apply_review_test_funding(trip: Trip) -> bool:
     before the completion charge and before settlement, so every completion
     path (driver, dispatch, admin, retries) credits the driver once.
     """
-    if getattr(trip, "funding_source", None) or getattr(trip, "stripe_payment_intent_id", None):
+    if getattr(trip, "stripe_payment_intent_id", None):
+        return False
+    # Live pricing (2026-10-26) stamps every trip "rider" at booking; that is
+    # still "nobody else pays". Courtesy / Cruise Cash trips stay untouched.
+    if (getattr(trip, "funding_source", None) or "rider") != "rider":
         return False
     if trip.rider_id not in review_tester_ids():
         return False

@@ -3062,9 +3062,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     if (_menuRouteOpen) return;
     _menuRouteOpen = true;
     try {
-      // See-through: the glass menu blurs the live map beneath it.
       await Navigator.of(context)
-          .push(slideFromLeftRoute(const DriverMenuScreen(), opaque: false));
+          .push(slideFromLeftRoute(const DriverMenuScreen()));
     } finally {
       _menuRouteOpen = false;
       if (mounted) unawaited(_remountMapSurface());

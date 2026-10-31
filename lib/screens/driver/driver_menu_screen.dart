@@ -316,26 +316,18 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     final top = MediaQuery.of(context).padding.top;
     final s = S.of(context);
     return Scaffold(
-      // Frosted grey glass over the map (owner spec 2026-10-30: "también el
-      // menú"). The route is pushed see-through from the map screen
-      // (_openDriverMenu), so the blur has the live map to work on; pushed
-      // over an opaque page it settles to a dark grey, like the old base.
-      backgroundColor: Colors.transparent,
+      backgroundColor: neuBase,
+      // Same dotted backdrop as the rider's home. On a flat neuBase the
+      // neumorphic cards float on nothing; the dots give the surface they
+      // are pressed into, which is the whole point of the style.
       body: Stack(
         children: [
-          const Positioned.fill(
-            child: GlassSurface(
-              blur: kGlassSheetBlur,
-              tint: glassSheetTint,
-              border: Border(),
-              child: SizedBox.expand(),
-            ),
-          ),
+          const Positioned.fill(child: NeuDotsBackdrop()),
           Column(
         children: [
           // ── Top bar ──
           Container(
-            color: Colors.transparent,
+            color: neuBase,
             padding: EdgeInsets.only(
               top: top + 8,
               bottom: 12,
@@ -349,7 +341,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                   child: Container(
                     width: Responsive.w(40),
                     height: Responsive.w(40),
-                    decoration: glassInnerBox(radius: 14, pressed: true),
+                    decoration: neuBox(radius: 14, pressed: true),
                     child: Icon(
                       Icons.close_rounded,
                       color: _text,
@@ -541,7 +533,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
       },
       child: Container(
         padding: EdgeInsets.all(Responsive.w(18)),
-        decoration: glassInnerBox(radius: 22),
+        decoration: neuBox(radius: 22),
         child: Row(
           children: [
             // Avatar
@@ -772,7 +764,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: glassInnerBox(radius: 18),
+          decoration: neuBox(radius: 18),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -816,7 +808,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   /// Raised neumorphic card holding a group of menu rows, hairline-divided.
   Widget _sectionCard(List<Widget> rows) {
     return Container(
-      decoration: glassInnerBox(radius: 20),
+      decoration: neuBox(radius: 20),
       child: Column(
         children: [
           for (var i = 0; i < rows.length; i++) ...[
@@ -859,7 +851,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
             Container(
               width: 40,
               height: 40,
-              decoration: glassInnerBox(radius: 14, pressed: true),
+              decoration: neuBox(radius: 14, pressed: true),
               child: Icon(icon, color: accentColor, size: 21),
             ),
             const SizedBox(width: 14),

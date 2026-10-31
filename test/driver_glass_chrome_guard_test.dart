@@ -72,13 +72,29 @@ void main() {
       expect(widgets, contains('enabled: t < 1.0,'));
     });
 
-    test('the menu is glass over the live map', () {
-      expect(menu, contains('backgroundColor: Colors.transparent,'));
-      expect(menu, isNot(contains('child: NeuDotsBackdrop()')));
+    test('the menu keeps its solid page (owner 2026-10-31)', () {
+      // "el menú déjalo con el fondo que tenía antes … no lo coloques
+      // transparente": the menu is a full page, not map chrome.
+      expect(menu, contains('backgroundColor: neuBase,'));
+      expect(menu, contains('child: NeuDotsBackdrop()'));
+      expect(offline,
+          contains('slideFromLeftRoute(const DriverMenuScreen())'));
+    });
+
+    test('the open sheet is solid: nothing shows through it', () {
+      // "cuando se abren no pueden verse detrás ni la flecha ni los
+      // botones" (owner 2026-10-31): glass at rest, opaque when open…
+      expect(glassSheetSolid.a, 1.0);
+      expect(widgets,
+          contains('Color.lerp(glassSheetTint, glassSheetSolid, solidT)!'));
+      expect(widgets,
+          contains('((t - _kSheetRestFrac) / 0.33).clamp(0.0, 1.0)'));
+      // …and the side buttons parked above the collapsed sheet step away.
       expect(
-          offline,
-          contains(
-              'slideFromLeftRoute(const DriverMenuScreen(), opaque: false)'));
+          RegExp(r'child: _hideUnderOpenSheet\(Column\(')
+              .allMatches(screen)
+              .length,
+          2);
     });
   });
 

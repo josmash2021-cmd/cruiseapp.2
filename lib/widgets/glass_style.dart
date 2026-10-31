@@ -26,6 +26,11 @@ import 'package:flutter/material.dart';
 const glassTint = Color(0x8F1E1E26); // grey glass, ~56 %
 const glassSheetTint = Color(0xA31A1A21); // a touch denser behind text, ~64 %
 const glassTintLight = Color(0xB3FFFFFF);
+// The sheet's tint once it is OPEN: the same grey, opaque — nothing behind
+// it (the driver's arrow, the side buttons) may show through (owner report
+// 2026-10-31: "cuando se abren no pueden verse detrás ni la flecha ni los
+// botones"). Glass at rest, solid when open.
+const glassSheetSolid = Color(0xFF1A1A21);
 const glassEdge = Color(0x24FFFFFF); // hairline, white 14 %
 const kGlassSheetBlur = 24.0;
 const kGlassChipBlur = 6.0;

@@ -2606,7 +2606,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 // it with the same gap that was always intended.
                 bottom: 78 + bot + 14,
                 left: 16,
-                child: Column(
+                child: _hideUnderOpenSheet(Column(
                   children: [
                     // Zone compass (user spec 2026-10-13: "el botón de
                     // recentrar de la izquierda será una brújula para ver la
@@ -2633,7 +2633,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     // spec 2026-10-15): el calendario vive en el ícono del sheet
                     // (lado derecho); la flecha de destino vuelve cuando se pida.
                   ],
-                ),
+                )),
               ),
               Positioned(
                 // Same lift as the calendar cluster on the left: the panel
@@ -2641,7 +2641,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 // into its top edge.
                 bottom: 78 + bot + 14,
                 right: 16,
-                child: Column(
+                child: _hideUnderOpenSheet(Column(
                   children: [
                     // Safety, where promotions used to be. The chat button
                     // that led this column is gone — it opened the same inbox
@@ -2675,7 +2675,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       },
                     ),
                   ],
-                ),
+                )),
               ),
             ],
 

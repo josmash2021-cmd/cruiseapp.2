@@ -3884,6 +3884,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final screenH = MediaQuery.of(context).size.height;
     final botPad = MediaQuery.of(context).padding.bottom;
     final t = _panelFrac.clamp(0.0, 1.0);
+    // 0 at (or below) the resting height, 1 three-quarters of the way open.
+    final solidT = ((t - _kSheetRestFrac) / 0.33).clamp(0.0, 1.0);
 
     // Collapsed pill height + expanded max height.
     //
@@ -3971,7 +3973,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             // no drop shadow — under a translucent fill it reads as dirt.
             borderRadius: radius,
             blur: kGlassSheetBlur,
-            tint: isDark ? glassSheetTint : surface.withValues(alpha: 0.72),
+            // Glass up to the resting height, then solid by the time it is
+            // open — the map and the buttons under it stop showing through.
+            tint: isDark
+                ? Color.lerp(glassSheetTint, glassSheetSolid, solidT)!
+                : Color.lerp(surface.withValues(alpha: 0.72), surface, solidT)!,
             child: Stack(
               children: [
                 Column(
@@ -4907,6 +4913,22 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ),
         ),
       );
+
+  /// The online side buttons are parked above the COLLAPSED sheet, so the
+  /// open sheet covers them — and through the glass they showed as smudges
+  /// (owner report 2026-10-31). They fade out as soon as it starts to open
+  /// and stop taking taps until it closes again.
+  Widget _hideUnderOpenSheet(Widget child) {
+    final hidden = _panelFrac > 0.04;
+    return IgnorePointer(
+      ignoring: hidden,
+      child: AnimatedOpacity(
+        opacity: hidden ? 0.0 : 1.0,
+        duration: const Duration(milliseconds: 160),
+        child: child,
+      ),
+    );
+  }
 
   Widget _fab(
     IconData ic,

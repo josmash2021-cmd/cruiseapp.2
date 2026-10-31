@@ -455,12 +455,8 @@ void main() {
       expect(openStart, isNonNegative);
       expect(openEnd, greaterThan(openStart));
       final open = off.substring(openStart, openEnd);
-      // See-through since 2026-10-30: the glass menu blurs the live map.
-      expect(
-          open,
-          contains(
-              'slideFromLeftRoute(const DriverMenuScreen(), opaque: false)'),
-          reason: 'the hamburger opens the full-screen glass menu');
+      expect(open, contains('slideFromLeftRoute(const DriverMenuScreen())'),
+          reason: 'the hamburger opens the classic full-screen menu');
       expect(open, contains('if (_menuRouteOpen) return;'),
           reason: 'a double tap cannot push two menu routes');
       expect(open, contains('finally {'),
@@ -485,11 +481,8 @@ void main() {
       expect(routeStart, isNonNegative);
       final route = transitions.substring(routeStart, routeStart + 1200);
       expect(route, contains('PageRouteBuilder<T>('));
-      // Opaque by default — a full page, not a drawer. Only the glass
-      // menu over the map asks for see-through (2026-10-30).
-      expect(route, contains('bool opaque = true'),
+      expect(route, contains('opaque: true'),
           reason: 'this is a full page, not a transparent drawer');
-      expect(route, contains('opaque: opaque,'));
       expect(route, contains('begin: const Offset(-1, 0)'),
           reason: 'the page enters from the left edge');
       expect(route, contains('Curves.easeOutCubic'));

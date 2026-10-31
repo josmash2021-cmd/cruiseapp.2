@@ -528,8 +528,8 @@ async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
 
     IMPORTANT POLICY CHANGE: the bot no longer cancels trips directly.
     Per product rules (2026-04-11), only the rider via the in-app
-    cancel button (before a driver is assigned) and the dispatch team
-    (via the dispatch panel or an action request from support) may
+    cancel button (before a driver is assigned) and the operations staff
+    (via the panel or an action request from support) may
     cancel a trip.
 
     This function now CREATES an action request routed to dispatch
@@ -579,13 +579,13 @@ async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
 
     if lang.startswith("es"):
         return (
-            f"Entendido. He enviado tu solicitud al equipo de dispatch para que "
-            f"revisen la cancelación de tu viaje #{trip.id}. Un agente se pondrá "
-            f"en contacto contigo en breve."
+            f"Entendido. Le pasé tu solicitud a un agente especializado para que "
+            f"revise la cancelación de tu viaje #{trip.id}. Se pondrá en "
+            f"contacto contigo en breve."
         )
     return (
-        f"Got it. I've escalated your cancellation request for trip #{trip.id} "
-        f"to the dispatch team. An agent will reach out shortly to process it."
+        f"Got it. I've passed your cancellation request for trip #{trip.id} "
+        f"to a specialist agent, who will reach out shortly to process it."
     )
 
 
@@ -1048,7 +1048,7 @@ HOW CRUISE ACTUALLY WORKS (shared):
 - Progress only moves forward. A trip already in_trip cannot be pushed back
   to arrived, so never promise to "reset" a trip's state.
 - WHO MAY CANCEL: the rider themselves while no driver is assigned yet, and
-  our dispatch team. DRIVERS CANNOT CANCEL A TRIP — the app rejects it. If a
+  our support team. DRIVERS CANNOT CANCEL A TRIP — the app rejects it. If a
   driver asks how to cancel, do not give them steps that do not exist; take
   the reason and escalate.
 - Payments run through Stripe. Riders are charged when the trip completes.
@@ -1186,9 +1186,9 @@ You are good, but you are not the last line. Hand over — do not stall — when
 
 TO HAND OVER: end your reply with ||REQUEST:escalate-priority:REASON|| where
 REASON is one short line a human can triage from — what happened, what you
-already tried. That marker moves this chat to our dispatch team and a real
-person picks it up here. Tell the user plainly that a supervisor is joining,
-then stop working the case.
+already tried. That marker moves this chat to a specialist agent who picks
+it up here. Tell the user plainly that a specialist agent ("agente
+especializado") is joining — never say dispatch — then stop working the case.
 
 Never promise a specific wait time. "A supervisor is joining this chat" is
 true; "in 5 minutes" is a guess that turns into a complaint.
@@ -2658,6 +2658,14 @@ async def create_or_get_support_chat(request: Request, user: User = Depends(_get
     return await _get_or_create_support_chat(user, db, subject=subject, locale=locale, fresh=fresh)
 
 
+# Once the bot has said an agent is coming, it is done with that chat (owner
+# rule 2026-10-31, chat 201: "si ya dijo que va a conectar a un agente real
+# ... ya debe de dejar de responder"). Neither a resume nor the watchdog
+# hands these back; only dispatch can, by hand (the bot-reactivate endpoint
+# with a chat_id), or a new conversation after the chat closes.
+_HANDED_OVER_PHASES = ("escalated", "dispatch_takeover")
+
+
 async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str = "", locale: str = "en", fresh: bool = False):
     """Create or return the user's open support chat. Shared with the web
     endpoint /auth/web/support/chat in routers/payments.py."""
@@ -2683,7 +2691,8 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
     # transcript survives AND the bot answers the next message (the watchdog
     # does the same for chats that go stale while nobody visits).
     _BOT_ALIVE_PHASES = {"welcome", "awaiting_details", "awaiting_cancel_confirm"}
-    if chat and not fresh and (chat.bot_phase or "") not in _BOT_ALIVE_PHASES:
+    if (chat and not fresh and (chat.bot_phase or "") not in _BOT_ALIVE_PHASES
+            and (chat.bot_phase or "") not in _HANDED_OVER_PHASES):
         last_human_r = await db.execute(
             select(SupportMessage).where(
                 SupportMessage.chat_id == chat.id,
@@ -3817,6 +3826,11 @@ async def sweep_stuck_bot_chats(db: AsyncSession,
     with the human. Shared by the dispatch endpoint and the boot sweep."""
     reactivated, skipped_attended = [], []
     for chat, last_msg, attended in await _stuck_bot_chats(db, chat_id):
+        # The automatic sweep never re-enters a chat the bot handed over
+        # (it repeated "Ya le avisé a tu agente…" every tick); dispatch
+        # naming one chat_id still can.
+        if chat_id is None and (chat.bot_phase or "") in _HANDED_OVER_PHASES:
+            continue
         if attended:
             skipped_attended.append(chat.id)
             continue

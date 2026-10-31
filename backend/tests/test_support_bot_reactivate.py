@@ -103,8 +103,12 @@ async def test_reactivate_sweep_covers_all_stuck(client, db, test_rider,
                                                  monkeypatch):
     import routers.support as support
     rider, _ = test_rider
+    # Handed over to an agent: the automatic sweep never goes back in
+    # (owner rule 2026-10-31, chat 201 got "Ya le avisé…" every tick).
     a = await _mkchat(db, rider.id, "escalated")
     b = await _mkchat(db, rider.id, "dispatch_takeover")
+    # The bot's own chat whose reply died: the sweep answers it.
+    stuck = await _mkchat(db, rider.id, "agent_active")
     # one already fine — a bot message answered last
     ok = await _mkchat(db, rider.id, "agent_active", last_user=False)
 
@@ -117,7 +121,11 @@ async def test_reactivate_sweep_covers_all_stuck(client, db, test_rider,
     res = await client.post("/support/bot-reactivate", headers=_dh(), json={})
     assert res.status_code == 200, res.text
     ids = set(res.json()["reactivated"])
-    assert ids == {a.id, b.id}
+    assert ids == {stuck.id}
+    await db.refresh(a)
+    await db.refresh(b)
+    assert a.bot_phase == "escalated"
+    assert b.bot_phase == "dispatch_takeover"
     await db.refresh(ok)
     assert ok.bot_phase == "agent_active"
 

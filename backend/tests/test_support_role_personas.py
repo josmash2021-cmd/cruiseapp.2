@@ -127,14 +127,16 @@ async def _open_chat_in_phase(user, db, phase: str) -> SupportChat:
     return chat
 
 
-async def test_dead_phase_never_picked_up_returns_to_the_bot(db, test_rider):
+async def test_escalated_chat_resumes_with_the_bot_silent(db, test_rider):
+    """Owner rule 2026-10-31 (chat 201): once the bot said an agent is
+    coming it stops — resuming keeps the chat AND keeps the bot out."""
     rider, _ = test_rider
     old = await _open_chat_in_phase(rider, db, "escalated")
     out = await _get_or_create_support_chat(rider, db, locale="en")
     assert out["id"] == old.id, "resume en el MISMO chat — no uno vacío"
     await db.refresh(old)
-    assert old.status == "open", "la fase fantasma NO cierra el chat"
-    assert old.bot_phase == "agent_active", "el bot responde en el próximo mensaje"
+    assert old.status == "open", "la fase escalada NO cierra el chat"
+    assert old.bot_phase == "escalated", "el bot ya no vuelve a responder"
 
 
 async def test_dead_phase_with_active_human_resumes(db, test_rider):
@@ -184,7 +186,7 @@ async def test_driver_gets_the_same_rule_and_the_driver_assistant(db, test_drive
     assert out["id"] == old.id, "el driver reanuda igual que el rider"
     await db.refresh(old)
     assert old.status == "open"
-    assert old.bot_phase == "agent_active"
+    assert old.bot_phase == "escalated", "escalado = el bot ya no responde"
     # Cerrado → el siguiente abre NUEVO, con el asistente de drivers.
     old.status = "closed"
     await db.commit()

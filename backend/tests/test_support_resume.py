@@ -43,10 +43,11 @@ async def test_reopen_resumes_the_open_chat(client, db, test_rider):
     assert chat.status == "open"  # nunca se cerró
 
 
-async def test_phantom_escalated_chat_flips_back_in_place(client, db,
-                                                          test_rider):
-    """Escalated with NO human inside → resume keeps the transcript and puts
-    the bot back (no more silent dead chat), instead of closing + wiping."""
+async def test_escalated_chat_stays_silent_on_resume(client, db,
+                                                     test_rider):
+    """Owner rule 2026-10-31 (chat 201): once the bot said an agent is
+    coming it stops — a resume keeps the transcript and does NOT put the bot
+    back, even before the human writes."""
     rider, token = test_rider
     chat = await _open_chat(db, rider.id, "escalated")
 
@@ -58,7 +59,7 @@ async def test_phantom_escalated_chat_flips_back_in_place(client, db,
     assert res.json()["id"] == chat.id, "mismo id — la transcripción vive"
     await db.refresh(chat)
     assert chat.status == "open"
-    assert chat.bot_phase == "agent_active"
+    assert chat.bot_phase == "escalated"
 
 
 async def test_takeover_with_a_human_inside_stays_with_the_human(

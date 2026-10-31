@@ -226,3 +226,87 @@ def test_reasoning_models_get_their_own_knobs(monkeypatch):
     assert "temperature" not in ai_svc._openai_sampling()
     monkeypatch.setattr(ai_svc, "_MODEL", "gpt-4.1")
     assert ai_svc._openai_sampling()["max_tokens"] == 800
+
+
+# ── 2026-10-31 review: the owner's own answers are the standard ─────────────
+
+@pytest.mark.asyncio
+async def test_own_escalation_still_writes_the_transfer_line(db, test_driver, monkeypatch):
+    """Prod chat 201: the model escalated, the phase flipped to "escalated"
+    before anything was written, and the per-write gate dropped the bot's
+    own line — the driver saw only the system notice."""
+    from routers.support import _background_bot_reply
+
+    monkeypatch.setattr(support_router, "_BOT_READ_SETTLE_SECONDS", 0.01)
+    monkeypatch.setattr(support_router, "_user_still_typing", lambda _c: False)
+
+    class _R:
+        def random(self):
+            return 0.99
+
+        def uniform(self, a, b):
+            return a
+    monkeypatch.setattr(support_router, "_rng", _R())
+
+    driver, _ = test_driver
+    chat = await _chat(db, driver)
+    m = await _msg(db, chat.id, "driver", "🐞 Bug report — App Crash\n\nayuda", driver.id)
+
+    async def _gen(chat_, user_msg, user_name, db_):
+        chat_.bot_phase = "escalated"
+        db_.add(chat_)
+        await db_.commit()
+        return [
+            {"role": "bot", "message": "Gracias por reportarlo. Te paso con un agente especializado.",
+             "sender_name": "T"},
+            {"role": "system", "message": "Un agente especializado se conectará en breve.",
+             "sender_name": "Sistema"},
+        ]
+    monkeypatch.setattr(support_router, "_generate_bot_replies", _gen)
+
+    await _background_bot_reply(chat.id, m.message, "Yoanel", "agent_active",
+                                anchor_msg_id=m.id)
+    rows = (await db.execute(select(SupportMessage).where(
+        SupportMessage.chat_id == chat.id, SupportMessage.id > m.id)
+        .order_by(SupportMessage.id))).scalars().all()
+    assert [r.sender_role for r in rows] == ["bot", "system"]
+
+
+def test_prompt_copies_the_teams_own_answers():
+    src = ai_svc._system_prompt_for("driver")
+    assert "HOW THE CRUISE TEAM ANSWERS" in src
+    # The canonical "no rides" answer: growth stage + the team's emails.
+    assert "fase de crecimiento" in src
+    assert "los correos que te ha enviado el equipo" in src
+    # No data dumps, no dangling offers, a real close.
+    assert "Never quote figures they did not ask for" in src
+    assert "Either answer or hand over" in src
+    assert "¿Hay algo más en lo que pueda ayudarte hoy?" in src
+    assert "offer to connect with a human" not in src
+
+
+@pytest.mark.asyncio
+async def test_silent_transfer_gets_the_teams_warm_line(monkeypatch):
+    """gpt-5.5 often escalates without a word; the line it falls back to
+    carries the name and a thank-you, fitted to the moment."""
+    async def _fake_completion(messages, tools, lang="en"):
+        return {"response": ai_svc._tool_call_line("escalate_to_human", lang),
+                "function_call": {"name": "escalate_to_human", "arguments": {}},
+                "escalate": False}
+
+    monkeypatch.setattr(ai_svc, "_PROVIDER", "openai")
+    monkeypatch.setattr(ai_svc, "_completion", _fake_completion)
+    user = {"id": 7, "role": "driver", "name": "Richard Chirinos"}
+
+    async def say(text, handoff=None):
+        out = await ai_svc.generate_support_response(
+            [{"role": "user", "content": text}],
+            {"user": user, "lang": "es", "handoff": handoff})
+        return out["response"]
+
+    assert (await say("no me deja agregar mi banco")).startswith(
+        "Gracias por avisarnos, Richard. Te paso con un agente especializado")
+    assert (await say("\U0001f41e Bug report — App Crash")).startswith(
+        "Gracias por reportarlo, Richard.")
+    assert (await say("ok pero cuando?", handoff="agent_in_chat")).startswith(
+        "Ya le avisé a tu agente especializado, Richard;")

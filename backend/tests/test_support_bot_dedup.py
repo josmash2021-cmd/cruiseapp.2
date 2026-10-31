@@ -308,7 +308,7 @@ def test_specialized_agent_naming_and_contracts_tone():
     # The house standard stays, but the bot speaks as itself — the old
     # "soy un agente especializado del equipo" example made it claim to be
     # one (prod chats 161/199). The waitlist answer matches the screen copy.
-    assert "THE HOUSE STANDARD" in src
+    assert "HOW THE CRUISE TEAM ANSWERS" in src
     assert "NEVER present yourself" in src
     assert "soy un agente especializado del equipo, permíteme" not in src
     assert "Te notificaremos en cuanto" in src

@@ -1054,12 +1054,15 @@ async def test_takeover_mid_flight_kills_the_rest_of_the_reply():
     import pathlib
     src = pathlib.Path("routers/support.py").read_text(encoding="utf-8")
     fn = src.index("async def _background_bot_reply")
-    region = src[fn:fn + 6500]
+    region = src[fn:fn + 8000]
     # La fase Y el status se re-leen frescos antes de cada mensaje (2026-10-22:
     # la query ganó SupportChat.status para el silencio tras cierre).
     assert "select(SupportChat.bot_phase, SupportChat.status)" in region
     assert '_phase_now == "dispatch_takeover"' in region
     assert '_phase_now == "escalated" and r["role"] != "system"' in region
+    # …except this turn's OWN escalation: its transfer line still goes out
+    # (prod chat 201, 2026-10-31: only the system notice reached the driver).
+    assert "and not _own_escalation" in region
     assert '_state[1] != "open"' in region
     # y una task que entra ya escalated/takeover no habla en absoluto
     assert 'in ("escalated", "dispatch_takeover")' in region

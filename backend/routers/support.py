@@ -2351,6 +2351,14 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str,
                 replies = [{"role": "bot", "message": _fb0,
                             "sender_name": chat.agent_name or "Cruise AI"}]
             first_bot_preview = None
+            # This turn's OWN escalation (the model's escalate_to_human, or a
+            # scripted transfer) already flipped the phase to "escalated" in
+            # the DB before anything was written — and the per-write gate
+            # below then skipped the bot's own transfer line, so the driver
+            # read only "Un agente especializado se conectará en breve"
+            # (prod chat 201, 2026-10-31). The gate is for a takeover that
+            # lands from OUTSIDE mid-reply; our own words still go out.
+            _own_escalation = (chat.bot_phase or "") == "escalated"
             # Cap the flood (2026-10-22, prod chat 134): the model sometimes
             # returns 2-3 long bubbles for one question. A good human agent
             # sends ONE short message — keep at most two bot bubbles, system
@@ -2411,7 +2419,8 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str,
                         return
                     if _phase_now == "dispatch_takeover":
                         break
-                    if _phase_now == "escalated" and r["role"] != "system":
+                    if (_phase_now == "escalated" and r["role"] != "system"
+                            and not _own_escalation):
                         continue
                     if pidx > 0:
                         part_len = len(part)

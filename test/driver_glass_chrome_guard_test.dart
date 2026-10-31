@@ -184,4 +184,48 @@ void main() {
       expect(backend, contains('BOARD_DOC = ("config", "scheduled_board")'));
     });
   });
+
+  group('scheduled rides page (owner 2026-10-31)', () {
+    final sched = File('lib/screens/driver/scheduled_rides_map_screen.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+
+    test('the sheet is glass, frosting harder as it rises', () {
+      expect(sched, contains('builder: (ctx, child) => GlassSurface('));
+      expect(sched, contains('animation: _sheetCtrl,'),
+          reason: 'the sheet builder runs once — the frost listens to the '
+              'controller so it follows the drag');
+      expect(sched,
+          contains('glassSheetTint, glassSheetOpenTint, _sheetOpenT())!'));
+      expect(sched, isNot(contains('color: neuBase,\n                borderRadius:')));
+      expect(sched, contains('decoration: glassInnerBox(\n        radius: 20,'));
+    });
+
+    test('a drag rests closed or fully open — never half way', () {
+      expect(sched, contains('static const _sheetInitial = _sheetMin;'));
+      expect(sched, isNot(contains('snapSizes:')),
+          reason: 'snap with no snapSizes = min and max only');
+    });
+
+    test('Search this area + recentre: shadowed chips, no blur', () {
+      final pill = sched.substring(sched.indexOf('Widget _buildSearchAreaPill'),
+          sched.indexOf('Widget _buildRecenterFab'));
+      expect(pill, contains('MapChipSurface('));
+      expect(pill, isNot(contains('BackdropFilter')));
+      final fab = sched.substring(sched.indexOf('Widget _buildRecenterFab'),
+          sched.indexOf('Widget _buildReserveButton'));
+      expect(fab, contains('MapChipSurface('));
+    });
+
+    test('the ride marker: bigger cube and the 3D gold pin', () {
+      final m = sched.substring(sched.indexOf('Future<Uint8List?> _bubbleBytes'),
+          sched.indexOf('final side = shadowPad * 2;'));
+      expect(m, contains('fontSize: 18, // was 15'));
+      expect(m, contains('const discD = 34.0;'));
+      expect(m, contains('ui.Gradient.radial('));
+      expect(m, contains('const groundH = 7.0;'));
+      expect(m, isNot(contains('emoji_people_rounded')),
+          reason: 'the flat hailing glyph is gone');
+    });
+  });
 }

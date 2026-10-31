@@ -26,6 +26,7 @@ import '../../services/scheduled_board_watcher.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/glass_style.dart';
 import 'driver_rest_gate_mixin.dart';
 import 'scheduled_rides_screen.dart';
 import '../../utils/server_time.dart';
@@ -59,9 +60,13 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   static const _airport = Color(0xFF4285F4);
   static const _cacheKey = 'sched_avail_cache';
 
-  // Sheet extents: collapsed peek, browsing list, detail card, full list.
+  // Sheet extents. A drag rests in exactly TWO places — closed (the header:
+  // "N rides available" + its line) or fully open (owner spec 2026-10-31:
+  // "debe cerrarse o abrirse completo, pero no hasta la mitad"). Detail is
+  // the one height the app itself sets when a ride is tapped; any drag from
+  // there still lands closed or open.
   static const _sheetMin = 0.14;
-  static const _sheetInitial = 0.26;
+  static const _sheetInitial = _sheetMin;
   // Detail sits LOW, Lyft-style (2026-08-25): the card + Reserve take the
   // bottom ~44% and the route owns the rest of the map.
   static const _sheetDetail = 0.44;
@@ -607,30 +612,32 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   /// Renders the marker as ONE bitmap: a "$N" text-message cube (rounded
   /// square with the little tail at the bottom — user spec 2026-08-25, no
-  /// more pill) floating above a small hailing-person figure. A bare
-  /// textField cannot draw the bubble background, and a PointAnnotation
-  /// takes a single image — so cube + figure are rasterised together here.
-  /// The feet sit at the bottom edge so IconAnchor.BOTTOM plants the
-  /// figure on the pickup.
+  /// more pill) floating above a 3D gold pin with the rider inside (owner-
+  /// approved redesign 2026-10-31: "más moderno y con sombra para que se
+  /// vea 3D", and a slightly bigger price cube). A bare textField cannot
+  /// draw the bubble background, and a PointAnnotation takes a single
+  /// image — so cube + pin are rasterised together here. The pin's contact
+  /// shadow sits at the bottom edge so IconAnchor.BOTTOM plants it on the
+  /// pickup.
   Future<Uint8List?> _bubbleBytes(String label, {bool selected = false}) async {
     final key = '$label|${selected ? 's' : 'n'}';
     final cached = _bubbleByteCache[key];
     if (cached != null) return cached;
     const scale = 3.0; // raster density — stays crisp on retina
-    const hPad = 12.0, vPad = 6.0;
+    const hPad = 14.0, vPad = 8.0; // was 12 / 6 — the cube grew (2026-10-31)
     const borderW = 1.0;
-    const radius = 6.0; // chat-bubble corners, not a stadium
-    const tailH = 4.5, tailW = 9.0; // the tail pointing at the figure
-    const shadowPad = 6.0; // room for the blurred shadow to bleed into
-    const gap = 1.5; // air between the tail tip and the figure's hand
-    // Bigger figure (user spec 2026-08-28): the person reads at map zoom.
-    const personW = 24.0, personH = 33.0;
+    const radius = 8.0; // chat-bubble corners, not a stadium
+    const tailH = 5.5, tailW = 11.0; // the tail pointing at the pin
+    const shadowPad = 8.0; // room for the blurred shadows to bleed into
+    const gap = 2.0; // air between the tail tip and the pin
+    const discD = 34.0; // the pin: a gold disc with the rider inside
+    const groundH = 7.0; // its contact shadow on the street
     final tp = TextPainter(
       text: TextSpan(
         text: label,
         style: TextStyle(
           color: selected ? Colors.black : _gold,
-          fontSize: 15,
+          fontSize: 18, // was 15
           fontWeight: FontWeight.w800,
           height: 1.0,
         ),
@@ -639,8 +646,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     )..layout();
     final w = tp.width + hPad * 2 + borderW * 2;
     final h = tp.height + vPad * 2 + borderW * 2;
-    final totalW = max(w, personW);
-    final totalH = h + tailH + gap + personH;
+    final totalW = max(w, discD + 8);
+    final totalH = h + tailH + gap + discD + groundH;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.scale(scale);
@@ -657,53 +664,92 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       ..lineTo(totalW / 2, h + tailH)
       ..lineTo(totalW / 2 + tailW / 2, h - 1)
       ..close();
-    // Soft shadow first, then the cube on top of it.
+    // Soft shadow first, then the cube on top of it — lit from above.
     canvas.drawPath(
-      bubblePath.shift(const Offset(0, 1.5)),
+      bubblePath.shift(const Offset(0, 2)),
       Paint()
         ..color = Colors.black.withValues(alpha: 0.5)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.5),
     );
-    canvas.drawPath(
-        bubblePath, Paint()..color = selected ? _gold : neuSurface);
+    final cubeFill = Paint();
+    if (selected) {
+      cubeFill.color = _gold;
+    } else {
+      cubeFill.shader = ui.Gradient.linear(
+        bubbleRect.topCenter,
+        bubbleRect.bottomCenter,
+        const [Color(0xFF2B2B34), Color(0xFF1C1C24)],
+      );
+    }
+    canvas.drawPath(bubblePath, cubeFill);
     canvas.drawRRect(
       RRect.fromRectAndRadius(bubbleRect, const Radius.circular(radius)),
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = borderW
-        ..color = Colors.white.withValues(alpha: selected ? 0.25 : 0.08),
+        ..color = Colors.white.withValues(alpha: selected ? 0.25 : 0.12),
     );
     tp.paint(canvas, Offset(left + hPad + borderW, vPad + borderW));
 
-    // ── Hailing person: the official Material person-with-raised-arm
-    // glyph (2026-08-25 — replaced the hand-drawn stick figure; this
-    // Flutter version has no Icons.hailing, emoji_people_rounded is the
-    // hailing look). Drawn via the icon font, with the cube's soft shadow.
-    const hailingIcon = Icons.emoji_people_rounded;
-    final px = (totalW - personW) / 2;
-    final py = h + tailH + gap;
-    TextPainter iconPainter(Color color) {
-      return TextPainter(
-        text: TextSpan(
-          text: String.fromCharCode(hailingIcon.codePoint),
-          style: TextStyle(
-            fontFamily: hailingIcon.fontFamily,
-            package: hailingIcon.fontPackage,
-            fontSize: personH - 2,
-            color: color,
-          ),
+    // ── The pin: a gold disc lit from the top-left, white rim, a specular
+    // highlight, a drop shadow under it and a contact shadow on the street
+    // — the rider's bust inside in the app's dark ink.
+    const r = discD / 2;
+    final c = Offset(totalW / 2, h + tailH + gap + r);
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(c.dx, c.dy + r + groundH / 2),
+          width: discD * 0.7,
+          height: groundH * 0.9),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.45)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+    canvas.drawCircle(
+      c.translate(0, 2.5),
+      r,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.55)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.drawCircle(
+      c,
+      r,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          c.translate(-r * 0.3, -r * 0.4),
+          r * 1.5,
+          const [Color(0xFFFFE9A3), Color(0xFFE8C547), Color(0xFFA9861F)],
+          const [0.0, 0.55, 1.0],
         ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-    }
-
-    final shadowPainter = iconPainter(Colors.black.withValues(alpha: 0.45));
-    canvas.save();
-    canvas.translate(0.6, 1.0);
-    shadowPainter.paint(canvas, Offset(px, py));
-    canvas.restore();
-    iconPainter(selected ? _gold : const Color(0xFFF2DFA0))
-        .paint(canvas, Offset(px, py));
+    );
+    canvas.drawCircle(
+      c,
+      r - 1,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = selected ? 3 : 2
+        ..color = Colors.white,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: c.translate(-r * 0.32, -r * 0.48),
+          width: r * 0.95,
+          height: r * 0.48),
+      Paint()..color = Colors.white.withValues(alpha: 0.35),
+    );
+    final ink = Paint()..color = const Color(0xFF14141A);
+    canvas.drawCircle(c.translate(0, -r * 0.28), r * 0.29, ink);
+    canvas.drawPath(
+      Path()
+        ..moveTo(c.dx - r * 0.56, c.dy + r * 0.6)
+        ..cubicTo(c.dx - r * 0.53, c.dy + r * 0.18, c.dx - r * 0.28,
+            c.dy + r * 0.08, c.dx, c.dy + r * 0.08)
+        ..cubicTo(c.dx + r * 0.28, c.dy + r * 0.08, c.dx + r * 0.53,
+            c.dy + r * 0.18, c.dx + r * 0.56, c.dy + r * 0.6)
+        ..close(),
+      ink,
+    );
 
     final side = shadowPad * 2;
     final img = await recorder.endRecording().toImage(
@@ -1274,22 +1320,22 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
             initialChildSize: _sheetInitial,
             minChildSize: _sheetMin,
             maxChildSize: _sheetMax,
-            snap: true,
-            snapSizes: const [_sheetInitial, _sheetDetail],
-            builder: (ctx, scrollCtrl) => Container(
-              decoration: BoxDecoration(
-                color: neuBase,
+            snap: true, // min + max only: closed or fully open
+            // Frosted glass like the driver's home sheet (owner spec
+            // 2026-10-31), frosted harder as it rises: by the detail height
+            // nothing under it — the arrow, a bubble — shows through.
+            // The sheet's builder runs once, not per drag frame — the
+            // controller is what moves, so the frost listens to it.
+            builder: (ctx, scrollCtrl) => AnimatedBuilder(
+              animation: _sheetCtrl,
+              builder: (ctx, child) => GlassSurface(
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(24)),
-                border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.06), width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    blurRadius: 24,
-                    offset: const Offset(0, -6),
-                  ),
-                ],
+                blur: kGlassSheetBlur +
+                    (kGlassSheetBlurOpen - kGlassSheetBlur) * _sheetOpenT(),
+                tint: Color.lerp(
+                    glassSheetTint, glassSheetOpenTint, _sheetOpenT())!,
+                child: child!,
               ),
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
@@ -1306,6 +1352,12 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         ],
       ),
     );
+  }
+
+  /// 0 closed → 1 at the detail height: how hard the sheet's glass frosts.
+  double _sheetOpenT() {
+    final size = _sheetCtrl.isAttached ? _sheetCtrl.size : _sheetInitial;
+    return ((size - _sheetMin) / (_sheetDetail - _sheetMin)).clamp(0.0, 1.0);
   }
 
   /// Floating filter pill — soft shadow, neu surface, gold when active.
@@ -1420,21 +1472,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   Widget _buildSearchAreaPill(S s) {
     return GestureDetector(
       onTap: _searchThisArea,
-      child: Container(
+      // Same as the home map buttons (owner 2026-10-31): translucent grey,
+      // soft 3D shadow, no blur — on iOS a blur draws a square around it.
+      child: MapChipSurface(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          color: neuSurface,
-          borderRadius: BorderRadius.circular(24),
-          border:
-              Border.all(color: _gold.withValues(alpha: 0.45), width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(24),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1457,23 +1499,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   Widget _buildRecenterFab() {
     return GestureDetector(
       onTap: _recenter,
-      child: Container(
+      child: const MapChipSurface(
+        circle: true,
         width: 44,
         height: 44,
-        decoration: BoxDecoration(
-          color: neuSurface.withValues(alpha: 0.95),
-          shape: BoxShape.circle,
-          border:
-              Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: const Icon(Icons.my_location_rounded, color: _gold, size: 20),
+        child: Icon(Icons.my_location_rounded, color: _gold, size: 20),
       ),
     );
   }
@@ -1725,36 +1755,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      // Deeper than neuBox: the card floats over a live map / sits inside a
-      // sheet of identical cards, and at neuBox's 4-pt offset the layers
-      // read as one flat plane. Same shadow trio as the live offer card.
-      decoration: BoxDecoration(
-        color: neuSurface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isAirport
-              ? _airport.withValues(alpha: 0.25)
-              : Colors.white.withValues(alpha: 0.05),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.55),
-            offset: const Offset(0, 16),
-            blurRadius: 32,
-            spreadRadius: -8,
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            offset: const Offset(0, 4),
-            blurRadius: 10,
-            spreadRadius: -3,
-          ),
-          BoxShadow(
-            color: Colors.white.withValues(alpha: 0.06),
-            offset: const Offset(0, -1),
-            blurRadius: 2,
-          ),
-        ],
+      // A lift of the sheet's own glass (2026-10-31) — an opaque card on a
+      // frosted sheet reads as a grey slab again.
+      decoration: glassInnerBox(
+        radius: 20,
+        borderColor: isAirport ? _airport.withValues(alpha: 0.25) : null,
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
@@ -1933,7 +1938,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     final dropColor = isAirport ? _airport : Colors.white;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: neuBox(radius: 16),
+      decoration: glassInnerBox(radius: 16),
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,

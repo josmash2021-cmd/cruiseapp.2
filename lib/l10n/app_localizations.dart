@@ -5169,10 +5169,10 @@ class S {
   String get schedMapTimeMorning => _es ? 'Mañana' : 'Morning';
   String get schedMapTimeAfternoon => _es ? 'Tarde' : 'Afternoon';
   String get schedMapTimeNight => _es ? 'Noche' : 'Night';
-  String get schedMapAvailable =>
-      _es ? 'Viajes disponibles' : 'Available rides';
-  String schedMapRidesAvailable(int count) =>
-      _es ? '$count viajes disponibles' : '$count rides available';
+  // Always a number, 0 included (owner spec 2026-10-31: "0 Rides available").
+  String schedMapRidesAvailable(int count) => _es
+      ? (count == 1 ? '1 Viaje disponible' : '$count Viajes disponibles')
+      : (count == 1 ? '1 Ride available' : '$count Rides available');
   String get schedMapMoveToSearch =>
       _es ? 'Mueve el mapa para buscar viajes' : 'Move map to search for rides';
   String get schedMapSearchArea =>

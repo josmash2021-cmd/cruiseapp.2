@@ -149,4 +149,13 @@ void main() {
           reason: 'raw wrapper made drivers think the marketplace was down');
     });
   });
+
+  test('sheet title is always a count, 0 included', () {
+    // Owner spec 2026-10-31: "0 Rides available", then 2, 3, 4...
+    final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
+    expect(screen, contains('s.schedMapRidesAvailable(trips.length),'));
+    expect(screen, isNot(contains('s.schedMapAvailable')));
+    expect(l10n, contains("'\$count Rides available'"));
+    expect(l10n, contains("'\$count Viajes disponibles'"));
+  });
 }

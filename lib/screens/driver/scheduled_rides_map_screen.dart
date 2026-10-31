@@ -1605,9 +1605,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                trips.isEmpty
-                    ? s.schedMapAvailable
-                    : s.schedMapRidesAvailable(trips.length),
+                s.schedMapRidesAvailable(trips.length),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 17,

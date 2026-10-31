@@ -227,5 +227,23 @@ void main() {
         reason: 'every attempt reports its timings to the server log');
     expect(l10n, contains('String get faceCheckShotFailed =>'));
   });
+
+  test('2026-10-31: the verifying loader has ONE ceiling for the upload', () {
+    // "no pueden conectarse después de tomarse la foto, queda cargando
+    // verificando": the per-step bounds added up to more than a minute.
+    expect(screen,
+        contains('const Duration kSelfieUploadCeiling = Duration(seconds: 30);'));
+    final upload = screen.indexOf('Future<void> _uploadAndVerify(');
+    final watchdog = screen.indexOf('Timer(kSelfieUploadCeiling', upload);
+    final submit = screen.indexOf('ApiService.submitFaceCheck(', upload);
+    expect(watchdog, greaterThan(upload));
+    expect(watchdog, lessThan(submit),
+        reason: 'armed at the shutter, before the downscale and the upload');
+    expect(screen, contains("?.pop({'photo': photoPath, 'error': 'upload ceiling'});"),
+        reason: 'a failed upload — the caller stays fail-open and connects');
+    expect(screen.indexOf('_uploadWatchdog?.cancel();', submit),
+        greaterThan(submit),
+        reason: 'an answer in time disarms it');
+  });
 }
 

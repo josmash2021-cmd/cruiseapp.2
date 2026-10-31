@@ -77,6 +77,9 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
   /// (2026-10-31). Only the real manual-review wait pops "pending".
   bool _uploading = false;
 
+  /// Fires [kSelfieUploadCeiling] after the shutter (see there).
+  Timer? _uploadWatchdog;
+
   /// Timings of this attempt, reported once (ApiService.logClientEvent) so
   /// the next "se queda cargando" is read in the server log, not guessed.
   final Stopwatch _attemptClock = Stopwatch();
@@ -145,6 +148,7 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
     _reviewSub?.cancel();
     _reviewPoll?.cancel();
     _reviewTimeout?.cancel();
+    _uploadWatchdog?.cancel();
     // Null-swap: la animación de salida de la ruta rebuilda este widget
     // DESPUÉS de dispose() — con el campo en null el build cae al
     // placeholder en vez de llamar buildPreview sobre un controller
@@ -290,6 +294,16 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
       _reviewDone = false;
       _uploading = true;
     });
+    _uploadWatchdog = Timer(kSelfieUploadCeiling, () {
+      if (!_uploading || _reviewDone) return;
+      _uploading = false;
+      _reviewDone = true;
+      _mark('ceiling');
+      _report('fail');
+      if (!mounted) return;
+      Navigator.maybeOf(context)
+          ?.pop({'photo': photoPath, 'error': 'upload ceiling'});
+    });
     // Downscale off the UI thread BEFORE the base64: the payload must land
     // well under the backend's 5 MB body cap on every Android phone.
     // Bounded (2026-10-31): past 12 s the raw 1080p shot goes as it is —
@@ -305,6 +319,7 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
     }
     if (!mounted || _reviewDone) return;
     final resp = await ApiService.submitFaceCheck(photoPath, bytes: bytes);
+    _uploadWatchdog?.cancel();
     _uploading = false;
     _mark('upload:${resp == null ? 'null' : resp['ok'] == false ? 'HTTP${resp['status']}' : 'ok'}');
     if (!mounted || _reviewDone) return;
@@ -755,6 +770,14 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
     );
   }
 }
+
+/// Longest the "Verificando tu selfie" loader waits on the upload, counted
+/// from the shutter (owner report 2026-10-31: "no pueden conectarse después
+/// de tomarse la foto, queda cargando verificando"). Each step has its own
+/// bound, but they added up — downscale 12 s + upload 60 s. Past this the
+/// page closes as a failed upload: the caller stays fail-open and connects,
+/// and the upload keeps going — if it lands, the stamp is there.
+const Duration kSelfieUploadCeiling = Duration(seconds: 30);
 
 /// Longest side of the uploaded selfie, in pixels. 1280 px is plenty for a
 /// face check and lands around 150-300 KB as JPEG — a tenth of the cap.

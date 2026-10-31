@@ -385,11 +385,14 @@ async def test_reservation_change_driver_aims_it_at_the_new_one(
     assert trip.driver_id is None
     assert trip.scheduled_target_driver_id == new.id, "only the chosen driver sees it"
     titles = [p["title"] for p in quiet_dispatch]
-    assert "Reserva reasignada" in titles
+    # 2026-10-31 (owner): a reservation taken away by dispatch fades out
+    # of the old driver's app — no push, no inbox.
+    assert "Reserva reasignada" not in titles
     assert all("ispatch" not in p["body"] for p in quiet_dispatch)
     notif = (await db.execute(select(Notification).where(
         Notification.user_id == old.id))).scalars().all()
-    assert any(n.notif_type == "scheduled_ride_reassigned" for n in notif)
+    assert not any(n.notif_type == "scheduled_ride_reassigned" for n in notif), (
+        "the old driver's inbox stays silent too")
 
 
 async def test_reservation_put_available_opens_it_to_everyone(

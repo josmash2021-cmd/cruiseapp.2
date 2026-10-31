@@ -221,3 +221,55 @@ async def test_app_cancel_airport_updates_push_and_inbox(
     assert inbox.title == "Viaje cancelado"
     assert inbox.body == (
         "El pasajero tuvo un retraso en el aeropuerto y canceló su viaje.")
+
+
+# ── Reservations (owner spec 2026-10-31) ─────────────────────────────────
+# Dispatch removing a reservation is SILENT for the driver — the card just
+# fades out of the app. Only the rider's cancel is news.
+
+async def test_admin_cancel_of_a_reservation_is_silent_for_the_driver(
+        client, db, test_rider, test_driver, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from routers import admin
+
+    rider, _ = test_rider
+    driver, _ = test_driver
+    trip = await _trip(db, rider, driver, status="scheduled_accepted")
+    trip.scheduled_at = datetime.now(timezone.utc) + timedelta(hours=3)
+    await db.commit()
+    calls, scheduled = _capture_fcm(monkeypatch, admin)
+
+    response = await client.post(
+        f"/admin/trips/{trip.id}/cancel",
+        headers=_make_auth_headers("test-dispatch-key"),
+        json={"reason": "admin_cancel"},
+    )
+    assert response.status_code == 200, response.text
+    await _drain(scheduled)
+    assert not any(token == driver.fcm_token for token, _ in calls), calls
+
+
+async def test_rider_cancel_of_a_reservation_tells_the_driver(
+        client, db, test_rider, test_driver, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from routers import trips
+
+    rider, rider_token = test_rider
+    driver, _ = test_driver
+    driver.locale = "es"
+    trip = await _trip(db, rider, driver, status="scheduled_accepted")
+    trip.scheduled_at = datetime.now(timezone.utc) + timedelta(hours=3)
+    await db.commit()
+    calls, scheduled = _capture_fcm(monkeypatch, trips)
+
+    response = await client.post(
+        f"/trips/{trip.id}/cancel",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {rider_token}"},
+        json={"cancel_reason": "rider_cancel"},
+    )
+    assert response.status_code == 200, response.text
+    await _drain(scheduled)
+    driver_calls = [p for t, p in calls if t == driver.fcm_token]
+    assert len(driver_calls) == 1, calls
+    assert driver_calls[0]["body"] == "El pasajero ha cancelado su viaje."
+    assert driver_calls[0]["data"]["cancelled_by"] == "rider"

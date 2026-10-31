@@ -42,17 +42,19 @@ async def test_fingerprint_follows_the_open_board(db, test_rider, test_driver):
     n1, fp1 = await scheduled_board.board_fingerprint(db)
     assert (n1, fp1 != fp0) == (n0 + 1, True)
 
-    # Claimed → off the board.
+    # Claimed → off the open board, but the fingerprint still moves: the
+    # reservation now belongs to a driver, whose app must show it at once
+    # (and fade it out at once when it is released — 2026-10-31).
     t.driver_id = driver.id
     t.status = "scheduled_accepted"
     await db.commit()
     n2, fp2 = await scheduled_board.board_fingerprint(db)
-    assert n2 == n0 and fp2 == fp0
+    assert n2 == n0 and fp2 not in (fp0, fp1)
 
     # Inside the 30-minute cutoff, or not a reservation: never on the board.
     await _mk(db, rider, hours=0.25)
     await _mk(db, rider, status="requested")
-    assert await scheduled_board.board_fingerprint(db) == (n0, fp0)
+    assert await scheduled_board.board_fingerprint(db) == (n0, fp2)
 
 
 async def test_tick_bumps_only_on_change(db, test_rider, monkeypatch):

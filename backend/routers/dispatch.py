@@ -3257,31 +3257,10 @@ async def _reassign_reservation(db, trip, mode: str, body) -> dict:
         except Exception as e:
             logging.warning("[ReassignReservation] release mirror failed: %s", e)
     if previous_driver_id is not None:
-        old_driver = (await db.execute(
-            select(User).where(User.id == previous_driver_id)
-        )).scalar_one_or_none()
-        if old_driver is not None:
-            try:
-                db.add(Notification(
-                    user_id=old_driver.id,
-                    title="Reserva reasignada",
-                    body="Esta reserva fue asignada a otro conductor.",
-                    notif_type="scheduled_ride_reassigned",
-                    data=json.dumps({"trip_id": trip.id}),
-                ))
-                await db.commit()
-            except Exception as e:
-                logging.warning("[ReassignReservation] inbox row failed: %s", e)
-            if old_driver.fcm_token:
-                _safe_create_task(_send_fcm_push_async(
-                    old_driver.fcm_token,
-                    title="Reserva reasignada",
-                    body="Esta reserva fue asignada a otro conductor.",
-                    title_en="Reservation reassigned",
-                    body_en="This reservation was assigned to another driver.",
-                    locale=user_lang(old_driver),
-                    data={"type": "scheduled_ride_reassigned", "trip_id": str(trip.id)},
-                ))
+        # The old driver hears NOTHING — the reservation just fades out of
+        # their app (owner spec 2026-10-31: "cuando se le cancela un ride
+        # desde dispatch debe de desaparecer sin decir nada"). The rider
+        # still gets the update below.
         rider = (await db.execute(
             select(User).where(User.id == trip.rider_id)
         )).scalar_one_or_none() if trip.rider_id else None

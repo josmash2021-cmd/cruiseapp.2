@@ -209,6 +209,16 @@ async def get_available_scheduled_trips(
     )
     trips = result.scalars().all()
 
+    # A reservation this driver lost at the 1-hour deadline is not theirs to
+    # see again (owner spec 2026-10-31: "ya para él no").
+    lost = set((await db.execute(
+        select(DispatchOffer.trip_id).where(
+            DispatchOffer.driver_id == user.id,
+            DispatchOffer.status == "released_offline",
+        ))).scalars().all())
+    if lost:
+        trips = [t for t in trips if t.id not in lost]
+
     # Same state rule as live dispatch: a driver only sees pickups in the
     # state they are standing in. This browse is the wider hole of the two
     # — its radius is 50 km, not 30 — so a driver near a border could see
@@ -338,6 +348,13 @@ async def claim_scheduled_trip(
     if not trip:
         raise HTTPException(404, "Trip not found")
     if trip.status != "scheduled" or trip.driver_id is not None:
+        raise HTTPException(409, "This ride has already been claimed")
+    # Lost at the 1-hour deadline → not for this driver any more.
+    if (await db.execute(select(DispatchOffer.id).where(
+            DispatchOffer.trip_id == trip.id,
+            DispatchOffer.driver_id == user.id,
+            DispatchOffer.status == "released_offline",
+    ).limit(1))).scalar_one_or_none() is not None:
         raise HTTPException(409, "This ride has already been claimed")
     # Dispatch-aimed reservation (2026-10-26): only the driver dispatch chose
     # may claim it while the targeting stands. Claiming consumes the target.

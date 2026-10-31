@@ -561,6 +561,10 @@ async def admin_cancel_trip(trip_id: int, body: AdminCancelTripIn, db: AsyncSess
     if trip.status in ("completed", "cancelled", "canceled"):
         raise HTTPException(400, f"Trip already in terminal state '{trip.status}'")
     had_driver = bool(trip.driver_id or trip.driver_assigned_at)
+    # A RESERVATION cancelled by dispatch just disappears from the driver's
+    # app — no push (owner spec 2026-10-31). A live trip still tells them.
+    was_reservation = trip.status in (
+        "scheduled", "scheduled_accepted", "scheduled_active")
     trip.status = "cancelled"
     trip.cancel_reason = reason or "admin_cancel"
     from services.promotion_redemptions import settle_promotion_on_cancel
@@ -619,7 +623,7 @@ async def admin_cancel_trip(trip_id: int, body: AdminCancelTripIn, db: AsyncSess
                 "Your trip has been canceled by dispatch.",
                 data={"type": "trip_canceled", "trip_id": str(trip.id)},
             ))
-        if trip.driver_id:
+        if trip.driver_id and not was_reservation:
             driver_res = await db.execute(select(User).where(User.id == trip.driver_id))
             driver = driver_res.scalar_one_or_none()
             if driver and driver.fcm_token:

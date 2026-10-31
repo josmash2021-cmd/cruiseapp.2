@@ -2481,6 +2481,8 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         in_trip_full_fare = True
     if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
+    was_reservation = trip.status in (
+        "scheduled", "scheduled_accepted", "scheduled_active")
     # Accept optional cancel_reason from body
     reason = None
     try:
@@ -2592,7 +2594,11 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # The block below reaches drivers holding a *pending* offer. A driver
     # who accepted has no pending offer — they have a trip, and they are
     # driving to a pickup that is no longer there. Nothing told them.
-    if trip.driver_id and user.id != trip.driver_id:
+    # A reservation removed by dispatch just fades out of the driver's app —
+    # no push, no inbox (owner spec 2026-10-31). Only the RIDER's cancel is
+    # news: "El pasajero ha cancelado su viaje".
+    _silent = was_reservation and not is_owner_rider
+    if trip.driver_id and user.id != trip.driver_id and not _silent:
         try:
             _drv = (await db.execute(
                 select(User).where(User.id == trip.driver_id)
@@ -2600,6 +2606,13 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
             if _drv:
                 copy = _driver_cancel_copy(
                     trip, in_trip_full_fare=in_trip_full_fare)
+                if was_reservation:
+                    copy = {
+                        "title": "Viaje reservado cancelado",
+                        "body": "El pasajero ha cancelado su viaje.",
+                        "title_en": "Reserved ride cancelled",
+                        "body_en": "The rider has cancelled their trip.",
+                    }
                 _title = copy["title_en"] if user_lang(_drv) == "en" else copy["title"]
                 _body = copy["body_en"] if user_lang(_drv) == "en" else copy["body"]
                 db.add(Notification(

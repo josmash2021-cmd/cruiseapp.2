@@ -45,8 +45,18 @@ async def board_fingerprint(db) -> tuple[int, str]:
             Trip.scheduled_at > cutoff,
         ).order_by(Trip.id)
     )).all()
+    # Reservations held by a driver count too: a release, a dispatch cancel
+    # or a reassign must reach that driver's app at once — their card fades
+    # out (2026-10-31) — and none of those touch the open board itself.
+    held = (await db.execute(
+        select(Trip.id, Trip.driver_id).where(
+            Trip.status.in_(("scheduled_accepted", "scheduled_active")),
+            Trip.driver_id.isnot(None),
+        ).order_by(Trip.id)
+    )).all()
     raw = ",".join(f"{tid}:{int(at.timestamp()) if at else 0}"
                    for tid, at in rows)
+    raw += "|" + ",".join(f"{tid}:{did}" for tid, did in held)
     return len(rows), hashlib.md5(raw.encode()).hexdigest()
 
 

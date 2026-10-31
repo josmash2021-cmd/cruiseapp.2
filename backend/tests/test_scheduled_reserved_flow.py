@@ -180,10 +180,13 @@ async def test_reserved_offline_driver_releases_to_cascade(
     offers = (await db.execute(
         select(DispatchOffer).where(DispatchOffer.trip_id == trip.id)
     )).scalars().all()
-    assert all(o.status == "canceled" for o in offers), (
+    assert not any(o.status in ("accepted", "pending") for o in offers), (
         "the claim's accepted offer would block accept_offer's "
         "'already accepted by another driver' guard for the next driver"
     )
+    # 2026-10-31: the released driver's row is the "not for you" marker.
+    assert any(o.driver_id == driver.id and o.status == "released_offline"
+               for o in offers)
 
     assert any(
         c["token"] == "rider-fcm-token"
@@ -199,7 +202,8 @@ async def test_reserved_offline_driver_releases_to_cascade(
 async def test_go_online_reminder_sent_exactly_once(
     db, test_rider, test_driver, fcm_spy
 ):
-    """(c) 30-min reminder fires once; a second pass does not re-send."""
+    """(c) The go-online reminder fires once — 15 min BEFORE the 1-hour
+    deadline (75 min out, 2026-10-31) — and a second pass does not re-send."""
     rider, _ = test_rider
     driver, _ = test_driver
     driver.is_online = False
@@ -210,8 +214,8 @@ async def test_go_online_reminder_sent_exactly_once(
     await db.commit()
     await db.refresh(trip)
 
-    # 30 min out -> reminder window.
-    trip.scheduled_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+    # 75 min out -> reminder window (deadline at 60).
+    trip.scheduled_at = datetime.now(timezone.utc) + timedelta(minutes=75)
     await db.commit()
 
     await _run_pass(db)
@@ -269,3 +273,117 @@ async def test_unclaimed_scheduled_ride_untouched(
     assert fcm_spy == [], (
         f"reserved pass must not touch unclaimed rides: {fcm_spy}"
     )
+
+
+# ── 2026-10-31 owner rules: online by 1 hour before, or it is gone ──────
+
+async def test_offline_at_the_one_hour_deadline_releases_silently(
+    db, test_rider, test_driver, fcm_spy
+):
+    """Not online 1 h before pickup → back on the board, NOT for this driver,
+    and the driver hears nothing (no push of any kind)."""
+    rider, _ = test_rider
+    driver, _ = test_driver
+    driver.fcm_token = "driver-fcm-token"
+    driver.is_online = False
+    trip = _reserved_trip(rider.id, driver.id, minutes_out=55)
+    db.add(trip)
+    await db.commit()
+    await db.refresh(trip)
+    db.add(DispatchOffer(trip_id=trip.id, driver_id=driver.id, status="accepted"))
+    await db.commit()
+
+    await _run_pass(db)
+
+    await db.refresh(trip)
+    assert trip.driver_id is None and trip.status == "scheduled"
+    offers = (await db.execute(
+        select(DispatchOffer).where(DispatchOffer.trip_id == trip.id)
+    )).scalars().all()
+    assert any(o.driver_id == driver.id and o.status == "released_offline"
+               for o in offers)
+    assert not any(c["token"] == "driver-fcm-token" for c in fcm_spy), (
+        f"the released driver must hear nothing: {fcm_spy}")
+
+
+async def test_online_by_the_deadline_keeps_the_reservation(
+    db, test_rider, test_driver, fcm_spy
+):
+    rider, _ = test_rider
+    driver, _ = test_driver
+    driver.is_online = True
+    # A locked phone's stale heartbeat does not cost the reservation.
+    driver.last_active_at = datetime.now(timezone.utc) - timedelta(minutes=40)
+    trip = _reserved_trip(rider.id, driver.id, minutes_out=55)
+    db.add(trip)
+    await db.commit()
+    await db.refresh(trip)
+
+    await _run_pass(db)
+
+    await db.refresh(trip)
+    assert trip.driver_id == driver.id
+    assert trip.status in ("scheduled_accepted", "scheduled_active")
+
+
+async def test_more_than_an_hour_out_offline_is_left_alone(
+    db, test_rider, test_driver, fcm_spy
+):
+    rider, _ = test_rider
+    driver, _ = test_driver
+    driver.is_online = False
+    trip = _reserved_trip(rider.id, driver.id, minutes_out=90)
+    db.add(trip)
+    await db.commit()
+    await db.refresh(trip)
+
+    await _run_pass(db)
+
+    await db.refresh(trip)
+    assert trip.driver_id == driver.id, "the deadline is 60 min, not earlier"
+
+
+async def test_a_lost_reservation_never_comes_back_to_that_driver(
+    client, db, test_rider, test_driver
+):
+    """The board hides it from the driver who lost it, and a claim is
+    refused — "ya para él no"."""
+    from tests.conftest import _make_auth_headers
+    from main import Vehicle
+
+    rider, _ = test_rider
+    driver, token = test_driver
+    driver.is_verified = True
+    driver.verification_status = "approved"
+    driver.lat, driver.lng = 25.77, -80.19
+    db.add(Vehicle(user_id=driver.id, make="Toyota", model="Camry", year=2022,
+                   plate="LOST1", vehicle_type="standard", is_active=True,
+                   approval_status="approved"))
+    trip = Trip(
+        rider_id=rider.id, driver_id=None,
+        pickup_address="x", dropoff_address="y",
+        pickup_lat=25.78, pickup_lng=-80.20, dropoff_lat=25.80, dropoff_lng=-80.22,
+        fare=30.0, vehicle_type="standard", status="scheduled",
+        scheduled_at=datetime.now(timezone.utc) + timedelta(hours=3),
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(trip)
+    await db.commit()
+    await db.refresh(trip)
+    db.add(DispatchOffer(trip_id=trip.id, driver_id=driver.id,
+                         status="released_offline"))
+    await db.commit()
+
+    headers = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+    res = await client.get(
+        "/scheduled-trips/available?lat=25.77&lng=-80.19&radius_km=50",
+        headers=headers)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    ids = [t.get("id") for t in (body if isinstance(body, list)
+                                 else body.get("trips", []))]
+    assert trip.id not in ids
+
+    headers = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+    res = await client.post(f"/scheduled-trips/{trip.id}/claim", headers=headers)
+    assert res.status_code == 409, res.text

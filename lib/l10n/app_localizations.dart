@@ -5098,6 +5098,12 @@ class S {
   String scheduledAvailableCount(int n) => _es
       ? (n == 1 ? '1 viaje disponible' : '$n viajes disponibles')
       : (n == 1 ? '1 ride available' : '$n rides available');
+  // The driver's own next reservation on the offline sheet (owner spec
+  // 2026-10-31, Lyft's "$13.03 Reserved Lyft · Go online by 7:10 AM").
+  String reservedRideTitle(String price) =>
+      _es ? '$price Viaje reservado' : '$price Reserved ride';
+  String goOnlineBy(String time) =>
+      _es ? 'Conéctate antes de las $time' : 'Go online by $time';
 
   // ── Vehicle page ──
   String get addVehicleAsk => _es

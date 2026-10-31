@@ -82,6 +82,8 @@ const double _kGoSideInset = 20.0;
 /// foto 2): el reposo abraza el contenido (header + hero + botones) sin la
 /// banda muerta debajo de la tarjeta de demanda que dejaba el 0.5.
 const double _kSheetRestFrac = 0.42;
+// Ink on the gold reservation card (top-level: part-file const rule #16).
+const Color _resInk = Color(0xFF14141A);
 
 /// The offline chrome's gold (home's `_gold`). This library's top-level
 /// `_gold` is a different shade (0xFFD4A843) that belongs to the online
@@ -2287,6 +2289,9 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 // ── Cruise Level ──
                 _buildCruiseLevelRow(dc),
                 const SizedBox(height: 16),
+                // The driver's OWN reservation (gold, Lyft-style) — fades out
+                // when it is gone (owner spec 2026-10-31).
+                _buildMyReservationCard(),
                 // Only there when there is a reservation to take.
                 _buildReservedRidesCard(dc),
                 // ── Earnings: period toggle + chart + see more ──
@@ -2459,7 +2464,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
             ),
           ),
           const SizedBox(height: 18),
-          Container(
+          // With a reservation of their own, that is what the driver needs
+          // to see at rest — it takes the demand card's place and hands it
+          // back with a fade when it is gone (owner spec 2026-10-31).
+          _heroReservationOr(Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: glassInnerBox(radius: 18),
@@ -2541,10 +2549,148 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 ),
               ],
             ),
-          ),
+          )),
         ],
       ),
     );
+  }
+
+  /// The gold card for the driver's own next reservation — Lyft's "$13.03
+  /// Reserved Lyft · Go online by 7:10 AM" in gold (owner spec 2026-10-31):
+  /// price + "Viaje reservado", the go-online deadline (1 hour before the
+  /// pickup — past it the reservation goes back to the board), and the
+  /// pickup time on the right. Null when there is none.
+  Widget? _myReservationTile() {
+    final r = _nextReservation;
+    if (r == null) return null;
+    final at = parseServerTime(r['scheduled_at']);
+    if (at == null) return null;
+    final s = S.of(context);
+    final fmt = DateFormat('h:mm a', 'en_US');
+    final fare = (r['fare'] as num?)?.toDouble() ?? 0;
+    return GestureDetector(
+      key: ValueKey('my-res-${r['id']}'),
+      onTap: _openMyReservations,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFF2D46A), Color(0xFFE8C547), Color(0xFFD4AE34)],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x40E8C547),
+              blurRadius: 14,
+              offset: Offset(0, 4),
+              spreadRadius: -4,
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.event_available_rounded, color: _resInk, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    s.reservedRideTitle('\$${fare.toStringAsFixed(2)}'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _resInk,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    s.goOnlineBy(fmt.format(at.subtract(const Duration(hours: 1)))),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _resInk.withValues(alpha: 0.75),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              fmt.format(at),
+              style: const TextStyle(
+                color: _resInk,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Fade between [a] and [b] in place; the box eases to the new height
+  /// once the old one is gone — the smooth fade-out the owner asked for.
+  Widget _fadeSwap(Widget child) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 420),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        transitionBuilder: (c, a) => FadeTransition(opacity: a, child: c),
+        layoutBuilder: (current, previous) => Stack(
+          alignment: Alignment.topCenter,
+          children: [...previous, if (current != null) current],
+        ),
+        child: child,
+      ),
+    );
+  }
+
+  /// Open face: the reservation card, or nothing — with the fade.
+  Widget _buildMyReservationCard() {
+    final tile = _myReservationTile();
+    return _fadeSwap(tile == null
+        ? const SizedBox(width: double.infinity, key: ValueKey('my-res-none'))
+        : Padding(
+            key: tile.key,
+            padding: const EdgeInsets.only(bottom: 14),
+            child: tile,
+          ));
+  }
+
+  /// Resting face: the reservation in the demand card's place, or the
+  /// demand card — with the fade.
+  Widget _heroReservationOr(Widget demand) {
+    final tile = _myReservationTile();
+    return _fadeSwap(tile ??
+        KeyedSubtree(key: const ValueKey('hero-demand'), child: demand));
+  }
+
+  /// The card's tap: the driver's own rides ("Tus viajes" tab).
+  void _openMyReservations() {
+    HapticService.selectionClick();
+    final nav = Navigator.maybeOf(context);
+    if (nav == null) return;
+    nav
+        .push(slideFromRightRoute(const ScheduledRidesScreen(initialTab: 1)))
+        .then((_) {
+      if (!mounted) return;
+      _fetchScheduledCount();
+      _remountMapSurface();
+    });
   }
 
   Widget _recommendItem(IconData icon, String label, VoidCallback onTap) {

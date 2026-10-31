@@ -114,6 +114,8 @@ import '../../utils/responsive.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../utils/fix_kinematics.dart';
 import '../../utils/server_time.dart';
+import 'package:intl/intl.dart';
+import 'scheduled_rides_screen.dart';
 
 part 'driver_online_controller.dart';
 part 'driver_online_map.dart';
@@ -515,6 +517,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // ── Scheduled rides badge ──
   int _scheduledAvailCount = 0;
+  /// The driver's OWN next reservation (scheduled_accepted / _active) — the
+  /// gold card on the offline sheet. Null = none; the card fades away.
+  Map<String, dynamic>? _nextReservation;
 
   // ── Marketplace de viajes sin agarrar (user spec 2026-10-02) ──
   // Viajes que ya sonaron a los candidatos y nadie tomó: la píldora arriba

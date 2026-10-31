@@ -10,6 +10,7 @@ import '../../services/api_service.dart';
 import '../../utils/friendly_load_error.dart';
 import '../../widgets/neu_style.dart';
 import '../../services/notification_service.dart';
+import '../../services/scheduled_board_watcher.dart';
 import '../../utils/server_time.dart';
 
 /// Premium Scheduled Trips screen for drivers.
@@ -35,6 +36,11 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
   bool _loading = true;
   String? _error;
 
+  /// Reservations on their way out: they fade, THEN leave the list — no
+  /// message, no notification (owner spec 2026-10-31: released at the
+  /// 1-hour deadline or removed by dispatch, it "just disappears").
+  final Set<Object?> _leaving = {};
+
   @override
   void initState() {
     super.initState();
@@ -47,10 +53,17 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
       if (mounted) setState(() {});
     });
     _loadTrips();
+    // Live: a release or a dispatch removal reaches this list at once.
+    NotificationService.scheduledRideRefreshNotifier
+        .addListener(_refreshQuietly);
+    ScheduledBoardWatcher.acquire();
   }
 
   @override
   void dispose() {
+    NotificationService.scheduledRideRefreshNotifier
+        .removeListener(_refreshQuietly);
+    ScheduledBoardWatcher.release();
     _countdownTimer?.cancel();
     _staggerCtrl.dispose();
     super.dispose();
@@ -86,6 +99,36 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
         _error = friendlyLoadError(context, e);
         _loading = false;
       });
+    }
+  }
+
+  /// Re-read the list without a spinner. A reservation that is gone fades
+  /// out first, then the list settles.
+  Future<void> _refreshQuietly() async {
+    if (_loading) return;
+    try {
+      final userId = await ApiService.getCurrentUserId();
+      if (userId == null) return;
+      final fresh = await ApiService.getDriverScheduledTrips(userId);
+      if (!mounted) return;
+      final keep = fresh.map((t) => t['id']).toSet();
+      final gone = _trips
+          .map((t) => t['id'])
+          .where((id) => !keep.contains(id))
+          .toSet();
+      if (gone.isEmpty) {
+        setState(() => _trips = fresh);
+        return;
+      }
+      setState(() => _leaving.addAll(gone));
+      await Future<void>.delayed(const Duration(milliseconds: 420));
+      if (!mounted) return;
+      setState(() {
+        _trips = fresh;
+        _leaving.clear();
+      });
+    } catch (_) {
+      // Quiet by design: the next signal or the next open tries again.
     }
   }
 
@@ -241,7 +284,12 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (ctx, i) => _buildCard(i, c),
+                  (ctx, i) => AnimatedOpacity(
+                    opacity: _leaving.contains(_trips[i]['id']) ? 0 : 1,
+                    duration: const Duration(milliseconds: 400),
+                    curve: Curves.easeOut,
+                    child: _buildCard(i, c),
+                  ),
                   childCount: _trips.length,
                 ),
               ),

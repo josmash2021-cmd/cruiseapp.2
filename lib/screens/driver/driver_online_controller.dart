@@ -3098,6 +3098,36 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _prevScheduledCount = newCount;
     } catch (_) {}
 
+    // The driver's OWN next reservation (owner spec 2026-10-31). When it is
+    // gone — not online by 1 hour before pickup, or removed by dispatch —
+    // the card simply fades out: no message, no notification.
+    try {
+      final id = _driverId ?? await ApiService.getCurrentUserId();
+      if (id != null) {
+        final mine = await ApiService.getDriverScheduledTrips(id);
+        if (!mounted || seq != _scheduledCountSeq) return;
+        final now = DateTime.now();
+        Map<String, dynamic>? next;
+        DateTime? nextAt;
+        for (final t in mine) {
+          final st = (t['status'] ?? '').toString();
+          if (st != 'scheduled_accepted' && st != 'scheduled_active') continue;
+          final at = parseServerTime(t['scheduled_at']);
+          if (at == null || at.isBefore(now)) continue;
+          if (nextAt == null || at.isBefore(nextAt)) {
+            next = t;
+            nextAt = at;
+          }
+        }
+        String sig(Map<String, dynamic>? r) => r == null
+            ? ''
+            : '${r['id']}|${r['scheduled_at']}|${r['fare']}|${r['status']}';
+        if (sig(next) != sig(_nextReservation)) {
+          _setState(() => _nextReservation = next);
+        }
+      }
+    } catch (_) {}
+
     // The bell's badge is a different number from the bounce above: what
     // is waiting to be read, not what is up for grabs.
     try {

@@ -70,6 +70,9 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 
   // ── My Rides tab state ──
   List<Map<String, dynamic>> _myRides = [];
+  /// "Tus viajes" on their way out — they fade, then leave (owner spec
+  /// 2026-10-31: a reservation that is gone just disappears, no message).
+  final Set<Object?> _leavingMine = {};
   bool _loadingMine = true;
   String? _errorMine;
   DateTime? _lastMineFetch; // throttle: min 10 s between fetches
@@ -120,7 +123,37 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   }
 
   void _onScheduledRidePush() {
-    if (mounted) _loadAvailable(force: true);
+    if (!mounted) return;
+    _loadAvailable(force: true);
+    _refreshMineQuietly();
+  }
+
+  /// "Tus viajes" without a spinner: a reservation that is gone (released
+  /// at the 1-hour deadline, removed by dispatch) fades out first.
+  Future<void> _refreshMineQuietly() async {
+    if (_fetchingMine) return;
+    try {
+      final uid = await ApiService.getCurrentUserId();
+      if (uid == null) return;
+      final fresh = await ApiService.getDriverScheduledTrips(uid);
+      if (!mounted) return;
+      final keep = fresh.map((t) => t['id']).toSet();
+      final gone = _myRides
+          .map((t) => t['id'])
+          .where((id) => !keep.contains(id))
+          .toSet();
+      if (gone.isNotEmpty) {
+        setState(() => _leavingMine.addAll(gone));
+        await Future<void>.delayed(const Duration(milliseconds: 420));
+        if (!mounted) return;
+      }
+      setState(() {
+        _myRides = fresh;
+        _leavingMine.clear();
+      });
+    } catch (_) {
+      // Quiet by design: the next signal tries again.
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -582,14 +615,19 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         itemCount: trips.length,
         itemBuilder: (ctx, i) => isMyRides
-            ? _DriverMyRideCard(
-                trip: trips[i],
-                onCancelled: onRefresh,
-                expanded: _expandedTripId == trips[i]['id'],
-                onToggle: () {
-                  final id = trips[i]['id'] as int?;
-                  if (id != null) _onCardToggle(id);
-                },
+            ? AnimatedOpacity(
+                opacity: _leavingMine.contains(trips[i]['id']) ? 0 : 1,
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOut,
+                child: _DriverMyRideCard(
+                  trip: trips[i],
+                  onCancelled: onRefresh,
+                  expanded: _expandedTripId == trips[i]['id'],
+                  onToggle: () {
+                    final id = trips[i]['id'] as int?;
+                    if (id != null) _onCardToggle(id);
+                  },
+                ),
               )
             : _buildAvailableCard(trips[i]),
       ),

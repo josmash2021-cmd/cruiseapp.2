@@ -1360,6 +1360,26 @@ async def _eligible_debit_card(db: AsyncSession, user_id: int):
     return r.scalars().first()
 
 
+def _same_bank_already_attached(stripe_mod, connect_id: str, bank_token: str):
+    """The Stripe bank already on this account with the token's fingerprint,
+    or None. Same fingerprint = same account number at the same bank (owner
+    report 2026-10-31: one driver's Chase ····8997 was attached 8 times in a
+    minute — every tap of "save" added another copy). Never fatal: when the
+    check cannot run, the attach goes ahead as before."""
+    try:
+        tok = stripe_mod.Token.retrieve(bank_token)
+        fp = ((tok.get("bank_account") or {}).get("fingerprint")) or ""
+        if not fp:
+            return None
+        banks = stripe_mod.Account.list_external_accounts(
+            connect_id, object="bank_account", limit=100,
+        ).get("data", [])
+    except Exception as e:
+        logging.warning("[StripeBankAccount] duplicate check skipped: %s", str(e)[:160])
+        return None
+    return next((b for b in banks if b.get("fingerprint") == fp), None)
+
+
 def _ext_id_from_display(display_name: str) -> str:
     """Pull the Stripe external_account id out of the
     ``"Visa ····1234  [ext:card_xxx]"`` display_name suffix."""
@@ -2305,10 +2325,19 @@ async def _mirror_bank_payout_methods(db, user, banks: list) -> list:
 
     # Stripe's default first, so it claims the local default when none exists.
     ordered = sorted(banks, key=lambda b: not b.get("default_for_currency"))
+    # One row per real bank: copies of the same account (same fingerprint,
+    # different ba_ id) are not shown twice (2026-10-31).
+    seen_fp = {b.get("fingerprint") for b in banks
+               if b.get("fingerprint") and (b.get("id") or "") in known}
     for b in ordered:
         ext_id = b.get("id") or ""
         if not ext_id or ext_id in known:
             continue
+        fp = b.get("fingerprint")
+        if fp and fp in seen_fp:
+            continue
+        if fp:
+            seen_fp.add(fp)
         bank_name = (b.get("bank_name") or "Bank").title()
         last4 = b.get("last4") or "----"
         pm = PayoutMethod(
@@ -2534,6 +2563,36 @@ async def add_bank_account_payout(
             if _mod:
                 _stripe.Account.modify(_cid, **_mod)
 
+        _same = _same_bank_already_attached(_stripe, _cid, bank_token)
+        if _same is not None:
+            if set_default and not _same.get("default_for_currency"):
+                try:
+                    _stripe.Account.modify_external_account(
+                        _cid, _same["id"], default_for_currency=True,
+                    )
+                except Exception as e:
+                    logging.warning("[StripeBankAccount] default switch failed: %s",
+                                    str(e)[:160])
+            await _mirror_bank_payout_methods(db, user, [_same])
+            row = (await db.execute(
+                select(PayoutMethod).where(
+                    PayoutMethod.user_id == user.id,
+                    PayoutMethod.display_name.like(f"%[ext:{_same['id']}]"),
+                )
+            )).scalars().first()
+            if row is not None:
+                if set_default and not row.is_default:
+                    await _clear_other_defaults(db, user.id)
+                    row.is_default = True
+                    await db.commit()
+                logging.info("[StripeBankAccount] user %s re-linked the same bank — reused %s",
+                             user.id, _same["id"])
+                return {
+                    "id": row.id,
+                    "method_type": row.method_type,
+                    "display_name": row.display_name,
+                    "is_default": row.is_default,
+                }
         try:
             ext = _stripe.Account.create_external_account(
                 _cid,

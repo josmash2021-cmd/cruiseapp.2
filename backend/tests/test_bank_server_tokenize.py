@@ -44,6 +44,15 @@ def stripe_mock(monkeypatch):
         return {"id": "btok_server_side"}
 
     monkeypatch.setattr("stripe.Token.create", _token_create)
+    # No bank on the account yet: the duplicate check finds nothing.
+    monkeypatch.setattr(
+        "stripe.Token.retrieve",
+        lambda _tok: {"bank_account": {"fingerprint": "fp_new"}},
+    )
+    monkeypatch.setattr(
+        "stripe.Account.list_external_accounts",
+        lambda _cid, **kw: {"data": calls.get("existing", [])},
+    )
     monkeypatch.setattr(
         "stripe.Account.retrieve",
         lambda _cid: {"controller": {"requirement_collection": "application"}},
@@ -125,3 +134,36 @@ async def test_digits_require_driver_auth(client):
         json={"routing_number": ROUTING, "account_number": ACCOUNT},
     )
     assert resp.status_code in (401, 403)
+
+
+async def test_the_same_bank_twice_is_reused_not_copied(
+    client, db, test_driver, stripe_mock, monkeypatch,
+):
+    """Owner report 2026-10-31: one driver's Chase ····8997 was attached 8
+    times in a minute. Same fingerprint already on the account → no new
+    external account, the existing one is reused and becomes the default."""
+    driver, token = test_driver
+    stripe_mock["existing"] = [{
+        "id": "ba_already", "bank_name": "JPMORGAN CHASE BANK, NA",
+        "last4": "8997", "fingerprint": "fp_new",
+        "default_for_currency": False,
+    }]
+    switched = []
+    monkeypatch.setattr(
+        "stripe.Account.modify_external_account",
+        lambda _cid, ext_id, **kw: switched.append((ext_id, kw)),
+        raising=False,
+    )
+    resp = await client.post(
+        "/drivers/payout-methods/bank-account",
+        headers=_headers(token),
+        json={"bank_token": "btok_again", "set_default": True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert stripe_mock["attach"] is None, "no second copy on Stripe"
+    assert switched == [("ba_already", {"default_for_currency": True})]
+    rows = (await db.execute(
+        select(PayoutMethod).where(PayoutMethod.user_id == driver.id)
+    )).scalars().all()
+    assert len(rows) == 1 and "[ext:ba_already]" in rows[0].display_name
+    assert rows[0].is_default is True

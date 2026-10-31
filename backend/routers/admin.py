@@ -1352,7 +1352,8 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
             {
                 "id": p.id,
                 "method_type": p.method_type,
-                "display_name": p.display_name,
+                # Bank + last 4 only — the internal [ext:ba_...] id is ours.
+                "display_name": (p.display_name or "").split("[ext:")[0].strip(),
                 "is_default": bool(p.is_default),
                 "created_at": p.created_at.isoformat() if p.created_at else None,
             }

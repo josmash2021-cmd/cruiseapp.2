@@ -52,9 +52,19 @@ const kGlassBannerMaxWidth = 560.0;
 /// ends fully off-screen (cards are 68–82 px tall at text scale 1).
 const kGlassBannerTravel = 96.0;
 
-/// Frost: the sheet's blur, the open sheet's denser tint.
+/// Frost: the sheet's blur under a LIGHT smoke tint. It wore the open
+/// sheet's 82 % tint until 2026-11-01 — the owner: "¿por qué está gris y no
+/// transparente blurry?" — at 82 % the blurred map barely showed and the
+/// card read as a flat grey box. 40 % lets the frosted map through; white
+/// text over the dark-navy map stays legible.
 const kGlassBannerBlur = kGlassSheetBlur; // sigma 24
-const kGlassBannerTint = glassSheetOpenTint; // #1A1A21 @ ~82 %
+const kGlassBannerTint = Color(0x661A1A21); // #1A1A21 @ 40 %
+
+/// Extra smoke on the 6 px rim only ([kGlassBannerBlurInset]): there iOS
+/// does not blur, and at 40 % the sharp streets would show through the
+/// edge. Over the base tint the rim lands near 73 % — a polished bevel,
+/// not a frame of crisp map.
+const kGlassBannerRimTint = Color(0x8C1A1A21); // + 55 %
 
 /// iOS over the native Mapbox view: the engine blurs the map with a
 /// UIVisualEffectView framed to the BackdropFilter's bounding RECTANGLE
@@ -64,8 +74,8 @@ const kGlassBannerTint = glassSheetOpenTint; // #1A1A21 @ ~82 %
 /// owner saw on the earnings pill, 2026-10-31). The frost is therefore
 /// inset by ceil(r·(1 − 1/√2)) = 6 px: the largest rectangle whose corners
 /// still sit INSIDE the 20 px rounded shape. Whatever iOS does with it,
-/// the blur can never leave the card. The 6 px rim is the same tint over
-/// the unblurred backdrop — at 82 % the difference reads as the polished
+/// the blur can never leave the card. The 6 px rim is unblurred backdrop
+/// under a denser tint ([kGlassBannerRimTint]) — it reads as the polished
 /// edge of the glass, not as a frame. Same geometry on Android (exact
 /// clip there) so both platforms look identical over the map.
 const kGlassBannerBlurInset = 6.0;
@@ -579,12 +589,24 @@ class _GlassBannerState extends State<_GlassBanner>
                   ),
                 ),
               ),
-              // 2 — one tint + hairline over the whole card, painted after
-              // the frost so the blur never smears it.
+              // 2 — one light tint over the whole card, painted after the
+              // frost so the blur never smears it; the unblurred 6 px rim
+              // gets extra smoke so no crisp street shows at the edge.
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: kGlassBannerTint,
+                    borderRadius: radius,
+                    border: Border.all(
+                        color: kGlassBannerRimTint,
+                        width: kGlassBannerBlurInset),
+                  ),
+                ),
+              ),
+              // 3 — the hairline of light on the edge, as before.
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
                     borderRadius: radius,
                     border: Border.all(color: glassEdge),
                   ),

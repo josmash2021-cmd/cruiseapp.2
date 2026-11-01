@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cruise_app/widgets/glass_notification_banner.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Guardian for the owner spec of 2026-11-01: "todas las notificaciones
@@ -51,6 +52,17 @@ void main() {
         reason: 'reuses the shared glass, no second blur recipe');
     expect(banner, contains('tint: Colors.transparent'),
         reason: 'the tint is painted over the WHOLE card after the frost');
+  });
+
+  // Owner 2026-11-01: "¿por qué está gris y no transparente blurry?" — the
+  // banner wore the open sheet's 82 % tint and read as a flat grey box.
+  test('see-through glass: light tint, denser only on the unblurred rim', () {
+    expect(kGlassBannerTint.a, lessThanOrEqualTo(0.45),
+        reason: 'the frosted map must show through');
+    expect(kGlassBannerRimTint.a, greaterThan(kGlassBannerTint.a));
+    expect(banner, contains('color: kGlassBannerRimTint,'));
+    expect(banner, contains('width: kGlassBannerBlurInset),'),
+        reason: 'extra smoke exactly where iOS does not blur');
   });
 
   test('foreground pushes use the banner, never a system/local copy', () {

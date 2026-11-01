@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, B
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, or_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel, Field
 from models.database import (
     get_db, SessionLocal, User, Trip, Vehicle, Document, DispatchOffer,
     Cashout, PayoutMethod, RiderPaymentMethod, Wallet, WalletTransaction,
@@ -4586,3 +4587,90 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     return {"status": "ok"}
 
 
+
+
+# ── Airport presence: the "1-5 Drivers" line of the airport map callouts ──
+# (owner spec 2026-11-01). The driver app draws its airports from its own
+# list (lib/data/us_airports_geo.dart) and sends the codes + coordinates it is
+# showing, so the airport list lives in ONE place instead of being mirrored
+# here. The server only counts: OTHER drivers online (is_online, heartbeat
+# fresh within the same 15 min window dispatch uses) within 4 km of each
+# airport. The app buckets the number ("1-5", "5-15", …) and asks at most
+# once per local hour.
+_AIRPORT_PRESENCE_RADIUS_KM = 4.0
+_AIRPORT_PRESENCE_FRESH_MIN = 15
+_AIRPORT_PRESENCE_MAX_AIRPORTS = 20
+_AIRPORT_CODE_RE = re.compile(r"^[A-Z0-9]{3,4}$")
+
+
+class _AirportPointIn(BaseModel):
+    code: str = Field(..., max_length=8)
+    lat: float
+    lng: float
+
+
+class _AirportPresenceIn(BaseModel):
+    airports: List[_AirportPointIn] = Field(default_factory=list, max_length=50)
+
+
+@router.post("/drivers/airport-presence", dependencies=[Depends(_verify_api_key)])
+async def airport_presence(
+    body: _AirportPresenceIn,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """How many OTHER drivers are online near each airport.
+
+    Returns ``{"counts": {"BHM": 3, ...}, "radius_km": 4.0}`` — every valid
+    code asked for is in ``counts`` (0 when nobody is there). Codes that are
+    not 3-4 letters/digits and coordinates off the globe are dropped.
+    """
+    if user.role != "driver":
+        raise HTTPException(status_code=403, detail="Drivers only")
+
+    airports: list[tuple[str, float, float]] = []
+    seen: set[str] = set()
+    for a in body.airports:
+        code = (a.code or "").strip().upper()
+        if code in seen or not _AIRPORT_CODE_RE.match(code):
+            continue
+        if not (math.isfinite(a.lat) and math.isfinite(a.lng)):
+            continue
+        if not (-90.0 <= a.lat <= 90.0 and -180.0 <= a.lng <= 180.0):
+            continue
+        seen.add(code)
+        airports.append((code, a.lat, a.lng))
+        if len(airports) >= _AIRPORT_PRESENCE_MAX_AIRPORTS:
+            break
+
+    counts = {code: 0 for code, _, _ in airports}
+    if not airports:
+        return {"counts": counts, "radius_km": _AIRPORT_PRESENCE_RADIUS_KM}
+
+    r = _AIRPORT_PRESENCE_RADIUS_KM
+    boxes = []
+    for _, lat, lng in airports:
+        d_lat = r / 111.0
+        d_lng = r / (111.0 * max(math.cos(math.radians(lat)), 0.01))
+        boxes.append(and_(
+            User.lat >= lat - d_lat, User.lat <= lat + d_lat,
+            User.lng >= lng - d_lng, User.lng <= lng + d_lng,
+        ))
+    cutoff = utc_now() - timedelta(minutes=_AIRPORT_PRESENCE_FRESH_MIN)
+    rows = (await db.execute(
+        select(User.id, User.lat, User.lng).where(and_(
+            User.role == "driver",
+            User.is_online == True,  # noqa: E712 — SQL comparison
+            User.id != user.id,
+            User.lat.isnot(None),
+            User.lng.isnot(None),
+            User.last_active_at.isnot(None),
+            User.last_active_at >= cutoff,
+            or_(*boxes),
+        ))
+    )).all()
+    for _id, d_lat, d_lng in rows:
+        for code, a_lat, a_lng in airports:
+            if _haversine(a_lat, a_lng, d_lat, d_lng) <= r:
+                counts[code] += 1
+    return {"counts": counts, "radius_km": r}

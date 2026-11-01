@@ -35,6 +35,7 @@ from config import (
 )
 from services.event_bus import event_bus
 from services import vehicle_tiers
+from services import pickup_eta
 from services.platform_earnings import driver_fare_basis, driver_offer_dict
 from routers.admin import _pricing_config
 from utils.bounded_cache import TTLCache, BoundedDict
@@ -357,6 +358,7 @@ async def _find_nearest_drivers(
     limit: int = 10,
     dropoff_lat: float | None = None,
     dropoff_lng: float | None = None,
+    max_pickup_min: float | None = None,
 ) -> list:
     """Find the nearest online drivers using a bounding-box pre-filter and
     SQL-side haversine ORDER BY so the database does the heavy lifting.
@@ -367,7 +369,12 @@ async def _find_nearest_drivers(
     radius does not mean a far driver is picked: it means the cascade has
     somewhere to go once everyone close has passed.
 
-    Returns a list of User ORM objects sorted by distance (closest first).
+    [radius_km] only bounds the SQL search. Who is actually eligible is
+    decided by DRIVING TIME to the pickup (services/pickup_eta.py): the
+    pickup state's limit (AL 30 / FL 15 / others 30 min), narrowed by
+    [max_pickup_min] when the panel's reassign asked for fewer.
+
+    Returns a list of User ORM objects, fastest to the pickup first.
     """
     if exclude_driver_ids is None:
         exclude_driver_ids = set()
@@ -546,7 +553,7 @@ async def _find_nearest_drivers(
     # that crossing a state line for a real fare is not a mistake, then by
     # a two-state service area (AL/FL) that refused every other pickup.
     # Nationwide since 2026-09-11: the pickup's state now only tunes how
-    # far the request reaches (_radius_for_state), never whether it is
+    # far the request reaches (pickup_eta.max_pickup_minutes), never whether it is
     # served. What survives of the old rule is the border guard: a driver
     # is only offered work in the state they are standing in, which is
     # also the rule reserved rides already follow.
@@ -556,7 +563,6 @@ async def _find_nearest_drivers(
     # open: a driver whose state cannot be resolved is kept rather than
     # dropped, because a geocoder that is down must not empty the queue.
     pickup_state = await _state_for(pickup_lat, pickup_lng)
-    state_radius = _radius_for_state(pickup_state)
 
     if pickup_state:
         same = []
@@ -571,34 +577,21 @@ async def _find_nearest_drivers(
             )
         drivers = same
 
-    # The state's own reach, applied last. The caller asked for a radius
-    # and the SQL box was built from it, but Florida's ten miles is not
-    # Alabama's twenty and the pickup decides which one this is.
-    if state_radius < radius_km:
-        inside = [
-            d for d in drivers
-            if _haversine(pickup_lat, pickup_lng, d.lat or 0, d.lng or 0)
-            <= state_radius
-        ]
-        if len(inside) != len(drivers):
-            logging.info(
-                "[NearbySearch] %s reaches %.0f km: dropped %d driver(s) "
-                "past it", pickup_state, state_radius,
-                len(drivers) - len(inside),
-            )
-        drivers = inside
+    # How far the request reaches, applied last: minutes of DRIVING with
+    # live traffic, not miles in a straight line (owner 2026-11-01, "los
+    # carros no vuelan"). Also orders the survivors fastest-first — the
+    # rider cares who ARRIVES first. Falls back to the old straight-line
+    # reach only when no routing provider answers (pickup_eta.py).
+    limit_min = pickup_eta.max_pickup_minutes(pickup_state, max_pickup_min)
+    drivers = await pickup_eta.filter_by_pickup_time(
+        drivers, pickup_lat, pickup_lng, limit_min,
+    )
 
     if drivers:
         logging.info(
-            "[NearbySearch] Found %d drivers for a %s request",
-            len(drivers), vehicle_tiers.normalize_tier(vehicle_type),
+            "[NearbySearch] Found %d drivers within %.0f min for a %s request",
+            len(drivers), limit_min, vehicle_tiers.normalize_tier(vehicle_type),
         )
-
-    # The list is haversine-ordered so far. Re-order these few finalists
-    # by real driving time to the pickup when the ETA provider answers;
-    # any failure keeps the distance order (fail-open).
-    if len(drivers) > 1:
-        drivers = await _order_by_driver_eta(drivers, pickup_lat, pickup_lng)
 
     # Lyft-style refinements over the finalists (2026-08-24), in order:
     # acceptance rate breaks distance ties, the destination filter removes
@@ -610,219 +603,6 @@ async def _find_nearest_drivers(
     drivers = await _order_chained_by_detour(db, drivers, pickup_lat, pickup_lng)
 
     return drivers
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  Ordering candidates by real driving time, not crow-flies distance
-# ══════════════════════════════════════════════════════════════════════════════
-#
-# Haversine says who is closest as the crow flies; the rider cares who
-# ARRIVES first. The candidate list still comes from the SQL haversine
-# filter above (top ~10) — this only re-orders those finalists by driving
-# time to the pickup, using the same Google key the geocoder and the
-# offer-route fetcher already use. One Distance Matrix request carries
-# every candidate at once (many origins, one destination), so the whole
-# step is a single HTTP call per dispatch, not one per driver.
-#
-# Fail-open everywhere: no key, a timeout, a provider error, or a single
-# unroutable candidate all mean "keep the haversine order" — dispatch must
-# never depend on a third-party API being alive.
-
-_ETA_CACHE_TTL_SECONDS = 60.0
-_ETA_TOTAL_TIMEOUT_S = 4.0
-
-# (driver_id, pickup cell) -> driving seconds. 60 s is short enough that a
-# moving driver's answer stays honest, long enough that a cascade walking
-# its candidates does not re-ask for the same pickup every round.
-_eta_cache: TTLCache[tuple, float] = TTLCache(
-    ttl_seconds=_ETA_CACHE_TTL_SECONDS, max_size=2000, name="dispatch_eta_cache",
-)
-
-
-def _eta_cell(lat: float, lng: float) -> tuple[int, int]:
-    """~0.5 km grid cell for the pickup — requests from the same block
-    share one cached ETA instead of one call each."""
-    return (int(lat / 0.005), int(lng / 0.005))
-
-
-async def _fetch_etas_osrm(
-    drivers: list, pickup_lat: float, pickup_lng: float,
-) -> dict[int, float] | None:
-    """Driving seconds driver -> pickup for every candidate, from ONE OSRM
-    /table request (batch: many sources, one destination). No api key, no
-    console enablement — this is what lets the ETA ranking work in prod
-    (2026-10-27). Same fail-open contract as the Google path: None when the
-    provider cannot answer for EVERY candidate.
-    """
-    import urllib.request
-
-    n = len(drivers)
-    if n == 0:
-        return {}
-    coords = ";".join(f"{d.lng},{d.lat}" for d in drivers) + f";{pickup_lng},{pickup_lat}"
-    sources = ";".join(str(i) for i in range(n))
-    url = (
-        f"https://router.project-osrm.org/table/v1/driving/{coords}"
-        f"?sources={sources}&destinations={n}&annotations=duration"
-    )
-
-    def _fetch():
-        with urllib.request.urlopen(url, timeout=_ETA_TOTAL_TIMEOUT_S) as resp:
-            return json.loads(resp.read().decode())
-
-    try:
-        data = await asyncio.wait_for(
-            asyncio.get_running_loop().run_in_executor(None, _fetch),
-            timeout=_ETA_TOTAL_TIMEOUT_S + 0.5,
-        )
-    except Exception as exc:
-        logging.warning("[Dispatch] OSRM ETA table failed: %s", exc)
-        return None
-
-    if not isinstance(data, dict) or data.get("code") != "Ok":
-        logging.warning("[Dispatch] OSRM ETA table answered code=%s",
-                        data.get("code") if isinstance(data, dict) else "no-payload")
-        return None
-    matrix = data.get("durations")
-    if not isinstance(matrix, list) or len(matrix) != n:
-        logging.warning("[Dispatch] OSRM ETA table returned no full matrix")
-        return None
-    etas: dict[int, float] = {}
-    for i, d in enumerate(drivers):
-        row = matrix[i]
-        if not isinstance(row, list) or not row or not isinstance(row[0], (int, float)):
-            logging.info("[Dispatch] OSRM ETA element not routable for driver %s", d.id)
-            return None
-        etas[d.id] = float(row[0])
-    return etas
-
-
-async def _fetch_etas_to_pickup(
-    drivers: list, pickup_lat: float, pickup_lng: float,
-) -> dict[int, float] | None:
-    """Driving seconds driver -> pickup for each candidate, from one Google
-    Distance Matrix request (batch: many origins, one destination).
-
-    Returns a {driver_id: seconds} dict, or None when the provider cannot
-    answer for EVERY candidate — a partial ranking is worse than none, so
-    the caller then keeps the haversine order. Never raises.
-    """
-    # OSRM /table FIRST (2026-10-27, owner spec "que llegue antes el que
-    # tarda menos"): it returns the same driving-seconds matrix as Google's
-    # Distance Matrix but needs NO api key and NO console enablement. The
-    # old Google-only path was answering REQUEST_DENIED in prod, so the ETA
-    # ranking was silently degrading to straight-line distance. Google stays
-    # as the fallback when OSRM cannot answer.
-    osrm_etas = await _fetch_etas_osrm(drivers, pickup_lat, pickup_lng)
-    if osrm_etas is not None:
-        return osrm_etas
-    if not GOOGLE_MAPS_API_KEY:
-        return None
-
-    import urllib.parse
-    import urllib.request
-
-    origins = "|".join(f"{d.lat},{d.lng}" for d in drivers)
-    url = "https://maps.googleapis.com/maps/api/distancematrix/json?" + urllib.parse.urlencode({
-        "origins": origins,
-        "destinations": f"{pickup_lat},{pickup_lng}",
-        "mode": "driving",
-        "key": GOOGLE_MAPS_API_KEY,
-    })
-
-    def _fetch():
-        with urllib.request.urlopen(url, timeout=_ETA_TOTAL_TIMEOUT_S) as resp:
-            return json.loads(resp.read().decode())
-
-    try:
-        data = await asyncio.wait_for(
-            asyncio.get_running_loop().run_in_executor(None, _fetch),
-            timeout=_ETA_TOTAL_TIMEOUT_S + 0.5,
-        )
-    except Exception as exc:
-        logging.warning("[Dispatch] ETA matrix request failed: %s", exc)
-        return None
-
-    if not isinstance(data, dict) or data.get("status") != "OK":
-        logging.warning(
-            "[Dispatch] ETA matrix answered status=%s",
-            data.get("status") if isinstance(data, dict) else "no-payload",
-        )
-        return None
-
-    rows = data.get("rows") or []
-    if len(rows) < len(drivers):
-        logging.warning(
-            "[Dispatch] ETA matrix returned %d rows for %d candidates",
-            len(rows), len(drivers),
-        )
-        return None
-
-    etas: dict[int, float] = {}
-    for d, row in zip(drivers, rows):
-        elements = (row or {}).get("elements") or []
-        if not elements or elements[0].get("status") != "OK":
-            # One unroutable candidate poisons the comparison — fall back.
-            logging.info(
-                "[Dispatch] ETA matrix element not OK for driver %s", d.id,
-            )
-            return None
-        etas[d.id] = float((elements[0].get("duration") or {}).get("value") or 0.0)
-    return etas
-
-
-async def _order_by_driver_eta(
-    drivers: list, pickup_lat: float, pickup_lng: float,
-) -> list:
-    """Re-order dispatch candidates by driving time to the pickup.
-
-    Returns the input list unchanged (haversine order) whenever the
-    provider cannot answer — fail-open by construction.
-    """
-    if len(drivers) < 2:
-        return drivers
-    try:
-        cell = _eta_cell(pickup_lat, pickup_lng)
-        etas: dict[int, float] = {}
-        missing = []
-        for d in drivers:
-            hit = _eta_cache.get((d.id, cell))
-            if hit is None:
-                missing.append(d)
-            else:
-                etas[d.id] = hit
-
-        if missing:
-            fetched = await _fetch_etas_to_pickup(missing, pickup_lat, pickup_lng)
-            if fetched is None:
-                logging.info(
-                    "[Dispatch] haversine fallback: ETA provider unavailable "
-                    "for %d candidate(s)", len(missing),
-                )
-                return drivers
-            for did, secs in fetched.items():
-                _eta_cache[(did, cell)] = secs
-            etas.update(fetched)
-
-        if any(d.id not in etas for d in drivers):
-            logging.info("[Dispatch] haversine fallback: incomplete ETA coverage")
-            return drivers
-
-        ordered = sorted(
-            drivers,
-            key=lambda d: (
-                etas[d.id],
-                _haversine(pickup_lat, pickup_lng, d.lat or 0, d.lng or 0),
-            ),
-        )
-        logging.info(
-            "[Dispatch] ETA ordering used: %s",
-            ", ".join(f"driver {d.id} {etas[d.id]:.0f}s" for d in ordered),
-        )
-        return ordered
-    except Exception as exc:
-        logging.warning("[Dispatch] haversine fallback: ETA ordering failed: %s", exc)
-        return drivers
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -929,6 +709,13 @@ async def _send_offer_to_driver(
         chained = int(_active_cnt.scalar() or 0) > 0
     except Exception as _ce:
         logging.warning("[Dispatch] chained-flag lookup failed: %s", _ce)
+
+    # What the routing provider predicted for this driver, so the real
+    # pickup time can correct the next predictions (pickup_eta.py).
+    if trip.pickup_lat is not None and trip.pickup_lng is not None:
+        pickup_eta.record_offer_sample(
+            trip.id, driver.id, trip.pickup_lat, trip.pickup_lng, chained,
+        )
 
     # Compute rider's trip history, rating, and "new rider" flag so the
     # driver card shows the right label:
@@ -1231,10 +1018,11 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
                     pickup_lng=trip.pickup_lng,
                     exclude_driver_ids=tried_driver_ids,
                     vehicle_type=trip.vehicle_type or "comfort",
-                    radius_km=_radius_for_trip(trip_id, _LIVE_DISPATCH_RADIUS_KM),
+                    radius_km=_LIVE_DISPATCH_RADIUS_KM,
                     limit=5,
                     dropoff_lat=trip.dropoff_lat,
                     dropoff_lng=trip.dropoff_lng,
+                    max_pickup_min=_minutes_for_trip(trip_id),
                 )
                 if not next_drivers:
                     logging.warning(
@@ -2538,8 +2326,9 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
 # ── Marketplace of unclaimed trips (user spec 2026-10-02) ────────────────
 # A trip rings each nearby driver ONCE (guardian's retry never re-offers).
 # When every candidate passed, it sits on this board instead of ringing
-# forever: any online driver within the dispatch radius sees it in the
-# pill above the online sheet, and the first to claim keeps it.
+# forever: any online driver who can DRIVE to the pickup within its
+# state's limit (pickup_eta.py) sees it in the pill above the online sheet,
+# and the first to claim keeps it.
 
 
 @router.get("/dispatch/available", dependencies=[Depends(_verify_api_key)])
@@ -2595,11 +2384,29 @@ async def list_available_trips(driver_id: int = Query(...), user: User = Depends
         for rid, fname, avg, cnt in rr.all():
             rider_rep[rid] = (fname or "", (round(float(avg), 2) if avg is not None else None), int(cnt or 0))
 
+    # Driving minutes from this driver to every pickup on the board, in one
+    # request. Low priority: the board is polled by every online driver, so
+    # it never takes Mapbox's share away from a ride being dispatched.
+    reach = [
+        t for t in trips
+        if _haversine(user.lat, user.lng, t.pickup_lat or 0, t.pickup_lng or 0) <= radius_km
+    ]
+    etas = await pickup_eta.etas_from_driver(
+        user, [(t.pickup_lat or 0, t.pickup_lng or 0) for t in reach],
+    )
+
     out = []
-    for t in trips:
-        dist_km = _haversine(user.lat, user.lng, t.pickup_lat or 0, t.pickup_lng or 0)
-        if dist_km > radius_km:
-            continue  # bounding-box corners overshoot the circle
+    for i, t in enumerate(reach):
+        eta = etas.get(i)
+        if eta is None:
+            continue  # the road does not connect them
+        limit_min = pickup_eta.max_pickup_minutes(
+            await _state_for(t.pickup_lat, t.pickup_lng), _minutes_for_trip(t.id),
+        )
+        if eta.minutes > limit_min:
+            continue
+        pickup_km = (eta.meters / 1000.0) if eta.meters else _haversine(
+            user.lat, user.lng, t.pickup_lat or 0, t.pickup_lng or 0)
         est_driver_fare = round(
             driver_fare_basis(t) * vehicle_tiers.driver_share_for_trip(t), 2,
         )
@@ -2617,7 +2424,8 @@ async def list_available_trips(driver_id: int = Query(...), user: User = Depends
             "per_hour": per_hour,
             "miles": f"{miles:.1f} mi" if miles > 0 else None,
             "minutes": f"{minutes} min" if minutes > 0 else None,
-            "pickup_distance_miles": round(dist_km * 0.621371, 1),
+            "pickup_distance_miles": round(pickup_km * 0.621371, 1),
+            "pickup_eta_min": max(1, int(round(eta.minutes))),
             "rider_name": rname,
             "rider_rating": rrate,
             "rider_rides_count": max(0, rrides - 1),
@@ -2636,6 +2444,24 @@ async def claim_available_trip(trip_id: int = Query(...), driver_id: int = Query
     """
     if user.id != driver_id or user.role != "driver":
         raise HTTPException(403, "Not authorized to claim this trip")
+    if user.lat is None or user.lng is None:
+        raise HTTPException(403, "too_far_from_pickup")
+
+    # Driving time first, without holding the row: a routing call can take
+    # up to 3 s and the lock below must stay short. Usually a cache hit —
+    # the board measured this same driver and pickup moments ago.
+    peek = (await db.execute(
+        select(Trip.pickup_lat, Trip.pickup_lng).where(Trip.id == trip_id)
+    )).first()
+    if peek is None:
+        raise HTTPException(409, "trip_no_longer_available")
+    p_lat, p_lng = float(peek[0] or 0), float(peek[1] or 0)
+    eta = await pickup_eta.pickup_minutes_for(user, p_lat, p_lng)
+    limit_min = pickup_eta.max_pickup_minutes(
+        await _state_for(p_lat, p_lng), _minutes_for_trip(trip_id),
+    )
+    if eta is None or eta.minutes > limit_min:
+        raise HTTPException(403, "too_far_from_pickup")
 
     # Lock the trip FIRST (canonical lock order: trips before offers — same
     # convention as accept_offer, which is the race this lock settles).
@@ -2649,9 +2475,6 @@ async def claim_available_trip(trip_id: int = Query(...), driver_id: int = Query
     # Same eligibility the cascade demands of a candidate before ringing.
     if not user.is_online or (user.status or "active") not in ACTIVE_ACCOUNT_STATUSES:
         raise HTTPException(403, "not_eligible")
-    if user.lat is None or user.lng is None or _haversine(
-            user.lat, user.lng, trip.pickup_lat or 0, trip.pickup_lng or 0) > _LIVE_DISPATCH_RADIUS_KM:
-        raise HTTPException(403, "too_far_from_pickup")
 
     accepted_status = (
         "scheduled_accepted"
@@ -2737,14 +2560,15 @@ async def _requeue_trip_to_next_driver(db: AsyncSession, trip: Trip):
         pickup_lng=trip.pickup_lng or 0,
         exclude_driver_ids=tried_ids,
         vehicle_type=trip.vehicle_type or "comfort",
-        radius_km=_radius_for_trip(trip.id, _LIVE_DISPATCH_RADIUS_KM),
+        radius_km=_LIVE_DISPATCH_RADIUS_KM,
         limit=5,
         dropoff_lat=trip.dropoff_lat,
         dropoff_lng=trip.dropoff_lng,
+        max_pickup_min=_minutes_for_trip(trip.id),
     )
     if not drivers_sorted:
         # Nobody new to try. If there is also nobody else online within
-        # twenty miles, the trip comes back to the drivers who passed
+        # driving reach, the trip comes back to the drivers who passed
         # rather than stopping here with a rider still waiting.
         if not await _has_other_drivers_nearby(db, trip, tried_ids):
             _schedule_reoffer(trip.id)
@@ -2850,7 +2674,7 @@ async def _dispatch_first_offer_after_delay(trip_id: int) -> None:
 # ── Coming back to a driver who passed ────────────────────────────────
 #
 # A rejection sends the trip to the next driver. When there is no next
-# driver — nobody else online and free within _REOFFER_RADIUS_KM of the
+# driver — nobody else online and free within driving reach of the
 # pickup — the trip used to stop there, and the rider waited for a
 # cascade that had nowhere left to go while a driver sat a mile away
 # having tapped X once.
@@ -2864,61 +2688,19 @@ async def _dispatch_first_offer_after_delay(trip_id: int) -> None:
 # stop asking rather than ring one phone forever.
 
 # ══════════════════════════════════════════════════════════════════════
-#  How far a ride reaches, tuned per state
+#  How far a ride reaches
 # ══════════════════════════════════════════════════════════════════════
 #
 # A ride requested in Alabama only ever rings an Alabama driver's phone;
 # one requested in Florida only reaches Florida. Nothing crosses — that
 # border guard is still the rule, here and in the reserved marketplace.
 #
-# The radius differs per state because the states do: Alabama's drivers
-# are spread thin enough that twenty miles is a reasonable reach, Florida
-# dense enough that ten is plenty and more would only mean dead mileage.
-#
-# Nationwide since 2026-09-11: a pickup in any other state IS served, at
-# the default reach below. The table no longer decides where Cruise
-# operates, only how far a pickup reaches there. What the rider's
-# destination is does not enter into it; a fare that *leaves* Alabama
-# for Georgia is a real fare and still dispatches.
-_STATE_RADIUS_KM: dict[str, float] = {
-    "AL": 32.19,  # 20 miles
-    "FL": 16.09,  # 10 miles
-}
-
-# Every state without its own entry reaches this far — 20 miles.
-_DEFAULT_STATE_RADIUS_KM = 32.19
-
-# Used when the pickup's state cannot be resolved at all — see
-# _radius_for_state. Not a service area, a fallback.
-_FALLBACK_RADIUS_KM = 32.19
-
-
-def _radius_for_state(state: str | None) -> float:
-    """How far this pickup reaches.
-
-    There is no "outside the map" anymore: a resolved state without its
-    own entry in the table gets the nationwide default, so every state is
-    served.
-
-    A state of None is a different thing: the geocoder did not answer.
-    That is our outage, not the rider's location, and refusing every ride
-    because a Google endpoint is slow is a far worse failure than serving
-    one ride from a few miles outside. It falls back and says so in the
-    log.
-    """
-    if state is None:
-        logging.warning(
-            "[Dispatch] pickup state unresolved — falling back to %.0f km. "
-            "Per-state reach tuning is not being applied for this request.",
-            _FALLBACK_RADIUS_KM,
-        )
-        return _FALLBACK_RADIUS_KM
-    return _STATE_RADIUS_KM.get(state, _DEFAULT_STATE_RADIUS_KM)
-
-
-# The widest any live ride reaches, for the bounding-box pre-filter that
-# runs before the state is known.
-_LIVE_DISPATCH_RADIUS_KM = max(_DEFAULT_STATE_RADIUS_KM, *_STATE_RADIUS_KM.values())
+# How far it reaches is DRIVING TIME with live traffic since 2026-11-01
+# (owner: "los carros no vuelan") — Alabama 30 min, Florida 15 min, every
+# other state 30 min. The limits and the routing live in
+# services/pickup_eta.py; this file only bounds the SQL search, and it does
+# so with the straight line no road can beat for the longest limit.
+_LIVE_DISPATCH_RADIUS_KM = pickup_eta.prefilter_km(pickup_eta.LONGEST_PICKUP_MIN)
 
 # Same number, kept under the name the re-offer path reads.
 _REOFFER_RADIUS_KM = _LIVE_DISPATCH_RADIUS_KM
@@ -2939,15 +2721,16 @@ _reoffer_tasks: dict[int, asyncio.Task] = {}
 async def _has_other_drivers_nearby(
     db: AsyncSession, trip: Trip, exclude_driver_ids: set[int],
 ) -> bool:
-    """Whether anyone else is online, free and within 20 miles of the pickup."""
+    """Whether anyone else is online, free and within driving reach of the pickup."""
     others = await _find_nearest_drivers(
         db,
         pickup_lat=trip.pickup_lat or 0,
         pickup_lng=trip.pickup_lng or 0,
         exclude_driver_ids=exclude_driver_ids,
         vehicle_type=trip.vehicle_type or "comfort",
-        radius_km=_radius_for_trip(trip.id, _REOFFER_RADIUS_KM),
+        radius_km=_REOFFER_RADIUS_KM,
         limit=1,
+        max_pickup_min=_minutes_for_trip(trip.id),
     )
     return bool(others)
 
@@ -2998,15 +2781,16 @@ async def _reoffer_after_delay(trip_id: int) -> None:
                 pickup_lng=trip.pickup_lng or 0,
                 exclude_driver_ids=set(),
                 vehicle_type=trip.vehicle_type or "comfort",
-                radius_km=_radius_for_trip(trip_id, _REOFFER_RADIUS_KM),
+                radius_km=_REOFFER_RADIUS_KM,
                 limit=5,
                 dropoff_lat=trip.dropoff_lat,
                 dropoff_lng=trip.dropoff_lng,
+                max_pickup_min=_minutes_for_trip(trip_id),
             )
             if not candidates:
                 logging.info(
-                    "[Reoffer] Trip %d: nobody within %.0f km at all",
-                    trip_id, _REOFFER_RADIUS_KM,
+                    "[Reoffer] Trip %d: nobody within driving reach at all",
+                    trip_id,
                 )
                 _reoffer_rounds.pop(trip_id, None)
                 return
@@ -3025,9 +2809,9 @@ async def _reoffer_after_delay(trip_id: int) -> None:
             )
             logging.info(
                 "[Reoffer] Trip %d: back to driver %d as offer %d "
-                "(round %d/%d) — nobody else within %.0f km",
+                "(round %d/%d) — nobody else within driving reach",
                 trip_id, driver.id, new_offer.id,
-                rounds + 1, _REOFFER_MAX_ROUNDS, _REOFFER_RADIUS_KM,
+                rounds + 1, _REOFFER_MAX_ROUNDS,
             )
             # A fresh offer id, so the app does not filter it as one
             # the driver already rejected.
@@ -3172,7 +2956,7 @@ async def release_trip(
 #
 # The operator wants a trip off its current driver: hand it to a driver
 # they pick, or put it back in the queue so it rings the driver with the
-# shortest real driving time to the pickup within a few miles. Both are
+# shortest real driving time to the pickup within 10 minutes. Both are
 # OFFERS (the trip is assigned only when the driver accepts), and both
 # start by detaching the current driver, who is told at once. The old
 # admin "accept" path offered an assigned trip without detaching anyone,
@@ -3181,8 +2965,8 @@ async def release_trip(
 #
 # The reach the operator asked for sticks to the trip for a while: the
 # cascade and the re-offer rounds that follow this call read the override
-# through _radius_for_trip, so "5 miles" means the whole re-dispatch, not
-# just the first ring. It expires on its own, so a trip accepted and
+# through _minutes_for_trip, so "10 minutes" means the whole re-dispatch,
+# not just the first ring. It expires on its own, so a trip accepted and
 # released again much later goes back to the normal reach.
 
 _REASSIGNABLE_STATUSES = ("requested", "accepted", "driver_en_route")
@@ -3294,37 +3078,41 @@ async def _reassign_reservation(db, trip, mode: str, body) -> dict:
         ),
         "message": message,
     }
-_REASSIGN_DEFAULT_RADIUS_MILES = 5.0
+_REASSIGN_DEFAULT_MINUTES = pickup_eta.REASSIGN_MAX_PICKUP_MIN
 _REASSIGN_RADIUS_TTL_SECONDS = 15 * 60
 _MILES_PER_KM = 0.621371
 
-# trip_id -> (radius_km, monotonic deadline)
-_trip_radius_override: dict[int, tuple[float, float]] = {}
+# trip_id -> (max driving minutes to the pickup, monotonic deadline)
+_trip_minutes_override: dict[int, tuple[float, float]] = {}
 
 
-def _set_trip_radius_override(trip_id: int, radius_km: float) -> None:
-    _trip_radius_override[trip_id] = (
-        float(radius_km), time.monotonic() + _REASSIGN_RADIUS_TTL_SECONDS,
+def _set_trip_minutes_override(trip_id: int, minutes: float) -> None:
+    _trip_minutes_override[trip_id] = (
+        float(minutes), time.monotonic() + _REASSIGN_RADIUS_TTL_SECONDS,
     )
 
 
-def _radius_for_trip(trip_id: int, default_km: float) -> float:
-    """The reach for this trip's next offers: the operator's override while
-    it lasts (never wider than the default), the default otherwise."""
-    entry = _trip_radius_override.get(trip_id)
+def _minutes_for_trip(trip_id: int) -> float | None:
+    """The operator's driving-time limit for this trip's next offers while it
+    lasts, else None (the pickup state's own limit applies). It can only
+    narrow the state's limit — pickup_eta.max_pickup_minutes takes the min."""
+    entry = _trip_minutes_override.get(trip_id)
     if entry is None:
-        return default_km
-    radius_km, deadline = entry
+        return None
+    minutes, deadline = entry
     if time.monotonic() >= deadline:
-        _trip_radius_override.pop(trip_id, None)
-        return default_km
-    return min(float(default_km), radius_km)
+        _trip_minutes_override.pop(trip_id, None)
+        return None
+    return minutes
 
 
 class AdminReassignIn(BaseModel):
     mode: str = "nearest"
     driver_id: Optional[int] = None
-    radius_miles: float = Field(default=_REASSIGN_DEFAULT_RADIUS_MILES, gt=0, le=50)
+    max_minutes: float = Field(default=_REASSIGN_DEFAULT_MINUTES, gt=0, le=60)
+    # Ignored since 2026-11-01 (driving minutes replaced the straight-line
+    # radius); still accepted so a panel tab opened before the deploy works.
+    radius_miles: Optional[float] = None
     reason: Optional[str] = None
 
 
@@ -3341,9 +3129,10 @@ async def admin_reassign_trip(
 ):
     """Take a trip off its current driver and offer it again.
 
-    mode="nearest": the driver with the shortest driving ETA within
-    `radius_miles` of the pickup gets the offer, and the cascade that
-    follows stays inside that radius. Nobody inside it -> the trip stays
+    mode="nearest": the driver with the shortest driving ETA (live traffic)
+    who can reach the pickup within `max_minutes` gets the OFFER — nobody is
+    assigned until they accept — and the cascade that follows stays inside
+    that limit. Nobody inside it -> the trip stays
     `requested` (visible in the drivers' available list) and the response
     says so.
 
@@ -3356,7 +3145,7 @@ async def admin_reassign_trip(
     mode = (body.mode or "nearest").strip().lower()
     if mode not in ("nearest", "driver"):
         raise HTTPException(400, "mode debe ser 'nearest' o 'driver'")
-    radius_km = float(body.radius_miles) / _MILES_PER_KM
+    max_minutes = float(body.max_minutes)
 
     # Canonical lock order (2026-04-11): trips first, then dispatch_offers.
     trip = (await db.execute(
@@ -3437,11 +3226,11 @@ async def admin_reassign_trip(
         old_reoffer.cancel()
     _reoffer_rounds.pop(trip_id, None)
     _dispatch_status_cache.pop(trip_id, None)
-    _trip_radius_override.pop(trip_id, None)
+    _trip_minutes_override.pop(trip_id, None)
 
     logging.warning(
-        "[Reassign] Dispatch took trip %s off driver %s (mode=%s, radius=%.1f mi, reason=%s)",
-        trip_id, previous_driver_id, mode, body.radius_miles, body.reason or "unspecified",
+        "[Reassign] Dispatch took trip %s off driver %s (mode=%s, limit=%.0f min, reason=%s)",
+        trip_id, previous_driver_id, mode, max_minutes, body.reason or "unspecified",
     )
 
     # ── Tell the rider first (same path as the driver's own release) ──
@@ -3528,14 +3317,15 @@ async def admin_reassign_trip(
                 pickup_lng=trip.pickup_lng,
                 exclude_driver_ids=exclude,
                 vehicle_type=trip.vehicle_type or "comfort",
-                radius_km=radius_km,
+                radius_km=_LIVE_DISPATCH_RADIUS_KM,
                 limit=5,
                 dropoff_lat=trip.dropoff_lat,
                 dropoff_lng=trip.dropoff_lng,
+                max_pickup_min=max_minutes,
             )
             if candidates:
                 # The cascade behind this offer keeps the operator's reach.
-                _set_trip_radius_override(trip_id, radius_km)
+                _set_trip_minutes_override(trip_id, max_minutes)
                 offered = candidates[0]
         if offered is not None:
             new_offer = await _send_offer_to_driver(
@@ -3558,15 +3348,16 @@ async def admin_reassign_trip(
         distance_mi = None
         eta_min = None
         if has_pickup and offered.lat is not None and offered.lng is not None:
-            distance_mi = round(
-                _haversine(trip.pickup_lat, trip.pickup_lng, offered.lat, offered.lng)
-                * _MILES_PER_KM, 1,
-            )
-            eta_secs = _eta_cache.get(
-                (offered.id, _eta_cell(trip.pickup_lat, trip.pickup_lng))
-            )
-            if eta_secs:
-                eta_min = max(1, int(round(float(eta_secs) / 60.0)))
+            eta = pickup_eta.cached_eta(offered.id, trip.pickup_lat, trip.pickup_lng)
+            if eta is not None and eta.meters:
+                distance_mi = round(eta.meters / 1000.0 * _MILES_PER_KM, 1)  # by road
+            else:
+                distance_mi = round(
+                    _haversine(trip.pickup_lat, trip.pickup_lng, offered.lat, offered.lng)
+                    * _MILES_PER_KM, 1,
+                )
+            if eta is not None:
+                eta_min = max(1, int(round(eta.minutes)))
         offered_payload = {
             "id": offered.id,
             "name": _driver_display_name(offered),
@@ -3590,7 +3381,7 @@ async def admin_reassign_trip(
         )
     elif mode == "nearest":
         message = (
-            f"Nadie disponible a {body.radius_miles:g} millas del punto de recogida. "
+            f"Nadie disponible a {max_minutes:g} minutos o menos del punto de recogida. "
             "El viaje quedó disponible sin conductor."
         )
     else:
@@ -3599,7 +3390,7 @@ async def admin_reassign_trip(
     _security_audit_log(
         "ADMIN_TRIP_REASSIGNED", "admin",
         f"trip_id={trip_id} mode={mode} from={previous_driver_id} "
-        f"to={offered.id if offered else None} radius_mi={body.radius_miles:g} "
+        f"to={offered.id if offered else None} max_min={max_minutes:g} "
         f"reason={body.reason or ''}",
     )
     return {
@@ -3607,7 +3398,7 @@ async def admin_reassign_trip(
         "trip_id": trip_id,
         "previous_driver_id": previous_driver_id,
         "mode": mode,
-        "radius_miles": float(body.radius_miles),
+        "max_minutes": max_minutes,
         "requeued": new_offer is not None,
         "offered_driver": offered_payload,
         "offer_id": new_offer.id if new_offer is not None else None,

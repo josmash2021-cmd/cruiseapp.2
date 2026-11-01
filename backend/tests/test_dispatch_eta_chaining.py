@@ -2,9 +2,10 @@
 
 Covers the two Uber-style dispatch upgrades in routers/dispatch.py:
 
-  * `_find_nearest_drivers` re-orders its haversine finalists by driving
-    ETA to the pickup (one Google Distance Matrix call), failing open to
-    the distance order whenever the provider cannot answer;
+  * `_find_nearest_drivers` keeps and orders its finalists by driving
+    time to the pickup (services/pickup_eta.py — Mapbox with traffic, then
+    OSRM), failing open to the straight-line reach and distance order
+    whenever no provider can answer;
   * a driver whose active trip ends within ~1 mile of where they are now
     stays in the candidate pool (chaining), while genuinely busy drivers
     and every pre-existing filter behave exactly as before.
@@ -45,10 +46,27 @@ def _clear_eta_cache():
     """The ETA cache is module-level and keyed by (driver_id, pickup cell).
     Row ids repeat across tests once tables are dropped and recreated, so
     entries from one test must never leak into the next."""
-    from routers import dispatch
-    dispatch._eta_cache.clear()
+    from services import pickup_eta
+    pickup_eta._eta_cache.clear()
     yield
-    dispatch._eta_cache.clear()
+    pickup_eta._eta_cache.clear()
+
+
+def _fake_mapbox(seconds_by_driver_lat):
+    """A pickup_eta._get_json stand-in answering like Mapbox's Matrix API:
+    the seconds come from each source coordinate's latitude."""
+    async def _get_json(url, timeout):
+        if "api.mapbox.com" not in url:
+            return None
+        coords = url.split("/driving-traffic/")[1].split("?")[0].split(";")
+        sources = coords[:-1]
+        rows = []
+        for c in sources:
+            lat = round(float(c.split(",")[1]), 4)
+            rows.append([seconds_by_driver_lat[lat]])
+        return {"code": "Ok", "durations": rows,
+                "distances": [[r[0] * 10.0] for r in rows]}
+    return _get_json
 
 
 # Miami — the same spot the other dispatch tests dispatch from. Every
@@ -117,12 +135,9 @@ async def test_eta_ordering_beats_haversine(db, monkeypatch):
 
     # The far driver is quicker to the pickup by road — the exact case
     # straight-line distance ordering gets wrong.
-    etas = {near.id: 600.0, far.id: 120.0}
-
-    async def _fake_fetch(drivers, pickup_lat, pickup_lng):
-        return {d.id: etas[d.id] for d in drivers}
-
-    monkeypatch.setattr(dispatch, "_fetch_etas_to_pickup", _fake_fetch)
+    from services import pickup_eta
+    monkeypatch.setattr(pickup_eta, "_get_json",
+                        _fake_mapbox({25.7657: 600.0, 25.7797: 120.0}))
 
     drivers = await dispatch._find_nearest_drivers(db, *_PICKUP)
     assert [d.id for d in drivers][:2] == [far.id, near.id]
@@ -136,16 +151,17 @@ async def test_provider_exception_falls_back_to_haversine(db, monkeypatch, caplo
     near = await _mk_driver(db, "near@test.com", 25.7657, -80.1918)
     far = await _mk_driver(db, "far@test.com", 25.7797, -80.1918)
 
-    async def _boom(drivers, pickup_lat, pickup_lng):
-        raise TimeoutError("distance matrix dead")
+    async def _boom(url, timeout):
+        raise TimeoutError("routing dead")
 
-    monkeypatch.setattr(dispatch, "_fetch_etas_to_pickup", _boom)
+    from services import pickup_eta
+    monkeypatch.setattr(pickup_eta, "_get_json", _boom)
 
     with caplog.at_level(logging.INFO):
         drivers = await dispatch._find_nearest_drivers(db, *_PICKUP)
 
     assert [d.id for d in drivers][:2] == [near.id, far.id]
-    assert any("haversine fallback" in r.getMessage() for r in caplog.records)
+    assert any("straight-line" in r.getMessage() for r in caplog.records)
 
 
 async def test_provider_empty_answer_falls_back_to_haversine(db, monkeypatch, caplog):
@@ -155,22 +171,22 @@ async def test_provider_empty_answer_falls_back_to_haversine(db, monkeypatch, ca
     near = await _mk_driver(db, "near@test.com", 25.7657, -80.1918)
     far = await _mk_driver(db, "far@test.com", 25.7797, -80.1918)
 
-    async def _nothing(drivers, pickup_lat, pickup_lng):
+    async def _nothing(url, timeout):
         return None
 
-    monkeypatch.setattr(dispatch, "_fetch_etas_to_pickup", _nothing)
+    from services import pickup_eta
+    monkeypatch.setattr(pickup_eta, "_get_json", _nothing)
 
     with caplog.at_level(logging.INFO):
         drivers = await dispatch._find_nearest_drivers(db, *_PICKUP)
 
     assert [d.id for d in drivers][:2] == [near.id, far.id]
-    assert any("haversine fallback" in r.getMessage() for r in caplog.records)
+    assert any("straight-line" in r.getMessage() for r in caplog.records)
 
 
 async def test_no_api_key_falls_back_to_haversine(db):
-    """No GOOGLE_MAPS_API_KEY in the test env: the unmocked provider
-    boundary answers None and the distance order stands — this is also the
-    proof that the default path is byte-for-byte the old behavior."""
+    """Routing is offline in the test env (conftest): the provider boundary
+    answers None and the straight-line reach and distance order stand."""
     from routers import dispatch
 
     near = await _mk_driver(db, "near@test.com", 25.7657, -80.1918)

@@ -774,6 +774,31 @@ async def get_available_trips(
 async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     if user.id != body.driver_id or user.role != "driver":
         raise HTTPException(403, "Not authorized to accept trips for another driver")
+    # A driver who was never offered this trip gets the same reach as every
+    # offer path: minutes of driving to the pickup (services/pickup_eta.py),
+    # measured before the row lock below. One holding an offer for it was
+    # already chosen — by the cascade or by dispatch picking them by hand —
+    # and is not second-guessed here.
+    peek = (await db.execute(
+        select(Trip.pickup_lat, Trip.pickup_lng, Trip.status).where(Trip.id == trip_id)
+    )).first()
+    was_offered = (await db.execute(
+        select(DispatchOffer.id).where(
+            DispatchOffer.trip_id == trip_id,
+            DispatchOffer.driver_id == user.id,
+            DispatchOffer.status == "pending",
+        ).limit(1)
+    )).first() is not None
+    if (peek is not None and not was_offered and peek[2] == "requested"
+            and peek[0] is not None and peek[1] is not None):
+        from routers.dispatch import _minutes_for_trip, _state_for  # lazy: import cycle
+        from services import pickup_eta
+        eta = await pickup_eta.pickup_minutes_for(user, float(peek[0]), float(peek[1]))
+        limit_min = pickup_eta.max_pickup_minutes(
+            await _state_for(peek[0], peek[1]), _minutes_for_trip(trip_id),
+        )
+        if eta is None or eta.minutes > limit_min:
+            raise HTTPException(403, "too_far_from_pickup")
     result = await db.execute(select(Trip).where(Trip.id == trip_id).with_for_update())
     trip = result.scalar_one_or_none()
     if not trip:

@@ -982,6 +982,11 @@ async def _start_scheduler_agents() -> None:
     from services.scheduled_board import scheduled_board_loop
     _safe_create_task(scheduled_board_loop(lambda: _is_scheduler_leader))
 
+    # Driving-time dispatch learns from real pickups (owner 2026-11-01): every
+    # worker reloads its own correction factors; the leader prunes old rows.
+    from services.pickup_eta import calibration_loop
+    _spawn_background(calibration_loop(lambda: _is_scheduler_leader), "pickup_eta_calibration")
+
     _spawn_background(_cache_sweep(), "cache_sweep")
 
     logging.info("🚀 Cruise backend FULLY OPERATIONAL — all agents active")

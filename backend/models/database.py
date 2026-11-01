@@ -1190,6 +1190,24 @@ class DemandWaitlist(Base):
     notified_at = Column(DateTime(timezone=True), nullable=True)
 
 
+class PickupEtaSample(Base):
+    """What the routing provider predicted for one offer (2026-11-01, owner
+    spec: learn from real trips like Lyft). The real time is read from the
+    trip itself (driver_assigned_at -> arrived_at) when the factors are
+    rebuilt — see services/pickup_eta.py."""
+    __tablename__ = "pickup_eta_samples"
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False, index=True)
+    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    provider = Column(String(16), nullable=False)  # mapbox | osrm
+    predicted_s = Column(Float, nullable=False)    # raw, before the learned factor
+    road_m = Column(Float, nullable=True)
+    pickup_lat = Column(Float, nullable=False)
+    pickup_lng = Column(Float, nullable=False)
+    chained = Column(Boolean, default=False)       # offered while finishing another ride
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+
 # ═══════════════════════════════════════════════════════
 #  Migration helpers
 # ═══════════════════════════════════════════════════════
@@ -1449,6 +1467,20 @@ async def migrate_add_columns(conn):
             state VARCHAR(2),
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             notified_at DATETIME
+        )
+    """))
+    await conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS pickup_eta_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trip_id INTEGER NOT NULL,
+            driver_id INTEGER NOT NULL,
+            provider VARCHAR(16) NOT NULL,
+            predicted_s REAL NOT NULL,
+            road_m REAL,
+            pickup_lat REAL NOT NULL,
+            pickup_lng REAL NOT NULL,
+            chained BOOLEAN DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """))
 
@@ -1783,6 +1815,31 @@ async def migrate_postgres(conn):
                 await conn.execute(text(_ddl))
         except Exception as _e:
             logging.warning("Postgres demand_waitlist DDL skip: %s", _e)
+
+    # ── Pickup ETA samples (driving-time dispatch learns from real pickups) ──
+    for _ddl in (
+        """
+        CREATE TABLE IF NOT EXISTS pickup_eta_samples (
+            id SERIAL PRIMARY KEY,
+            trip_id INTEGER NOT NULL REFERENCES trips(id),
+            driver_id INTEGER NOT NULL REFERENCES users(id),
+            provider VARCHAR(16) NOT NULL,
+            predicted_s DOUBLE PRECISION NOT NULL,
+            road_m DOUBLE PRECISION,
+            pickup_lat DOUBLE PRECISION NOT NULL,
+            pickup_lng DOUBLE PRECISION NOT NULL,
+            chained BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_pickup_eta_samples_trip_id ON pickup_eta_samples (trip_id)",
+        "CREATE INDEX IF NOT EXISTS ix_pickup_eta_samples_created_at ON pickup_eta_samples (created_at)",
+    ):
+        try:
+            async with conn.begin_nested():
+                await conn.execute(text(_ddl))
+        except Exception as _e:
+            logging.warning("Postgres pickup_eta_samples DDL skip: %s", _e)
 
     # ── Performance indexes for hot-path queries ──
     _indexes = [

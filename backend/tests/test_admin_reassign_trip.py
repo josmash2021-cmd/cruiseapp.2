@@ -2,7 +2,8 @@
 
 The operator takes a trip off its current driver and either offers it to a
 driver they pick or puts it back in the queue for the driver with the
-shortest ETA within a few miles. It is an OFFER, never a forced
+shortest driving ETA within 10 minutes (2026-11-01; it was 5 miles in a
+straight line before). It is an OFFER, never a forced
 assignment, and the detached driver is told at once.
 """
 import asyncio
@@ -34,7 +35,9 @@ def _register_sqlite_math_funcs(dbapi_conn, _):
 
 PICKUP = (25.7617, -80.1918)
 NEAR = (25.7800, -80.1918)   # ~2.0 km / 1.3 mi north of the pickup
-FAR = (25.9000, -80.1918)    # ~15.4 km / 9.6 mi north — outside 5 miles
+FAR = (25.9000, -80.1918)    # ~15.4 km / 9.6 mi north — outside 10 minutes
+# Routing is offline in tests (conftest), so the 10-minute limit is judged by
+# its straight-line fallback: 10 min -> 10.7 km. NEAR is inside, FAR is not.
 
 
 def _dh() -> dict:
@@ -61,14 +64,10 @@ def quiet_dispatch(monkeypatch):
             return None
         return _noop()
 
-    async def _no_eta(drivers, lat, lng):
-        return None
-
     monkeypatch.setattr(dispatch, "_safe_create_task", _collect)
     monkeypatch.setattr(dispatch, "_send_fcm_push_async", _fake_push)
-    monkeypatch.setattr(dispatch, "_fetch_etas_to_pickup", _no_eta)
     monkeypatch.setattr(dispatch, "_HAS_FIRESTORE", False, raising=False)
-    dispatch._trip_radius_override.clear()
+    dispatch._trip_minutes_override.clear()
     return pushes
 
 
@@ -124,14 +123,14 @@ async def test_nearest_detaches_and_offers_the_closest_inside_the_radius(
 
     resp = await client.post(
         f"/admin/trips/{test_trip.id}/reassign",
-        json={"mode": "nearest", "radius_miles": 5}, headers=_dh(),
+        json={"mode": "nearest", "max_minutes": 10}, headers=_dh(),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["status"] == "offer_sent"
     assert body["requeued"] is True
     assert body["mode"] == "nearest"
-    assert body["radius_miles"] == 5.0
+    assert body["max_minutes"] == 10.0
     assert body["previous_driver_id"] == a.id
     assert body["offered_driver"]["id"] == b.id
     assert body["offered_driver"]["name"] == "Ana López"
@@ -146,9 +145,8 @@ async def test_nearest_detaches_and_offers_the_closest_inside_the_radius(
     assert old_offer.status == "reassigned"
     assert await _pending_for(db, test_trip.id) == [b.id]
 
-    # The cascade behind this offer keeps the operator's five miles.
-    assert dispatch._radius_for_trip(test_trip.id, 100.0) == pytest.approx(
-        5 / 0.621371, rel=1e-3)
+    # The cascade behind this offer keeps the operator's ten minutes.
+    assert dispatch._minutes_for_trip(test_trip.id) == 10.0
 
     # Dispatch decided, not the driver: no hit on their acceptance rate.
     await db.refresh(a)
@@ -165,7 +163,7 @@ async def test_nearest_with_nobody_inside_the_radius_leaves_the_trip_available(
 
     resp = await client.post(
         f"/admin/trips/{test_trip.id}/reassign",
-        json={"mode": "nearest", "radius_miles": 5}, headers=_dh(),
+        json={"mode": "nearest", "max_minutes": 10}, headers=_dh(),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -173,13 +171,13 @@ async def test_nearest_with_nobody_inside_the_radius_leaves_the_trip_available(
     assert body["requeued"] is False
     assert body["offered_driver"] is None
     assert body["offer_id"] is None
-    assert "5 millas" in body["message"]
+    assert "10 minutos" in body["message"]
 
     await db.refresh(test_trip)
     assert test_trip.status == "requested"
     assert test_trip.driver_id is None
     assert await _pending_for(db, test_trip.id) == []
-    assert dispatch._radius_for_trip(test_trip.id, 100.0) == 100.0
+    assert dispatch._minutes_for_trip(test_trip.id) is None
 
 
 async def test_nearest_never_rings_the_driver_it_just_detached(
@@ -224,8 +222,8 @@ async def test_driver_mode_offers_the_chosen_driver(
     await db.refresh(old_offer)
     assert old_offer.status == "reassigned"
     assert await _pending_for(db, test_trip.id) == [b.id]
-    # A hand-picked driver carries no radius: the fallback cascade is normal.
-    assert dispatch._radius_for_trip(test_trip.id, 100.0) == 100.0
+    # A hand-picked driver carries no limit: the fallback cascade is normal.
+    assert dispatch._minutes_for_trip(test_trip.id) is None
 
 
 async def test_driver_mode_validates_before_touching_the_trip(
@@ -330,22 +328,42 @@ async def test_unassigned_requested_trip_is_simply_redispatched(
                 if p["data"].get("type") in ("trip_reassigned", "ride_reassigned")]
 
 
-async def test_radius_override_caps_and_expires(monkeypatch):
+async def test_minutes_override_narrows_and_expires(monkeypatch):
     from routers import dispatch
+    from services import pickup_eta
 
     now = [1000.0]
     monkeypatch.setattr(dispatch.time, "monotonic", lambda: now[0])
-    dispatch._trip_radius_override.clear()
+    dispatch._trip_minutes_override.clear()
 
-    dispatch._set_trip_radius_override(77, 8.0)
-    assert dispatch._radius_for_trip(77, 32.0) == 8.0
-    # Never wider than what the caller would have used anyway.
-    assert dispatch._radius_for_trip(77, 5.0) == 5.0
-    assert dispatch._radius_for_trip(78, 32.0) == 32.0
+    dispatch._set_trip_minutes_override(77, 10.0)
+    assert dispatch._minutes_for_trip(77) == 10.0
+    assert dispatch._minutes_for_trip(78) is None
+    # Never wider than the pickup state's own limit.
+    assert pickup_eta.max_pickup_minutes("FL", dispatch._minutes_for_trip(77)) == 10.0
+    dispatch._set_trip_minutes_override(77, 45.0)
+    assert pickup_eta.max_pickup_minutes("FL", dispatch._minutes_for_trip(77)) == 15.0
 
     now[0] += dispatch._REASSIGN_RADIUS_TTL_SECONDS + 1
-    assert dispatch._radius_for_trip(77, 32.0) == 32.0
-    assert 77 not in dispatch._trip_radius_override
+    assert dispatch._minutes_for_trip(77) is None
+    assert 77 not in dispatch._trip_minutes_override
+
+
+async def test_old_panel_body_with_radius_miles_still_works(
+        client, db, test_trip, test_driver, quiet_dispatch):
+    """A panel tab opened before the deploy still sends radius_miles: it is
+    accepted and ignored — the 10-minute default applies."""
+    a, _ = test_driver
+    await _assign(db, test_trip, a)
+    b = await _driver(db, "old@test.com", "+15550000009", *NEAR)
+    resp = await client.post(
+        f"/admin/trips/{test_trip.id}/reassign",
+        json={"mode": "nearest", "radius_miles": 5}, headers=_dh(),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["max_minutes"] == 10.0
+    assert body["offered_driver"]["id"] == b.id
 
 
 # ── Reservations (owner report 2026-10-30: "no me deja cambiar de conductor") ──

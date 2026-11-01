@@ -85,6 +85,26 @@ def reset_security_ip_reputation():
 
 
 @pytest.fixture(autouse=True)
+def road_routing_offline(monkeypatch):
+    """No test reaches Mapbox or OSRM. Driving-time dispatch then uses its
+    straight-line fallback (AL/others 30 min -> 20 mi, FL 15 min -> 10 mi)
+    unless a test fakes the provider through pickup_eta._get_json."""
+    from services import pickup_eta
+
+    async def _offline(url, timeout):
+        return None
+
+    monkeypatch.setattr(pickup_eta, "_get_json", _offline)
+    monkeypatch.setattr(pickup_eta, "_mapbox_down_until", 0.0)
+    monkeypatch.setattr(pickup_eta, "_factors", {})
+    pickup_eta._mapbox_calls.clear()
+    pickup_eta._eta_cache.clear()
+    yield
+    pickup_eta._mapbox_calls.clear()
+    pickup_eta._eta_cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def zone_gate_fail_open(monkeypatch):
     """The sector connect gate reads the live map with baked FL+AL as
     fallback; most suite drivers use coordinates outside sector coverage.

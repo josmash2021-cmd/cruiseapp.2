@@ -3,11 +3,12 @@
 The current split (2026-09):
 
   * LIVE work — the cascade, /trips/available — is NATIONWIDE: every
-    state is served, and the pickup's state only tunes the reach
-    (`_radius_for_state`: AL 20 mi / FL 10 mi / default 20 mi). Only
-    same-state drivers are offered — the border guard survives. An
-    unresolved state fails OPEN on a fallback radius — a dead geocoder
-    must degrade to "no state rule", never to "nothing matches".
+    state is served, and the pickup's state only tunes the reach — in
+    DRIVING MINUTES since 2026-11-01 (`pickup_eta.max_pickup_minutes`:
+    AL 30 / FL 15 / default 30). Only same-state drivers are offered — the
+    border guard survives. An unresolved state fails OPEN on the default
+    limit — a dead geocoder must degrade to "no state rule", never to
+    "nothing matches".
   * RESERVED work — the scheduled marketplace — is same-state only, at
     browse AND at claim. Hiding a card is not enforcement; a trip id
     outlives the list it came from.
@@ -39,33 +40,33 @@ def _clean_cache():
 
 
 async def test_live_dispatch_is_nationwide_with_per_state_tuning():
-    """Live work is nationwide now (2026-09-11): the pickup's state only
-    tunes the reach (AL 20 mi / FL 10 mi / default 20 mi) and only
-    same-state drivers are offered. There is no "outside the service
-    area" answer left — a resolved state Cruise has no tuning for still
-    dispatches at the default reach. Unresolved state fails OPEN
-    (fallback radius — a dead geocoder must not empty the queue)."""
+    """Live work is nationwide (2026-09-11): the pickup's state only tunes
+    the reach and only same-state drivers are offered. The reach is driving
+    minutes with traffic (owner 2026-11-01, "los carros no vuelan"):
+    AL 30 / FL 15 / every other state 30. A resolved state Cruise has no
+    tuning for still dispatches at the default; an unresolved one fails
+    OPEN on the default too (a dead geocoder must not empty the queue)."""
     from routers import dispatch as D
+    from services import pickup_eta as E
 
     src = inspect.getsource(D._find_nearest_drivers)
     assert "_state_for" in src, "live dispatch no longer resolves the pickup state"
-    assert "_radius_for_state" in src, "the state's own reach is not applied"
-    assert "_FALLBACK_RADIUS_KM" in inspect.getsource(D._radius_for_state), (
-        "an unresolved pickup state must fall back, never empty the queue"
-    )
+    assert "max_pickup_minutes" in src, "the state's own reach is not applied"
+    assert "filter_by_pickup_time" in src, "the reach is not measured by road"
     # The old service-area rule answered 'nobody' for a resolved state
     # outside the table. Nationwide means that early return is gone.
     assert "return []" not in src, (
         "a resolved state still gets 'no service' — the nationwide "
         "default is not wired"
     )
-    # The tuning table: known states keep their own reach, every other
-    # resolved state gets the default, an unresolved one the fallback.
-    assert D._radius_for_state("AL") == 32.19
-    assert D._radius_for_state("FL") == 16.09
-    assert D._radius_for_state("TX") == D._DEFAULT_STATE_RADIUS_KM
-    assert D._radius_for_state("WY") == D._DEFAULT_STATE_RADIUS_KM
-    assert D._radius_for_state(None) == D._FALLBACK_RADIUS_KM
+    assert E.max_pickup_minutes("AL") == 30.0
+    assert E.max_pickup_minutes("FL") == 15.0
+    assert E.max_pickup_minutes("TX") == E.DEFAULT_MAX_PICKUP_MIN == 30.0
+    assert E.max_pickup_minutes("WY") == E.DEFAULT_MAX_PICKUP_MIN
+    assert E.max_pickup_minutes(None) == E.DEFAULT_MAX_PICKUP_MIN
+    # The panel's reassign can only narrow the state's limit.
+    assert E.max_pickup_minutes("FL", 10) == 10.0
+    assert E.max_pickup_minutes("FL", 45) == 15.0
 
 
 def test_available_trips_has_no_state_filter():

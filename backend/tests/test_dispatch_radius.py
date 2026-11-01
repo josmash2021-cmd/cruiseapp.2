@@ -27,8 +27,9 @@ def test_every_live_path_uses_the_shared_ceiling():
     """No path may quietly keep its own radius.
 
     The current rule (2026-09): the live reach is per-state tuning over a
-    nationwide default (`_radius_for_state` — AL 20 mi / FL 10 mi / every
-    other state 20 mi) and the 500-mile constant survives ONLY as the
+    nationwide default — in driving minutes since 2026-11-01
+    (`pickup_eta.max_pickup_minutes`: AL 30 / FL 15 / every other state 30)
+    — and the 500-mile constant survives ONLY as the
     absolute cap of the SQL bounding box inside the shared search. So:
     every path must either contain the shared cap itself or route through
     the shared capped search.

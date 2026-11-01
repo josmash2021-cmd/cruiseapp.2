@@ -190,8 +190,10 @@ void main() {
   });
 
   test('the GO call sites swapped to SelfieCheckScreen', () {
-    expect(offline.split('const SelfieCheckScreen()').length, 3,
-        reason: 'the daily gate AND _onFaceVerifyTap');
+    expect(offline.split('const SelfieCheckScreen()').length, 2,
+        reason: '_onFaceVerifyTap waits on the dispatch review');
+    expect(offline, contains('SelfieCheckScreen(instant: !reviewed)'),
+        reason: 'the daily gate closes on the shutter (2026-11-01)');
     expect(offline, isNot(contains('FaceLivenessScreen')));
     expect(driverScreen, contains("import 'selfie_check_screen.dart';"));
     expect(driverScreen,
@@ -245,5 +247,28 @@ void main() {
         greaterThan(submit),
         reason: 'an answer in time disarms it');
   });
-}
 
+  test('2026-11-01: the daily selfie connects on the shutter', () {
+    // Owner: "después de tomarse la foto debe de conectarlo al instante en
+    // 3 o 5 segundos" — no loader waits on the downscale or the upload.
+    expect(screen, contains('const SelfieCheckScreen({super.key, this.instant = false});'));
+    final capture = screen.indexOf('Future<void> _capture() async {');
+    final instant = screen.indexOf('if (widget.instant) {', capture);
+    final loader = screen.indexOf('_uploadAndVerify(xFile.path);', capture);
+    expect(instant, greaterThan(capture));
+    expect(instant, lessThan(loader),
+        reason: 'the shutter branches BEFORE the verifying loader');
+    final close = screen.indexOf('void _closeAndUploadBehind(');
+    final behind = screen.indexOf('unawaited(_uploadSelfieBehind(', close);
+    final pop = screen.indexOf("?.pop({'photo': photoPath, 'approved': true});", close);
+    expect(behind, greaterThan(close),
+        reason: 'the upload is NOT awaited by the page');
+    expect(pop, greaterThan(behind));
+    expect(screen, contains("'face_check', '\${ok ? 'behind_ok' : 'behind_fail'}"),
+        reason: 'the background upload still reports to the server log');
+    final gate = offline.indexOf('if (_docStatusLoaded && _faceCheckDue) {');
+    expect(offline.indexOf('final reviewed = _faceReviewRequired;', gate),
+        greaterThan(gate),
+        reason: 'a driver on manual review still waits for dispatch');
+  });
+}

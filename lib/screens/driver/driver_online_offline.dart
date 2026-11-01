@@ -1113,10 +1113,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     // resume so a mid-trip driver is never gated.
     if (_docStatusLoaded && _faceCheckDue) {
       HapticService.mediumImpact();
+      // Instant unless dispatch reviews this one (owner 2026-11-01: connect
+      // within seconds of the shutter; the upload rides behind).
+      final reviewed = _faceReviewRequired;
       final res = await Navigator.of(context).push<Map?>(
         MaterialPageRoute<Map?>(
           fullscreenDialog: true,
-          builder: (_) => const SelfieCheckScreen(),
+          builder: (_) => SelfieCheckScreen(instant: !reviewed),
         ),
       );
       if (!mounted) return;

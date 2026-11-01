@@ -107,9 +107,11 @@ void main() {
             'screen, never the 4-step biometric page (2026-10-23 spec)');
     expect(offline, isNot(contains('FaceLivenessScreen')),
         reason: 'the biometric 4-step page is signup-only now');
-    expect(offline.split('const SelfieCheckScreen()').length, 3,
-        reason: 'BOTH call sites (the daily GO gate and _onFaceVerifyTap) '
-            'use it');
+    expect(offline.split('const SelfieCheckScreen()').length, 2,
+        reason: '_onFaceVerifyTap keeps the waiting page');
+    expect(offline, contains('SelfieCheckScreen(instant: !reviewed)'),
+        reason: 'the daily GO gate uses the SAME screen, instant unless '
+            'on review (2026-11-01)');
     // Owner spec 2026-10-23: the page HOLDS its verifying loader until the
     // decision — approve closes already-connecting, pending falls back to
     // the grey review GO, rejected-again re-arms verify with the dialog.

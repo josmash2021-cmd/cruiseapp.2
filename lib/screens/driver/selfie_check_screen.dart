@@ -35,9 +35,17 @@ import '../../widgets/selfie_verify_card.dart';
 /// Output contract: pops `{'photo': path, 'approved': true|false}` on a
 /// decision, `{'photo': path, 'pending': true}` when dispatch has not
 /// decided (timeout / X escape), a bare `{'photo': path}` when the upload
-/// itself failed (callers stay fail-open), and null on cancel.
+/// itself failed (callers stay fail-open), and null on cancel. With
+/// [instant] it pops `{'photo': path, 'approved': true}` on the shutter.
 class SelfieCheckScreen extends StatefulWidget {
-  const SelfieCheckScreen({super.key});
+  const SelfieCheckScreen({super.key, this.instant = false});
+
+  /// The daily auto-approved check (owner 2026-11-01: "después de tomarse
+  /// la foto debe de conectarlo al instante en 3 o 5 segundos"): the page
+  /// closes ON the shutter as approved and the caller connects; the
+  /// downscale and the upload run behind it. Off for a driver on manual
+  /// review — dispatch decides that one, so the page waits.
+  final bool instant;
 
   @override
   State<SelfieCheckScreen> createState() => _SelfieCheckScreenState();
@@ -258,6 +266,10 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
           await _ctrl!.takePicture().timeout(const Duration(seconds: 10));
       if (!mounted) return;
       _mark('shot');
+      if (widget.instant) {
+        _closeAndUploadBehind(xFile.path);
+        return;
+      }
       _uploadAndVerify(xFile.path);
     } catch (e) {
       _mark('shot_failed:${e.runtimeType}');
@@ -281,6 +293,16 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
       await c.setFlashMode(next);
       if (mounted) setState(() => _flashMode = next);
     } catch (_) {}
+  }
+
+  /// [SelfieCheckScreen.instant]: no loader at all — close approved now,
+  /// upload behind. A failed upload means no stamp, so the next GO asks
+  /// again: the same fail-open as before, minus the wait.
+  void _closeAndUploadBehind(String photoPath) {
+    _reviewDone = true;
+    unawaited(_uploadSelfieBehind(photoPath, _attemptClock, [..._attemptLog]));
+    _attemptLog.clear();
+    Navigator.maybeOf(context)?.pop({'photo': photoPath, 'approved': true});
   }
 
   /// Step 2 → 3: the upload runs under the verifying loader; the answer
@@ -778,6 +800,27 @@ class _SelfieCheckScreenState extends State<SelfieCheckScreen>
 /// page closes as a failed upload: the caller stays fail-open and connects,
 /// and the upload keeps going — if it lands, the stamp is there.
 const Duration kSelfieUploadCeiling = Duration(seconds: 30);
+
+/// [SelfieCheckScreen.instant]'s upload, after its page closed: the same
+/// bounded downscale and endpoint as the loader path, timings reported once.
+Future<void> _uploadSelfieBehind(
+    String photoPath, Stopwatch clock, List<String> log) async {
+  void mark(String what) => log.add('$what@${clock.elapsedMilliseconds}ms');
+  Uint8List? bytes;
+  try {
+    bytes = await compute(_shrinkSelfieForUpload, photoPath)
+        .timeout(const Duration(seconds: 12));
+    mark('shrink');
+  } catch (e) {
+    mark('shrink_skipped:${e.runtimeType}');
+  }
+  final resp = await ApiService.submitFaceCheck(photoPath, bytes: bytes);
+  final ok = resp != null && resp['ok'] != false;
+  mark('upload:${resp == null ? 'null' : ok ? 'ok' : 'HTTP${resp['status']}'}');
+  if (!ok) debugPrint('[SelfieCheck] background upload failed: ${log.last}');
+  ApiService.logClientEvent(
+      'face_check', '${ok ? 'behind_ok' : 'behind_fail'} ${log.join(' ')}');
+}
 
 /// Longest side of the uploaded selfie, in pixels. 1280 px is plenty for a
 /// face check and lands around 150-300 KB as JPEG — a tenth of the cap.

@@ -286,7 +286,7 @@ class _MapCalloutBubbleState extends State<MapCalloutBubble>
                       ),
                     ),
                   // The price / code: left edge fixed, slides to the icon's
-                  // centre line and grows 17 → 20 px from its top-left.
+                  // centre line and grows 13 → 15.5 px from its top-left.
                   Positioned(
                     left: f.titleAt.dx - u.left,
                     top: f.titleAt.dy - u.top,

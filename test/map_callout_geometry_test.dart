@@ -8,11 +8,12 @@ import 'package:cruise_app/widgets/map/map_callout_bubble.dart';
 /// spec 2026-11-01): the box is centred on the map point with the tail tip
 /// ON it; collapsing, the box grows left by the icon's growth, line 2 and
 /// the product run fade and are clipped, and the price keeps its left edge
-/// while it slides down to the icon's centre line and grows 17 → 20 px.
+/// while it slides down to the icon's centre line and grows 13 → 15.5 px
+/// (sizes cut ~25 % on 2026-11-01: "en el mapa está súper grande").
 void main() {
   // ── Pure numbers (synthetic text widths, real line heights) ────────────
-  const titleH = kCalloutTitleSize * kCalloutLineHeight; // 19.55
-  const subH = kCalloutSubtitleSize * kCalloutLineHeight; // 17.25
+  const titleH = kCalloutTitleSize * kCalloutLineHeight; // 14.95
+  const subH = kCalloutSubtitleSize * kCalloutLineHeight; // 13.225
 
   group('trip layout', () {
     final layout = CalloutLayout.of(
@@ -28,26 +29,26 @@ void main() {
 
     test('expanded: centred on the point, tail tip on it', () {
       final e = layout.expandedBox;
-      // 10 + 36 + 10 + max(100, 80) + 14 = 170; 10 + max(36, 36.8) + 10.
-      expect(e.width, closeTo(170, 1e-9));
-      expect(e.height, closeTo(56.8, 1e-9));
+      // 8 + 27 + 8 + max(100, 80) + 11 = 154; 7 + max(27, 28.175) + 7.
+      expect(e.width, closeTo(154, 1e-9));
+      expect(e.height, closeTo(42.175, 1e-9));
       expect(e.center.dx, closeTo(0, 1e-9));
       expect(e.bottom, closeTo(-kCalloutTailHeight, 1e-9),
-          reason: 'the 8 px tail ends exactly on the point (0, 0)');
-      expect(layout.titleX, closeTo(e.left + 10 + 36 + 10, 1e-9));
-      expect(layout.titleYExpanded, closeTo(e.top + 10, 1e-9));
+          reason: 'the 6 px tail ends exactly on the point (0, 0)');
+      expect(layout.titleX, closeTo(e.left + 8 + 27 + 8, 1e-9));
+      expect(layout.titleYExpanded, closeTo(e.top + 7, 1e-9));
     });
 
-    test('compact: same top, grown left, hugs icon 44 + price at 20 px', () {
+    test('compact: same top, grown left, hugs icon 33 + price at 15.5 px', () {
       final c = layout.compactBox;
       final e = layout.expandedBox;
       expect(c.top, e.top);
-      expect(c.left, closeTo(e.left - (44 - 36), 1e-9));
-      expect(c.width, closeTo(10 + 44 + 10 + 30 * 20 / 17 + 14, 1e-9));
-      expect(c.height, closeTo(10 + 44 + 10, 1e-9), reason: '64 tall');
-      // The price centred on the icon: (44 − 20×1.15) / 2 = 10.5 down.
+      expect(c.left, closeTo(e.left - (33 - 27), 1e-9));
+      expect(c.width, closeTo(8 + 33 + 8 + 30 * 15.5 / 13 + 11, 1e-9));
+      expect(c.height, closeTo(7 + 33 + 7, 1e-9), reason: '47 tall');
+      // The price centred on the icon: (33 − 15.5×1.15) / 2 down.
       expect(layout.titleYCompact - layout.titleYExpanded,
-          closeTo((44 - titleH * 20 / 17) / 2, 1e-9));
+          closeTo((33 - titleH * 15.5 / 13) / 2, 1e-9));
     });
 
     test('every frame: price x fixed, y / icon monotonic, box shrinks', () {
@@ -55,9 +56,9 @@ void main() {
       for (var i = 10; i >= 0; i--) {
         final f = layout.frameAt(i / 10); // collapsing: v 1 → 0
         expect(f.titleAt.dx, layout.titleX, reason: 'v=${i / 10}');
-        expect(f.icon.left, closeTo(f.box.left + 10, 1e-9));
+        expect(f.icon.left, closeTo(f.box.left + 8, 1e-9));
         expect(f.icon.right + kCalloutGap, closeTo(layout.titleX, 1e-9),
-            reason: 'icon–price gap stays 10');
+            reason: 'icon–price gap stays 8');
         if (lastY != null) {
           expect(f.titleAt.dy, greaterThanOrEqualTo(lastY));
           expect(f.icon.width, greaterThanOrEqualTo(lastIcon!));
@@ -68,17 +69,17 @@ void main() {
         lastW = f.box.width;
       }
       final c = layout.frameAt(0);
-      expect(c.titleScale, closeTo(20 / 17, 1e-12));
+      expect(c.titleScale, closeTo(15.5 / 13, 1e-12));
       expect(c.titleAt.dy + titleH * c.titleScale / 2,
           closeTo(c.icon.center.dy, 1e-9),
           reason: 'compact price centred on the icon');
       expect(c.showFading, isFalse, reason: 'line 2 out of the tree');
       expect(c.tailOpacity, 0);
-      expect(c.tileRadius, closeTo(11, 1e-9));
-      expect(c.glyph, closeTo(44 * 24 / 36, 1e-9));
+      expect(c.tileRadius, closeTo(8.25, 1e-9));
+      expect(c.glyph, closeTo(33 * 24 / 36, 1e-9));
       final e = layout.frameAt(1);
-      expect(e.tileRadius, closeTo(9, 1e-9));
-      expect(e.glyph, closeTo(24, 1e-9));
+      expect(e.tileRadius, closeTo(6.75, 1e-9));
+      expect(e.glyph, closeTo(18, 1e-9));
       expect(e.tailOpacity, 1);
       expect(e.box, layout.expandedBox);
     });
@@ -92,7 +93,7 @@ void main() {
     });
   });
 
-  test('airport layout: plane 26 → 34, padding 12 / 14', () {
+  test('airport layout: plane 20 → 26, padding 9 / 11', () {
     final layout = CalloutLayout.of(
       CalloutVariant.airport,
       const CalloutText(
@@ -102,12 +103,12 @@ void main() {
         subtitleHeight: subH,
       ),
     );
-    expect(layout.expandedBox.width, closeTo(12 + 26 + 10 + 80 + 14, 1e-9));
+    expect(layout.expandedBox.width, closeTo(9 + 20 + 8 + 80 + 11, 1e-9));
     expect(layout.compactBox.width,
-        closeTo(12 + 34 + 10 + 40 * 20 / 17 + 14, 1e-9));
-    expect(layout.compactBox.height, closeTo(10 + 34 + 10, 1e-9));
+        closeTo(9 + 26 + 8 + 40 * 15.5 / 13 + 11, 1e-9));
+    expect(layout.compactBox.height, closeTo(7 + 26 + 7, 1e-9));
     expect(layout.frameAt(0).tileRadius, 0, reason: 'no tile behind it');
-    expect(layout.frameAt(0).glyph, closeTo(34, 1e-9));
+    expect(layout.frameAt(0).glyph, closeTo(26, 1e-9));
   });
 
   // ── The widget ─────────────────────────────────────────────────────────
@@ -143,7 +144,7 @@ void main() {
       );
 
   // Measured like the bubble measures (the test font rounds line boxes, so
-  // heights come from the painter, not from 17 × 1.15).
+  // heights come from the painter, not from 13 × 1.15).
   Size textSize(String s, double size, FontWeight w) {
     final tp = TextPainter(
       text: TextSpan(
@@ -174,9 +175,9 @@ void main() {
     final box = rectOf(t, MapCalloutBubble.boxKey);
     expect(box.center.dx, closeTo(anchor.dx, 1e-6));
     expect(box.bottom + kCalloutTailHeight, closeTo(anchor.dy, 1e-6));
-    final lines = textSize(r'$10', 17, FontWeight.w700).height +
-        textSize('9 min away', 15, FontWeight.w400).height;
-    expect(box.height, closeTo(10 + (lines > 36 ? lines : 36) + 10, 1e-6));
+    final lines = textSize(r'$10', 13, FontWeight.w700).height +
+        textSize('9 min away', 11.5, FontWeight.w400).height;
+    expect(box.height, closeTo(7 + (lines > 27 ? lines : 27) + 7, 1e-6));
     expect(find.text(' CRUISE'), findsOneWidget);
     expect(find.text('9 min away'), findsOneWidget);
   });
@@ -229,17 +230,17 @@ void main() {
     }
     expect(boxes.first.top, closeTo(compact.top, 1e-6), reason: 'same top');
 
-    // At rest compact: icon 44, price at 20 px centred on it, only "$10".
-    expect(icons.last.width, closeTo(44, 1e-6));
+    // At rest compact: icon 33, price at 15.5 px centred on it, only "$10".
+    expect(icons.last.width, closeTo(33, 1e-6));
     final price = titles.last;
-    final priceW = textWidth(r'$10', 17, FontWeight.w700);
-    expect(price.width, closeTo(priceW * 20 / 17, 1e-6));
+    final priceW = textWidth(r'$10', 13, FontWeight.w700);
+    expect(price.width, closeTo(priceW * 15.5 / 13, 1e-6));
     expect(price.height,
-        closeTo(textSize(r'$10', 17, FontWeight.w700).height * 20 / 17, 1e-6));
+        closeTo(textSize(r'$10', 13, FontWeight.w700).height * 15.5 / 13, 1e-6));
     expect((price.center.dy - icons.last.center.dy).abs(),
         lessThanOrEqualTo(0.5));
-    expect(compact.width, closeTo(10 + 44 + 10 + priceW * 20 / 17 + 14, 1));
-    expect(compact.height, closeTo(64, 1e-6));
+    expect(compact.width, closeTo(8 + 33 + 8 + priceW * 15.5 / 13 + 11, 1));
+    expect(compact.height, closeTo(47, 1e-6));
     expect(find.text(r'$10'), findsOneWidget);
     expect(find.text(' CRUISE'), findsNothing);
     expect(find.text('9 min away'), findsNothing);
@@ -270,7 +271,7 @@ void main() {
     final code0 = rectOf(t, MapCalloutBubble.titleKey);
     expect(expanded.center.dx, closeTo(anchor.dx, 1e-6));
     expect(expanded.bottom + kCalloutTailHeight, closeTo(anchor.dy, 1e-6));
-    expect(rectOf(t, MapCalloutBubble.iconKey).width, closeTo(26, 1e-6));
+    expect(rectOf(t, MapCalloutBubble.iconKey).width, closeTo(20, 1e-6));
     expect(find.byType(GestureDetector), findsNothing,
         reason: 'visual only — no tap');
 
@@ -278,11 +279,11 @@ void main() {
     await t.pump();
     await t.pump(kCalloutMorphDuration);
     final compact = rectOf(t, MapCalloutBubble.boxKey);
-    final codeW = textWidth('BHM', 17, FontWeight.w700);
-    expect(compact.width, closeTo(12 + 34 + 10 + codeW * 20 / 17 + 14, 1));
+    final codeW = textWidth('BHM', 13, FontWeight.w700);
+    expect(compact.width, closeTo(9 + 26 + 8 + codeW * 15.5 / 13 + 11, 1));
     expect(compact.width, lessThan(expanded.width));
-    expect(compact.height, closeTo(54, 1e-6));
-    expect(rectOf(t, MapCalloutBubble.iconKey).width, closeTo(34, 1e-6));
+    expect(compact.height, closeTo(40, 1e-6));
+    expect(rectOf(t, MapCalloutBubble.iconKey).width, closeTo(26, 1e-6));
     expect(rectOf(t, MapCalloutBubble.titleKey).left,
         closeTo(code0.left, 1e-6), reason: 'the code never moves sideways');
     expect(find.text('5-15 Drivers'), findsNothing);
@@ -293,7 +294,7 @@ void main() {
         variant: CalloutVariant.airport, expanded: true, title: 'BHM'));
     expect(find.byKey(MapCalloutBubble.subtitleKey), findsNothing);
     final box = rectOf(t, MapCalloutBubble.boxKey);
-    expect(box.height, closeTo(10 + 26 + 10, 1e-6),
-        reason: 'one line: max(plane 26, 19.55) + padding');
+    expect(box.height, closeTo(7 + 20 + 7, 1e-6),
+        reason: 'one line: max(plane 20, 14.95) + padding');
   });
 }

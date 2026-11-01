@@ -18,7 +18,7 @@ import '../utils/vehicle_tier_style.dart';
 //  tail tip on it); zoomed out COMPACT (bigger icon + the price / code, a
 //  touch bigger, no tail). The 380 ms morph between them never moves the
 //  price's left edge: the box grows LEFT by the icon's growth, the price
-//  slides down to the icon's centre line and grows 17 → 20 px, line 2 and
+//  slides down to the icon's centre line and grows 13 → 15.5 px, line 2 and
 //  the product run (" CRUISE") fade and are clipped by the closing box.
 //
 //  Everything here is pure (no Mapbox, no widgets): label text, both rest
@@ -33,39 +33,41 @@ import '../utils/vehicle_tier_style.dart';
 /// Box fill: pure black, like Lyft's.
 const Color kCalloutFill = Color(0xFF000000);
 
+// Sizes cut ~25 % on 2026-11-01 (owner: "en el mapa está súper grande").
+
 /// Box corner radius, both states.
-const double kCalloutRadius = 14.0;
+const double kCalloutRadius = 11.0;
 
 /// The tail of the expanded state: an isosceles triangle under the box, its
 /// tip on the map point.
-const double kCalloutTailBase = 16.0;
-const double kCalloutTailHeight = 8.0;
+const double kCalloutTailBase = 12.0;
+const double kCalloutTailHeight = 6.0;
 
-/// The soft drop shadow under box + tail: black at 45 %, blur sigma 8,
-/// pushed 4 px down.
+/// The soft drop shadow under box + tail: black at 45 %, blur sigma 6,
+/// pushed 3 px down.
 const double kCalloutShadowOpacity = 0.45;
-const double kCalloutShadowSigma = 8.0;
-const double kCalloutShadowDy = 4.0;
+const double kCalloutShadowSigma = 6.0;
+const double kCalloutShadowDy = 3.0;
 
 /// How far that shadow reaches past the shape: 3 sigma (Skia sizes its blur
-/// mask at 3 sigma; beyond it the shadow is < 0.1 % alpha) — shifted 4 px
-/// down: 20 px above the box, 24 left/right, 28 below.
-const double kCalloutShadowReach = 3 * kCalloutShadowSigma; // 24
+/// mask at 3 sigma; beyond it the shadow is < 0.1 % alpha) — shifted 3 px
+/// down: 15 px above the box, 18 left/right, 21 below.
+const double kCalloutShadowReach = 3 * kCalloutShadowSigma; // 18
 
-/// Text: Poppins, white, line height 1.15. The price / code line is 17 px
-/// expanded and grows to 20 px compact.
-const double kCalloutTitleSize = 17.0;
-const double kCalloutTitleSizeCompact = 20.0;
+/// Text: Poppins, white, line height 1.15. The price / code line is 13 px
+/// expanded and grows to 15.5 px compact.
+const double kCalloutTitleSize = 13.0;
+const double kCalloutTitleSizeCompact = 15.5;
 const double kCalloutTitleScaleCompact =
     kCalloutTitleSizeCompact / kCalloutTitleSize;
-const double kCalloutSubtitleSize = 15.0;
+const double kCalloutSubtitleSize = 11.5;
 const double kCalloutLineHeight = 1.15;
 
 /// Air between the icon and the text, both states.
-const double kCalloutGap = 10.0;
+const double kCalloutGap = 8.0;
 
 /// Gold of the trip tile (app gold); its corners are a quarter of its side
-/// (36 → 9, 44 → 11).
+/// (27 → 6.75, 33 → 8.25).
 const Color kTripCalloutTileGold = Color(0xFFE8C547);
 const double kTripTileRadiusPerSide = 0.25;
 
@@ -140,20 +142,20 @@ class CalloutSpec {
   final bool tile;
 }
 
-/// TRIP: padding 10 / 10 / 14 / 10, gold tile 36 (glyph 24) → 44 (≈29).
+/// TRIP: padding 8 / 7 / 11 / 7, gold tile 27 (glyph 18) → 33 (22).
 const CalloutSpec kTripCalloutSpec = CalloutSpec(
-  padding: EdgeInsets.fromLTRB(10, 10, 14, 10),
-  iconExpanded: 36,
-  iconCompact: 44,
+  padding: EdgeInsets.fromLTRB(8, 7, 11, 7),
+  iconExpanded: 27,
+  iconCompact: 33,
   glyphPerIcon: 24 / 36,
   tile: true,
 );
 
-/// AIRPORT: padding 12 / 10 / 14 / 10, gold plane 26 → 34, no tile.
+/// AIRPORT: padding 9 / 7 / 11 / 7, gold plane 20 → 26, no tile.
 const CalloutSpec kAirportCalloutSpec = CalloutSpec(
-  padding: EdgeInsets.fromLTRB(12, 10, 14, 10),
-  iconExpanded: 26,
-  iconCompact: 34,
+  padding: EdgeInsets.fromLTRB(9, 7, 11, 7),
+  iconExpanded: 20,
+  iconCompact: 26,
   glyphPerIcon: 1.0,
   tile: false,
 );
@@ -163,7 +165,7 @@ CalloutSpec calloutSpecOf(CalloutVariant v) =>
 
 // ── Geometry ──────────────────────────────────────────────────────────────
 
-/// The measured text of a callout at its 17 / 15 px rest sizes.
+/// The measured text of a callout at its 13 / 11.5 px rest sizes.
 @immutable
 class CalloutText {
   const CalloutText({
@@ -212,7 +214,7 @@ class CalloutFrame {
   final double glyph;
   final double tileRadius;
 
-  /// Top-left of the price / code run, and its scale (1 → 20/17).
+  /// Top-left of the price / code run, and its scale (1 → 15.5/13).
   final Offset titleAt;
   final double titleScale;
 
@@ -245,10 +247,10 @@ class CalloutFrame {
 ///   left = −wE/2, top = −(8 + hE)
 ///   titleX = left + padL + iconE + GAP, titleY_E = top + padT
 /// COMPACT: same top, title x unchanged, the box grows left by iconC − iconE:
-///   wC = padL + iconC + GAP + keepW·20/17 + padR
-///   hC = padT + max(iconC, titleH·20/17) + padB
+///   wC = padL + iconC + GAP + keepW·15.5/13 + padR
+///   hC = padT + max(iconC, titleH·15.5/13) + padB
 ///   leftC = titleX − GAP − iconC − padL
-///   titleY_C = top + padT + (contentH_C − titleH·20/17)/2 (centred on the
+///   titleY_C = top + padT + (contentH_C − titleH·15.5/13)/2 (centred on the
 ///   icon)
 @immutable
 class CalloutLayout {

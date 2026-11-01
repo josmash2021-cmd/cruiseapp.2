@@ -290,6 +290,31 @@ class DataGuardian:
                 self._last_check_time = time.time()
             await asyncio.sleep(60)  # Check every 60 seconds
 
+    async def _notify_guest_no_driver(self, trip_id: int, refunded: bool) -> None:
+        """Guest no-driver email + SMS, once the cancel has committed and on a
+        session of their own (2026-11-01, trip 783). They used to ride the
+        guardian's session from fire-and-forget tasks: mid-commit it was in
+        'prepared' state, so the SMS idempotency lookup failed ("sending
+        anyway") and its rollback() could land on the guardian's cancel."""
+        from models.database import Trip
+        try:
+            async with self._db_session_maker() as s:
+                trip = await s.get(Trip, trip_id)
+                if trip is None:
+                    return
+                try:
+                    from services.email_service import email_guest_no_driver
+                    await email_guest_no_driver(s, trip, refunded)
+                except Exception as e:
+                    logger.warning("[AutoCancel/Guardian] email_guest_no_driver failed: %s", e)
+                try:
+                    from services.sms_service import notify_guest_no_driver
+                    await notify_guest_no_driver(s, trip, refunded)
+                except Exception as e:
+                    logger.warning("[AutoCancel/Guardian] notify_guest_no_driver failed: %s", e)
+        except Exception as e:
+            logger.warning("[AutoCancel/Guardian] guest notice for trip=%d failed: %s", trip_id, e)
+
     async def _verify_active_trips(self):
         """Make sure all active trips have consistent state"""
         try:
@@ -343,8 +368,16 @@ class DataGuardian:
                           WHERE o.trip_id = t.id
                             AND o.created_at > NOW() - INTERVAL '10 minutes'
                       )
+                      -- One worker per trip (2026-11-01, trip 783): all
+                      -- UVICORN_WORKERS run this loop; without the row lock
+                      -- two of them cancelled the same trip and sent two SMS.
+                    ORDER BY t.id
+                    FOR UPDATE OF t SKIP LOCKED
                 """))
                 stuck = result.fetchall()
+                # Guest notices go out AFTER the cancel commits (see
+                # _notify_guest_no_driver).
+                guest_notices: list[tuple[int, bool]] = []
 
                 for row in stuck:
                     trip_id, status, created_at, rider_id, pay_status, pi_id, fare = row
@@ -437,16 +470,7 @@ class DataGuardian:
                     # Rider-app bookings are notified via Firestore listener.
                     try:
                         if _trip_obj and (getattr(_trip_obj, "guest_email", None) or getattr(_trip_obj, "guest_phone", None)):
-                            try:
-                                from services.email_service import email_guest_no_driver
-                                asyncio.create_task(email_guest_no_driver(session, _trip_obj, refunded))
-                            except Exception as _e_err:
-                                logger.warning("[AutoCancel/Guardian] email_guest_no_driver failed: %s", _e_err)
-                            try:
-                                from services.sms_service import notify_guest_no_driver
-                                asyncio.create_task(notify_guest_no_driver(session, _trip_obj, refunded))
-                            except Exception as _s_err:
-                                logger.warning("[AutoCancel/Guardian] notify_guest_no_driver failed: %s", _s_err)
+                            guest_notices.append((trip_id, refunded))
                     except Exception as _n_err:
                         logger.warning(
                             "[AutoCancel/Guardian] no-driver notification dispatch failed for trip=%d: %s",
@@ -471,6 +495,8 @@ class DataGuardian:
 
                 await session.commit()
                 self._trips_checked += len(orphaned) + len(stuck)
+                for _tid, _refunded in guest_notices:
+                    asyncio.create_task(self._notify_guest_no_driver(_tid, _refunded))
 
                 # ── Scheduled ride auto-cancel: 30 min deadline ──────────
                 # If a scheduled ride is <=30 minutes from its scheduled_at
@@ -496,6 +522,11 @@ class DataGuardian:
                           WHERE o.trip_id = t.id
                             AND o.created_at > NOW() - INTERVAL '10 minutes'
                       )
+                      -- One worker per trip (2026-11-01, trip 783): all
+                      -- UVICORN_WORKERS run this loop; without the row lock
+                      -- two of them cancelled the same trip and sent two SMS.
+                    ORDER BY t.id
+                    FOR UPDATE OF t SKIP LOCKED
                 """))
                 sched_stuck = sched_result.fetchall()
 
@@ -581,6 +612,11 @@ class DataGuardian:
                     FROM trips t
                     WHERE t.status IN ('driver_en_route', 'arrived', 'in_trip')
                     AND t.updated_at < NOW() - INTERVAL '180 minutes'
+                    -- One worker per trip (2026-11-01, trip 783): all
+                    -- UVICORN_WORKERS run this loop; without the row lock
+                    -- two of them cancelled the same trip and sent two SMS.
+                    ORDER BY t.id
+                    FOR UPDATE OF t SKIP LOCKED
                 """))
                 ghosts = ghost_result.fetchall()
 

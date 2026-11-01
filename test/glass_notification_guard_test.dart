@@ -44,25 +44,18 @@ void main() {
         contains('GlassNotificationBanner.navigatorKey = _navigatorKey;'));
   });
 
-  test('the frost is inset so iOS cannot blur a square past the corners', () {
-    // ceil(20 · (1 − 1/√2)) = 6 — see the comment on the constant.
-    expect(banner, contains('const kGlassBannerBlurInset = 6.0;'));
-    expect(banner, contains('padding: EdgeInsets.all(kGlassBannerBlurInset)'));
-    expect(banner, contains('GlassSurface('),
-        reason: 'reuses the shared glass, no second blur recipe');
-    expect(banner, contains('tint: Colors.transparent'),
-        reason: 'the tint is painted over the WHOLE card after the frost');
-  });
-
-  // Owner 2026-11-01: "¿por qué está gris y no transparente blurry?" — the
-  // banner wore the open sheet's 82 % tint and read as a flat grey box.
-  test('see-through glass: light tint, denser only on the unblurred rim', () {
+  // Owner 2026-11-01: "¿por qué está gris y no transparente blurry?" (82 %
+  // tint) and then "veo que está como un cuadro, debe ser todo de vidrio
+  // blurry" (the 6 px inset rim read as a box inside the card).
+  test('the whole card is glass: one frost, one light tint, no rim', () {
     expect(kGlassBannerTint.a, lessThanOrEqualTo(0.45),
         reason: 'the frosted map must show through');
-    expect(kGlassBannerRimTint.a, greaterThan(kGlassBannerTint.a));
-    expect(banner, contains('color: kGlassBannerRimTint,'));
-    expect(banner, contains('width: kGlassBannerBlurInset),'),
-        reason: 'extra smoke exactly where iOS does not blur');
+    expect(banner, contains('GlassSurface('),
+        reason: 'reuses the shared glass, no second blur recipe');
+    expect(banner, contains('tint: kGlassBannerTint,'));
+    expect(banner.contains('kGlassBannerBlurInset'), isFalse,
+        reason: 'no inset frost, no rim — that was the box');
+    expect(banner.contains('kGlassBannerRimTint'), isFalse);
   });
 
   test('foreground pushes use the banner, never a system/local copy', () {

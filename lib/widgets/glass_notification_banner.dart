@@ -60,25 +60,13 @@ const kGlassBannerTravel = 96.0;
 const kGlassBannerBlur = kGlassSheetBlur; // sigma 24
 const kGlassBannerTint = Color(0x661A1A21); // #1A1A21 @ 40 %
 
-/// Extra smoke on the 6 px rim only ([kGlassBannerBlurInset]): there iOS
-/// does not blur, and at 40 % the sharp streets would show through the
-/// edge. Over the base tint the rim lands near 73 % — a polished bevel,
-/// not a frame of crisp map.
-const kGlassBannerRimTint = Color(0x8C1A1A21); // + 55 %
-
-/// iOS over the native Mapbox view: the engine blurs the map with a
-/// UIVisualEffectView framed to the BackdropFilter's bounding RECTANGLE
-/// (FlutterPlatformViewsController.mm, kBackdropFilter → PlatformViewFilter
-/// initWithFrame:) — ClipRRect is ignored, so a full-size frost would put
-/// four blurred square corners outside the rounded card (the halo the
-/// owner saw on the earnings pill, 2026-10-31). The frost is therefore
-/// inset by ceil(r·(1 − 1/√2)) = 6 px: the largest rectangle whose corners
-/// still sit INSIDE the 20 px rounded shape. Whatever iOS does with it,
-/// the blur can never leave the card. The 6 px rim is unblurred backdrop
-/// under a denser tint ([kGlassBannerRimTint]) — it reads as the polished
-/// edge of the glass, not as a frame. Same geometry on Android (exact
-/// clip there) so both platforms look identical over the map.
-const kGlassBannerBlurInset = 6.0;
+/// The frost covers the WHOLE card, edge to edge, one even tint (owner
+/// 2026-11-01: "veo que está como un cuadro, debe ser todo de vidrio
+/// blurry"). It used to be inset 6 px with a denser rim, so iOS's
+/// rectangular platform-view blur could never poke past the rounded
+/// corners — but the rim read as a box inside the card. Same recipe as the
+/// online/offline sheet (GlassSurface, full rect): on iOS the blur may
+/// square off the 20 px corners slightly, exactly as the sheet's do.
 
 const kGlassBannerIconSize = 40.0; // gold ring
 const kGlassBannerGlyphSize = 20.0;
@@ -574,42 +562,15 @@ class _GlassBannerState extends State<_GlassBanner>
           type: MaterialType.transparency,
           child: Stack(
             children: [
-              // 1 — the frost, inset so iOS's rectangular blur over the
-              // Mapbox view can never stick out past the rounded corners.
-              const Positioned.fill(
-                child: Padding(
-                  padding: EdgeInsets.all(kGlassBannerBlurInset),
-                  child: GlassSurface(
-                    borderRadius: BorderRadius.all(Radius.circular(
-                        kGlassBannerRadius - kGlassBannerBlurInset)),
-                    blur: kGlassBannerBlur,
-                    tint: Colors.transparent,
-                    border: Border(),
-                    child: SizedBox.expand(),
-                  ),
-                ),
-              ),
-              // 2 — one light tint over the whole card, painted after the
-              // frost so the blur never smears it; the unblurred 6 px rim
-              // gets extra smoke so no crisp street shows at the edge.
+              // The frost: the whole card, one even tint, the hairline of
+              // light on the edge — the sheet's glass, nothing inset.
               Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: kGlassBannerTint,
-                    borderRadius: radius,
-                    border: Border.all(
-                        color: kGlassBannerRimTint,
-                        width: kGlassBannerBlurInset),
-                  ),
-                ),
-              ),
-              // 3 — the hairline of light on the edge, as before.
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: radius,
-                    border: Border.all(color: glassEdge),
-                  ),
+                child: GlassSurface(
+                  borderRadius: radius,
+                  blur: kGlassBannerBlur,
+                  tint: kGlassBannerTint,
+                  borderColor: glassEdge,
+                  child: const SizedBox.expand(),
                 ),
               ),
               content,

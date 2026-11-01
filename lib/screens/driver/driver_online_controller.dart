@@ -1084,6 +1084,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _zoomEaseFrom = _onlineCamState?.zoom ?? 10.8;
         _zoomEaseDone = false;
         _zoomEaseStartMs = null;
+        _searchFollowZoom = kSearchFollowZoom;
+        _zoomEaseMs = 750;
         if (!_cameraFollowing && _pos != null) {
           _animateToPosition(_pos!,
               zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
@@ -2516,7 +2518,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // ignore it, so a driver dragging the map while online was overruled
     // sixty times a second and the view snapped back under their finger.
     if (_phase == _Phase.searching && !offerActive && _cameraFollowing) {
-      const zoomTarget = 15.5;
+      final zoomTarget = _searchFollowZoom;
       final followPadding = _kZeroCamPadding;
       // Entry zoom ease: the map opens at zoom 16 (same as home) and
       // glides to the working zoom over ~750ms (easeOutCubic) so there
@@ -2524,7 +2526,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       double zoom = zoomTarget;
       if (!_zoomEaseDone) {
         _zoomEaseStartMs ??= elapsed.inMilliseconds;
-        final t = ((elapsed.inMilliseconds - _zoomEaseStartMs!) / 750.0)
+        final t = ((elapsed.inMilliseconds - _zoomEaseStartMs!) / _zoomEaseMs)
             .clamp(0.0, 1.0);
         final e = 1.0 - math.pow(1.0 - t, 3).toDouble();
         zoom = _zoomEaseFrom - (_zoomEaseFrom - zoomTarget) * e;
@@ -2744,6 +2746,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (!mounted) return;
       final had = _availableTrips.length;
       _setState(() => _availableTrips = trips);
+      _maybeRevealBoardTrips(trips);
       // Fresh arrivals bump the pill like the scheduled badge does.
       if (trips.length > had && trips.isNotEmpty) {
         HapticService.lightImpact();
@@ -2752,6 +2755,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (trips.isEmpty && _marketplaceOpen) {
         _setState(() => _marketplaceOpen = false);
       }
+      // Same for a board trip opened from its map callout.
+      final shown = _pendingOffers.where(_isBoardOffer).toList();
+      if (shown.isNotEmpty &&
+          _claimingTripId == null &&
+          !trips.any((t) =>
+              calloutNum(t['trip_id'])?.toInt() == shown.first[kBoardTripKey])) {
+        _closeBoardOffer();
+        _snack(S.of(context).tripNoLongerAvailable);
+      }
     } catch (e) {
       debugPrint('[DriverOnline] marketplace fetch failed: $e');
     }
@@ -2759,26 +2771,32 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Grab an unclaimed trip off the board — the backend resolves the race
   /// atomically; on 409 the card comes down with "ya no está disponible".
-  Future<void> _claimTrip(Map<String, dynamic> t) async {
+  Future<bool> _claimTrip(Map<String, dynamic> t) async {
     final tripId = (t['trip_id'] as num?)?.toInt();
-    if (tripId == null || _driverId == null || _claimingTripId != null) return;
+    if (tripId == null || _driverId == null || _claimingTripId != null) {
+      return false;
+    }
     HapticService.mediumImpact();
     _setState(() => _claimingTripId = tripId);
     try {
       final res = await ApiService.claimUnclaimedTrip(
           tripId: tripId, driverId: _driverId!);
-      if (!mounted) return;
+      if (!mounted) return false;
       final httpStatus = (res['_http_status'] as num?)?.toInt() ?? 200;
       if (httpStatus == 200 && res['trip'] is Map<String, dynamic>) {
         _setState(() {
           _marketplaceOpen = false;
           _availableTrips = [];
           _claimingTripId = null;
+          // A board card is done once won — the accept flow owns the map
+          // from here, and it may not return until the trip ends.
+          _pendingOffers =
+              _pendingOffers.where((o) => !_isBoardOffer(o)).toList();
         });
         // Same flow as accepting a ring: the backend already assigned it.
         await _acceptOffer(Map<String, dynamic>.from(res['trip'] as Map),
             alreadyAcceptedOnBackend: true);
-        return;
+        return true;
       }
       _setState(() => _claimingTripId = null);
       if (httpStatus == 409) {
@@ -2794,6 +2812,59 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (mounted) {
         _setState(() => _claimingTripId = null);
         _snack(S.of(context).acceptFailedTryAgain);
+      }
+    }
+    return false;
+  }
+
+  // ── Board trip opened from its map callout (owner spec 2026-11-01) ────
+  // It wears the offer card and the offer route, but it is not a ring: no
+  // offer row, no countdown, nothing sent on close, no "declined" banner.
+
+  bool _isBoardOffer(Map<String, dynamic> o) => o[kBoardTripKey] != null;
+
+  /// Accept on a board card = claim it off the board, the same atomic
+  /// /dispatch/claim the list used. Lost (409, error) → the card closes;
+  /// _claimTrip already said why.
+  Future<void> _claimBoardOffer(Map<String, dynamic> r) async {
+    final won = await _claimTrip({'trip_id': r[kBoardTripKey]});
+    if (!won && mounted) _closeBoardOffer();
+  }
+
+  /// Take a board card down: card, route, pins; the camera goes back to the
+  /// driver unless a real ring is taking the screen ([restoreCamera] false).
+  void _closeBoardOffer({bool restoreCamera = true}) {
+    final board = _pendingOffers.where(_isBoardOffer).toList();
+    if (board.isEmpty || !mounted) return;
+    final wasPreviewing =
+        _previewingOffer != null && _isBoardOffer(_previewingOffer!);
+    for (final o in board) {
+      final oid = (o['offer_id'] ?? '').toString();
+      _routeCache.remove(oid);
+      _tappedCardIds.remove(oid);
+      _expandedOfferIds.remove(oid);
+      _offerCardHeights.remove(oid);
+    }
+    _setState(() {
+      _pendingOffers = _pendingOffers.where((o) => !_isBoardOffer(o)).toList();
+      if (_pendingOffers.isEmpty) _hideFindingBar = false;
+      if (wasPreviewing) {
+        _previewingOffer = null;
+        _offerRouteShown = false;
+        _fullSegOne = [];
+        _fullSegTwo = [];
+        _lastAutoTriggeredOfferId = null;
+      }
+    });
+    if (!wasPreviewing) return;
+    unawaited(_clearAllAnnotations().catchError((_) {}));
+    unawaited(_sweepPreviewOrphans());
+    if (restoreCamera && _pos != null) {
+      try {
+        _animateToPosition(_pos!,
+            zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
+      } catch (e) {
+        debugPrint('[DriverOnline] board close camera failed: $e');
       }
     }
   }
@@ -3371,6 +3442,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final reprieved = <Map<String, dynamic>>[];
     final expired = <Map<String, dynamic>>[];
     for (final shown in _pendingOffers) {
+      if (_isBoardOffer(shown)) continue; // rides no stream — see below
       final id = idOf(shown);
       if (arrivedIds.contains(id)) continue;
       // Rejected and accepted offers were already filtered out above, so
@@ -3427,6 +3499,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
                 '[DriverOnline] _animateToPosition failed on expire: $e');
           }
         }
+      }
+    }
+
+    // A board card (opened from a map callout) is in no stream: it stays
+    // while nothing real is on offer, and a real ring takes the screen.
+    if (_pendingOffers.any(_isBoardOffer)) {
+      if (filtered.isEmpty) {
+        filtered = _pendingOffers.where(_isBoardOffer).toList();
+      } else {
+        // Its route may still be animating, which vetoes the ring's
+        // auto-preview; _onOfferCardTap redraws the ring when it ends.
+        if (_isCardAnimating) _ringWaitingOnBoardPreview = true;
+        _closeBoardOffer(restoreCamera: false);
       }
     }
 
@@ -3814,6 +3899,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       {bool alreadyAcceptedOnBackend = false}) async {
     debugPrint('[DriverOnline] _acceptOffer called — map=$_map, phase=$_phase');
     debugPrint('[DriverOnline] offer data: ${r.keys.toList()}');
+    if (_isBoardOffer(r)) {
+      await _claimBoardOffer(r);
+      return;
+    }
     // Prevent double-tap
     final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
     if (_offerAcceptState != _OfferAcceptState.normal) {
@@ -4674,6 +4763,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // stale clock here would start it mid-curve (or skip it entirely).
     _zoomEaseStartMs = null;
     _zoomEaseDone = false;
+    _searchFollowZoom = kSearchFollowZoom;
+    _zoomEaseMs = 750;
     // The style watchdog's one retry is PER MOUNT (2026-10-12, black map
     // after returning from another page): without this reset, the first
     // remount whose style never loaded had no watchdog left and the driver
@@ -4827,6 +4918,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// out — only that one gets the "You declined a ride request" banner.
   Future<void> _rejectOffer(Map<String, dynamic> r,
       {bool byDriver = false}) async {
+    // A board trip was never offered: closing it tells nobody anything.
+    if (_isBoardOffer(r)) {
+      HapticService.lightImpact();
+      _closeBoardOffer();
+      return;
+    }
     int? toInt(dynamic v) {
       if (v == null) return null;
       if (v is int) return v;

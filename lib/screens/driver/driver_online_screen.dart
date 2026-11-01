@@ -605,6 +605,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final Set<String> _tappedCardIds = {};
   final Set<int> _rejectedOfferIds = {}; // locally rejected — filter from polls
   String? _lastAutoTriggeredOfferId; // prevent duplicate auto-trigger
+  // A ring closed a board-trip card while its route was still animating:
+  // the ring's auto-preview was vetoed, so the board sequence redraws it.
+  bool _ringWaitingOnBoardPreview = false;
 
   /// Where the previewed offer's driver leg was last fetched from, and
   /// when. The baseline is set when the preview opens; the refresh lives
@@ -935,6 +938,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   int? _zoomEaseStartMs;
   bool _zoomEaseDone = false;
   double _zoomEaseFrom = 16.0;
+  // Where the ease lands and how long it takes: the working 15.5 over
+  // 750 ms, or — once per new board trip — lower, over a slower glide, so
+  // its callout is on screen with the arrow still centred (2026-11-01).
+  double _searchFollowZoom = kSearchFollowZoom;
+  int _zoomEaseMs = 750;
+  final Set<int> _revealedBoardTripIds = {};
 
   // â”€â”€ Slide confirm â”€â”€
   double _slideVal = 0;

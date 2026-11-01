@@ -81,11 +81,14 @@ void main() {
         contains("ValueKey('trip-callout-\$id')"));
   });
 
-  test('tap opens the EXISTING claim card on that trip — no new claim path',
-      () {
-    final tap = fn(callouts, 'void _onTripCalloutTap(int tripId)', 600);
-    expect(tap, contains('_marketplaceFocusTripId = tripId;'));
-    expect(tap, contains('_marketplaceOpen = true;'));
+  // 2026-11-01: the tap used to open the marketplace claim card, which only
+  // renders inside the offer stack — never mounted with no offer, so the
+  // tap did nothing. It now opens the trip as the offer card with its route
+  // (test/board_trip_callout_test.dart); claiming is still /dispatch/claim
+  // through _claimTrip — no new claim path, none in this file.
+  test('tap opens the trip as the offer card — no new claim path', () {
+    final tap = fn(callouts, 'void _onTripCalloutTap(int tripId)', 900);
+    expect(tap, contains('_pendingOffers = [offer];'));
     expect(callouts.contains('claimUnclaimedTrip'), isFalse);
     expect(callouts.contains('_claimTrip('), isFalse);
     expect(widgets, contains('for (final t in _marketplaceTripsOrdered.take(3))'));

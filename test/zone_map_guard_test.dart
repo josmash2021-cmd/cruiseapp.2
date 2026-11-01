@@ -443,8 +443,12 @@ void main() {
         reason: 'the chase stops before the zoom-out flight starts');
     expect(map, contains('_sectorsBBox('),
         reason: 'the bbox union math is shared with the fit');
-    expect(ctrl, contains('const zoomTarget = 15.5'),
+    // The working zoom is a field since 2026-11-01 (a new board trip
+    // eases it out once) — still 15.5, still only in the follow chase.
+    expect(ctrl, contains('final zoomTarget = _searchFollowZoom;'),
         reason: 'street zoom is only for the active heading-follow chase');
+    expect(File('lib/map/map_callout.dart').readAsStringSync(),
+        contains('const double kSearchFollowZoom = 15.5;'));
     final sources = '$map$ctrl';
     expect(sources.contains('_reFollowTimer'), isFalse,
         reason: 'manual gestures never start a timed refollow');

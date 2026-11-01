@@ -167,18 +167,81 @@ extension _DriverOnlineCallouts on _DriverOnlineScreenState {
     );
   }
 
-  /// Tap a trip callout → the marketplace claim card opens with that trip
-  /// first; claiming is the card's own button (_claimTrip) — no new path.
+  /// Tap a trip callout → the trip opens as an offer card with its route
+  /// drawn on the map, the same card and animation a ring gets (owner spec
+  /// 2026-11-01). It used to set _marketplaceOpen, whose card only renders
+  /// inside the offer stack — which never mounts with no offer: the tap did
+  /// nothing. Accept claims it off the board (_claimBoardOffer); the X just
+  /// closes it (_closeBoardOffer).
   void _onTripCalloutTap(int tripId) {
     if (!mounted || !_tripCalloutsWanted) return;
-    final live = _availableTrips
-        .any((t) => calloutNum(t['trip_id'])?.toInt() == tripId);
-    if (!live) return;
+    Map<String, dynamic>? trip;
+    for (final t in _availableTrips) {
+      if (calloutNum(t['trip_id'])?.toInt() == tripId) {
+        trip = t;
+        break;
+      }
+    }
+    final offer = trip == null ? null : boardOfferFrom(trip);
+    if (offer == null) return;
     HapticService.lightImpact();
     _setState(() {
-      _marketplaceFocusTripId = tripId;
-      _marketplaceOpen = true;
+      _pendingOffers = [offer];
+      _currentOfferIndex = 0;
+      _nextOfferRevealAt = null;
+      _hideFindingBar = true;
     });
+    _autoTriggerRoutePreview(offer);
+  }
+
+  /// New trips on the board ease the follow camera OUT once, smoothly, so
+  /// their callouts are on screen — the arrow stays centred, follow stays on
+  /// (owner spec 2026-11-01). Once per trip id: a poll that returns the same
+  /// trips again does nothing, and a recentre tap takes the zoom back. When
+  /// the board empties the camera glides back to the working zoom.
+  void _maybeRevealBoardTrips(List<Map<String, dynamic>> trips) {
+    final ids = <int>{
+      for (final t in trips)
+        if (calloutNum(t['trip_id']) != null) calloutNum(t['trip_id'])!.toInt(),
+    };
+    final fresh = ids.difference(_revealedBoardTripIds);
+    _revealedBoardTripIds.addAll(fresh);
+    if (trips.isEmpty) {
+      if (_searchFollowZoom < kSearchFollowZoom) {
+        _easeSearchFollowZoom(kSearchFollowZoom, ms: 900);
+      }
+      return;
+    }
+    final pos = _pos;
+    final size = _onlineMapSize;
+    if (fresh.isEmpty ||
+        pos == null ||
+        size == null ||
+        !_cameraFollowing ||
+        !_tripCalloutsWanted) {
+      return;
+    }
+    var farthestM = 0.0;
+    for (final t in trips) {
+      final lat = calloutNum(t['pickup_lat']);
+      final lng = calloutNum(t['pickup_lng']);
+      if (lat == null || lng == null) continue;
+      final m = _hav(pos, LatLng(lat, lng)) * 1000;
+      if (m.isFinite && m > farthestM) farthestM = m;
+    }
+    final z = boardRevealZoom(
+        latDeg: pos.latitude, farthestM: farthestM, viewport: size);
+    if (z < _searchFollowZoom - 0.05) _easeSearchFollowZoom(z, ms: 1400);
+  }
+
+  /// Glide the searching follow zoom to [target] over [ms] — the same ease
+  /// the entry zoom runs (easeOutCubic from wherever the camera is now).
+  void _easeSearchFollowZoom(double target, {required int ms}) {
+    _zoomEaseFrom = _onlineCamState?.zoom ?? _searchFollowZoom;
+    _searchFollowZoom = target;
+    _zoomEaseMs = ms;
+    _zoomEaseStartMs = null;
+    _zoomEaseDone = false;
   }
 
   /// The second line of an airport callout, or null until its count has

@@ -2404,7 +2404,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               ),
               child: OfferCountdownRing(
                 key: ValueKey('countdown_$offerId'),
-                active: isVisible,
+                // A board trip (opened from its map callout) is not a ring:
+                // no clock runs out on it.
+                active: isVisible && offer[kBoardTripKey] == null,
                 onExpired: () {
                   if (!mounted) return;
                   _rejectOffer(offer);
@@ -2833,8 +2835,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   /// OUTSIDE the card (added by _rideOfferCards) so the card itself ends
   /// at the rider row.
   Widget _buildAcceptButton(Map<String, dynamic> offer, String offerId) {
-    final bool isAccepting = _offerAcceptState == _OfferAcceptState.routing &&
-        _acceptingCardId == offerId;
+    final bool isAccepting = (_offerAcceptState == _OfferAcceptState.routing &&
+            _acceptingCardId == offerId) ||
+        // A board card claiming (map callout, 2026-11-01).
+        (_claimingTripId != null &&
+            offer[kBoardTripKey] == _claimingTripId);
     return GestureDetector(
       onTapDown:
           isAccepting ? null : (_) => _setState(() => _isAcceptPressed = true),

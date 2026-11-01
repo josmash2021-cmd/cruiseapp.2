@@ -1,5 +1,12 @@
 part of 'driver_online_screen.dart';
 
+/// What the offline zone view frames in a state with no zones of its own
+/// yet — [w, s, e, n]. Alabama: Pelham, Hoover and Birmingham in one view
+/// (owner spec 2026-11-01). Top-level: used from a part file (rule #16).
+const Map<String, List<double>> kStateMetroFrames = {
+  'AL': [-86.92, 33.26, -86.70, 33.56],
+};
+
 // ══════════════════════════════════════════════════════════════
 //  MAP — annotations, route preview, camera, pin builders
 // ══════════════════════════════════════════════════════════════
@@ -1099,6 +1106,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await _offerCardTapSequence(offer);
     } finally {
       _isCardAnimating = false;
+      if (_ringWaitingOnBoardPreview) {
+        _ringWaitingOnBoardPreview = false;
+        if (mounted && _pendingOffers.isNotEmpty) {
+          _autoTriggerRoutePreview(_pendingOffers.first);
+        }
+      }
     }
   }
 
@@ -2194,6 +2207,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final isNav = _phase == _Phase.enRouteToPickup ||
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
+    // Recentre = back to the working zoom, even after a board-trip reveal.
+    _searchFollowZoom = kSearchFollowZoom;
+    _zoomEaseMs = 750;
     unawaited(_recenterWithFollow(
       zoom: isNav ? 17.5 : 15.5,
       bearing: bearing,
@@ -3077,9 +3093,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await _fitAllZones(animated: animated);
       return false;
     }
-    await _fitSectors(
-        ZoneService.sectorsForState(ZoneService.stateOfPoint(pos)),
-        animated: animated);
+    final state = ZoneService.stateOfPoint(pos);
+    final sectors = ZoneService.sectorsForState(state);
+    // A state with no zones of its own frames its metro instead (owner
+    // spec 2026-11-01: Alabama → Pelham, Hoover and Birmingham at once);
+    // before, the fit had nothing to frame and the button did nothing.
+    final metro = kStateMetroFrames[state];
+    if (metro != null &&
+        !sectors.any((sec) => ZoneService.sectorState(sec) == state)) {
+      await _fitBBox(metro, animated: animated);
+      return true;
+    }
+    await _fitSectors(sectors, animated: animated);
     return true;
   }
 
@@ -3125,11 +3150,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _fitSectors(List<Sector> sectors, {bool animated = true}) async {
-    final map = _map;
-    if (map == null || kIsWeb || !ZoneService.sectorsReady) return;
-    _pauseFollowForZoneFit();
+    if (!ZoneService.sectorsReady) return;
     final bbox = _sectorsBBox(sectors);
     if (bbox == null) return;
+    await _fitBBox(bbox, animated: animated);
+  }
+
+  /// Frame a [w, s, e, n] box north-up above the open sheet, follow off.
+  Future<void> _fitBBox(List<double> bbox, {bool animated = true}) async {
+    final map = _map;
+    if (map == null || kIsWeb) return;
+    _pauseFollowForZoneFit();
     final w = bbox[0], s = bbox[1], e = bbox[2], n = bbox[3];
     // Token anti-stale (user report 2026-10-16-noche: "cuando me pongo
     // online y me desconecto el boton de centrar no funciona despues"): el

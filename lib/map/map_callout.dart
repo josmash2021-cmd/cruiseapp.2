@@ -411,6 +411,81 @@ double? calloutNum(Object? v) {
   return null;
 }
 
+/// Marks an offer card opened from a trip callout (owner spec 2026-11-01:
+/// "debería mostrar la tarjeta con la ruta así como sale cuando llega una
+/// oferta"). The trip sits on the board — it is not ringing this driver and
+/// has no offer row: Accept claims it, the X only closes the card.
+const String kBoardTripKey = 'board_trip_id';
+
+/// A /dispatch/available row in the shape the offer card reads, or null when
+/// it lacks the coordinates the route needs (a server that predates
+/// dropoff_lat/lng). The id is a string, `board-<trip>`, so it can never
+/// collide with a real offer id nor reach the reject endpoint.
+Map<String, dynamic>? boardOfferFrom(Map<String, dynamic> t) {
+  final id = calloutNum(t['trip_id'])?.toInt();
+  final pLat = calloutNum(t['pickup_lat']);
+  final pLng = calloutNum(t['pickup_lng']);
+  final dLat = calloutNum(t['dropoff_lat']);
+  final dLng = calloutNum(t['dropoff_lng']);
+  if (id == null || pLat == null || pLng == null || dLat == null ||
+      dLng == null) {
+    return null;
+  }
+  final type = (t['vehicle_type'] ?? '').toString();
+  return {
+    'offer_id': 'board-$id',
+    kBoardTripKey: id,
+    'trip_id': id,
+    'pickup_address': t['pickup_address'],
+    'dropoff_address': t['dropoff_address'],
+    'pickup_lat': pLat,
+    'pickup_lng': pLng,
+    'dropoff_lat': dLat,
+    'dropoff_lng': dLng,
+    'fare': calloutNum(t['driver_earnings'] ?? t['fare']) ?? 0.0,
+    if (type.isNotEmpty) 'vehicle_type': type,
+    'rider_name': t['rider_name'],
+    'rider_rating': t['rider_rating'],
+    'rider_is_new': t['rider_is_new'] == true,
+    'rider_ratings_count': t['rider_rides_count'],
+  };
+}
+
+/// The online follow camera's working zoom while searching.
+const double kSearchFollowZoom = 15.5;
+
+/// Lowest zoom the board-trip reveal eases out to (callouts go compact
+/// below 10.6, so a farther trip still shows as its price).
+const double kBoardRevealMinZoom = 10.0;
+
+/// Pixels kept clear around a revealed pickup: the callout rises ~45 px
+/// above its point and the online chrome sits on the screen's edges.
+const double kBoardRevealMarginPx = 70.0;
+
+/// The follow zoom (arrow still centred) at which a pickup [farthestM]
+/// metres from the driver lands on screen — owner spec 2026-11-01: "cuando
+/// salen debe el mapa hacer smooth zoom out mostrándolo pero sin perder la
+/// ubicación de la flecha". The map is heading-up, so the pickup may sit in
+/// any direction: it must fit within the SHORTER half of [viewport]. Never
+/// zooms in past [kSearchFollowZoom]; never out past [kBoardRevealMinZoom].
+/// Mapbox zoom: the world is 512 px wide at zoom 0.
+double boardRevealZoom({
+  required double latDeg,
+  required double farthestM,
+  required Size viewport,
+}) {
+  final halfPx = math.min(viewport.width, viewport.height) / 2 -
+      kBoardRevealMarginPx;
+  if (farthestM <= 0 || halfPx <= 0) return kSearchFollowZoom;
+  final metresPerPx = farthestM / halfPx;
+  final z = math.log(40075016.686 *
+          math.cos(latDeg * math.pi / 180) /
+          (512 * metresPerPx)) /
+      math.ln2;
+  if (!z.isFinite) return kSearchFollowZoom;
+  return z.clamp(kBoardRevealMinZoom, kSearchFollowZoom).toDouble();
+}
+
 /// The driver's pay rounded to whole dollars: 9.5 → "$10", 10.49 → "$10".
 /// Null when the feed has no usable number.
 String? tripCalloutPrice(Object? fare) {

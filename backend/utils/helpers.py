@@ -308,6 +308,26 @@ SETTABLE_ACCOUNT_STATUSES = (
 )
 
 
+def synced_account_status(value: str | None) -> str | None:
+    """The account status a Firestore drivers/clients ``status`` may set, or
+    None to leave the column alone.
+
+    ``firestore_sync.write_approval`` mirrors the REVIEW decision (approved,
+    waitlist, pending, rejected) into that same Firestore field, and the
+    /auth sync copied it back verbatim into the account column. A driver
+    waitlisted and later approved kept "waitlist" there, and every GO came
+    back 403 (2026-11-01: Julio Morales, ten hours of refused heartbeats
+    while can-go-online said yes). Only real account states cross over.
+    """
+    v = (value or "").strip().lower()
+    return v if v in SETTABLE_ACCOUNT_STATUSES else None
+
+
+# A review word stranded in the account column by the sync above (or by an
+# older build of it). Approving a driver lifts it.
+STRANDED_REVIEW_STATUSES = ("waitlist", "pending", "rejected", "unwaitlist")
+
+
 def normalise_account_status(value: str | None) -> str | None:
     """Fold verification words into the account status they meant.
 

@@ -92,6 +92,14 @@ def _png_b64():
     return _b64.b64encode(_buf.getvalue()).decode()
 
 
+async def _settle_face_store():
+    """Auto-approve answers first and stores the selfie after (2026-11-01)."""
+    import asyncio as _asyncio
+    from routers import drivers as _drivers
+    if _drivers._face_check_stores:
+        await _asyncio.gather(*list(_drivers._face_check_stores))
+
+
 def _fake_storage(monkeypatch):
     monkeypatch.setattr(
         "routers.drivers.firestore_sync.upload_to_firebase_storage",
@@ -132,6 +140,7 @@ async def test_upload_without_flag_auto_approves(client, db, test_driver, monkey
     )
     assert res.status_code == 200, res.text
     assert res.json()["pending_review"] is False
+    await _settle_face_store()
 
     await db.refresh(driver)
     assert driver.last_face_verified_at is not None
@@ -484,6 +493,7 @@ async def test_new_selfie_replaces_the_older_ones(client, db, test_driver, monke
         res = await client.post("/drivers/face-check", headers=headers,
                                 json={"photo_b64": _png_b64()})
         assert res.status_code == 200, res.text
+        await _settle_face_store()
 
     docs = (await db.execute(select(Document).where(
         Document.user_id == driver.id,
@@ -522,3 +532,51 @@ async def test_replacing_a_document_photo_renews_its_date(db, test_driver):
     await db.refresh(doc)
     stamp = doc.created_at if doc.created_at.tzinfo else doc.created_at.replace(tzinfo=timezone.utc)
     assert (datetime.now(timezone.utc) - stamp).total_seconds() < 60
+
+
+async def test_auto_approve_answers_before_storage(client, db, test_driver, monkeypatch):
+    """Owner 2026-11-01: "después de tomarse la foto debe de conectarlo al
+    instante". The stamp lands and the answer goes out while the storage
+    round-trip is still running; the row follows when it finishes."""
+    import asyncio as _asyncio
+    import threading
+
+    gate = threading.Event()
+
+    def _slow_upload(data, path, content_type):
+        gate.wait(5)
+        return f"https://storage.test/{path}"
+    monkeypatch.setattr(
+        "routers.drivers.firestore_sync.upload_to_firebase_storage", _slow_upload)
+    driver, token = test_driver
+    res = await _asyncio.wait_for(client.post(
+        "/drivers/face-check",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+        json={"photo_b64": _png_b64()},
+    ), timeout=3)
+    assert res.status_code == 200, res.text
+    assert res.json()["pending_review"] is False
+    await db.refresh(driver)
+    assert driver.last_face_verified_at is not None, "stamped before storage"
+    gate.set()
+    await _settle_face_store()
+    doc = (await db.execute(select(Document).where(
+        Document.user_id == driver.id,
+        Document.doc_type == "selfie_check"))).scalar_one()
+    assert doc.status == "approved"
+
+
+async def test_failed_storage_keeps_the_stamp(client, db, test_driver, monkeypatch):
+    monkeypatch.setattr(
+        "routers.drivers.firestore_sync.upload_to_firebase_storage",
+        lambda data, path, content_type: None)
+    driver, token = test_driver
+    res = await client.post(
+        "/drivers/face-check",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+        json={"photo_b64": _png_b64()},
+    )
+    assert res.status_code == 200, res.text
+    await _settle_face_store()
+    await db.refresh(driver)
+    assert driver.last_face_verified_at is not None

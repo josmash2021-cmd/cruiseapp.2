@@ -37,7 +37,7 @@ from utils.helpers import (
     _user_dict, _trip_dict, _doc_dict, _vehicle_dict, _haversine, _resolve_rider_display, _safe_create_task,
     _abs_photo_url, user_lang, _driver_cancel_copy, rider_safe_cancel_reason,
     SETTABLE_ACCOUNT_STATUSES, ACTIVE_ACCOUNT_STATUSES, normalise_account_status,
-    _strip_accents,
+    STRANDED_REVIEW_STATUSES, _strip_accents,
 )
 from utils.ssn_encryption import is_ssn_provided, decrypt_ssn, get_ssn_masked, format_ssn_for_display
 from services.fcm_service import _send_fcm_push_async
@@ -1072,6 +1072,10 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
         user.is_verified = True
         user.verified_at = datetime.now(timezone.utc)
         user.verification_reason = None
+        # Same as /auth/dispatch-approve: a stranded waitlist word in the
+        # account column would keep refusing every GO.
+        if (user.status or "").lower() in STRANDED_REVIEW_STATUSES:
+            user.status = "active"
     else:
         user.verification_status = "rejected"
         user.is_verified = False

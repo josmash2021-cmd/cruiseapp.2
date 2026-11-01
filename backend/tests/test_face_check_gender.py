@@ -150,6 +150,8 @@ async def test_face_check_stores_and_stamps(client, db, test_driver, monkeypatch
         json={"photo_b64": png},
     )
     assert res.status_code == 200, res.text
+    from tests.test_face_check_review import _settle_face_store
+    await _settle_face_store()
     await db.refresh(driver)
     assert driver.last_face_verified_at is not None
     doc = (await db.execute(select(Document).where(

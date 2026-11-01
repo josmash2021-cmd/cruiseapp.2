@@ -27,7 +27,7 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _abs_photo_url, _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE, user_lang, ACTIVE_ACCOUNT_STATUSES
+from utils.helpers import _abs_photo_url, _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE, user_lang, ACTIVE_ACCOUNT_STATUSES, synced_account_status, STRANDED_REVIEW_STATUSES
 from utils.image_validation import validate_image_bytes, shrink_image_bytes
 from services import vehicle_tiers
 from services.fcm_service import _send_fcm_push_async
@@ -1668,8 +1668,8 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
     if _HAS_FIRESTORE:
         try:
             collection = "drivers" if user.role == "driver" else "clients"
-            fs_status = await asyncio.to_thread(
-                firestore_sync.get_account_status, user.id, collection)
+            fs_status = synced_account_status(await asyncio.to_thread(
+                firestore_sync.get_account_status, user.id, collection))
             if fs_status and fs_status != account_status:
                 await db.execute(
                     User.__table__.update().where(User.__table__.c.id == user.id).values(status=fs_status)
@@ -3442,6 +3442,10 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     db_user.verification_status = "approved"
     db_user.is_verified = True
     db_user.verified_at = datetime.now(timezone.utc)
+    # A waitlist that came before this approval left its word in the
+    # ACCOUNT column (synced_account_status) — approved must mean GO.
+    if (db_user.status or "").lower() in STRANDED_REVIEW_STATUSES:
+        db_user.status = "active"
     await db.commit()
     logging.info("[DISPATCH-APPROVE] SQLite updated for user %d: status=approved, is_verified=True", user_id)
 
@@ -3762,8 +3766,8 @@ async def account_status(user: User = Depends(_get_current_user), db: AsyncSessi
     if _HAS_FIRESTORE:
         try:
             collection = "drivers" if user.role == "driver" else "clients"
-            fs_status = await asyncio.to_thread(
-                firestore_sync.get_account_status, user.id, collection)
+            fs_status = synced_account_status(await asyncio.to_thread(
+                firestore_sync.get_account_status, user.id, collection))
             if fs_status and fs_status != current_status:
                 await db.execute(
                     User.__table__.update().where(User.__table__.c.id == user.id).values(status=fs_status)

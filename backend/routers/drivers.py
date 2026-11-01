@@ -3359,29 +3359,20 @@ async def driver_face_check(request: Request,
     if len(photo_b64) > 30_000_000:
         raise HTTPException(413, "Photo too large")
     import base64 as _b64
-    import time as _time
     try:
         decoded = _b64.b64decode(photo_b64, validate=True)
     except Exception:
         raise HTTPException(400, "Invalid photo data")
     validate_image_bytes(decoded)
-    from utils.image_validation import shrink_image_bytes
-    decoded = shrink_image_bytes(decoded)
-    # Unique per shot: two selfies in the same second used to share a name,
-    # and replacing the older one would have deleted the newer one's file.
-    fb_path = (f"drivers/{user.id}/face_check_"
-               f"{int(_time.time() * 1000)}_{secrets.token_hex(3)}.jpg")
-    # Off the event loop: upload + make_public are two blocking round-trips
-    # to Google, and inline they froze every other request on this worker
-    # while a driver sat on the "verifying" loader (2026-10-31).
-    fb_url = await asyncio.to_thread(
-        firestore_sync.upload_to_firebase_storage, decoded, fb_path, "image/jpeg")
-    if not fb_url:
-        raise HTTPException(503, "Document storage unavailable. Please try again later.")
     # Dispatch review (2026-10-23, owner spec): the selfie AUTO-APPROVES by
     # default; a driver dispatch rejected once is on manual review — their
     # selfie stays PENDING (no stamp, no connect) until dispatch approves.
+    # The pending ROW is what dispatch reviews, so it is stored before the
+    # answer.
     if user.face_review_required:
+        fb_url = await _upload_face_check(user.id, decoded)
+        if not fb_url:
+            raise HTTPException(503, "Document storage unavailable. Please try again later.")
         doc = Document(user_id=user.id, doc_type="selfie_check",
                        status="pending", file_path=fb_url)
         db.add(doc)
@@ -3390,17 +3381,61 @@ async def driver_face_check(request: Request,
         await db.commit()
         _delete_selfie_files(user.id, stale, keep=fb_url)
         return {"ok": True, "pending_review": True}
+    # Auto-approve answers on the stamp (owner 2026-11-01: "después de
+    # tomarse la foto debe de conectarlo al instante en 3 o 5 segundos"):
+    # the shrink + storage round-trip (1-6 s in the logs) runs after the
+    # answer, so the driver's GO never waits on Google.
     user.last_face_verified_at = utc_now()
-    # Informational row — dispatch sees the latest check in the person file.
-    doc = Document(user_id=user.id, doc_type="selfie_check",
-                   status="approved", file_path=fb_url)
-    db.add(doc)
-    await db.flush()
-    stale = await _drop_older_selfies(db, user.id, keep_id=doc.id)
     await db.commit()
-    _delete_selfie_files(user.id, stale, keep=fb_url)
+    task = asyncio.create_task(_store_face_check(user.id, decoded),
+                               name=f"face_check_store_{user.id}")
+    _face_check_stores.add(task)
+    task.add_done_callback(_face_check_stores.discard)
     return {"ok": True, "pending_review": False,
             "last_face_verified_at": user.last_face_verified_at.isoformat()}
+
+
+# Strong refs to the in-flight auto-approve stores (a bare create_task can be
+# collected mid-upload); tests await them.
+_face_check_stores: set = set()
+
+
+async def _upload_face_check(user_id: int, raw: bytes) -> Optional[str]:
+    """Shrink + upload one selfie, both off the event loop: the PIL decode of
+    a 4K still and the two blocking round-trips to Google froze every other
+    request on this worker while a driver sat on the loader (2026-10-31)."""
+    import time as _time
+    from utils.image_validation import shrink_image_bytes
+    data = await asyncio.to_thread(shrink_image_bytes, raw)
+    # Unique per shot: two selfies in the same second used to share a name,
+    # and replacing the older one would have deleted the newer one's file.
+    fb_path = (f"drivers/{user_id}/face_check_"
+               f"{int(_time.time() * 1000)}_{secrets.token_hex(3)}.jpg")
+    return await asyncio.to_thread(
+        firestore_sync.upload_to_firebase_storage, data, fb_path, "image/jpeg")
+
+
+async def _store_face_check(user_id: int, raw: bytes) -> None:
+    """The auto-approved selfie's record, after the answer: the informational
+    row dispatch sees in the person file, replacing the older ones. A failed
+    upload keeps the stamp (the driver is already connected) and is logged."""
+    try:
+        fb_url = await _upload_face_check(user_id, raw)
+        if not fb_url:
+            logging.warning("[FaceCheck] storage upload failed for driver %d — "
+                            "stamp kept, no photo on file", user_id)
+            return
+        async with SessionLocal() as db:
+            doc = Document(user_id=user_id, doc_type="selfie_check",
+                           status="approved", file_path=fb_url)
+            db.add(doc)
+            await db.flush()
+            stale = await _drop_older_selfies(db, user_id, keep_id=doc.id)
+            await db.commit()
+        _delete_selfie_files(user_id, stale, keep=fb_url)
+    except Exception:
+        logging.exception("[FaceCheck] storing the selfie failed for driver %d",
+                          user_id)
 
 
 async def _drop_older_selfies(db: AsyncSession, user_id: int, keep_id: int) -> list[str]:

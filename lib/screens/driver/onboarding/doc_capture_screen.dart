@@ -165,7 +165,7 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
             if (pdfPickSupported)
               ListTile(
                 leading: const Icon(
-                  Icons.picture_as_pdf_outlined,
+                  Icons.picture_as_pdf_rounded,
                   color: kOnboardingGold,
                 ),
                 title: Text(
@@ -315,7 +315,7 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const Icon(
-                              Icons.picture_as_pdf_outlined,
+                              Icons.picture_as_pdf_rounded,
                               color: kOnboardingGold,
                               size: 44,
                             ),

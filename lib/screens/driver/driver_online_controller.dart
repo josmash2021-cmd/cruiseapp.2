@@ -1112,7 +1112,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         GlassNotificationBanner.show(
           context: context,
           title: S.of(context).shiftEnded12h,
-          icon: Icons.bedtime_rounded,
+          icon: Icons.nightlight_round,
         );
       }
 
@@ -1345,7 +1345,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       GlassNotificationBanner.show(
         context: context,
         title: S.of(context).shiftEnded12h,
-        icon: Icons.bedtime_rounded,
+        icon: Icons.nightlight_round,
       );
     }());
   }
@@ -1492,7 +1492,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             : s.dispatchPresenceOfflineBody,
         icon: online
             ? Icons.wifi_tethering_rounded
-            : Icons.wifi_tethering_off_rounded,
+            : Icons.wifi_off_rounded,
       );
     });
   }

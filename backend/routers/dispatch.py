@@ -2429,6 +2429,10 @@ async def list_available_trips(driver_id: int = Query(...), user: User = Depends
             # Map callouts at each pickup ("$10 Cruise · 9 min away").
             "pickup_lat": float(t.pickup_lat) if t.pickup_lat is not None else None,
             "pickup_lng": float(t.pickup_lng) if t.pickup_lng is not None else None,
+            # A tapped callout opens the trip as an offer card with its route
+            # drawn (owner spec 2026-11-01) — the route needs the far end.
+            "dropoff_lat": float(t.dropoff_lat) if t.dropoff_lat is not None else None,
+            "dropoff_lng": float(t.dropoff_lng) if t.dropoff_lng is not None else None,
             "rider_name": rname,
             "rider_rating": rrate,
             "rider_rides_count": max(0, rrides - 1),

@@ -65,6 +65,9 @@ async def test_available_lists_passed_trip_with_offer(client, db, test_rider, te
     # Coordinates for the map callout at the pickup, minutes to get there.
     assert isinstance(trips[0]["pickup_lat"], float)
     assert isinstance(trips[0]["pickup_lng"], float)
+    # The far end too: a tapped callout draws the route like an offer.
+    assert trips[0]["dropoff_lat"] == 25.75
+    assert trips[0]["dropoff_lng"] == -80.20
     assert trips[0]["pickup_eta_min"] >= 1
 
 

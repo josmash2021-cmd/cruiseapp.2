@@ -1108,17 +1108,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         await _exitOnlineMode();
         if (!mounted) return;
         _setRestUntil(DateTime.now().add(const Duration(hours: 6)));
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            S.of(context).shiftEnded12h,
-            style: const TextStyle(
-                color: Colors.black, fontWeight: FontWeight.w600),
-          ),
-          backgroundColor: const Color(0xFFE8C547),
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ));
+        // Glass banner at the top (owner spec 2026-11-01).
+        GlassNotificationBanner.show(
+          context: context,
+          title: S.of(context).shiftEnded12h,
+          icon: Icons.bedtime_rounded,
+        );
       }
 
       if (now.difference(_dailyShiftStart(started, now)) >=
@@ -1346,16 +1341,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (_restUntil == null && !_serverRestResponseKnown) {
         _setRestUntil(DateTime.now().add(const Duration(hours: 6)));
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-          S.of(context).shiftEnded12h,
-          style:
-              const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
-        ),
-        backgroundColor: const Color(0xFFE8C547),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
+      // Glass banner at the top (owner spec 2026-11-01).
+      GlassNotificationBanner.show(
+        context: context,
+        title: S.of(context).shiftEnded12h,
+        icon: Icons.bedtime_rounded,
+      );
     }());
   }
 
@@ -1449,10 +1440,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         action();
       } else {
         // Selfie under review: the GO button is dead, so is this.
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
-          content: Text(S.of(context).faceReviewPending),
-          duration: const Duration(seconds: 3),
-        ));
+        GlassNotificationBanner.show(
+          context: context,
+          title: S.of(context).faceReviewPending,
+          icon: Icons.hourglass_top_rounded,
+        );
       }
       return;
     }
@@ -1487,33 +1479,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Owner copy 2026-10-29 — never mentions Dispatch: "Has sido
     // desconectado / No estás recibiendo viajes" and "Estás conectado /
     // Disponible para recibir viajes".
-    // After the pop settles, so it lands on this screen's Scaffold.
+    // The glass banner at the top (owner spec 2026-11-01), after the pop
+    // settles so it lands over this screen, not over a closing sheet.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.maybeOf(context);
-      if (messenger == null) return;
       final s = S.of(context);
-      messenger.showSnackBar(SnackBar(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              online ? s.dispatchPresenceOnline : s.dispatchPresenceOffline,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              online
-                  ? s.dispatchPresenceOnlineBody
-                  : s.dispatchPresenceOfflineBody,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ));
+      GlassNotificationBanner.show(
+        context: context,
+        title: online ? s.dispatchPresenceOnline : s.dispatchPresenceOffline,
+        body: online
+            ? s.dispatchPresenceOnlineBody
+            : s.dispatchPresenceOfflineBody,
+        icon: online
+            ? Icons.wifi_tethering_rounded
+            : Icons.wifi_tethering_off_rounded,
+      );
     });
   }
 
@@ -1960,7 +1940,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           }
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
-          _smoothMoveTo(snappedLL, _roadLockBearing ?? _smoothedBearing,
+          // Bearing: ONLY the road lock's, never `_smoothedBearing` (owner
+          // report 2026-11-01, "la cámara gira por pasos"). The heading
+          // stream delivers this fix's course a microtask LATER, so
+          // `_smoothedBearing` here is still the PREVIOUS fix's course —
+          // and SmoothMotion read that stale repeat as "the turn stopped"
+          // and cut its turn rate to 10–30 % on every fix. The arrow (and
+          // the heading-up camera) then turned in bursts and paused until
+          // the next fix. Off the road lock the course arrives once, via
+          // _startHeadingSource.
+          _smoothMoveTo(snappedLL, _roadLockBearing,
               accuracyM: pos.accuracy,
               timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
               // Measured only: Android sends 0 when it has no Doppler, and
@@ -1985,7 +1974,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // Phase-specific nav stats (camera handled by _onDriverAnimTick)
         if (_phase == _Phase.routeSummary) {
           final dist = _hav(newLL, _dropoffLL);
-          final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
+          final eta = (dist * 1000 / 17.88 / 60).ceil();
           _navDist = dist;
           _navEta = eta;
           final now = DateTime.now();
@@ -1996,7 +1985,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         } else if (_phase == _Phase.enRouteToPickup) {
           _updateNavState(newLL);
           final dist = _hav(newLL, _pickupLL);
-          final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
+          final eta = (dist * 1000 / 17.88 / 60).ceil();
           final progress = _distToPickup > 0
               ? (1.0 - dist / _distToPickup).clamp(0.0, 1.0)
               : 0.0;
@@ -2014,7 +2003,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         } else if (_phase == _Phase.inTrip) {
           _updateNavState(newLL);
           final dist = _hav(newLL, _dropoffLL);
-          final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
+          final eta = (dist * 1000 / 17.88 / 60).ceil();
           final progress =
               _tripDist > 0 ? (1.0 - dist / _tripDist).clamp(0.0, 1.0) : 0.0;
           _navDist = dist;
@@ -2314,7 +2303,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
-  void _smoothMoveTo(LatLng target, double heading,
+  void _smoothMoveTo(LatLng target, double? heading,
       {double? accuracyM, double? timestampMs, double? speedMps}) {
     // accuracyM sizes the standstill jitter hold — see SmoothMotion. Without
     // it the hold falls back to a flat 15 m, which is wider than a road, and
@@ -2502,8 +2491,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // reporta que ni la posición ni el rumbo cambiaron este frame.
     // Excepción: el ease de zoom de entrada (solo fase searching) necesita
     // sus frames aunque el carro esté quieto.
-    final needsFrames =
-        frameMoved || (_phase == _Phase.searching && !_zoomEaseDone);
+    // …and the camera bearing spring: the car can stop with the map still
+    // turning toward the arrow, and that turn must finish, not freeze.
+    final needsFrames = frameMoved ||
+        (_phase == _Phase.searching && !_zoomEaseDone) ||
+        (_phase == _Phase.searching &&
+            _cameraFollowing &&
+            !_searchCamSpring.isSettled(_heading));
     if (!needsFrames) {
       // Los paneles siguen actualizando su reloj a ritmo bajo.
       final nowMs0 = DateTime.now().millisecondsSinceEpoch;
@@ -2542,7 +2536,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // in the arrow (compass EMA, adaptive turn blend, SmoothMotion's
       // turn-rate glide between 1 Hz fixes), so whatever the arrow does is
       // what the map shows — fluid and in real time at every speed, with no
-      // second filter to step, lag or fight it.
+      // second filter to step, lag or fight it. [Superseded 2026-11-01:
+      // copied per frame, the arrow's 1 Hz rhythm turned the map in steps.]
       //
       // 2026-10-16-noche (decisión final del usuario): la variante "congelar
       // la cámara parado" murió — el usuario quiere heading-up SIEMPRE
@@ -2555,7 +2550,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // girar el teléfono ya NO gira la flecha ni la cámara. La brújula está
       // apagada en este mapa (`HeadingService(useCompass: false)`); el rumbo
       // sale solo del recorrido real del carro y, parado, se mantiene.
-      final camBearing = _heading;
+      // 2026-11-01 ("gira por pasos"): still ONE source, on a damped spring
+      // (rule #35) — see _kSearchCamBearingOmega. Seeded from the real map.
+      final camBearing = _searchCamSpring.step(_heading, dtSec,
+          seed: _onlineCamState?.bearing);
       final lastWrittenB = _lastCamWriteBearing;
       // A parked car on a frozen bearing produces the IDENTICAL camera
       // every frame — skip ONLY the write (never the rest of the tick: the
@@ -2606,6 +2604,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           padding: _kZeroCamPadding,
         ),
       );
+    }
+    if (!(_phase == _Phase.searching && !offerActive && _cameraFollowing)) {
+      // The chase is not writing (finger on the map, offer preview, another
+      // phase): the next chase frame re-seeds from the real camera.
+      _searchCamSpring.reset();
     }
 
     // Repaint the Flutter marker with this frame. Cheap, and the only thing
@@ -4138,7 +4141,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // abort the accept two lines later instead of just looking wrong.
       double finite(double v) => v.isFinite ? v : 0.0;
       _distToPickup = _pos != null ? finite(_hav(_pos!, _pickupLL)) : 0.0;
-      _etaToPickup = (_distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      _etaToPickup = offerLegMinutes(km: _distToPickup); // uncapped (was 1..99)
       // Booking-time stop: rides into the trip screen handoff, and the
       // straight-line trip estimate runs both legs — pickup→dropoff alone
       // would under-quote the detour on the trip card.
@@ -4148,7 +4151,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _tripDist = _stopLL == null
           ? finite(_hav(_pickupLL, _dropoffLL))
           : finite(_hav(_pickupLL, _stopLL!) + _hav(_stopLL!, _dropoffLL));
-      _tripEta = (_tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      _tripEta = offerLegMinutes(km: _tripDist);
 
       // ── Extract cached route BEFORE clearing cache ──
       final cachedRouteData = _routeCache[oid];
@@ -4820,7 +4823,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (notify && mounted) _snack(S.of(context).tripReturnedToDispatch);
   }
 
-  Future<void> _rejectOffer(Map<String, dynamic> r) async {
+  /// [byDriver]: the driver's own decline (the X), not the countdown running
+  /// out — only that one gets the "You declined a ride request" banner.
+  Future<void> _rejectOffer(Map<String, dynamic> r,
+      {bool byDriver = false}) async {
     int? toInt(dynamic v) {
       if (v == null) return null;
       if (v is int) return v;
@@ -4864,6 +4870,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // The island mirrors _pendingOffers — without this the rejected offer
       // stays on the lock screen until the 5s clock backstop catches it.
       _syncOfferLiveActivity();
+      // Owner spec 2026-11-01: the card leaves and the glass note comes in
+      // from the top, 5 s.
+      if (byDriver && mounted) {
+        GlassNotificationBanner.show(
+          title: S.of(context).offerDeclinedBanner,
+          icon: Icons.block_rounded,
+          duration: kDeclinedOfferBannerDuration,
+        );
+      }
       // Guard: don't reset a disposed controller (can throw)
       if (_rejectSlideCtrl != null &&
           (_rejectSlideCtrl!.isAnimating || _rejectSlideCtrl!.isCompleted)) {

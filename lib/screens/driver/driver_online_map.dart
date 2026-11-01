@@ -387,13 +387,25 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _roadSnap.reset();
       }
     }
+    // Searching (owner report 2026-11-01, "al hacer zoom la flecha queda
+    // fuera de las líneas"): the matched line is the trace of PAST fixes,
+    // so a moving car is always beyond its end and was never snapped — the
+    // arrow showed the raw GPS error, ~10 m, which is 7 px at zoom 15.5 and
+    // 38 px at zoom 18. The fix now rides the line's straight continuation
+    // while it stays within 15–20 m of it and along the car's own course;
+    // SmoothMotion glides between those targets, so the drawn arrow sits on
+    // the street. Only the position is corrected there — the heading stays
+    // the car's course (a turn begun past the line must turn the arrow).
     final result = _roadLock.project(
       pts,
       raw,
       requireConfidence: !onRoute,
       speedMps: _motion.speedMps,
+      extendPastEnd: !onRoute,
+      headingDeg: _motion.hasPosition ? _motion.bearing : null,
     );
-    _roadLockBearing = result.trusted ? result.bearing : null;
+    _roadLockBearing =
+        result.trusted && !result.extended ? result.bearing : null;
     return driverDisplayPosition(result, raw);
   }
 
@@ -2043,6 +2055,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // flight (_isCardAnimating), where events trail the flyTo.
     _markerFrame.value++;
     _updateDriverAnnotation();
+    // The finger owns the camera now: the chase's bearing spring re-seeds
+    // from wherever the camera is when follow resumes.
+    _searchCamSpring.reset();
     if (!_cameraFollowing) return; // already paused
     _setState(() => _cameraFollowing = false);
   }
@@ -3376,16 +3391,22 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     );
   }
 
-  /// Gold airport pills for the driver's working state (2026-10-22, owner
-  /// spec: "solo los grandes", VISUAL ONLY — IgnorePointer, no tap): same
-  /// flat-projection zero-IPC pipeline as the zone pills, in BOTH searching
-  /// views (offline zone map and online "Finding trips"). Hidden beyond
-  /// zoom 8.5 (map clutter) and during navigation phases.
+  /// Airport callouts for the driver's working state: originally gold pills
+  /// (2026-10-22, owner spec: "solo los grandes", VISUAL ONLY — IgnorePointer,
+  /// no tap), restyled 2026-11-01 as Lyft's airport callout — the same black
+  /// bubble as the trip callouts (driver_online_callouts.dart): gold plane +
+  /// code + "1-5 Drivers", expanded zoomed in, compact (plane + code)
+  /// zoomed out, the tail tip on the airport. Same flat-projection zero-IPC
+  /// pipeline as the zone pills, in BOTH searching views (offline zone map
+  /// and online "Finding trips"). Hidden below zoom 8.5 (map clutter) and
+  /// during navigation phases.
   Widget _airportPillOverlay() {
     if (kIsWeb) return const SizedBox.shrink();
     return ListenableBuilder(
-      listenable: _markerFrame,
-      builder: (_, __) {
+      // The count arriving (or the hour turning) redraws without a camera
+      // frame.
+      listenable: Listenable.merge([_markerFrame, _mapCallouts.airportTick]),
+      builder: (context, __) {
         if (_phase != _Phase.searching) return const SizedBox.shrink();
         // Misma regla que las etiquetas de zona: nunca sobre el velo/negro
         // de un remount.
@@ -3400,9 +3421,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         final airports = airportsForState(_driveStateCode ??
             (p == null ? null : ZoneService.stateOfPoint(p)));
         if (airports.isEmpty) return const SizedBox.shrink();
+        final expanded = _calloutsExpandedAt(cam.zoom);
+        final s = S.of(context);
         final c = cam.center.coordinates;
         final camCenter = LatLng(c.lat.toDouble(), c.lng.toDouble());
         final children = <Widget>[];
+        final drawn = <UsAirportGeo>[];
         for (final a in airports) {
           final off = FlatMapProjection.screenOffsetHeading(
             target: LatLng(a.lat, a.lng),
@@ -3414,49 +3438,30 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           );
           if (off == null) continue;
           final shifted = off + _camPadShift(cam);
-          if (!FlatMapProjection.isOnScreen(shifted, size)) continue;
+          if (!FlatMapProjection.isOnScreen(shifted, size,
+              margin: _kCalloutCullMargin)) {
+            continue;
+          }
+          drawn.add(a);
           children.add(Positioned(
+            key: ValueKey('airport-callout-${a.code}'),
             left: shifted.dx,
             top: shifted.dy,
             child: IgnorePointer(
-              child: FractionalTranslation(
-                translation: const Offset(-0.5, -0.5),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF14141A),
-                    borderRadius: BorderRadius.circular(20),
-                    border:
-                        Border.all(color: const Color(0xFFE8C547), width: 1.2),
-                    boxShadow: const [
-                      BoxShadow(color: Colors.black54, blurRadius: 6),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.flight_rounded,
-                          color: Color(0xFFE8C547), size: 14),
-                      const SizedBox(width: 4),
-                      Text(
-                        a.code,
-                        style: const TextStyle(
-                          color: Color(0xFFE8C547),
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              child: MapCalloutBubble(
+                variant: CalloutVariant.airport,
+                title: a.code,
+                subtitle: _airportDriversLine(s, a.code),
+                expanded: expanded,
               ),
             ),
           ));
         }
+        // The driver count is fetched only while a callout is on screen —
+        // once, then once per local hour.
+        _maybeFetchAirportCounts(drawn);
         if (children.isEmpty) return const SizedBox.shrink();
-        return Stack(children: children);
+        return Stack(clipBehavior: Clip.none, children: children);
       },
     );
   }

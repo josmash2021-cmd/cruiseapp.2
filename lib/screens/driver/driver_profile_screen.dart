@@ -428,10 +428,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                                 ClipboardData(text: _dispatchPassword!),
                               );
                               HapticService.lightImpact();
+                              // Never "dispatch" in user-facing copy (rule #45).
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
+                                SnackBar(
                                   content: Text(
-                                    'Dispatch password copied (clipboard clears in 30s)',
+                                    S.of(context).passwordCopiedClears,
                                   ),
                                 ),
                               );

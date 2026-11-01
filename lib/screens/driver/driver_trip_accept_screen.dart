@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import '../../widgets/neu_style.dart';
+import '../../widgets/glass_notification_banner.dart';
 import 'driver_earnings_screen.dart';
 import 'driver_menu_screen.dart';
 import 'dart:math' as math;
@@ -61,6 +62,7 @@ import '../../utils/name_helper.dart' as nh;
 import '../../widgets/offer_countdown_ring.dart';
 import '../../services/firebase_auth_recovery.dart';
 import '../../utils/fix_kinematics.dart';
+import '../../utils/offer_metrics.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER TRIP ACCEPT SCREEN  — DoorDash-style trip details sheet
@@ -270,7 +272,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   LatLng? _stopLatLng;
   String _stopLabel = '';
   LatLng? _dropoffOverride;
-  Timer? _routeBannerTimer;
   bool _proposalDeclineShown = false;
   mapbox.PointAnnotation? _stopPinAnnot;
 
@@ -420,7 +421,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         math.sin(dLng / 2) * math.sin(dLng / 2);
     return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
   }
-  int get _tripEta => (_tripKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+  int get _tripEta => offerLegMinutes(km: _tripKm);
 
   void _enforceDriverRole() {
     UserSession.getMode().then((mode) {
@@ -553,10 +554,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final fare = (offer['driver_earnings'] as num?)?.toDouble() ??
         (offer['fare'] as num?)?.toDouble() ??
         0.0;
-    final riderName =
-        (offer['rider_name'] as String?)?.trim().isNotEmpty == true
-            ? (offer['rider_name'] as String).trim()
-            : s.riderFallback;
+    // An offer, not yet accepted: "Lisbeth T." (owner spec 2026-11-01).
+    final shortRider = nh.shortName((offer['rider_name'] as String?) ?? '');
+    final riderName = shortRider.isNotEmpty ? shortRider : s.riderFallback;
     final pickup = (offer['pickup_address'] as String?) ?? '';
     final offerId = (offer['offer_id'] as num?)?.toInt() ?? 0;
     return Container(
@@ -1253,7 +1253,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _slideCtrl.dispose();
     _tiltCtrl.dispose();
     _confirmBannerTimer?.cancel();
-    _routeBannerTimer?.cancel();
     _pinCtrl.dispose();
     _pinFocusNode.dispose();
     _pinShakeCtrl.dispose();
@@ -1697,21 +1696,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         _tripFinished = true;
         _riderConfirmSub?.cancel();
 
-        // Show specific message for passenger no-show
+        // Show specific message for passenger no-show — the glass banner
+        // at the top (owner spec 2026-11-01); it rides the root overlay, so
+        // it stays up across the exit to the online screen.
         if (isWaitTimeout && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Pasajero no apareció — Viaje cancelado por no-show.\n'
-                'Passenger no-show — Trip auto-cancelled.',
-                style: TextStyle(fontSize: 14),
-              ),
-              backgroundColor: const Color(0xFFEF4444),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              duration: const Duration(seconds: 5),
-              margin: const EdgeInsets.all(16),
-            ),
+          GlassNotificationBanner.show(
+            context: context,
+            title: S.of(context).tripCancelled,
+            body: S.of(context).riderNoShowCancelledBody,
+            icon: Icons.person_off_rounded,
           );
           // Delay to let driver read the message
           await Future.delayed(const Duration(seconds: 3));
@@ -1746,9 +1739,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           (prc['status'] ?? '') == 'declined' &&
           !_proposalDeclineShown) {
         _proposalDeclineShown = true;
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
-            content: Text(S.of(context).riderDeclinedProposal),
-            behavior: SnackBarBehavior.floating));
+        GlassNotificationBanner.show(
+          context: context,
+          title: S.of(context).riderDeclinedProposal,
+          icon: Icons.alt_route_rounded,
+        );
         unawaited(_writeTripDoc(
             {'pending_route_change': FieldValue.delete()},
             'clear declined proposal'));
@@ -1809,21 +1804,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           _statusPollTimer?.cancel();
           _riderConfirmSub?.cancel();
 
-          // Show specific message for passenger no-show
+          // Show specific message for passenger no-show (glass banner, as
+          // in the Firestore path above).
           if (isWaitTimeout && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text(
-                  'Pasajero no apareció — Viaje cancelado por no-show.\n'
-                  'Passenger no-show — Trip auto-cancelled.',
-                  style: TextStyle(fontSize: 14),
-                ),
-                backgroundColor: const Color(0xFFEF4444),
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                duration: const Duration(seconds: 5),
-                margin: const EdgeInsets.all(16),
-              ),
+            GlassNotificationBanner.show(
+              context: context,
+              title: S.of(context).tripCancelled,
+              body: S.of(context).riderNoShowCancelledBody,
+              icon: Icons.person_off_rounded,
             );
             await Future.delayed(const Duration(seconds: 3));
           }
@@ -2158,48 +2146,16 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
   }
 
-  /// Top in-app notification — slides in, auto-hides after 6 s.
+  /// Top in-app notification — the shared glass banner (owner spec
+  /// 2026-11-01): slides in, leaves on its own after 7 s or on a swipe up.
   void _showRouteChangeBanner(String title, String body) {
     HapticService.heavyImpact();
-    final sm = ScaffoldMessenger.maybeOf(context);
-    if (sm == null) return;
-    sm.clearMaterialBanners();
-    sm.showMaterialBanner(MaterialBanner(
-      backgroundColor: const Color(0xFF1C1C24),
-      dividerColor: Colors.transparent,
-      leading: Icon(Icons.add_location_alt_rounded, color: _gold, size: 24),
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15)),
-          if (body.isNotEmpty)
-            Text(body,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.65),
-                    fontSize: 12.5)),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => sm.clearMaterialBanners(),
-          child: Text('OK',
-              style:
-                  TextStyle(color: _gold, fontWeight: FontWeight.w800)),
-        ),
-      ],
-    ));
-    _routeBannerTimer?.cancel();
-    _routeBannerTimer = Timer(const Duration(seconds: 6), () {
-      try {
-        sm.clearMaterialBanners();
-      } catch (_) {}
-    });
+    GlassNotificationBanner.show(
+      context: context,
+      title: title,
+      body: body,
+      icon: Icons.add_location_alt_rounded,
+    );
   }
 
   /// Drops the stop pin once the mini map's pins exist — shared by the

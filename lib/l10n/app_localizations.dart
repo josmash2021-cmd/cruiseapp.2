@@ -2745,6 +2745,16 @@ class S {
   String get grabTrip => _es ? 'Aceptar viaje' : 'Accept trip';
   String get tripsNearYou => _es ? 'cerca de ti' : 'near you';
 
+  /// Second line of the map callout on an unclaimed trip's pickup
+  /// (owner spec 2026-11-01, Lyft's "9 min away").
+  String tripCalloutMinAway(int m) => _es ? 'a $m min' : '$m min away';
+
+  /// Second line of the airport map callout: how many other drivers are
+  /// near it, as the owner's bucket ("1-5", "30+"…) — "1-5 Drivers" /
+  /// "1-5 conductores".
+  String airportDriversLabel(String range) =>
+      _es ? '$range conductores' : '$range Drivers';
+
   // ── Trip Complete / Nav UI ─────────────────────────────────────────────────
   String get tripComplete => _es ? 'Viaje completo' : 'Trip Complete';
   String get fareEarned => _es ? 'Tarifa ganada' : 'Fare earned';
@@ -3631,6 +3641,9 @@ class S {
   String get goOnlineDisabledBody => _es
       ? 'No puedes conectarte en este momento. Contacta soporte si crees que es un error.'
       : 'You can\'t go online right now. Contact support if you think this is a mistake.';
+  String get offerDeclinedBanner => _es
+      ? 'Rechazaste una solicitud de viaje'
+      : 'You declined a ride request';
   String get goOnlineEnabledBody =>
       _es ? 'Ya puedes conectarte de nuevo' : 'You can go online again';
   String get faceReviewPending =>
@@ -4653,6 +4666,14 @@ class S {
 
   // ── Driver Online / Offers ──
   String get newRideOffer => _es ? 'Nueva oferta de viaje' : 'New Ride Offer';
+  // Glass in-app banners (owner spec 2026-11-01) — copy that used to be
+  // hard-coded bilingual SnackBars.
+  String get riderNoShowCancelledBody => _es
+      ? 'El pasajero no apareció — viaje cancelado por no-show.'
+      : 'The rider did not show up — trip cancelled as a no-show.';
+  String get riderMissedPickupBody => _es
+      ? 'No llegaste al punto de recogida a tiempo.'
+      : "You didn't reach the pickup point in time.";
   String get riderNotConfirmedStarting => _es
       ? 'El rider no ha confirmado, comenzando viaje...'
       : 'Rider has not confirmed, starting trip...';
@@ -4756,6 +4777,9 @@ class S {
   String get deleteBtn => _es ? 'Eliminar' : 'Delete';
 
   // ── Referral Screen ──
+  String get passwordCopiedClears => _es
+      ? 'Contraseña copiada (se borra del portapapeles en 30 s)'
+      : 'Password copied (clipboard clears in 30s)';
   String get codeCopied =>
       _es ? '¡Código copiado!' : 'Code copied to clipboard!';
   String get shareWithFriends =>

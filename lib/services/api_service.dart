@@ -3898,6 +3898,42 @@ class ApiService {
     return [];
   }
 
+  /// How many OTHER drivers are online near each airport the driver's map
+  /// is showing (owner spec 2026-11-01, the airport callout's "1-5 Drivers").
+  /// [airports] = [{code, lat, lng}], the app's own list
+  /// (lib/data/us_airports_geo.dart). Returns {code: count}, or null when the
+  /// call failed — the callout then simply keeps no second line.
+  static Future<Map<String, int>?> getAirportDriverCounts(
+    List<Map<String, Object>> airports,
+  ) async {
+    if (airports.isEmpty) return const {};
+    try {
+      final h = await _authHeaders();
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/drivers/airport-presence'),
+            headers: h,
+            body: jsonEncode({'airports': airports}),
+          )
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        _signal401(res);
+        return null;
+      }
+      final body = jsonDecode(res.body);
+      final raw = body is Map ? body['counts'] : null;
+      if (raw is! Map) return null;
+      final out = <String, int>{};
+      raw.forEach((k, v) {
+        if (k is String && v is num && v.isFinite) out[k] = v.toInt();
+      });
+      return out;
+    } catch (e) {
+      debugPrint('[ApiService] airport presence failed: $e');
+      return null;
+    }
+  }
+
   /// Grab an unclaimed trip off the board. The backend resolves the race
   /// atomically: 200 = yours, 409 = another driver took it first
   /// ("Ya este viaje no está disponible").

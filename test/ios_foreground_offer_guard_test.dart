@@ -28,10 +28,21 @@ void main() {
         reason: 'the decision reads the FCM data type');
   });
 
-  test('everything else keeps the banner in foreground', () {
+  // Owner spec 2026-11-01: every other FCM push in foreground is drawn by
+  // Flutter as the glass banner (GlassNotificationBanner) — the system
+  // banner would double it, so FCM keeps only sound + badge there.
+  test('FCM pushes in foreground: sound + badge, Flutter draws the banner',
+      () {
+    final gcm = swift.indexOf('userInfo["gcm.message_id"] != nil');
+    expect(gcm, isNonNegative);
+    expect(swift.indexOf('completionHandler([.sound, .badge])', gcm),
+        greaterThan(gcm));
+  });
+
+  test('local notifications keep the system banner in foreground', () {
     expect(swift.contains('completionHandler([.banner, .sound, .badge])'),
         isTrue,
-        reason: 'non-offer notifications keep the historical foreground '
-            'banner — only the offer was reported');
+        reason: 'scheduled reminders never reach onMessage — they keep the '
+            'historical foreground banner');
   });
 }

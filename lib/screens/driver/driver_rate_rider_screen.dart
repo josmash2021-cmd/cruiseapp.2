@@ -16,6 +16,7 @@ import 'driver_online_screen.dart';
 import 'driver_trip_accept_screen.dart';
 import '../../utils/responsive.dart';
 import '../../utils/trip_stops.dart';
+import '../../utils/offer_metrics.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER RATE RIDER SCREEN — Post-trip feedback
@@ -216,7 +217,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
         ? LatLng(widget.dropoffLat!, widget.dropoffLng!)
         : pickup;
     final distKm = _havKm(driverPos, pickup);
-    final eta = (distKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+    final eta = offerLegMinutes(km: distKm);
 
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(

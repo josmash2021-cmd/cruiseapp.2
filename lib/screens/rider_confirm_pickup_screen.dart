@@ -25,6 +25,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../utils/route_splice.dart';
 import '../utils/smooth_motion.dart';
 import '../widgets/neu_style.dart';
+import '../widgets/glass_notification_banner.dart';
 import '../widgets/static_route_preview.dart';
 import '../widgets/verified_avatar.dart';
 import '../l10n/app_localizations.dart';
@@ -640,21 +641,15 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
 
     if (!mounted) return;
 
-    // Show appropriate message based on cancel reason
-    final message = isWaitTimeout
-        ? 'Viaje cancelado: no te presentaste al pickup a tiempo.\nTrip cancelled: you did not arrive at pickup on time.'
-        : 'Viaje cancelado.\nTrip cancelled.';
-
-    // Show toast/snackbar before navigating
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isWaitTimeout ? _red : Colors.black87,
-        duration: const Duration(seconds: 4),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
-      ),
+    // The glass banner at the top (owner spec 2026-11-01), before
+    // navigating — it rides the root overlay, so it stays up on the screen
+    // the rider lands on.
+    final s = S.of(context);
+    GlassNotificationBanner.show(
+      context: context,
+      title: s.tripCancelled,
+      body: isWaitTimeout ? s.riderMissedPickupBody : null,
+      icon: Icons.close_rounded,
     );
 
     // Delay to let user read the message, then call onCancelled or pop

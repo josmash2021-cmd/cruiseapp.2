@@ -107,8 +107,11 @@ void main() {
     // Outside build: maybeOf only.
     final pop = body(ctrl, 'void _popToDriverHome() {', 600);
     expect(pop, contains('Navigator.maybeOf(context)'));
-    final notice = body(ctrl, 'void _showDispatchPresenceNotice(', 700);
-    expect(notice, contains('ScaffoldMessenger.maybeOf(context)'));
+    // The notice is the glass banner on the root overlay (owner spec
+    // 2026-11-01) — no ScaffoldMessenger lookup at all.
+    final notice = body(ctrl, 'void _showDispatchPresenceNotice(', 900);
+    expect(notice, contains('GlassNotificationBanner.show('));
+    expect(notice, isNot(contains('ScaffoldMessenger.of(context)')));
   });
 
   test('copy exists in both languages', () {

@@ -1,0 +1,245 @@
+part of 'driver_online_screen.dart';
+
+// ══════════════════════════════════════════════════════════════
+//  MAP CALLOUTS — Lyft-style bubbles (owner spec 2026-11-01)
+//
+//  • Trips: one on the pickup of every unclaimed trip ("$10 CRUISE" /
+//    "9 min away"); tap → the marketplace claim card opens on that trip.
+//  • Airports: the existing airport markers wear the same bubble
+//    ("BHM" / "1-5 Drivers"), visual only.
+//
+//  Both are FLUTTER overlays glued per camera frame with FlatMapProjection
+//  (the same zero-IPC pipeline as the zone labels) — not Mapbox
+//  annotations: a PNG annotation cannot morph between expanded and
+//  compact without re-uploading an image every frame (rule #25), and an
+//  overlay holds no native handle that could outlive the surface (the
+//  stale-handle hijack). Label, geometry and morph live, pure and tested,
+//  in lib/map/map_callout.dart; the bubble in
+//  lib/widgets/map/map_callout_bubble.dart.
+// ══════════════════════════════════════════════════════════════
+
+/// Everything the callouts keep between frames — one field on the State.
+class _MapCalloutState {
+  // Trip callouts, memoised on the feed list they were built from: the
+  // camera rebuilds the overlay every frame, the list only when the feed
+  // (or the language) changed, and an equal poll keeps the old list.
+  List<Map<String, dynamic>>? tripSource;
+  int tripSourceLength = -1;
+  String? tripLang;
+  List<TripCallout> trips = const [];
+
+  /// The zoom hysteresis, shared by trips and airports so both flip on the
+  /// same frame.
+  bool expanded = true;
+
+  // Airport driver counts: fetched once when a callout first needs one,
+  // then again only in a new local hour (owner: the label changes at most
+  // once per hour).
+  final AirportDriverCounts airportCounts = AirportDriverCounts();
+  final ValueNotifier<int> airportTick = ValueNotifier<int>(0);
+  bool airportFetchInFlight = false;
+  DateTime? airportRetryAt;
+  Timer? airportHourTimer;
+
+  void dispose() {
+    airportHourTimer?.cancel();
+    airportHourTimer = null;
+    airportTick.dispose();
+  }
+}
+
+/// Room around the viewport a callout's point may sit in and still be
+/// drawn — the bubble rises ~70 px above its point and spreads ~100 px.
+const double _kCalloutCullMargin = 160.0;
+
+/// After a failed count fetch, wait this long before asking again (never a
+/// tight retry loop against a backend that is down).
+const Duration _kAirportCountRetry = Duration(minutes: 2);
+
+extension _DriverOnlineCallouts on _DriverOnlineScreenState {
+  /// Trip callouts only while ONLINE and plainly searching: no offer card,
+  /// no offer preview, no accepted celebration, no trip / navigation phase,
+  /// and only over a rendered map (never on the remount veil).
+  bool get _tripCalloutsWanted =>
+      !kIsWeb &&
+      _driverOnline &&
+      _phase == _Phase.searching &&
+      _pendingOffers.isEmpty &&
+      _previewingOffer == null &&
+      _acceptedOverlay == null &&
+      _mapMounted &&
+      _mapStyleLoaded &&
+      _firstRenderDone;
+
+  /// Shared expanded/compact state for this camera zoom (hysteresis).
+  bool _calloutsExpandedAt(double zoom) {
+    final st = _mapCallouts;
+    st.expanded = calloutExpandedForZoom(zoom, wasExpanded: st.expanded);
+    return st.expanded;
+  }
+
+  /// The trip callouts for the current feed.
+  List<TripCallout> _tripCalloutItems(S s) {
+    final st = _mapCallouts;
+    final src = _availableTrips;
+    final lang = s.locale.languageCode;
+    if (identical(st.tripSource, src) &&
+        st.tripSourceLength == src.length &&
+        st.tripLang == lang) {
+      return st.trips;
+    }
+    final next = buildTripCallouts(src, minAway: s.tripCalloutMinAway);
+    st.tripSource = src;
+    st.tripSourceLength = src.length;
+    st.tripLang = lang;
+    if (!sameTripCallouts(st.trips, next)) st.trips = next;
+    return st.trips;
+  }
+
+  /// The feed with the trip the driver tapped on the map first, so the
+  /// claim card opens on THAT trip.
+  List<Map<String, dynamic>> get _marketplaceTripsOrdered {
+    final focus = _marketplaceFocusTripId;
+    if (focus == null) return _availableTrips;
+    final i = _availableTrips
+        .indexWhere((t) => calloutNum(t['trip_id'])?.toInt() == focus);
+    if (i <= 0) return _availableTrips;
+    return [
+      _availableTrips[i],
+      ..._availableTrips.sublist(0, i),
+      ..._availableTrips.sublist(i + 1),
+    ];
+  }
+
+  /// The trip callouts layer. Tappable — no IgnorePointer; the Stack only
+  /// takes a touch that lands on a bubble, the rest reaches the map.
+  Widget _tripCalloutOverlay() {
+    if (kIsWeb) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: _markerFrame,
+      builder: (context, _) {
+        if (!_tripCalloutsWanted) return const SizedBox.shrink();
+        final items = _tripCalloutItems(S.of(context));
+        if (items.isEmpty) return const SizedBox.shrink();
+        final cam = _onlineCamState;
+        final size = _onlineMapSize;
+        if (cam == null || size == null) return const SizedBox.shrink();
+        final expanded = _calloutsExpandedAt(cam.zoom);
+        final c = cam.center.coordinates;
+        final camCenter = LatLng(c.lat.toDouble(), c.lng.toDouble());
+        final shift = _camPadShift(cam);
+        final children = <Widget>[];
+        for (final t in items) {
+          final off = FlatMapProjection.screenOffsetHeading(
+            target: LatLng(t.lat, t.lng),
+            cameraCenter: camCenter,
+            zoom: cam.zoom,
+            bearingDeg: cam.bearing,
+            pitchDeg: cam.pitch,
+            viewport: size,
+          );
+          if (off == null) continue;
+          final p = off + shift;
+          if (!FlatMapProjection.isOnScreen(p, size,
+              margin: _kCalloutCullMargin)) {
+            continue;
+          }
+          final id = t.tripId;
+          children.add(Positioned(
+            // Keyed by trip: a callout keeps its morph state while the
+            // camera moves and other trips come and go.
+            key: ValueKey('trip-callout-$id'),
+            left: p.dx,
+            top: p.dy,
+            child: MapCalloutBubble(
+              variant: CalloutVariant.trip,
+              title: t.keepRun,
+              titleFade: t.fadeRun,
+              subtitle: t.subtitle,
+              expanded: expanded,
+              onTap: () => _onTripCalloutTap(id),
+            ),
+          ));
+        }
+        if (children.isEmpty) return const SizedBox.shrink();
+        return Stack(clipBehavior: Clip.none, children: children);
+      },
+    );
+  }
+
+  /// Tap a trip callout → the marketplace claim card opens with that trip
+  /// first; claiming is the card's own button (_claimTrip) — no new path.
+  void _onTripCalloutTap(int tripId) {
+    if (!mounted || !_tripCalloutsWanted) return;
+    final live = _availableTrips
+        .any((t) => calloutNum(t['trip_id'])?.toInt() == tripId);
+    if (!live) return;
+    HapticService.lightImpact();
+    _setState(() {
+      _marketplaceFocusTripId = tripId;
+      _marketplaceOpen = true;
+    });
+  }
+
+  /// The second line of an airport callout, or null until its count has
+  /// arrived (no placeholder text).
+  String? _airportDriversLine(S s, String code) {
+    final n = _mapCallouts.airportCounts.countFor(code);
+    return n == null ? null : s.airportDriversLabel(airportDriversBucket(n));
+  }
+
+  /// Called by the airport overlay with the airports it is drawing. Fetches
+  /// only the codes with no value for this local hour — so once when a
+  /// callout first needs one, then once per hour. Never during build: the
+  /// request goes out on a microtask.
+  void _maybeFetchAirportCounts(List<UsAirportGeo> onScreen) {
+    final st = _mapCallouts;
+    if (onScreen.isEmpty || st.airportFetchInFlight) return;
+    final now = DateTime.now();
+    final retryAt = st.airportRetryAt;
+    if (retryAt != null && now.isBefore(retryAt)) return;
+    final stale =
+        st.airportCounts.staleCodes(onScreen.map((a) => a.code), now).toSet();
+    if (stale.isEmpty) return;
+    st.airportFetchInFlight = true;
+    final ask = [
+      for (final a in onScreen)
+        if (stale.contains(a.code)) a,
+    ];
+    scheduleMicrotask(() => _fetchAirportCounts(ask));
+  }
+
+  Future<void> _fetchAirportCounts(List<UsAirportGeo> ask) async {
+    final st = _mapCallouts;
+    try {
+      final counts = await ApiService.getAirportDriverCounts([
+        for (final a in ask) {'code': a.code, 'lat': a.lat, 'lng': a.lng},
+      ]);
+      if (!mounted) return;
+      final now = DateTime.now();
+      if (counts == null) {
+        st.airportRetryAt = now.add(_kAirportCountRetry);
+        return;
+      }
+      st.airportRetryAt = null;
+      st.airportCounts.store(ask.map((a) => a.code), counts, now);
+      // Ask again only once the clock is in the next hour: a parked driver
+      // has no camera frames to re-run the overlay, so wake it then.
+      st.airportHourTimer?.cancel();
+      st.airportHourTimer = Timer(
+        calloutNextHour(now).difference(now) + const Duration(seconds: 2),
+        () {
+          if (mounted) st.airportTick.value++;
+        },
+      );
+      st.airportTick.value++;
+    } catch (e) {
+      debugPrint('[DriverOnline] airport counts fetch failed: $e');
+      if (mounted) {
+        st.airportRetryAt = DateTime.now().add(_kAirportCountRetry);
+      }
+    } finally {
+      st.airportFetchInFlight = false;
+    }
+  }
+}

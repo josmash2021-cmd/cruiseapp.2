@@ -48,6 +48,7 @@ import '../widgets/cancel_reason_sheet.dart';
 import '../services/user_session.dart';
 import 'rider_permissions_screen.dart';
 import '../widgets/neu_style.dart';
+import '../widgets/glass_notification_banner.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/car_image_3d.dart';
 import '../widgets/electric_bolt_badge.dart';

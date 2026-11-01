@@ -57,7 +57,11 @@ void main() {
     expect(region, contains('IgnorePointer('));
     expect(region.contains('GestureDetector'), isFalse);
     expect(region.contains('onTap'), isFalse);
-    expect(region, contains('Icons.flight_rounded'));
+    // Restyled 2026-11-01 as Lyft's airport callout: the shared bubble, the
+    // standard plane glyph (gold, turned 45°) defined with it.
+    expect(region, contains('CalloutVariant.airport'));
+    expect(File('lib/map/map_callout.dart').readAsStringSync(),
+        contains('kAirportCalloutGlyph = Icons.flight_rounded'));
   });
 
   test('mounted in the map widget, state from the profile drive_state', () {

@@ -18,6 +18,13 @@ const double _kOfferStopH = 34.0;
 /// to touch if it wants nudging again.
 const double _kOfferCardLift = 12.0;
 
+/// Left/right gap between the screen edge and BOTH the offer card and its
+/// Accept pill — one number, so the card is exactly as wide as the button
+/// (owner spec 2026-11-01). The card used to sit 4 px in and the pill 20 px,
+/// which made the card 32 px wider. Top-level for the same reason as
+/// [_kBarTipH]: it is read inside `const EdgeInsets` in this part file.
+const double _kOfferSideInset = 20.0;
+
 /// Height of the sheet's header strip (grab handle + status row) — the ONLY
 /// zone whose taps/drags move the sheet (user spec 2026-10-13: "el sheet
 /// solamente se puede abrir o cerrar tocando o deslizando desde donde dice
@@ -178,6 +185,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     ),
                   ),
                 ),
+              // Lyft-style callouts on the unclaimed trips' pickups (owner
+              // spec 2026-11-01) — under the driver's marker, tappable.
+              Positioned.fill(child: _tripCalloutOverlay()),
               // The marker, painted by Flutter: centred while the camera
               // follows, at its own projected pixel once the driver has
               // panned or zoomed away. The Mapbox annotation takes back over
@@ -950,7 +960,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 key: const ValueKey('closed'),
                 onTap: () {
                   HapticService.lightImpact();
-                  _setState(() => _marketplaceOpen = true);
+                  _setState(() {
+                    // Opened from the pill: the feed's own order.
+                    _marketplaceFocusTripId = null;
+                    _marketplaceOpen = true;
+                  });
                 },
                 child: Container(
                   padding:
@@ -1022,7 +1036,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 ),
               ),
               GestureDetector(
-                onTap: () => _setState(() => _marketplaceOpen = false),
+                onTap: () => _setState(() {
+                  _marketplaceOpen = false;
+                  _marketplaceFocusTripId = null;
+                }),
                 child: Padding(
                   padding: const EdgeInsets.all(2),
                   child: Icon(Icons.close_rounded,
@@ -1032,7 +1049,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             ],
           ),
           const SizedBox(height: 10),
-          for (final t in _availableTrips.take(3)) _claimTripRow(gold, t),
+          // A trip tapped on the map comes first (owner spec 2026-11-01).
+          for (final t in _marketplaceTripsOrdered.take(3))
+            _claimTripRow(gold, t),
         ],
       ),
     );
@@ -1521,15 +1540,17 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 4),
+                          horizontal: _kOfferSideInset, vertical: 4),
                       child: card,
                     ),
                   ),
                   // Each card owns its accept pill (2026-10-27): with several
                   // offers on screen, the old shared pill only acted on the
-                  // page the driver was looking at.
+                  // page the driver was looking at. Same side inset as the
+                  // card above, so the two are exactly as wide.
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                    padding: const EdgeInsets.fromLTRB(
+                        _kOfferSideInset, 4, _kOfferSideInset, 8),
                     child: _buildAcceptButton(offer, oid),
                   ),
                 ],
@@ -2035,12 +2056,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final double tripDistKm;
     final int tripEta;
     final double tripDistMi;
+    // Minutes come from the same leg as the miles, uncapped (offerLegMinutes):
+    // the old 1..99 clamp printed a 747-mile pickup as "1 h 39 min".
     if (cached?.driverToPickupKm != null && cached?.pickupToDropoffKm != null) {
       distToPickupKm = cached!.driverToPickupKm!;
-      etaToPickup = (cached.driverToPickupMin ?? 1).ceil().clamp(1, 99);
+      etaToPickup = offerLegMinutes(
+          km: distToPickupKm, roadMinutes: cached.driverToPickupMin);
       distToPickupMi = distToPickupKm * 0.621371;
       tripDistKm = cached.pickupToDropoffKm!;
-      tripEta = (cached.pickupToDropoffMin ?? 1).ceil().clamp(1, 99);
+      tripEta = offerLegMinutes(
+          km: tripDistKm, roadMinutes: cached.pickupToDropoffMin);
       tripDistMi = tripDistKm * 0.621371;
     } else {
       if (_pos != null) {
@@ -2048,7 +2073,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         // Guard against NaN from _hav with invalid coordinates
         if (!dtp.isFinite) dtp = 0;
         distToPickupKm = dtp;
-        etaToPickup = (dtp * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+        etaToPickup = offerLegMinutes(km: dtp);
         distToPickupMi = dtp * 0.621371;
       } else {
         distToPickupKm = 0;
@@ -2062,7 +2087,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       if (stopLL != null) td = _hav(pickupLL, stopLL) + _hav(stopLL, dropoffLL);
       if (!td.isFinite) td = 0;
       tripDistKm = td;
-      tripEta = (td * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      tripEta = offerLegMinutes(km: td);
       tripDistMi = td * 0.621371;
     }
 
@@ -2246,8 +2271,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // included, because that time is spent whether or not it is paid.
     // Shown next to the fare so a short expensive trip and a long cheap one
     // stop looking the same.
-    final totalMin = (etaToPickup + tripEta).clamp(1, 999);
-    final hourly = fare / (totalMin / 60.0);
+    final totalMin = offerTotalMinutes(etaToPickup, tripEta);
+    final hourly = offerPayPerHour(fare, totalMin);
 
     return Column(
       key: const ValueKey('compact'),
@@ -2407,9 +2432,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         const SizedBox(height: 16),
 
         // ── Who is riding ───────────────────────────────────────────
+        // First name + last initial ("Lisbeth T.") until the ride is
+        // accepted (owner spec 2026-11-01); the trip screens keep the full
+        // name for the pickup.
         Builder(builder: (context) {
+          final short = nh.shortName((offer['rider_name'] as String?) ?? '');
           final riderName =
-              (offer['rider_name'] as String?) ?? S.of(context).riderFallback;
+              short.isNotEmpty ? short : S.of(context).riderFallback;
           return Row(
             children: [
               _offerRiderAvatar(offer, riderName),
@@ -3051,15 +3080,19 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final double tripDistMi;
     if (cachedPreview?.driverToPickupKm != null &&
         cachedPreview?.pickupToDropoffKm != null) {
-      etaToPickup = (cachedPreview!.driverToPickupMin ?? 1).ceil().clamp(1, 99);
+      etaToPickup = offerLegMinutes(
+          km: cachedPreview!.driverToPickupKm!,
+          roadMinutes: cachedPreview.driverToPickupMin);
       distToPickupMi = cachedPreview.driverToPickupKm! * 0.621371;
-      tripEta = (cachedPreview.pickupToDropoffMin ?? 1).ceil().clamp(1, 99);
+      tripEta = offerLegMinutes(
+          km: cachedPreview.pickupToDropoffKm!,
+          roadMinutes: cachedPreview.pickupToDropoffMin);
       tripDistMi = cachedPreview.pickupToDropoffKm! * 0.621371;
     } else {
       if (_pos != null) {
         final distToPickupKm = _hav(_pos!, pickupLL);
         final safeDist = distToPickupKm.isFinite ? distToPickupKm : 0.0;
-        etaToPickup = (safeDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+        etaToPickup = offerLegMinutes(km: safeDist);
         distToPickupMi = safeDist * 0.621371;
       } else {
         etaToPickup = 1;
@@ -3072,7 +3105,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ? _hav(pickupLL, dropoffLL)
           : _hav(pickupLL, stopLL) + _hav(stopLL, dropoffLL);
       final safeTripDist = tripDistKm.isFinite ? tripDistKm : 0.0;
-      tripEta = (safeTripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      tripEta = offerLegMinutes(km: safeTripDist);
       tripDistMi = safeTripDist * 0.621371;
     }
 

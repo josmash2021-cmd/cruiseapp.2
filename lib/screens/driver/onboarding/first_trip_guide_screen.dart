@@ -1249,7 +1249,8 @@ class _StaticOfferCardState extends State<_StaticOfferCard>
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Text(
-                        'jhon martinez',
+                        // First name + last initial, like the live card.
+                        'Jhon M.',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(

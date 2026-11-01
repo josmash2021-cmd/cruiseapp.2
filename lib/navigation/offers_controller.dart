@@ -79,7 +79,7 @@ class OffersController {
           fareUsd: offer.fareUsd,
           distanceToPickupKm: km,
           estimatedMinutes:
-              offer.estimatedMinutes > 0 ? offer.estimatedMinutes : (km / 0.5).ceil().clamp(1, 99),
+              offer.estimatedMinutes > 0 ? offer.estimatedMinutes : math.max(1, (km / 0.5).ceil()),
           vehicleType: offer.vehicleType,
           riderPhotoUrl: offer.riderPhotoUrl,
           riderRating: offer.riderRating,

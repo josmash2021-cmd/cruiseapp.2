@@ -70,10 +70,16 @@ void main() {
       final body = bodyOf(ctrl,
           "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
           maxLen: 4000);
-      expect(body.contains('final camBearing = _heading;'), isTrue,
-          reason: 'ONE source while moving AND parked — the user wants the '
-              'map to rotate with the phone (heading-up), the arrow centred '
-              'by the zero-padding write; the parked camera freeze is dead');
+      // 2026-11-01 (owner: "cuando la cámara gira no gira fluido, gira por
+      // pasos"): still ONE source — the arrow's heading — but the map
+      // follows it on a damped spring instead of copying its 1 Hz rhythm.
+      expect(
+          body.contains(
+              'final camBearing = _searchCamSpring.step(_heading, dtSec,'),
+          isTrue,
+          reason: 'ONE source while moving AND parked — the arrow\'s '
+              'heading, heading-up, the arrow centred by the zero-padding '
+              'write; the parked camera freeze is dead');
       expect(body.contains('parkedCompass'), isFalse,
           reason: 'no parked freeze — tilting/moving the phone must rotate '
               'the camera, not lock it at a stale bearing');

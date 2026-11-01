@@ -42,6 +42,7 @@ import 'services/api_service.dart';
 import 'services/account_session_guard.dart';
 import 'services/map_controller_cache.dart';
 import 'services/notification_service.dart';
+import 'widgets/glass_notification_banner.dart';
 import 'services/live_activity_service.dart';
 import 'services/referral_link_service.dart';
 import 'services/security_service.dart';
@@ -69,6 +70,7 @@ import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 import 'utils/responsive.dart';
 import 'utils/trip_stops.dart';
+import 'utils/offer_metrics.dart';
 
 /// Global theme notifier so any screen can toggle night mode.
 final themeNotifier = ThemeNotifier();
@@ -623,20 +625,67 @@ Future<_PendingOfferLookup> _fetchPendingOffer(
 void _showOfferGoneNotice() {
   final ctx = _navigatorKey.currentContext;
   if (ctx == null) return;
-  // maybeOf: this lands a frame or more after the route was pushed, off any
-  // build of ours, and the lookup can settle while the tree is rebuilding.
-  final messenger = ScaffoldMessenger.maybeOf(ctx);
-  if (messenger == null) return;
-  messenger.showSnackBar(SnackBar(
-    content: Text(
-      S.of(ctx).tripNoLongerAvailable,
-      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w700),
-    ),
-    backgroundColor: const Color(0xFFD4A843),
-    behavior: SnackBarBehavior.floating,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    duration: const Duration(seconds: 4),
-  ));
+  // The glass banner on the root overlay (owner spec 2026-11-01) — no
+  // ScaffoldMessenger lookup, which can settle mid-rebuild here.
+  GlassNotificationBanner.show(
+    title: S.of(ctx).tripNoLongerAvailable,
+    icon: Icons.local_taxi_rounded,
+  );
+}
+
+/// Push types whose banner tap opens something useful from INSIDE the app.
+/// Left out on purpose: the tracking pushes (driver_arriving/arrived,
+/// scheduled_*) — their tap handler pushes a second RiderTrackingScreen,
+/// i.e. a second live Mapbox surface, over the one already open; the
+/// approval pushes, whose foreground branch already navigated; and types
+/// whose tap only refreshes a card.
+const _kPushBannerTapTypes = {
+  'dispatch_notification',
+  'scheduled_ride',
+  'face_check_rejected',
+  'face_check_approved',
+  'driver_waitlisted',
+  'chat_message',
+  'support_message',
+  'support_followup',
+};
+
+/// First iOS build whose AppDelegate stops presenting the system banner for a
+/// foreground FCM push (the glass banner replaces it). Builds up to 1.1.8+753
+/// were archived before that change.
+const int kFirstQuietForegroundPushIosBuild = 754;
+
+/// The installed binary's build number (PackageInfo), read at startup.
+int? _nativeBuildNumber;
+
+/// A foreground push -> the glass banner (owner spec 2026-11-01: every
+/// in-app notification arrives as frosted glass at the top). iOS no longer
+/// draws its own copy for FCM pushes while the app is open (AppDelegate
+/// willPresent keeps only sound + badge) and Android never did, so this is
+/// the one banner on both platforms. The tap goes where the system
+/// notification's tap would.
+void _showPushBanner(
+  RemoteMessage message, {
+  required String type,
+  required String title,
+  required String body,
+}) {
+  // An iOS binary older than the AppDelegate change still draws the system
+  // banner for a foreground FCM push — a Shorebird patch carries this Dart
+  // but not that Swift, and two banners would stack. Unknown build = old.
+  if (!kIsWeb &&
+      Platform.isIOS &&
+      (_nativeBuildNumber ?? 0) < kFirstQuietForegroundPushIosBuild) {
+    return;
+  }
+  GlassNotificationBanner.show(
+    title: title,
+    body: body,
+    icon: glassBannerIconForType(type),
+    onTap: _kPushBannerTapTypes.contains(type)
+        ? () => _handleNotificationTap(message)
+        : null,
+  );
 }
 
 /// Unified notification tap handler — routes to correct screen by FCM type.
@@ -931,7 +980,7 @@ void _handleDriverAssigned(RemoteMessage message) {
       final nav = _navigatorKey.currentState;
       if (nav == null) return;
       final distKm = _haversineKm(driverPos, pickup);
-      final etaMin = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
+      final etaMin = offerLegMinutes(km: distKm);
       nav.push(MaterialPageRoute(
         builder: (_) => DriverTripAcceptScreen(
           tripId: tripId,
@@ -1140,6 +1189,9 @@ void main() async {
   await runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // Every in-app notification is the glass banner on the root overlay
+      // (owner spec 2026-11-01) — push handlers have no context of their own.
+      GlassNotificationBanner.navigatorKey = _navigatorKey;
       debugPrint('[Perf] Flutter binding: ${perfStopwatch.elapsedMilliseconds}ms');
 
       // CRASH FIX: Clear potentially corrupted SharedPreferences on first run
@@ -1155,6 +1207,7 @@ void main() async {
         // the app state on launch.
         final packageInfo = await PackageInfo.fromPlatform().timeout(const Duration(seconds: 2));
         final currentVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
+        _nativeBuildNumber = int.tryParse(packageInfo.buildNumber);
         if (lastVersion != currentVersion) {
           debugPrint('[Startup] Version changed from $lastVersion to $currentVersion — clearing potentially stale caches');
           // Only clear caches that might be schema-incompatible, NOT user data
@@ -1620,16 +1673,16 @@ Future<void> heavyInit() async {
                     message.data['body'] ??
                     _riderNotifBody(type));
 
-            // ── In-app notification policy ──
-            // By default ALL foreground notifications are suppressed.
-            // Only specific types are allowed through:
-            //
-            // RIDER (show in-app):
-            //   driver_arriving, driver_arrived, arrived, completed, arrived_dropoff
-            //
-            // DRIVER (show in-app):
-            //   chat_message (from rider), trip_offer, new_offer,
-            //   rider_cancelled, scheduled_cancelled, scheduled_available
+            // ── In-app notification policy (owner spec 2026-11-01) ──
+            // Every foreground push that carries text is shown as the glass
+            // banner (_showPushBanner) and saved to the inbox as before. The
+            // exceptions return early: ride offers (the offer card owns the
+            // screen), shift-end and dispatch presence (the driver screen
+            // shows its own banner), a chat message for the chat already
+            // open. The allowlists below now only decide which types also run
+            // their in-app side effects (refresh, sounds, approval
+            // navigation) and get the fallback copy when the push has no
+            // text of its own.
 
             const riderInAppTypes = {
               'driver_arriving', 'driver_arrived', 'arrived',
@@ -1662,12 +1715,12 @@ Future<void> heavyInit() async {
                     ? null
                     : 'server_$notificationId',
               );
+              _showPushBanner(message, type: type, title: title, body: body);
               return;
             }
 
-            // Chat messages: suppress in-app notification — the OS already shows
-            // the FCM push when the app is backgrounded. When foreground, the user
-            // is already in the app and doesn't need an intrusive overlay.
+            // Chat messages: the banner, unless that very chat is open —
+            // the message is already on screen there.
             if (type == 'chat_message') {
               final tripId = int.tryParse(message.data['trip_id']?.toString() ?? '');
               // Always suppress if user is in that chat screen
@@ -1675,24 +1728,21 @@ Future<void> heavyInit() async {
                 debugPrint('[FCM] suppressed chat notification — user is in chat');
                 return;
               }
-              // Save to notification history only (no local OS notification)
               LocalDataService.addNotification(
                 title: title,
                 message: body,
                 type: type,
               );
+              _showPushBanner(message, type: type, title: title, body: body);
               return;
             }
 
             // New scheduled ride in the marketplace (2026-10-26 report: the
-            // reservation broadcast "never arrived"). On Android with the app
-            // OPEN the OS never draws the FCM copy and this type sat in
-            // neither allowlist below, so a driver watching the app got
-            // nothing — no banner, no sound, just a silent inbox row. Draw
-            // the heads-up ourselves; the tap opens the ride detail via the
-            // payload. iOS skips this: its native willPresent already shows
-            // every non-offer banner in foreground (AppDelegate), so drawing
-            // here too would put two banners on one broadcast.
+            // reservation broadcast "never arrived" with the app OPEN — this
+            // type sat in neither allowlist below). The glass banner on both
+            // platforms; its tap opens the ride detail on the browse map
+            // (_handleNotificationTap -> _handleScheduledRidePush), the same
+            // route the system notification's tap takes.
             if (type == 'scheduled_ride') {
               NotificationService.scheduledRideRefreshNotifier.value++;
               LocalDataService.addNotification(
@@ -1700,16 +1750,7 @@ Future<void> heavyInit() async {
                 message: body,
                 type: type,
               );
-              if (!kIsWeb && Platform.isAndroid) {
-                NotificationService.show(
-                  id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-                  title: title,
-                  body: body,
-                  type: 'ride',
-                  payload:
-                      'scheduled_ride:${message.data['trip_id']?.toString() ?? ''}',
-                );
-              }
+              _showPushBanner(message, type: type, title: title, body: body);
               return;
             }
 
@@ -1717,25 +1758,36 @@ Future<void> heavyInit() async {
             final isAllowedInApp = riderInAppTypes.contains(type) ||
                 driverInAppTypes.contains(type);
 
-            if (!isAllowedInApp) {
-              // Suppress — only save to notification history
-              debugPrint('[FCM] suppressed foreground notification type=$type');
-              LocalDataService.addNotification(
-                title: title,
-                message: body,
-                type: type,
-              );
-              return;
-            }
-
-            // Save to notification history only — the OS already shows FCM push
-            // notifications when the app is backgrounded. When foreground, we
-            // update the UI silently without an intrusive local notification overlay.
             LocalDataService.addNotification(
               title: title,
               message: body,
               type: type,
             );
+
+            // A data-only sync push has no text of its own; with no real
+            // fallback copy either it would surface as a bare "Cruise".
+            final hasOwnText =
+                (message.notification?.title ?? '').trim().isNotEmpty ||
+                    (message.notification?.body ?? '').trim().isNotEmpty ||
+                    (message.data['title']?.toString() ?? '').trim().isNotEmpty ||
+                    (message.data['body']?.toString() ?? '').trim().isNotEmpty;
+            final hasText = hasOwnText || _riderNotifBody(type).isNotEmpty;
+
+            if (!isAllowedInApp) {
+              // No in-app side effects for this type — only the banner.
+              debugPrint('[FCM] foreground push type=$type -> '
+                  '${hasText ? 'banner' : 'silent, no text'}');
+              if (hasText) {
+                _showPushBanner(message, type: type, title: title, body: body);
+              }
+              return;
+            }
+
+            // Ride offers: the in-app offer card owns the screen (and plays
+            // its own sound) — never a banner on top of it.
+            if (!isOffer && hasText) {
+              _showPushBanner(message, type: type, title: title, body: body);
+            }
 
             // Play offer sound for trip offers (foreground only — background
             // offers already play sound via the FCM notification channel)

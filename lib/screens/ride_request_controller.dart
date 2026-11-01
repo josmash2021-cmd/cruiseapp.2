@@ -850,42 +850,17 @@ extension _RideRequestController on _RideRequestScreenState {
                 cancelCodeForToast,
                 rawReason: rawReasonForToast,
               );
+          final noDriversTitle = S.of(context).noDriversAvailableTitle;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            // Fire the SnackBar on the root ScaffoldMessenger BEFORE
-            // popping to HomeScreen — the root messenger survives the
-            // Navigator replacement so the toast shows up on the home
-            // screen after the transition.
-            final rootMessenger = ScaffoldMessenger.maybeOf(context);
-            rootMessenger?.clearSnackBars();
-            rootMessenger?.showSnackBar(
-              SnackBar(
-                behavior: SnackBarBehavior.floating,
-                backgroundColor: const Color(0xFF1a1a1a),
-                content: Row(
-                  children: [
-                    const Icon(Icons.info_outline,
-                        color: Color(0xFFE8C547), size: 22),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        friendlyMessage,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                duration: const Duration(seconds: 5),
-                margin: const EdgeInsets.all(16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(color: Color(0xFFE8C547), width: 1),
-                ),
-              ),
+            // The glass banner (owner spec 2026-11-01) on the root overlay,
+            // fired BEFORE popping to HomeScreen — it survives the Navigator
+            // replacement and is still up on the home screen after it.
+            GlassNotificationBanner.show(
+              context: context,
+              title: noDriversTitle,
+              body: friendlyMessage,
+              icon: Icons.local_taxi_rounded,
             );
             _ctrl.reset();
             _nav?.pushAndRemoveUntil(
@@ -1850,39 +1825,16 @@ extension _RideRequestController on _RideRequestScreenState {
         // home screen instead of the intrusive dialog. Fire it BEFORE
         // the navigation so the root messenger survives the replacement.
         if (isAutoNoDriver) {
-          final rootMessenger = ScaffoldMessenger.maybeOf(context);
-          rootMessenger?.clearSnackBars();
-          rootMessenger?.showSnackBar(
-            SnackBar(
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: const Color(0xFF1a1a1a),
-              content: Row(
-                children: [
-                  const Icon(Icons.info_outline,
-                      color: Color(0xFFE8C547), size: 22),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      S.of(context).cancelCodeMessage(
-                            cancelCode,
-                            rawReason: rawReason,
-                          ),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              duration: const Duration(seconds: 5),
-              margin: const EdgeInsets.all(16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: const BorderSide(color: Color(0xFFE8C547), width: 1),
-              ),
-            ),
+          // The glass banner on the root overlay (owner spec 2026-11-01) —
+          // it outlives the replacement below.
+          GlassNotificationBanner.show(
+            context: context,
+            title: S.of(context).noDriversAvailableTitle,
+            body: S.of(context).cancelCodeMessage(
+                  cancelCode,
+                  rawReason: rawReason,
+                ),
+            icon: Icons.local_taxi_rounded,
           );
           _nav?.pushAndRemoveUntil(
             smoothFadeRoute(const HomeScreen()),

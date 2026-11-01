@@ -256,10 +256,23 @@ extension _HomeScreenController on _HomeScreenState {
     if (!(prefs.getBool('welcome_pending_v1') ?? false)) return;
     await prefs.setBool('welcome_pending_v1', false);
     if (!mounted) return;
+    final s = S.of(context);
+    // App open — the usual case, the approval lands while the rider looks at
+    // home: the glass banner at the top (owner spec 2026-11-01). In the
+    // background nobody would see it, so the system notification instead.
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      GlassNotificationBanner.show(
+        context: context,
+        title: s.welcomeNotifTitle,
+        body: s.welcomeNotifBody,
+        icon: Icons.verified_rounded,
+      );
+      return;
+    }
     await NotificationService.show(
       id: 9999,
-      title: S.of(context).welcomeNotifTitle,
-      body: S.of(context).welcomeNotifBody,
+      title: s.welcomeNotifTitle,
+      body: s.welcomeNotifBody,
       payload: 'welcome',
     );
   }

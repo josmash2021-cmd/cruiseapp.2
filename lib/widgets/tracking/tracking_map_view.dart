@@ -675,7 +675,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         acc += _hav(tripRoute[i], tripRoute[i + 1]);
       }
       _distanceMiles = acc;
-      _etaMinutes = (acc / 0.4).ceil().clamp(1, 99);
+      _etaMinutes = (acc / 0.4).ceil().clamp(1, 999);
     } else {
       // onTrip / nearDestination: use trip route (pickup→dropoff)
       _pickupIdx = 0;
@@ -692,7 +692,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         acc += _hav(_routePts[i], _routePts[i + 1]);
       }
       _distanceMiles = acc;
-      _etaMinutes = (acc / 0.5).ceil().clamp(1, 99);
+      _etaMinutes = (acc / 0.5).ceil().clamp(1, 999);
     }
 
     if (!mounted) return;

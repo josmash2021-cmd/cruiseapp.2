@@ -10,10 +10,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// notification copy, and `scheduled_ride` sat in neither foreground
 /// allowlist — the handler suppressed it with only a silent inbox row.
 ///
-/// The fix: the foreground handler draws a heads-up local notification on
-/// Android (iOS already banners every non-offer type natively via the
-/// AppDelegate willPresent — drawing there too would double the banner), and
-/// the tap routes `scheduled_ride:<trip_id>` to the browse map.
+/// The fix: the foreground handler draws the glass in-app banner (owner spec
+/// 2026-11-01, one banner on both platforms — iOS no longer draws its own
+/// for FCM in foreground), and its tap routes the push to the browse map
+/// exactly like the system notification's tap.
 void main() {
   // CRLF-agnostic: fresh worktree checkouts on Windows carry \r\n and
   // multi-line needles must still match (AGENTS.md pattern).
@@ -21,27 +21,33 @@ void main() {
   final notifService =
       File('lib/services/notification_service.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
-  test('foreground handler draws a heads-up for scheduled_ride on Android', () {
-    expect(main.contains("if (type == 'scheduled_ride')"), isTrue,
+  // The foreground handler (the tap router has its own scheduled_ride
+  // branch earlier in the file).
+  final onMessageAt = main.indexOf('FirebaseMessaging.onMessage.listen(');
+
+  test('foreground handler shows the glass banner for scheduled_ride', () {
+    final branchAt = main.indexOf("if (type == 'scheduled_ride')", onMessageAt);
+    expect(branchAt, greaterThan(0),
         reason: 'the broadcast type gets its own foreground branch');
-    expect(main.contains('Platform.isAndroid'), isTrue,
-        reason: 'Android-only: iOS already banners it natively (willPresent) '
-            '— drawing on iOS would double the banner');
-    expect(
-      main.contains(
-          "payload:\n                      'scheduled_ride:"),
-      isTrue,
-      reason: 'the heads-up carries the trip id for tap routing',
-    );
+    final branch = main.substring(branchAt, main.indexOf('return;', branchAt));
+    expect(branch, contains('_showPushBanner(message, type: type'),
+        reason: 'the glass banner on both platforms');
+    expect(branch, isNot(contains('NotificationService.show(')),
+        reason: 'no OS heads-up on top of the banner');
+    // Its tap goes through the push tap router → the browse map.
+    final tapTypes = main.substring(main.indexOf('const _kPushBannerTapTypes'),
+        main.indexOf('};', main.indexOf('const _kPushBannerTapTypes')));
+    expect(tapTypes, contains("'scheduled_ride'"));
+    expect(main, contains('? () => _handleNotificationTap(message)'));
   });
 
-  test('scheduled_ride never falls into the silent suppression branch', () {
-    final branchAt = main.indexOf("if (type == 'scheduled_ride')");
-    final suppressionAt = main.indexOf('suppressed foreground notification');
+  test('scheduled_ride never falls into the allowlist branch', () {
+    final branchAt = main.indexOf("if (type == 'scheduled_ride')", onMessageAt);
+    final allowlistAt = main.indexOf('final isAllowedInApp =', onMessageAt);
     expect(branchAt, greaterThan(0));
-    expect(suppressionAt, greaterThan(0));
-    expect(branchAt, lessThan(suppressionAt),
-        reason: 'its return must come before the allowlist suppression');
+    expect(allowlistAt, greaterThan(0));
+    expect(branchAt, lessThan(allowlistAt),
+        reason: 'its return must come before the allowlist split');
   });
 
   test('local-notification tap routes scheduled_ride to the browse map', () {

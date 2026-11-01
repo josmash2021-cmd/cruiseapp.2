@@ -266,8 +266,10 @@ class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
                                   ],
                                   if (widget.riderIsNew || widget.riderRating > 0)
                                     const SizedBox(width: 12),
+                                  // Hours past 60 min, like the offer card —
+                                  // the ETA is uncapped now (was 1..99).
                                   Text(
-                                    '${widget.etaMinutes} min · '
+                                    '${S.of(context).offerDuration(widget.etaMinutes)} · '
                                     '${(widget.distToPickupKm * 0.621371).toStringAsFixed(1)} mi',
                                     style: const TextStyle(
                                       color: Colors.white38,

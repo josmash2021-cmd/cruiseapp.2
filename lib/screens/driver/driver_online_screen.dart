@@ -31,6 +31,7 @@ import '../../services/navigation_service.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/neu_style.dart';
 import '../../widgets/glass_style.dart';
+import '../../widgets/glass_notification_banner.dart';
 import '../../widgets/animated_count_badge.dart';
 import '../../services/scheduled_board_watcher.dart';
 import '../../widgets/offer_countdown_ring.dart';
@@ -56,6 +57,7 @@ import '../../widgets/gold_location_dot.dart';
 import '../../widgets/driver_sonar_marker.dart';
 import '../../widgets/static_map_snapshot.dart';
 import '../../utils/smooth_motion.dart';
+import '../../utils/bearing_spring.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
@@ -65,6 +67,8 @@ import '../../map/recenter_landing_guard.dart';
 import '../../map/driver_road_lock.dart';
 import '../../map/map_gesture_guard.dart';
 import '../../map/map_surface_coordinator.dart';
+import '../../map/map_callout.dart';
+import '../../widgets/map/map_callout_bubble.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../services/driver_rest_service.dart';
 import '../../services/places_service.dart';
@@ -113,6 +117,8 @@ import 'scheduled_ride_details_screen.dart';
 import '../../utils/responsive.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../utils/fix_kinematics.dart';
+import '../../utils/name_helper.dart' as nh;
+import '../../utils/offer_metrics.dart';
 import '../../utils/server_time.dart';
 import 'package:intl/intl.dart';
 import 'scheduled_rides_screen.dart';
@@ -121,6 +127,7 @@ part 'driver_online_controller.dart';
 part 'driver_online_map.dart';
 part 'driver_online_widgets.dart';
 part 'driver_online_offline.dart';
+part 'driver_online_callouts.dart';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  CRUISE DRIVER — ONLINE SCREEN
@@ -269,6 +276,16 @@ const int _kRerouteFadeMs = 350;
 /// static de la clase.
 final _kZeroCamPadding =
     mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0);
+
+/// Spring frequency (rad/s) of the searching chase's camera bearing (owner
+/// report 2026-11-01, "gira por pasos"). The input is the car's course, ~1
+/// sample/s on iOS. Simulated 30°/s turn at 1 Hz: copying the arrow, the map
+/// stood still in ~30 % of the frames and lurched at up to 114°/s; at 3.5 it
+/// never stops and turns at 26–46°/s, 2/ω ≈ 0.6 s behind the arrow, and it
+/// halves the arrow's own swing past the end of an abrupt turn (22° → 14°).
+/// The nav chase keeps 4.5 — its input is the continuous route tangent.
+/// Top-level: part files can't reach class statics reliably (rule #16).
+const double _kSearchCamBearingOmega = 3.5;
 
 class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
@@ -534,6 +551,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Timer? _marketplacePollTimer;
   bool _marketplaceOpen = false;
   int? _claimingTripId;
+  // The trip whose map callout the driver tapped: the claim card opens with
+  // it first (owner spec 2026-11-01). Null = the feed's own order.
+  int? _marketplaceFocusTripId;
+  // Lyft-style callouts on those trips' pickups and on the airports —
+  // Flutter overlays, no native handles (driver_online_callouts.dart).
+  final _MapCalloutState _mapCallouts = _MapCalloutState();
 
   /// Notifications the driver has not opened. This is what the bell's
   /// badge counts — it used to show _scheduledAvailCount, so the number on
@@ -723,6 +746,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final SmoothMotion _motion = SmoothMotion();
   double _heading = 0;
   double _smoothedBearing = 0;
+
+  /// The searching chase's camera bearing: follows [_heading] on a
+  /// critically damped spring instead of copying it per frame (owner report
+  /// 2026-11-01, "la cámara gira por pasos" — see [BearingSpring]). Reset
+  /// whenever the chase stops writing, so it re-seeds from the real camera.
+  final BearingSpring _searchCamSpring =
+      BearingSpring(omega: _kSearchCamBearingOmega);
 
   /// Where the phone is pointing, from the compass — see [HeadingService].
   ///
@@ -1050,10 +1080,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         if (_driverOnline) unawaited(_exitOnlineMode());
         _showGoOnlineDisabledDialog();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(S.of(context).goOnlineEnabledBody),
-          duration: const Duration(seconds: 3),
-        ));
+        // Glass banner at the top (owner spec 2026-11-01).
+        GlassNotificationBanner.show(
+          context: context,
+          title: S.of(context).goOnlineEnabledBody,
+          icon: Icons.power_settings_new_rounded,
+        );
       }
     });
     // Dispatch online/offline switch for THIS driver (owner spec
@@ -1956,6 +1988,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _sseReconnectTimer?.cancel();
     _scheduledPollTimer?.cancel();
     _marketplacePollTimer?.cancel();
+    _mapCallouts.dispose();
     _clock?.cancel();
     _navTimer?.cancel();
     _dotWatchdog?.cancel();
@@ -2763,7 +2796,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     }
                     final idx =
                         _currentOfferIndex.clamp(0, _pendingOffers.length - 1);
-                    _rejectOffer(_pendingOffers[idx]);
+                    _rejectOffer(_pendingOffers[idx], byDriver: true);
                   },
                 ),
               ),

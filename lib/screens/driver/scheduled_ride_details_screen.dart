@@ -15,6 +15,7 @@ import '../../utils/trip_stops.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_trip_accept_screen.dart';
 import '../../utils/server_time.dart';
+import '../../utils/offer_metrics.dart';
 
 /// Full-screen countdown + details for an upcoming scheduled ride.
 /// Shown when driver is "locked" (<=30 min before pickup).
@@ -189,7 +190,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     // Use pickup as fallback for driver position
     final driverPos = pickup;
     final distKm = _haversineKm(driverPos, pickup);
-    final etaMinutes = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
+    final etaMinutes = offerLegMinutes(km: distKm);
     final riderName = trip['rider_name']?.toString() ?? '';
     final riderId = int.tryParse((trip['rider_id'] ?? '').toString());
 

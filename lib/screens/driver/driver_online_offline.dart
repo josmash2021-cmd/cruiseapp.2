@@ -509,7 +509,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     final dropoff = LatLng(dropoffLat, dropoffLng);
     final driverPos = _pos ?? pickup;
     final distKm = _haversineKm(driverPos, pickup);
-    final etaMinutes = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
+    final etaMinutes = offerLegMinutes(km: distKm);
     final tripId = (trip['id'] as num?)?.toInt() ?? 0;
     final riderName = _pickString(trip, ['rider_name'], fallback: 'Rider');
     final riderId = int.tryParse((trip['rider_id'] ?? '').toString());
@@ -804,7 +804,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         _pickString(trip, ['vehicleType', 'vehicle_type'], fallback: 'Ride');
 
     final distKm = _haversineKm(driverPos, pickup);
-    final etaMinutes = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
+    final etaMinutes = offerLegMinutes(km: distKm);
 
     // Determine trip phase from Firestore status so the screen resumes
     // at the correct phase instead of resetting to "Slide Start Trip".

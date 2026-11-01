@@ -39,4 +39,10 @@ void main() {
     expect(ctrl, contains('dispatch|despacho|operador|operator|admin'));
     expect(ctrl, contains("return 'Your trip was cancelled.';"));
   });
+
+  test('the driver profile password copy never says dispatch', () {
+    final profile = read('lib/screens/driver/driver_profile_screen.dart');
+    expect(profile, isNot(contains("'Dispatch password copied")));
+    expect(profile, contains('S.of(context).passwordCopiedClears'));
+  });
 }

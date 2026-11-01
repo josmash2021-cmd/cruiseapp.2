@@ -197,6 +197,17 @@ import ActivityKit
       completionHandler([])
       return
     }
+    // Owner spec 2026-11-01: every FCM push that lands with the app OPEN is
+    // drawn by Flutter as the glass banner (GlassNotificationBanner, from
+    // FirebaseMessaging.onMessage — the firebase_messaging plugin delivers
+    // onMessage first and then forwards here). A system banner too would put
+    // two on screen, so FCM keeps only its sound and badge. Local
+    // notifications (no gcm.message_id: scheduled reminders, …) never reach
+    // onMessage and keep the system banner below.
+    if notification.request.content.userInfo["gcm.message_id"] != nil {
+      completionHandler([.sound, .badge])
+      return
+    }
     if #available(iOS 14.0, *) {
       completionHandler([.banner, .sound, .badge])
     } else {

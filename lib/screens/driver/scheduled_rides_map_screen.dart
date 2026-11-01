@@ -28,8 +28,10 @@ import '../../utils/mapbox_safe.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/neu_style.dart';
 import '../../widgets/glass_style.dart';
+import '../../widgets/glass_notification_banner.dart';
 import 'driver_rest_gate_mixin.dart';
 import 'scheduled_rides_screen.dart';
+import '../../utils/offer_metrics.dart';
 import '../../utils/server_time.dart';
 
 /// Full-screen map marketplace for scheduled rides (Lyft structure, Cruise
@@ -851,15 +853,13 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       _selectTrip(hit);
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(
-        S.of(context).scheduledRideNoLongerAvailable,
-        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
-      ),
-      backgroundColor: _gold,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    // Opened from a notification about a ride that is gone: the glass
+    // banner at the top (owner spec 2026-11-01).
+    GlassNotificationBanner.show(
+      context: context,
+      title: S.of(context).scheduledRideNoLongerAvailable,
+      icon: Icons.event_busy_rounded,
+    );
   }
 
   void _selectTrip(Map<String, dynamic> trip) {
@@ -1734,8 +1734,9 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
     // Driver→pickup leg comes from the backend; the trip leg is a
     // straight-line estimate, same rule the offer card uses pre-Directions.
-    final etaToPickup =
-        (distKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+    // Uncapped (offerLegMinutes): the old 1..99 clamp printed a far pickup
+    // as "1 h 39 min" whatever its miles said.
+    final etaToPickup = offerLegMinutes(km: distKm);
     final distToPickupMi = distKm * 0.621371;
     var tripKm = 0.0;
     if (isValidLatLng(pickupLat, pickupLng) &&
@@ -1744,10 +1745,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
           LatLng(dropoffLat!, dropoffLng!));
       if (!tripKm.isFinite) tripKm = 0;
     }
-    final tripEta = (tripKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+    final tripEta = offerLegMinutes(km: tripKm);
     final tripDistMi = tripKm * 0.621371;
 
-    final totalMin = (etaToPickup + tripEta).clamp(1, 999);
+    final totalMin = offerTotalMinutes(etaToPickup, tripEta);
 
     final scheduledAt = _parseScheduledAt(trip);
     final dateStr = scheduledAt != null

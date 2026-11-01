@@ -2426,6 +2426,9 @@ async def list_available_trips(driver_id: int = Query(...), user: User = Depends
             "minutes": f"{minutes} min" if minutes > 0 else None,
             "pickup_distance_miles": round(pickup_km * 0.621371, 1),
             "pickup_eta_min": max(1, int(round(eta.minutes))),
+            # Map callouts at each pickup ("$10 Cruise · 9 min away").
+            "pickup_lat": float(t.pickup_lat) if t.pickup_lat is not None else None,
+            "pickup_lng": float(t.pickup_lng) if t.pickup_lng is not None else None,
             "rider_name": rname,
             "rider_rating": rrate,
             "rider_rides_count": max(0, rrides - 1),

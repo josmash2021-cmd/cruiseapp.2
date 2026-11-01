@@ -62,6 +62,10 @@ async def test_available_lists_passed_trip_with_offer(client, db, test_rider, te
     assert len(trips) == 1
     assert trips[0]["pickup_address"] == "100 Boardwalk Ave"
     assert trips[0]["driver_earnings"] == 9.0  # 90% share of $10
+    # Coordinates for the map callout at the pickup, minutes to get there.
+    assert isinstance(trips[0]["pickup_lat"], float)
+    assert isinstance(trips[0]["pickup_lng"], float)
+    assert trips[0]["pickup_eta_min"] >= 1
 
 
 @pytest.mark.asyncio

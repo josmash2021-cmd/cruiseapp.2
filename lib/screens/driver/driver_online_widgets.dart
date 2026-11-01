@@ -168,19 +168,30 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       child: AnimatedOpacity(
                       opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0,
                       duration: const Duration(milliseconds: 200),
+                      // Once faded out the still leaves the tree (owner
+                      // 2026-11-01, factura Mapbox de $1,148.80): at opacity
+                      // 0 it stayed built and every GPS fix rebuilt it with
+                      // a new centre — a new billed Static Images request
+                      // per fix, all day, for every driver with the app open.
+                      onEnd: () => _setState(() =>
+                          _mapVeilFadedOut = _mapStyleLoaded && _firstRenderDone),
                       // 2026-10-17 (cero negro al volver de otra página): la
                       // foto REAL del mapa capturada al entregar la
                       // superficie gana siempre; sin ella, el snapshot de red
                       // de antes (que volvía a pedir el fetch y se veía negro
                       // mientras cargaba).
-                      child: _surfaceStillBytes != null
-                          ? Image.memory(
-                              _surfaceStillBytes!,
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                            )
-                          : StaticMapSnapshot(
-                              center: here, zoom: 16, veilAlpha: 0.60),
+                      child: (_mapStyleLoaded &&
+                              _firstRenderDone &&
+                              _mapVeilFadedOut)
+                          ? const SizedBox.shrink()
+                          : _surfaceStillBytes != null
+                              ? Image.memory(
+                                  _surfaceStillBytes!,
+                                  fit: BoxFit.cover,
+                                  gaplessPlayback: true,
+                                )
+                              : StaticMapSnapshot(
+                                  center: here, zoom: 16, veilAlpha: 0.60),
                       ),
                     ),
                   ),

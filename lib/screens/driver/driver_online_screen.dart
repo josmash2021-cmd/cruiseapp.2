@@ -364,6 +364,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // alone fires before the street tiles draw, and that gap read as an
   // empty dark map on Go (2026-08-25).
   bool _firstRenderDone = false;
+  // The snapshot overlay has finished fading out: it leaves the tree.
+  // Kept mounted at opacity 0 it re-fetched a Static Images still for every
+  // GPS fix — 1.5 M billed requests in Oct 2026 (Mapbox $1,148.80).
+  bool _mapVeilFadedOut = false;
   // Boot-stage timing breadcrumbs (2026-10-12: mapa negro ~30 s incluso con
   // las zonas apagadas) — the map_boot event reports which stage ate the
   // boot: native create → style loaded → first idle render.

@@ -1849,11 +1849,15 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     if (anchor == null) {
       return const ColoredBox(color: Color(0xFF191C24));
     }
+    // ~100 m snap: each distinct URL is a billed Static Images request.
+    double q(double v) => (v * 1000).roundToDouble() / 1000;
     return StaticRoutePreview(
-      pickupLat: anchor.latitude,
-      pickupLng: anchor.longitude,
-      dropoffLat: (rider != null && driver != null) ? driver.latitude : null,
-      dropoffLng: (rider != null && driver != null) ? driver.longitude : null,
+      pickupLat: q(anchor.latitude),
+      pickupLng: q(anchor.longitude),
+      dropoffLat:
+          (rider != null && driver != null) ? q(driver.latitude) : null,
+      dropoffLng:
+          (rider != null && driver != null) ? q(driver.longitude) : null,
       // No route line on this strip, stand-in included (user spec 2026-09-17):
       // pins only — the live dot and the car carry the map.
       // LARGE pins (2026-09-19): the static stand-in is what small phones

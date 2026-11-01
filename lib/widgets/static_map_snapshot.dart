@@ -30,7 +30,10 @@ class StaticMapSnapshot extends StatelessWidget {
 
   /// The Static Images API URL for [center]/[zoom] at [w]×[h] logical px.
   static String imageUrl(LatLng center, double zoom, int w, int h) {
-    String f(double v) => v.toStringAsFixed(6);
+    // 4 decimals (~11 m, ~3 px at zoom 16): a GPS fix that moved the centre
+    // a few metres reuses the cached still instead of buying a new one —
+    // every distinct URL is a billed Static Images request.
+    String f(double v) => v.toStringAsFixed(4);
     return 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
         '${f(center.longitude)},${f(center.latitude)},$zoom,0/${w}x$h@2x'
         '?logo=false&attribution=false&access_token=${MapboxConfig.accessToken}';

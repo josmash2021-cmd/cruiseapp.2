@@ -62,6 +62,22 @@ void main() {
     }
   });
 
+  test('the profile falls back to the backend detail (dueño 2026-11-02)', () {
+    // No Firestore drivers/ doc carries driveCity (0 of 338 on 2026-11-02),
+    // so the tile only ever showed up when it read /admin/users/N too.
+    expect(driversPage,
+        contains('workCity=pickText(g.driveCity,"drive_city")'));
+    expect(driversPage,
+        contains('birthDate=pickText(g.dateOfBirth,"date_of_birth")'));
+    expect(driversPage,
+        contains('const v=f.detail==null?void 0:f.detail[k]'),
+        reason: 'f = da(sqliteId) — the GET /admin/users/N detail');
+    expect(driversPage, contains('workCity!==null&&e.jsx(S,{icon:IconMapPin'));
+    expect(driversPage,
+        isNot(contains('(g.driveCity??"")!==""&&e.jsx(S,')),
+        reason: 'the Firestore-only condition hid the city for everyone');
+  });
+
   test('the Drivers page groups cities by state, then city', () {
     expect(driversPage, contains('panel_driver_city_dob_guard_test'),
         reason: 'the guard-pin comment must survive — a panel rebuild must '

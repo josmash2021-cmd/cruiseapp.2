@@ -79,6 +79,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
     required this.tripId,
     required this.riderName,
     this.riderPhotoUrl = '',
+    this.autoNav = false,
     this.riderRating = 0,
     this.riderIsNew = true,
     required this.pickupLatLng,
@@ -105,6 +106,12 @@ class DriverTripAcceptScreen extends StatefulWidget {
   final int tripId;
   final String riderName;
   final String riderPhotoUrl;
+
+  /// Straight into the navigation (owner design 2026-11-02: accept →
+  /// "Viaje Aceptado" → navigation, no trip page in between): the page
+  /// stays hidden under a plain background, never mounts its mini map, and
+  /// enters nav on the first frame. Leaving nav shows the page as before.
+  final bool autoNav;
   final int? riderId;
   final double riderRating;
   final bool riderIsNew;
@@ -247,6 +254,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // (offers during this trip) and "Último viaje" (none during it, and
   // offline when it ends).
   bool _receivingRides = true;
+  late bool _pageHidden = widget.autoNav;
   bool _lastTrip = false;
 
   // ── Pickup PIN (arrived / waiting-for-rider stage) ──
@@ -720,6 +728,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       _rideStarted = true;
       _startRideSlidDone = true;
     }
+    // Straight into navigation: "Iniciar Viaje" is a local step only (no
+    // backend status), so the trip simply counts as started.
+    if (widget.autoNav) {
+      _tripStarted = true;
+      _slid = true;
+    }
     // Resume at Continue/Directions (trip accepted, en route to pickup)
     if (widget.tripAlreadyStarted && !widget.arrivedAtPickup && !widget.rideStarted) {
       _tripStarted = true;
@@ -806,7 +820,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     // Mount the live preview map once the screen we came from has actually
     // let go of the native surface. Web has no surface limit — mount now.
-    if (kIsWeb) {
+    if (widget.autoNav) {
+      // Never mount the mini map: the nav view claims the one surface.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _enterNavMode();
+      });
+    } else if (kIsWeb) {
       _previewMapMounted = true;
     } else {
       _acquireMapSurface();
@@ -1049,6 +1068,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// claim, and the preview card claims it back through the coordinator.
   void _exitNavMode() {
     if (!_navMode || _navExiting) return;
+    if (_pageHidden) setState(() => _pageHidden = false);
     _navExiting = true;
     _navToPickupOverride = null; // the card-leg override dies with the nav
     _collapseNavMode();
@@ -5482,6 +5502,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         ),
       ),
       ),
+
+      // ── The trip page, hidden while going straight into navigation ──
+      if (_pageHidden)
+        Positioned.fill(
+          child: AbsorbPointer(
+            child: ColoredBox(color: _bg, child: const NeuDotsBackdrop()),
+          ),
+        ),
 
       // ── In-app turn-by-turn navigation (Continue / Directions) ────────
       // Full-screen; owns the one native map surface while it is up (the

@@ -4717,6 +4717,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final future = Navigator.of(context).push<String>(
       tripHandoffRoute(
         DriverTripAcceptScreen(
+          autoNav: true,
           tripId: tripId,
           riderName: riderName,
           riderPhotoUrl: riderPhotoUrl,

@@ -565,7 +565,7 @@ void main() {
     test('the route tangent steers the arrow at EVERY speed on-route', () {
       final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 5400);
       expect(body.contains('bearing: onRoute'), isTrue);
-      expect(body.contains('_roadLockBearing'), isTrue,
+      expect(body.contains('_navAimBearing(display)'), isTrue,
           reason: 'user report: GPS headings arrive once a second and the '
               'arrow turned in steps — on-route only the continuous route '
               'tangent speaks');

@@ -100,12 +100,13 @@ void main() {
       expect(heading, contains('(speedMps * 0.8).clamp(6.0, 24.0)'));
     });
 
-    test('navigation keeps its damped camera on the (now continuous) tangent',
-        () {
+    test('navigation turns the map with the arrow on a continuous heading '
+        '(owner 2026-11-02, "no modo resorte")', () {
       final nav = read('lib/screens/driver/driver_nav_view.dart');
-      expect(nav, contains('bearing: _stepCamBearing(_dot.bearing, dt),'));
-      expect(nav, contains('static const double _camBearingOmega = 4.5;'));
-      expect(nav, contains('_dot.setBearing(_roadLockBearing!);'));
+      expect(nav, contains('bearing: _followCamBearing(_dot.bearing),'));
+      expect(nav, isNot(contains('_camBearingOmega')),
+          reason: 'the camera spring made the arrow swing and swing back');
+      expect(nav, contains('if (aim != null && _speedMps >= 1.0) _dot.setBearing(aim);'));
     });
   });
 }

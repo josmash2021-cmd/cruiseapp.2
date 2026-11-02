@@ -18,12 +18,28 @@ void main() {
         contains('scale: GoldLocationDot.driverIconSize * _kNavArrowScale,'));
   });
 
-  test('the map bearing follows the arrow on a damped spring', () {
-    expect(nav, contains('bearing: _stepCamBearing(_dot.bearing, dt),'));
-    expect(nav, contains('2 * _camBearingOmega * _camBearingVel'),
-        reason: 'critically damped: settles without overshoot');
-    expect(nav, contains('valueListenable: _arrowScreenBearing,'),
-        reason: 'the overlay arrow shows what the camera has not turned yet');
+  // Owner 2026-11-02 ("que gire junto con la cámara… no modo resorte… no
+  // que gire y se devuelva"): the 2026-10-30 spring kept the map ~1 s behind
+  // the arrow, so at every turn the arrow swung on screen and swung back.
+  test('the map turns WITH the arrow, frame for frame — no spring', () {
+    expect(nav, contains('bearing: _followCamBearing(_dot.bearing),'));
+    expect(nav, isNot(contains('_camBearingOmega')));
+    final follow = nav.substring(nav.indexOf('double _followCamBearing(double bearing) {'));
+    expect(follow.substring(0, 200), contains('_snapCamBearing(bearing);'),
+        reason: 'camera = arrow: on screen the arrow always points up');
+  });
+
+  test('the arrow heading is continuous through corners, frozen when slow', () {
+    final aim = nav.substring(nav.indexOf('double? _navAimBearing(LatLng onLine) {'));
+    final body = aim.substring(0, 700);
+    expect(body, contains('_speedMps < 2.0) return _roadLockBearing;'),
+        reason: 'no pre-rotation waiting at a light before a turn');
+    expect(body, contains('RouteSplice.pointAlong(_routePts, onLine, ahead)'),
+        reason: 'a chord to a point ahead along the line turns over the '
+            'metres before a corner instead of jumping at the vertex');
+    expect(nav, contains('bearing: onRoute ? _navAimBearing(display) : measuredCourseDeg(pos),'),
+        reason: 'the 1 Hz fix and the per-frame tick feed the SAME heading — '
+            'two sources tugging is a swing-and-back of its own');
   });
 
   test('a turn the car stops in the middle of still finishes', () {
@@ -48,7 +64,8 @@ void main() {
   test('recenter ends with the camera on the arrow; tunnel keys on usable fixes', () {
     expect(nav, contains('if (to == _CamState.following) _snapCamBearing(_dot.bearing);'));
     expect(nav, contains('final last = _lastUsableFixAt ?? _lastGpsFixAt;'));
-    final gate = nav.indexOf('if (pos.accuracy > 30) return;');
+    final gate = nav.indexOf('if (pos.accuracy > 30) {');
+    expect(gate, isNonNegative);
     final usable = nav.indexOf('_lastUsableFixAt = DateTime.now();');
     expect(usable, greaterThan(gate), reason: 'only fixes past the 30 m gate');
   });

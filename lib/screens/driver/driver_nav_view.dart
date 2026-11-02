@@ -303,13 +303,13 @@ class DriverNavViewState extends State<DriverNavView>
   // navigation map — overlay and native annotation alike.
   static const double _kNavArrowScale = 1.2;
 
-  // Google-style chase (owner request 2026-10-30): the MAP turns on a
-  // critically damped spring toward the arrow's bearing (~1 s settle, no
-  // overshoot), so a kink in the route line no longer whips the whole map
-  // around; the arrow shows the remaining difference instantly. The dot
-  // only ticks while it moves, so a settle ticker finishes a turn the car
-  // stopped in the middle of. Null bearing = snap on the next frame.
-  static const double _camBearingOmega = 4.5;
+  // The map turns WITH the arrow, frame for frame (owner 2026-11-02: "que
+  // gire junto con la cámara… no modo resorte… no que gire y se devuelva").
+  // The 2026-10-30 damped spring kept the map ~1 s behind the arrow, so at
+  // every turn the arrow swung on screen and swung back as the map caught
+  // up. A kink in the route no longer whips the map because the arrow's own
+  // heading is continuous now (_navAimBearing) and glides at ≤ 120°/s.
+  // Null bearing = snap on the next frame.
   double? _camBearing;
   double _camBearingVel = 0;
   final ValueNotifier<double> _arrowScreenBearing = ValueNotifier<double>(0);
@@ -331,24 +331,10 @@ class DriverNavViewState extends State<DriverNavView>
         _camBearingVel.abs() < 0.5;
   }
 
-  /// Advances the camera bearing one frame and publishes the arrow's
-  /// on-screen rotation (arrow bearing minus camera bearing).
-  double _stepCamBearing(double target, double dt) {
-    final cur = _camBearing;
-    if (cur == null || dt <= 0) {
-      _camBearing = target % 360;
-      _camBearingVel = 0;
-    } else {
-      final err = _shortestArc(cur, target);
-      final acc = _camBearingOmega * _camBearingOmega * err -
-          2 * _camBearingOmega * _camBearingVel;
-      _camBearingVel += acc * dt;
-      _camBearing = (cur + _camBearingVel * dt + 360) % 360;
-    }
-    final rel = _shortestArc(_camBearing!, target);
-    if ((rel - _arrowScreenBearing.value).abs() > 0.05) {
-      _arrowScreenBearing.value = rel;
-    }
+  /// The camera carries the arrow's bearing exactly, frame for frame: on
+  /// screen the arrow always points up and the map does the turning.
+  double _followCamBearing(double bearing) {
+    _snapCamBearing(bearing);
     return _camBearing!;
   }
 
@@ -1028,7 +1014,7 @@ class DriverNavViewState extends State<DriverNavView>
       _dot.setTarget(
         display.latitude,
         display.longitude,
-        bearing: onRoute ? _roadLockBearing : measuredCourseDeg(pos),
+        bearing: onRoute ? _navAimBearing(display) : measuredCourseDeg(pos),
         accuracyM: pos.accuracy,
         timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
         // The fix's own speed reading parks the arrow against GPS wander —
@@ -1091,6 +1077,25 @@ class DriverNavViewState extends State<DriverNavView>
 
   double? _routeHeadingFor(LatLng pos) {
     return _roadLock.project(_routePts, pos, speedMps: _speedMps).bearing;
+  }
+
+  /// Where the arrow points on the route while moving (owner 2026-11-02,
+  /// "que gire fluido… no que gire y se devuelva"): the chord to a point a
+  /// little ahead ALONG the line, through corners too. The road-lock
+  /// heading stops at a corner and jumped by the whole corner angle the
+  /// moment the car passed the vertex; this one turns continuously over the
+  /// last metres before it. Below 2 m/s it keeps the road-lock heading, so
+  /// a car waiting at a light before a turn never pre-rotates.
+  double? _navAimBearing(LatLng onLine) {
+    if (_routePts.length < 2 || _speedMps < 2.0) return _roadLockBearing;
+    final ahead = (_speedMps * 1.0).clamp(8.0, 30.0).toDouble();
+    final step = RouteSplice.pointAlong(_routePts, onLine, ahead);
+    if (step == null || RouteSplice.haversineM(onLine, step.$1) < 3) {
+      return _roadLockBearing;
+    }
+    final b = Geolocator.bearingBetween(onLine.latitude, onLine.longitude,
+        step.$1.latitude, step.$1.longitude);
+    return (b + 360) % 360;
   }
 
   /// Where the opening camera centres: the arrow itself — the seeded dot,
@@ -2019,9 +2024,8 @@ class DriverNavViewState extends State<DriverNavView>
       final projected = _snapToNavRoute(LatLng(lat, lng));
       if (projected != null) {
         _renderPos = projected;
-        if (_roadLockBearing != null && _speedMps >= 1.0) {
-          _dot.setBearing(_roadLockBearing!);
-        }
+        final aim = _navAimBearing(projected);
+        if (aim != null && _speedMps >= 1.0) _dot.setBearing(aim);
         _trimRouteTo(projected);
       }
     }
@@ -2086,7 +2090,7 @@ class DriverNavViewState extends State<DriverNavView>
       zoom: _chaseZoom,
       // The map follows the arrow's bearing on a damped spring (2026-10-30,
       // "como Google"); the overlay arrow shows the difference.
-      bearing: _stepCamBearing(_dot.bearing, dt),
+      bearing: _followCamBearing(_dot.bearing),
       pitch: _chasePitch,
       padding: mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
     ));

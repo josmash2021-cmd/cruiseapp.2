@@ -121,7 +121,9 @@ class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Dark gradient over the live map — same wash the old screen had.
+          // Darkening only behind the text (owner 2026-11-02: "se debe ver
+          // la ruta completa"): the top half stays clear, so the whole route
+          // the camera frames above the card reads at a glance.
           IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -129,11 +131,11 @@ class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0.15),
-                    Colors.black.withValues(alpha: 0.55),
-                    Colors.black.withValues(alpha: 0.85),
+                    Colors.black.withValues(alpha: 0.0),
+                    Colors.black.withValues(alpha: 0.62),
+                    Colors.black.withValues(alpha: 0.9),
                   ],
-                  stops: const [0.0, 0.5, 1.0],
+                  stops: const [0.48, 0.64, 1.0],
                 ),
               ),
             ),
@@ -282,40 +284,7 @@ class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
                           ),
                         ),
 
-                        const SizedBox(height: 12),
-
-                        // ── Pickup address pill ──
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: _gold.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(20),
-                            border:
-                                Border.all(color: _gold.withValues(alpha: 0.3)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.location_on_rounded,
-                                  color: _gold, size: 16),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  widget.pickupAddress,
-                                  style: const TextStyle(
-                                    color: _gold,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
+                        // No pickup address here (owner 2026-11-02).
                         const SizedBox(height: 16),
 
                         // ── Gold progress bar (fills over [duration]) ──

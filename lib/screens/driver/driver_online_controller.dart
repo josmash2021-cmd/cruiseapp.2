@@ -4594,28 +4594,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   Future<void> _paintAcceptedRouteInner(List<LatLng>? preRoutePoints) async {
     final driverPos = _pos ?? _pickupLL;
-
-    // Frame driver → pickup with the same tilt the old screen opened on.
-    final center = safePoint(
-      (driverPos.longitude + _pickupLL.longitude) / 2,
-      (driverPos.latitude + _pickupLL.latitude) / 2,
-    );
-    if (center != null) {
-      try {
-        _camera(
-          mapbox.CameraOptions(
-            center: center,
-            zoom: 14.5,
-            pitch: 20.0,
-            bearing: _bearingBetween(driverPos, _pickupLL),
-          ),
-          animateMs: 900,
-        );
-      } catch (e) {
-        debugPrint('[DriverOnline] accepted camera failed: $e');
-      }
-    }
-
     try {
       await _setPickupDropoffAnnotations();
     } catch (e) {
@@ -4623,16 +4601,52 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
     if (!mounted || _acceptedOverlay == null) return;
 
-    var pts = preRoutePoints;
-    if (pts == null || pts.length < 2) {
-      pts = await _fetchRoutePoints(driverPos, _pickupLL);
+    // The whole trip, always (owner 2026-11-02, "se debe ver la ruta
+    // completa en esa página siempre"): bright gold to the pickup, faded
+    // gold on from the pickup through the stop to the destination.
+    var toPickup = preRoutePoints;
+    final legs = await Future.wait([
+      (toPickup == null || toPickup.length < 2)
+          ? _fetchRoutePoints(driverPos, _pickupLL)
+          : Future.value(toPickup),
+      _fetchRoutePoints(_pickupLL, _dropoffLL,
+          waypoints: _stopLL == null ? null : [_stopLL!]),
+    ]);
+    toPickup = legs[0];
+    final trip = legs[1];
+    if (!mounted || _acceptedOverlay == null) return;
+
+    _fitAcceptedRoute([
+      driverPos,
+      _pickupLL,
+      if (_stopLL != null) _stopLL!,
+      _dropoffLL,
+      ...toPickup,
+      ...trip,
+    ]);
+
+    if (trip.length >= 2) {
+      final geom = safeLineString(trip);
+      final mgr = _polylineAnnotMgr;
+      if (geom != null && mgr != null) {
+        try {
+          _acceptedTripLine = await mgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geom,
+            lineColor: const Color(0x73E8C547).toARGB32(),
+            lineWidth: 5.5,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } catch (e) {
+          debugPrint('[DriverOnline] accepted trip leg failed: $e');
+        }
+      }
     }
-    if (!mounted || _acceptedOverlay == null || pts.length < 2) return;
+    if (!mounted || _acceptedOverlay == null || toPickup.length < 2) return;
     try {
       // stillWanted overrides the helper's default "a preview is open"
       // liveness check — the preview was torn down before we got here.
       await _drawGoldGlossRoute(
-        pts,
+        toPickup,
         stillWanted: () => _acceptedOverlay != null,
       );
     } catch (e) {
@@ -4640,8 +4654,47 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
   }
 
+  /// Frames every point of the trip, top-down, in the clear strip above the
+  /// celebration card (its content plus the system inset).
+  Future<void> _fitAcceptedRoute(List<LatLng> points) async {
+    final map = _map;
+    if (map == null || points.length < 2) return;
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return;
+    final coords = <mapbox.Point>[];
+    for (final p in points) {
+      final pt = safePoint(p.longitude, p.latitude);
+      if (pt != null) coords.add(pt);
+    }
+    if (coords.length < 2) return;
+    try {
+      final cam = await map.cameraForCoordinatesPadding(
+        coords,
+        mapbox.CameraOptions(pitch: 0, bearing: 0),
+        mapbox.MbxEdgeInsets(
+          top: mq.padding.top + 40,
+          left: 48,
+          bottom: 360 + mq.padding.bottom,
+          right: 48,
+        ),
+        null,
+        null,
+      );
+      if ((cam.zoom ?? 15.5) > 15.5) cam.zoom = 15.5;
+      if (!mounted || _acceptedOverlay == null) return;
+      _camera(cam, animateMs: 900);
+    } catch (e) {
+      debugPrint('[DriverOnline] accepted fit failed: $e');
+    }
+  }
+
   /// Take the celebration off screen. Safe to call more than once.
   void _hideAcceptedOverlay() {
+    final line = _acceptedTripLine;
+    _acceptedTripLine = null;
+    if (line != null) {
+      _polylineAnnotMgr?.delete(line).catchError((Object _) {});
+    }
     if (_acceptedOverlay == null) return;
     _setState(() => _acceptedOverlay = null);
   }

@@ -601,6 +601,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // meant every accept briefly held two native Mapbox surfaces alive at
   // once. Non-null while the celebration is on screen.
   _AcceptedOverlayData? _acceptedOverlay;
+  // The faded pickup → stop → destination leg drawn under the celebration.
+  mapbox.PolylineAnnotation? _acceptedTripLine;
 
   // ── "Viaje cancelado" notice ──
   // Centred, semi-dark, never tappable: the driver is already back to

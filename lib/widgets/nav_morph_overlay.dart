@@ -15,18 +15,19 @@ enum NavMorphDirection { enter, exit }
 /// the tree. The image is plain Flutter content, so it can carry what the
 /// platform view cannot: feathered edges, blur and a free transform.
 ///
-/// enter — the preview's last frame blooms out of the card rect, edges
-///   dissolved into the page colour, over a scrim that fades the trip UI
-///   away; once the live nav map signals ready ([revealRequested]) the
-///   layer cross-fades out and navigation is simply there.
+/// enter — a scrim in the page colour fades the trip UI away; once the
+///   live nav map signals ready ([revealRequested]) it cross-fades out and
+///   navigation is simply there. No snapshot (owner report 2026-11-02): the
+///   preview's frame is card-sized, and stretched over the screen it
+///   smeared the car and the route into tall gold streaks.
 /// exit — the nav map's last frame contracts back toward the card rect,
 ///   dissolving at the edges, while the trip sheet fades back in beneath.
 class NavMorphOverlay extends StatefulWidget {
   const NavMorphOverlay({
     super.key,
     required this.direction,
-    required this.imageBytes,
-    required this.sourceRect,
+    this.imageBytes,
+    this.sourceRect,
     required this.backgroundColor,
     this.revealRequested = false,
     required this.onFinished,
@@ -34,11 +35,12 @@ class NavMorphOverlay extends StatefulWidget {
 
   final NavMorphDirection direction;
 
-  /// Snapshot of the departing map — its exact last frame.
-  final Uint8List imageBytes;
+  /// exit only: snapshot of the departing nav map — its exact last frame.
+  /// Without one the exit is the plain fade.
+  final Uint8List? imageBytes;
 
-  /// Global rect of the mini-map card the morph blooms from / returns to.
-  final Rect sourceRect;
+  /// Global rect of the mini-map card the morph returns to.
+  final Rect? sourceRect;
 
   /// Page background: the scrim and the feather fades dissolve into it.
   final Color backgroundColor;
@@ -160,25 +162,30 @@ class _NavMorphOverlayState extends State<NavMorphOverlay>
           final opacity =
               _isEnter ? p * (1.0 - _reveal.value) : p;
 
-          final image = ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-            child: Image.memory(
-              widget.imageBytes,
-              fit: BoxFit.fill,
-              gaplessPlayback: true,
-              filterQuality: FilterQuality.medium,
-            ),
-          );
-          final framed = Stack(
-            fit: StackFit.expand,
-            children: [
-              image,
-              Opacity(
-                opacity: featherOpacity,
-                child: _Feather(color: widget.backgroundColor),
-              ),
-            ],
-          );
+          // The snapshot only ever plays on the way OUT: the nav map's last
+          // frame is screen-sized, so it fills the screen undistorted.
+          final bytes = _isEnter ? null : widget.imageBytes;
+          final framed = bytes == null
+              ? null
+              : Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ImageFiltered(
+                      imageFilter:
+                          ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                      child: Image.memory(
+                        bytes,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        filterQuality: FilterQuality.medium,
+                      ),
+                    ),
+                    Opacity(
+                      opacity: featherOpacity,
+                      child: _Feather(color: widget.backgroundColor),
+                    ),
+                  ],
+                );
 
           return Opacity(
             opacity: opacity,
@@ -192,7 +199,7 @@ class _NavMorphOverlayState extends State<NavMorphOverlay>
                       child: ColoredBox(color: widget.backgroundColor),
                     ),
                   ),
-                Positioned.fill(child: framed),
+                if (framed != null) Positioned.fill(child: framed),
               ],
             ),
           );

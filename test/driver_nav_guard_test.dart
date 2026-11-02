@@ -102,14 +102,15 @@ void main() {
     test('_enterNavMode releases the preview surface before mounting', () {
       final body =
           bodyOf(accept, 'Future<void> _enterNavMode({bool? toPickup}) async {', maxLen: 3600);
-      final snapshot = body.indexOf('_captureMapSnapshot(_map)');
       final sweep = body.indexOf('_sweepPreviewAnnotations()');
       final unmount = body.indexOf('_previewMapMounted = false');
       final release = body.indexOf(
           'MapSurfaceCoordinator.instance.release(_mapSurfaceOwner)');
       final mount = body.indexOf('_navMode = true');
-      expect(snapshot, isNonNegative,
-          reason: 'the morph needs the preview\'s last frame');
+      expect(body, isNot(contains('_captureMapSnapshot(')),
+          reason: 'owner report 2026-11-02: the card-sized preview frame '
+              'stretched over the screen smeared into gold streaks — the '
+              'enter morph is a plain fade, no snapshot');
       expect(sweep, isNonNegative,
           reason: 'user report 2026-09-19 ("hay un carrito encima de la '
               'flecha"): the preview\'s car annotation + its GPS stream must '
@@ -120,10 +121,6 @@ void main() {
           reason: 'the coordinator claim must be released before the nav '
               'view acquires it');
       expect(mount, isNonNegative);
-      expect(snapshot, lessThan(unmount),
-          reason: 'snapshot BEFORE unmount — a dead surface captures nothing');
-      expect(sweep, greaterThan(snapshot),
-          reason: 'sweep AFTER the snapshot — the morph keeps the last frame');
       expect(sweep, lessThan(unmount),
           reason: 'and BEFORE the unmount, while manager and surface live');
       expect(unmount, lessThan(release));

@@ -944,45 +944,32 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // null keeps the trip's natural leg.
     _navToPickupOverride = toPickup;
     HapticService.mediumImpact();
-    // Morph continuity: capture the preview's exact last frame BEFORE the
-    // surface handoff unmounts it. The overlay blooms this image out of the
-    // card rect while the nav view's own map initialises underneath.
-    final morphRect = _miniMapRect();
-    final morphBytes = await _captureMapSnapshot(_map);
-    if (!mounted) {
-      _navEntering = false;
-      return;
-    }
-    if (morphBytes != null && morphRect != null) {
-      // Decode off the morph's critical path — the first frame must paint
-      // with the image already warm.
-      try {
-        await precacheImage(MemoryImage(morphBytes), context);
-      } catch (_) {}
+    // No snapshot on the way in (owner report 2026-11-02, screenshot of a
+    // stretched, blurred map before the nav opened): the preview's frame is
+    // card-sized, and filling the screen with it smeared the car and the
+    // route into tall gold streaks. The enter morph is a plain fade to the
+    // page colour that lifts once the nav map is ready — and the tap no
+    // longer waits on a snapshot before anything moves.
+    if (_previewMapMounted) {
+      // The preview's annotations must die WITH its map (user report
+      // 2026-09-19, "hay un carrito encima de la flecha"): swept BEFORE the
+      // unmount, while the manager and surface are still alive. AWAITED:
+      // unawaited it raced the unmount and the deletes could land on an
+      // already-torn-down channel, leaving the car behind.
+      await _sweepPreviewAnnotations();
       if (!mounted) {
         _navEntering = false;
         return;
       }
-    }
-    if (_previewMapMounted) {
-      // The preview's annotations must die WITH its map (user report
-      // 2026-09-19, "hay un carrito encima de la flecha"): swept AFTER the
-      // snapshot — the morph keeps the preview's exact last frame — and
-      // BEFORE the unmount, while the manager and surface are still alive.
-      // AWAITED: unawaited it raced the unmount and the deletes could land
-      // on an already-torn-down channel, leaving the car behind.
-      await _sweepPreviewAnnotations();
       setState(() {
         _previewMapMounted = false;
-        if (morphBytes != null && morphRect != null) {
-          _morphBytes = morphBytes;
-          _morphRect = morphRect;
-          _morphEnter = true;
-          _morphReveal = false;
-          // A re-entry during the exit dissolve supersedes it — one morph
-          // overlay at a time.
-          _morphExit = false;
-        }
+        _morphBytes = null;
+        _morphRect = null;
+        _morphEnter = true;
+        _morphReveal = false;
+        // A re-entry during the exit dissolve supersedes it — one morph
+        // overlay at a time.
+        _morphExit = false;
       });
       await surfaceRemoved();
       MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
@@ -5532,8 +5519,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             key: ValueKey(_morphExit ? 'exit' : 'enter'),
             direction:
                 _morphExit ? NavMorphDirection.exit : NavMorphDirection.enter,
-            imageBytes: _morphBytes!,
-            sourceRect: _morphRect!,
+            imageBytes: _morphBytes,
+            sourceRect: _morphRect,
             backgroundColor: _bg,
             revealRequested: _morphReveal,
             onFinished:

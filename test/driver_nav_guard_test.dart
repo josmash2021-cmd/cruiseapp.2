@@ -277,7 +277,7 @@ void main() {
 
     test('nav fixes pass a 30 m accuracy gate (audit 2026-10-28; was 65)',
         () {
-      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 700);
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 1400);
       expect(body.contains('pos.accuracy > 30'), isTrue,
           reason: 'without the gate, GPS noise would fire false reroutes '
               'and yank the road-lock bearing at crossings');
@@ -909,16 +909,41 @@ void main() {
     test('the speed box reads the fix, then the smoother, and zeroes THE '
         'fix a stop happens (user spec 2026-09-27: "instantaneo y en tiempo '
         'real")', () {
-      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 3400);
-      expect(body.contains('_dot.speedMps'), isTrue,
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 4200);
+      expect(body.contains('_setSpeed(measuredSpeed ?? _dot.speedMps);'), isTrue,
           reason: 'iOS reports speed -1 when it has none — the box falls '
               'back to the smoother’s measured glide speed');
-      expect(body.contains('rawSpeed < 0.9'), isTrue,
+      final setter = bodyOf(nav, 'void _setSpeed(double mps) {', maxLen: 500);
+      expect(setter.contains('mps < 0.9 ? 0.0 : mps'), isTrue,
           reason: 'the ~2 mph deadband: a stopped car reads 0 the same fix — '
               'the old 0.45 floor left it sitting at 7-10 mph');
       final dot = File('lib/widgets/gold_location_dot.dart')
           .readAsStringSync().replaceAll('\r\n', '\n');
       expect(dot.contains('double get speedMps => _motion.speedMps;'), isTrue);
+    });
+
+    test('the speed box never freezes on an old number (owner 2026-11-02, '
+        '"la velocidad exacta … sin fallas ni error")', () {
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 4200);
+      // A poor POSITION still carries a good Doppler speed: read it before
+      // the 30 m gate, not after.
+      final speed = body.indexOf('final measuredSpeed = _trustedSpeedMps(pos);');
+      final gate = body.indexOf('if (pos.accuracy > 30) {');
+      expect(speed, isNonNegative);
+      expect(gate, greaterThan(speed));
+      expect(body.substring(gate, gate + 120),
+          contains('if (measuredSpeed != null) _setSpeed(measuredSpeed);'));
+      // A noisy Doppler reading is not trusted.
+      final trusted = bodyOf(nav, 'double? _trustedSpeedMps(Position pos) {', maxLen: 300);
+      expect(trusted.contains('acc > 2.5'), isTrue);
+      // No fix for 3 s while moving: the box reads "–", not the last number;
+      // stopped keeps 0.
+      final tunnel = bodyOf(nav, 'void _tunnelTick() {', maxLen: 900);
+      expect(tunnel.contains('_speedMps > 0 &&'), isTrue);
+      expect(tunnel.contains('const Duration(seconds: 3)'), isTrue);
+      expect(tunnel.contains('_speedStale = true'), isTrue);
+      final box = bodyOf(nav, 'Widget _buildSpeedBox() {', maxLen: 900);
+      expect(box.contains("_speedStale ? '–' : '\$mph'"), isTrue);
     });
 
     test('the arrow lives in its own manager so pins never lie down', () {

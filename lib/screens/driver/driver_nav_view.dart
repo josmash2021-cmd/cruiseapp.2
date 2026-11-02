@@ -422,6 +422,9 @@ class DriverNavViewState extends State<DriverNavView>
   // the stoplight heading-freeze measures genuine movement against.
   LatLng? _headingSetAt;
   int _lastMphShown = -1;
+  // When the speed was last measured, and whether the box gave up on it.
+  DateTime _speedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _speedStale = false;
   int _remainSecs = 0;
   double _remainMeters = 0;
 
@@ -862,6 +865,15 @@ class DriverNavViewState extends State<DriverNavView>
 
   void _tunnelTick() {
     if (!mounted) return;
+    // A speed nobody re-measured for 3 s is not a speed (owner 2026-11-02):
+    // with no fixes the box froze on the last number — 45 mph through a
+    // tunnel or after the signal died. It reads "–" until a fix measures
+    // again. Stopped stays 0: iOS pauses the fixes of a parked car.
+    if (!_speedStale &&
+        _speedMps > 0 &&
+        DateTime.now().difference(_speedAt) > const Duration(seconds: 3)) {
+      setState(() => _speedStale = true);
+    }
     final last = _lastUsableFixAt ?? _lastGpsFixAt;
     final pts = _routePts;
     final now = DateTime.now();
@@ -946,6 +958,29 @@ class DriverNavViewState extends State<DriverNavView>
     }
   }
 
+  /// The fix's Doppler speed when the platform measured it and vouches for
+  /// it: a reported speed accuracy worse than 2.5 m/s (~6 mph) is noise.
+  double? _trustedSpeedMps(Position pos) {
+    final s = measuredSpeedMps(pos);
+    if (s == null) return null;
+    final acc = pos.speedAccuracy;
+    if (acc.isFinite && acc > 2.5) return null;
+    return s;
+  }
+
+  /// The one writer of the speed readout. Deadband at 0.9 m/s (~2 mph):
+  /// under that the car is stopped and the box reads 0 THE SAME fix.
+  void _setSpeed(double mps) {
+    _speedMps = mps < 0.9 ? 0.0 : mps;
+    _speedAt = DateTime.now();
+    final mph = (_speedMps * 2.23694).round();
+    if (mph != _lastMphShown || _speedStale) {
+      _lastMphShown = mph;
+      _speedStale = false;
+      setState(() {}); // the mph box is the only reader
+    }
+  }
+
   void _onGpsFix(Position pos) {
     if (!mounted || !_gpsFixPolicy.accept(pos)) return;
     _lastGpsFixAt = DateTime.now();
@@ -953,11 +988,20 @@ class DriverNavViewState extends State<DriverNavView>
       _gpsDown = false;
       _recomputeNavPhase();
     }
+    // Speed before the position gate (owner 2026-11-02, "la velocidad exacta
+    // … sin fallas ni error"): the satellites' Doppler speed is measured
+    // apart from the position, so a fix whose POSITION is poor (> 30 m, a
+    // street between tall buildings) still carries a good speed — the gate
+    // below dropped it and the box froze on an old number.
+    final measuredSpeed = _trustedSpeedMps(pos);
     // 30 m accuracy gate (audit extra; was 65): a fix that declares itself
     // worse must not steer the chase, the trim, the off-route check or the
     // arrival latch — with the arrow snapped to the line, a 65 m fix only
     // yanked the road-lock bearing around at crossings.
-    if (pos.accuracy > 30) return;
+    if (pos.accuracy > 30) {
+      if (measuredSpeed != null) _setSpeed(measuredSpeed);
+      return;
+    }
     // Tunnel mode keys on USABLE fixes: a stream of > 30 m fixes kept
     // _lastGpsFixAt fresh and the tunnel never engaged (review 2026-10-30).
     _lastUsableFixAt = DateTime.now();
@@ -1000,13 +1044,7 @@ class DriverNavViewState extends State<DriverNavView>
     // (~2 mph): under that the car is stopped and the box must read 0 THE
     // SAME fix — the old 0.45 floor let a stop sit at 7-10 mph while the
     // extrapolated glide bled off.
-    final rawSpeed = measuredSpeedMps(pos) ?? _dot.speedMps;
-    _speedMps = rawSpeed < 0.9 ? 0.0 : rawSpeed;
-    final mph = (_speedMps * 2.23694).round();
-    if (mph != _lastMphShown) {
-      _lastMphShown = mph;
-      setState(() {}); // the mph box is the only reader
-    }
+    _setSpeed(measuredSpeed ?? _dot.speedMps);
     _updateManeuvers(fixLL);
     // Route-tangent heading at EVERY speed while on-route (see above).
     if (onRoute) {
@@ -3378,7 +3416,7 @@ class DriverNavViewState extends State<DriverNavView>
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '$mph',
+            _speedStale ? '–' : '$mph',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 22,

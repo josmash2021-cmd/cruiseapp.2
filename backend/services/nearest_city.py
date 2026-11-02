@@ -47,6 +47,10 @@ def _index() -> dict[tuple[int, int], list[tuple[float, float, str, str]]]:
         grid: dict[tuple[int, int], list[tuple[float, float, str, str]]] = {}
         for key, point in city_centers().items():
             state, _, city = key.partition("|")
+            # GeoNames keeps a few vanished towns ("Estates of Fort
+            # Lauderdale (historical)"); nobody would recognize them.
+            if "(historical)" in city:
+                continue
             try:
                 lat, lng = float(point[0]), float(point[1])
             except (TypeError, ValueError, IndexError):

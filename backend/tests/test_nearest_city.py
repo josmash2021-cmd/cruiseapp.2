@@ -17,6 +17,14 @@ def test_known_places(lat, lng, expected):
     assert nearest_city(lat, lng) == expected
 
 
+def test_vanished_towns_are_never_the_answer():
+    # Driver 486 on 2026-11-02 read "Estates of Fort Lauderdale (historical)".
+    # Standing exactly on that old town's center.
+    place = nearest_city(26.0522, -80.17939)
+    assert place is not None and place[0] == "FL"
+    assert "(historical)" not in place[1]
+
+
 @pytest.mark.parametrize("lat,lng", [
     (0.0, 0.0),            # a dead GPS reading
     (24.0, -84.0),         # open Gulf, far from any city

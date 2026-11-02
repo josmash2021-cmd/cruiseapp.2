@@ -2661,11 +2661,15 @@ class ApiService {
     return _parse(res);
   }
 
-  /// Get a trip by ID (for polling status).
-  static Future<Map<String, dynamic>> getTrip(int tripId) async {
+  /// Get a trip by ID (for polling status). [riderStats] adds the rider's
+  /// completed rides, rating, days on Cruise and verified flag — the
+  /// driver's navigation asks once when the trip opens, never in the poll.
+  static Future<Map<String, dynamic>> getTrip(int tripId,
+      {bool riderStats = false}) async {
     final h = await _authHeaders();
+    final q = riderStats ? '?rider_stats=true' : '';
     final res = await _client
-        .get(Uri.parse('$_baseUrl/trips/$tripId'), headers: h)
+        .get(Uri.parse('$_baseUrl/trips/$tripId$q'), headers: h)
         .timeout(const Duration(seconds: 8));
     return _parse(res);
   }

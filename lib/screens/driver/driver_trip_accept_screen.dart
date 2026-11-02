@@ -254,6 +254,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // (offers during this trip) and "Último viaje" (none during it, and
   // offline when it ends).
   bool _receivingRides = true;
+
+  // The rider's card in navigation: exact completed rides, rating, days on
+  // Cruise, verified — fetched once when the trip opens.
+  int? _riderTrips;
+  int? _riderDays;
+  double? _riderRatingLive;
+  bool _riderVerified = false;
   late bool _pageHidden = widget.autoNav;
   bool _lastTrip = false;
 
@@ -708,6 +715,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     });
     _resolveGenericAddresses();
     _resolveRiderPhotoFromTrip();
+    unawaited(_loadRiderStats());
     _loadComplimentaryDrinkIfVip();
 
     // If returning from nav (trip already started), skip slide-to-confirm
@@ -1186,6 +1194,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       setState(() => _routePoints = pts);
     } catch (e) {
       debugPrint('[DriverTripAccept] preview route unavailable: $e');
+    }
+  }
+
+  Future<void> _loadRiderStats() async {
+    try {
+      final t = await ApiService.getTrip(widget.tripId, riderStats: true);
+      if (!mounted) return;
+      int? asInt(dynamic v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}');
+      final rating = t['rider_rating'];
+      setState(() {
+        _riderTrips = asInt(t['rider_completed_trips']);
+        _riderDays = asInt(t['rider_days']);
+        _riderRatingLive = rating is num ? rating.toDouble() : null;
+        _riderVerified = t['rider_verified'] == true;
+      });
+    } catch (e) {
+      debugPrint('[DriverTrip] rider stats failed: $e');
     }
   }
 
@@ -5558,7 +5583,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               onSupport: _openSupportChat,
               onMapReady: _onNavMapReady,
               // The redesigned panel (owner design 2026-11-02).
-              riderRating: widget.riderRating,
+              riderRating: _riderRatingLive ??
+                  (widget.riderRating > 0 ? widget.riderRating : null),
+              riderTrips: _riderTrips,
+              riderDays: _riderDays,
+              riderVerified: _riderVerified,
               onCancelTrip: _showDriverCancelSheet,
               onSafety: _showSafetySupportMenu,
               receivingRides: _receivingRides,

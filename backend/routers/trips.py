@@ -676,7 +676,12 @@ async def poll_trip_status(trip_id: int, user: User = Depends(_get_current_user)
 
 
 @router.get("/trips/{trip_id}", dependencies=[Depends(_verify_api_key)])
-async def get_trip(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_trip(
+    trip_id: int,
+    rider_stats: bool = Query(False),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:
@@ -732,6 +737,31 @@ async def get_trip(trip_id: int, user: User = Depends(_get_current_user), db: As
             d["vehicle_color"] = (_veh.color or "") if _veh else ""
             d["vehicle_plate"] = (_veh.plate or "") if _veh else ""
             d["vehicle_year"] = (str(_veh.year) if _veh.year else "") if _veh else ""
+    # The rider's card in the driver's navigation (owner design 2026-11-02):
+    # rides actually completed (exact), rating, days on Cruise, verified.
+    # Asked once when the trip opens — the 8 s status poll skips it.
+    if rider_stats and user.id == trip.driver_id and trip.rider_id:
+        try:
+            _rd = (await db.execute(select(User).where(User.id == trip.rider_id))).scalar_one_or_none()
+            if _rd:
+                _done = await db.execute(
+                    select(func.count(Trip.id)).where(
+                        Trip.rider_id == _rd.id, Trip.status == "completed"
+                    )
+                )
+                d["rider_completed_trips"] = int(_done.scalar() or 0)
+                _created = _rd.created_at
+                if _created is not None and _created.tzinfo is None:
+                    _created = _created.replace(tzinfo=timezone.utc)
+                d["rider_days"] = (
+                    max(0, (datetime.now(timezone.utc) - _created).days)
+                    if _created is not None else None
+                )
+                _ravg = getattr(_rd, "average_rating", None)
+                d["rider_rating"] = round(float(_ravg), 2) if _ravg is not None else None
+                d["rider_verified"] = bool(_rd.is_verified)
+        except Exception as _rerr:
+            logging.warning("[GetTrip] rider stats failed: %s", _rerr)
     return d
 
 @router.get("/trips/available", dependencies=[Depends(_verify_api_key)])

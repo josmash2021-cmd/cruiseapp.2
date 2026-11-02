@@ -45,6 +45,7 @@ from services.email_sms_service import send_sms_async
 from services.socketio_service import notify_user, emit_trip_status, sio
 from services.event_bus import event_bus
 from services import rider_presence_registry
+from services.nearest_city import city_centers, nearest_city
 from services.rider_pricing import (
     PricingConfigPatch, get_pricing_config, update_pricing_config,
 )
@@ -1740,7 +1741,7 @@ def _rider_display_name(user: User) -> str:
     return f"{user.first_name or ''} {user.last_name or ''}".strip()
 
 
-def _rider_last_seen(value: datetime) -> datetime:
+def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
@@ -1765,7 +1766,7 @@ async def _online_riders_snapshot(db: AsyncSession):
     )).scalars().all()
     riders = []
     for user in rows:
-        last_seen = _rider_last_seen(user.last_active_at)
+        last_seen = _as_utc(user.last_active_at)
         if now - last_seen > _RIDER_PRESENCE_MAX_AGE:
             continue
         riders.append({
@@ -1814,10 +1815,34 @@ async def _online_drivers_snapshot(db: AsyncSession):
             driver_id: round(float(average), 1) if average else 0.0
             for driver_id, average in rating_rows
         }
+        # The fleet panel's "Buscando viaje" list waits since the later of
+        # going online and the end of the driver's last trip.
+        finished_rows = (await db.execute(
+            select(Trip.driver_id,
+                   func.max(func.coalesce(Trip.completed_at, Trip.updated_at)))
+            .where(
+                Trip.driver_id.in_(driver_ids),
+                Trip.status.in_(("completed", "cancelled")),
+            )
+            .group_by(Trip.driver_id)
+        )).all()
+        finished_by_driver = {
+            driver_id: finished_at for driver_id, finished_at in finished_rows
+        }
+    else:
+        finished_by_driver = {}
 
     drivers = []
     for user, vehicle in rows:
         trip_id = trip_by_driver.get(user.id)
+        place = nearest_city(user.lat, user.lng)
+        waiting_since = max(
+            (stamp for stamp in (user.online_since,
+                                 finished_by_driver.get(user.id))
+             if stamp is not None),
+            key=_as_utc,
+            default=None,
+        )
         drivers.append({
             "id": user.id,
             "name": f"{user.first_name or ''} {user.last_name or ''}".strip(),
@@ -1836,6 +1861,11 @@ async def _online_drivers_snapshot(db: AsyncSession):
             "trip_id": trip_id,
             "last_updated": (
                 user.last_active_at.isoformat() if user.last_active_at else None
+            ),
+            "state": place[0] if place else None,
+            "city": place[1] if place else None,
+            "waiting_since": (
+                _as_utc(waiting_since).isoformat() if waiting_since else None
             ),
         })
     return {"drivers": drivers}
@@ -3237,25 +3267,10 @@ async def admin_driver_locations(db: AsyncSession = Depends(get_db)):
             "zone_counts": zone_counts}
 
 
-_city_centers_cache: dict | None = None
-
-
 def _city_center(key: str):
     """[lat, lng] for a "ST|City" key, or None — loaded once from the
-    GeoNames-derived table in backend/data/us_city_centers.json."""
-    global _city_centers_cache
-    if _city_centers_cache is None:
-        import json
-        from pathlib import Path
-        path = Path(__file__).resolve().parents[1] / "geo" / \
-            "us_city_centers.json"
-        try:
-            _city_centers_cache = json.loads(path.read_text(
-                encoding="utf-8"))
-        except Exception as e:
-            logging.warning("[CityCenters] load failed: %s", e)
-            _city_centers_cache = {}
-    return _city_centers_cache.get(key)
+    GeoNames-derived table in backend/geo/us_city_centers.json."""
+    return city_centers().get(key)
 
 
 @router.get("/admin/platform-stats", dependencies=[Depends(_require_dispatch_auth)])

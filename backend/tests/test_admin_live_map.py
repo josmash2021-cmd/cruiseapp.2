@@ -90,7 +90,56 @@ async def test_online_drivers_are_db_online_and_batch_trip_lookup(
     assert rows[0]["trip_id"] == trip.id
     assert rows[0]["on_trip"] is True
     assert rows[0]["lat"] == 25.76
-    assert len(queries) == 3, "drivers + active trips + ratings, never N+1"
+    assert len(queries) == 4, (
+        "drivers + active trips + ratings + last finished trip, never N+1")
+
+
+async def test_online_drivers_carry_state_city_and_waiting_since(
+        client, db, test_rider, test_driver):
+    """The fleet panel groups "Buscando viaje" by state and shows how long
+    each driver has waited: since going online or since the last trip
+    ended, whichever is later."""
+    rider, _ = test_rider
+    driver, _ = test_driver
+    driver.is_online = True
+    driver.lat = 25.8576
+    driver.lng = -80.2781
+    driver.online_since = datetime(2026, 11, 2, 14, 0, tzinfo=UTC)
+    done = _trip(rider, driver, status="completed")
+    done.completed_at = datetime(2026, 11, 2, 15, 30, tzinfo=UTC)
+    older = _trip(rider, driver, status="cancelled")
+    older.completed_at = datetime(2026, 11, 2, 13, 0, tzinfo=UTC)
+    db.add_all([done, older])
+    await db.commit()
+
+    response = await client.get("/admin/drivers/online", headers=_dh())
+    assert response.status_code == 200, response.text
+    row = response.json()["drivers"][0]
+    assert row["on_trip"] is False
+    assert (row["state"], row["city"]) == ("FL", "Hialeah")
+    assert row["waiting_since"].startswith("2026-11-02T15:30:00")
+
+    driver.lat, driver.lng = 33.52, -86.80
+    done.completed_at = datetime(2026, 11, 2, 13, 30, tzinfo=UTC)
+    await db.commit()
+    row = (await client.get(
+        "/admin/drivers/online", headers=_dh())).json()["drivers"][0]
+    assert (row["state"], row["city"]) == ("AL", "Birmingham")
+    assert row["waiting_since"].startswith("2026-11-02T14:00:00")
+
+
+async def test_online_driver_without_position_has_no_state(
+        client, db, test_driver):
+    driver, _ = test_driver
+    driver.is_online = True
+    driver.lat = None
+    driver.lng = None
+    driver.online_since = None
+    await db.commit()
+    row = (await client.get(
+        "/admin/drivers/online", headers=_dh())).json()["drivers"][0]
+    assert row["state"] is None and row["city"] is None
+    assert row["waiting_since"] is None
 
 
 async def test_active_trips_include_live_riders_not_registered_or_future(

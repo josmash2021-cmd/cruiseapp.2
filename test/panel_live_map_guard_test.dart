@@ -510,4 +510,26 @@ console.log('rider presence freshness ok');
     expect(chunk, contains('Sin actividad en el mapa'));
     expect(chunk, contains('No se pudieron cargar los datos del mapa'));
   });
+
+  test('"Buscando viaje" lists free drivers by state (dueño 2026-11-02)', () {
+    expect(chunk, contains('{ key: "FL", label: "Florida" }'));
+    expect(chunk, contains('{ key: "AL", label: "Alabama" }'));
+    expect(chunk, contains('{ key: "OTHER", label: "Otros estados" }'));
+    expect(chunk, contains('if (driver.onTrip) continue;'),
+        reason: 'a driver on a trip is not looking for one');
+    expect(chunk, contains('state: asText(raw?.state).trim().toUpperCase()'));
+    expect(chunk, contains('raw?.waiting_since ?? raw?.waitingSince'),
+        reason: 'a live GPS event spreads the normalized driver back in; '
+            'the camelCase fallback keeps the wait time');
+    expect(chunk, contains('\${count} buscando viaje'));
+    expect(chunk, contains('fitSelectedContent(mapRef.current, containerRef.current, [driver.position])'),
+        reason: 'picking a driver from the list brings them into view');
+    expect(chunk, contains('timer = setTimeout(tick, CLOCK_TICK_MS)'));
+    expect(chunk, contains('return () => clearTimeout(timer);'));
+    // bg-[#0A0A0E]/95, z-20 and bg-[#9CA3AF] are not in the compiled CSS.
+    expect(chunk,
+        contains('const PANEL_SURFACE = { background: "rgba(10,10,14,0.95)", zIndex: 20 };'));
+    expect(chunk, isNot(contains('bg-[#0A0A0E]/95"')));
+    expect(chunk, isNot(contains('"bg-[#9CA3AF]"')));
+  });
 }

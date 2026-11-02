@@ -65,6 +65,64 @@ const INACTIVE_TRIP_STATUSES = new Set([
   "scheduled",
 ]);
 
+// "Buscando viaje" panel (dueño 2026-11-02): online drivers with no active
+// trip, grouped by the state they are in right now.
+const SEARCHING_GROUPS = [
+  { key: "FL", label: "Florida" },
+  { key: "AL", label: "Alabama" },
+  { key: "OTHER", label: "Otros estados" },
+];
+const STALE_SIGNAL_MS = 180000;
+// Inline on purpose: bg-[#0A0A0E]/95, z-20 and bg-[#9CA3AF] are not in the
+// compiled stylesheet (index-BMTOULIX.css) — as classes they paint nothing.
+const PANEL_SURFACE = { background: "rgba(10,10,14,0.95)", zIndex: 20 };
+const IDLE_DOT = { background: "#9CA3AF" };
+const CLOCK_TICK_MS = 30000;
+
+function minutesSince(iso, now) {
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return null;
+  return Math.max(0, Math.floor((now - at) / 60000));
+}
+
+function durationLabel(minutes) {
+  if (minutes < 1) return "menos de 1 min";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+}
+
+function searchingGroupKey(driver) {
+  return driver.state === "FL" || driver.state === "AL" ? driver.state : "OTHER";
+}
+
+function searchingPlace(driver) {
+  if (driver.position === null) return "Sin ubicación";
+  if (driver.state === "") return "Ubicando…";
+  if (searchingGroupKey(driver) !== "OTHER") return driver.city || driver.state;
+  return driver.city ? `${driver.city}, ${driver.state}` : driver.state;
+}
+
+function groupSearchingDrivers(drivers) {
+  const groups = new Map(SEARCHING_GROUPS.map((group) => [group.key, []]));
+  for (const driver of drivers) {
+    if (driver.onTrip) continue;
+    groups.get(searchingGroupKey(driver)).push(driver);
+  }
+  for (const list of groups.values()) {
+    // Longest wait first; an unknown wait goes last.
+    list.sort((first, second) => {
+      const a = Date.parse(first.waitingSince);
+      const b = Date.parse(second.waitingSince);
+      const byWait =
+        (Number.isFinite(a) ? a : Infinity) - (Number.isFinite(b) ? b : Infinity);
+      return byWait || first.name.localeCompare(second.name);
+    });
+  }
+  return groups;
+}
+
 function emptyFeatureCollection() {
   return { type: "FeatureCollection", features: [] };
 }
@@ -162,6 +220,11 @@ function normalizeDriver(raw) {
     heading: numberOrNull(raw?.heading),
     capturedAt: asText(raw?.captured_at),
     photoUrl: asText(raw?.photo_url ?? raw?.photoUrl),
+    // Offline nearest-city lookup on the server (2-letter code, "" unknown).
+    state: asText(raw?.state).trim().toUpperCase(),
+    city: asText(raw?.city).trim(),
+    // Later of going online and the end of the last trip.
+    waitingSince: asText(raw?.waiting_since ?? raw?.waitingSince),
   };
 }
 
@@ -1590,6 +1653,10 @@ function FleetMap({ token }) {
     React.useState(null);
   const [detail, setDetail] = React.useState(emptyDetail());
   const [detailRetry, setDetailRetry] = React.useState(0);
+  const [searchingOpen, setSearchingOpen] = React.useState(
+    () => typeof window === "undefined" || window.innerWidth >= 768,
+  );
+  const [clockNow, setClockNow] = React.useState(() => Date.now());
 
   const containerRef = React.useRef(null);
   const mapRef = React.useRef(null);
@@ -1646,6 +1713,23 @@ function FleetMap({ token }) {
   const selectedDriver =
     drivers.find((driver) => driver.id === selectedDriverId) ??
     selectedDriverSnapshot;
+  const searchingGroups = React.useMemo(
+    () => groupSearchingDrivers(drivers),
+    [drivers],
+  );
+  let searchingCount = 0;
+  for (const list of searchingGroups.values()) searchingCount += list.length;
+
+  React.useEffect(() => {
+    if (!searchingOpen) return undefined;
+    let timer = null;
+    function tick() {
+      setClockNow(Date.now());
+      timer = setTimeout(tick, CLOCK_TICK_MS);
+    }
+    tick();
+    return () => clearTimeout(timer);
+  }, [searchingOpen]);
 
   const closePopup = React.useCallback(() => {
     popupOwnerRef.current = null;
@@ -2134,6 +2218,14 @@ function FleetMap({ token }) {
     detailRetry,
   ]);
 
+  function focusSearchingDriver(driverId) {
+    const driver = driversRef.current.find((item) => item.id === driverId);
+    selectDriver(driverId);
+    if (driver?.position && mapRef.current && containerRef.current) {
+      fitSelectedContent(mapRef.current, containerRef.current, [driver.position]);
+    }
+  }
+
   function handleStateChange(mode) {
     stateModeRef.current = mode;
     setStateMode(mode);
@@ -2203,6 +2295,11 @@ function FleetMap({ token }) {
                 dotClass: "bg-online",
                 label: `${drivers.length} en línea`,
               }),
+              jsxRuntime.jsx(SearchingToggle, {
+                open: searchingOpen,
+                count: searchingCount,
+                onClick: () => setSearchingOpen((value) => !value),
+              }),
               jsxRuntime.jsx(StatPill, {
                 dotClass: "bg-primary",
                 label: `${trips.length} viajes activos`,
@@ -2264,7 +2361,7 @@ function FleetMap({ token }) {
       jsxRuntime.jsxs("div", {
         className: classNames(
           "pointer-events-none absolute bottom-3 left-3 z-10 items-center gap-3 rounded-chip border border-cardBorder bg-[#0A0A0E]/85 px-3.5 py-2 backdrop-blur",
-          selectedDriverId === null ? "flex" : "hidden md:flex",
+          selectedDriverId === null && !searchingOpen ? "flex" : "hidden md:flex",
         ),
         children: [
           jsxRuntime.jsxs(LegendItem, {
@@ -2278,17 +2375,75 @@ function FleetMap({ token }) {
           jsxRuntime.jsxs(LegendItem, {
             children: [
               jsxRuntime.jsx("span", {
-                className: "h-3 w-3 rounded-[4px] border border-white/60 bg-[#9CA3AF]",
+                className: "h-3 w-3 rounded-[4px] border border-white/60",
+                style: IDLE_DOT,
               }),
               "Rider en pickup",
             ],
           }),
         ],
       }),
+      searchingOpen &&
+        !snapshot.loading &&
+        (containerWidth >= 768 || selectedDriverId === null) &&
+        jsxRuntime.jsxs("section", {
+          role: "region",
+          "aria-label": "Conductores buscando viaje",
+          className:
+            "absolute overflow-y-auto rounded-card border border-cardBorder p-4 shadow-2xl shadow-black/60 backdrop-blur",
+          style: {
+            ...PANEL_SURFACE,
+            ...(containerWidth < 768
+              ? { left: 12, right: 12, bottom: 12, maxHeight: "45vh" }
+              : { left: 16, bottom: 64, width: 300, maxHeight: "calc(100% - 210px)" }),
+          },
+          children: [
+            jsxRuntime.jsxs("div", {
+              className: "flex items-start justify-between gap-3",
+              children: [
+                jsxRuntime.jsxs("div", {
+                  className: "min-w-0",
+                  children: [
+                    jsxRuntime.jsx("h2", {
+                      className: "truncate text-base font-bold text-white",
+                      children: "Buscando viaje",
+                    }),
+                    jsxRuntime.jsx("p", {
+                      className: "mt-0.5 text-xs text-textSecondary",
+                      children: "En línea y sin viaje activo",
+                    }),
+                  ],
+                }),
+                jsxRuntime.jsx("button", {
+                  type: "button",
+                  "aria-label": "Ocultar conductores buscando viaje",
+                  onClick: () => setSearchingOpen(false),
+                  className:
+                    "shrink-0 rounded-pill border border-primary/30 px-3 py-1.5 text-[11px] font-bold text-primary transition-colors hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/60",
+                  children: "Ocultar",
+                }),
+              ],
+            }),
+            ...SEARCHING_GROUPS.map((group) =>
+              jsxRuntime.jsx(
+                SearchingGroup,
+                {
+                  label: group.label,
+                  drivers: searchingGroups.get(group.key),
+                  now: clockNow,
+                  selectedDriverId,
+                  onSelect: focusSearchingDriver,
+                },
+                group.key,
+              ),
+            ),
+          ],
+        }),
       snapshot.loading &&
         jsxRuntime.jsx("div", {
           className:
             "absolute inset-0 z-30 flex items-center justify-center bg-background/40",
+          style: { zIndex: 30 },
           children: jsxRuntime.jsx(Loading, { message: "Cargando mapa…" }),
         }),
       noActivity &&
@@ -2319,7 +2474,7 @@ function FleetMap({ token }) {
       (snapshot.error !== null || snapshot.zonesError !== null) &&
         jsxRuntime.jsx("div", {
           className: "absolute inset-x-3 z-20 flex justify-center",
-          style: { top: 128 },
+          style: { top: 128, zIndex: 30 },
           children: jsxRuntime.jsxs("div", {
             role: "alert",
             className:
@@ -2349,9 +2504,10 @@ function FleetMap({ token }) {
           role: "region",
           "aria-label": "Detalle del conductor",
           className:
-            "absolute z-20 overflow-y-auto rounded-card border border-primary/25 bg-[#0A0A0E]/95 p-4 shadow-2xl shadow-black/60 backdrop-blur",
-          style:
-            containerWidth < 768
+            "absolute overflow-y-auto rounded-card border border-primary/25 p-4 shadow-2xl shadow-black/60 backdrop-blur",
+          style: {
+            ...PANEL_SURFACE,
+            ...(containerWidth < 768
               ? { left: 12, right: 12, bottom: 12, maxHeight: "48vh" }
               : {
                   left: "auto",
@@ -2360,7 +2516,8 @@ function FleetMap({ token }) {
                   bottom: "auto",
                   width: 360,
                   maxHeight: "calc(100vh - 10rem)",
-                },
+                }),
+          },
           children: [
             jsxRuntime.jsxs("div", {
               className: "flex items-start justify-between gap-3",
@@ -2535,6 +2692,114 @@ function StatPill({ dotClass, label, dotStyle }) {
       jsxRuntime.jsx("span", {
         className: "text-[11px] font-bold text-textPrimary",
         children: label,
+      }),
+    ],
+  });
+}
+
+function SearchingToggle({ open, count, onClick }) {
+  return jsxRuntime.jsxs("button", {
+    type: "button",
+    "aria-pressed": open,
+    "aria-label": "Conductores buscando viaje",
+    onClick,
+    className: classNames(
+      "pointer-events-auto flex items-center gap-1.5 rounded-chip border bg-[#0A0A0E]/85 px-3 py-1.5 backdrop-blur transition-colors focus:outline-none focus:ring-2 focus:ring-primary/60",
+      open ? "border-primary/30" : "border-cardBorder hover:bg-primary/10",
+    ),
+    children: [
+      jsxRuntime.jsx("span", {
+        className: classNames("h-2 w-2 rounded-full", count > 0 && "bg-online"),
+        style: count > 0 ? undefined : IDLE_DOT,
+      }),
+      jsxRuntime.jsx("span", {
+        className: "text-[11px] font-bold text-textPrimary",
+        children: `${count} buscando viaje`,
+      }),
+    ],
+  });
+}
+
+function SearchingGroup({ label, drivers, now, selectedDriverId, onSelect }) {
+  return jsxRuntime.jsxs("div", {
+    className: "mt-3",
+    children: [
+      jsxRuntime.jsxs("p", {
+        className:
+          "flex items-center justify-between text-[10px] font-bold uppercase tracking-wide text-textHint",
+        children: [
+          label,
+          jsxRuntime.jsx("span", {
+            className: drivers.length > 0 ? "text-online" : undefined,
+            children: drivers.length,
+          }),
+        ],
+      }),
+      drivers.length === 0
+        ? jsxRuntime.jsx("p", {
+            className: "mt-1 text-xs text-textHint",
+            children: "Nadie buscando viaje",
+          })
+        : drivers.map((driver) =>
+            jsxRuntime.jsx(
+              SearchingRow,
+              {
+                driver,
+                now,
+                selected: driver.id === selectedDriverId,
+                onSelect,
+              },
+              driver.id,
+            ),
+          ),
+    ],
+  });
+}
+
+function SearchingRow({ driver, now, selected, onSelect }) {
+  const waited = minutesSince(driver.waitingSince, now);
+  const silent = minutesSince(driver.lastUpdated, now);
+  const stale = silent !== null && silent * 60000 >= STALE_SIGNAL_MS;
+  const place = searchingPlace(driver);
+  const status = stale
+    ? `sin señal hace ${durationLabel(silent)}`
+    : waited === null
+      ? ""
+      : `esperando ${durationLabel(waited)}`;
+  return jsxRuntime.jsxs("button", {
+    type: "button",
+    "aria-pressed": selected,
+    disabled: driver.position === null,
+    onClick: () => onSelect(driver.id),
+    className: classNames(
+      "mt-1 flex w-full items-center gap-2 rounded-input px-2 py-1.5 text-left transition-colors hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/60 disabled:opacity-50",
+    ),
+    style: selected ? { background: "rgba(232,197,71,0.10)" } : undefined,
+    children: [
+      jsxRuntime.jsx("span", {
+        "aria-hidden": "true",
+        className: classNames("h-2 w-2 shrink-0 rounded-full", !stale && "bg-online"),
+        style: stale ? IDLE_DOT : undefined,
+      }),
+      jsxRuntime.jsxs("span", {
+        className: "min-w-0 flex-1",
+        children: [
+          jsxRuntime.jsx("span", {
+            className: "block truncate text-sm font-semibold text-white",
+            children: driver.name,
+          }),
+          jsxRuntime.jsxs("span", {
+            className: "block truncate text-[11px] text-textSecondary",
+            children: [
+              place,
+              status !== "" &&
+                jsxRuntime.jsx("span", {
+                  className: stale ? "text-warning" : undefined,
+                  children: ` · ${status}`,
+                }),
+            ],
+          }),
+        ],
       }),
     ],
   });

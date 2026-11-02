@@ -397,9 +397,11 @@ void main() {
       expect(nav.contains('_endRouteRaised'), isFalse,
           reason: 'the panel never auto-raises on arrival');
       final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 9000);
-      expect(bar.contains('s.navExit'), isTrue,
-          reason: 'the top bar keeps the quiet X until the trip page is gone');
+      expect(bar, isNot(contains('widget.onExit()')),
+          reason: 'the trip page is gone, so the banner has no X back to it');
       expect(bar, isNot(contains('navEndRoute')));
+      expect(nav.contains('icon: Icons.shield_rounded,'), isTrue,
+          reason: 'Seguridad y soporte (911 first) rides the map as a shield');
     });
 
     test('arrived: bar shows the CLIENT ADDRESS, arrow aims at the pin '

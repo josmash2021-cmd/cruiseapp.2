@@ -142,6 +142,7 @@ class DriverNavView extends StatefulWidget {
     this.onToggleReceiving,
     this.onToggleLastTrip,
     this.onNoShow,
+    this.onSafety,
   });
 
   final int tripId;
@@ -219,6 +220,10 @@ class DriverNavView extends StatefulWidget {
 
   /// The free wait is over and the rider never came (the red slider).
   final VoidCallback? onNoShow;
+
+  /// "Seguridad y soporte" (911 first) — the shield on the map, since the
+  /// trip page that carried it goes away (owner 2026-11-02).
+  final VoidCallback? onSafety;
 
   @override
   State<DriverNavView> createState() => DriverNavViewState();
@@ -3045,6 +3050,16 @@ class DriverNavViewState extends State<DriverNavView>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Safety and support, one tap away while driving or parked
+              // (owner 2026-11-02): Emergencia 911 sits at the top.
+              if (widget.onSafety != null) ...[
+                _roundMapBtn(
+                  icon: Icons.shield_rounded,
+                  tooltip: s.safetyAndSupport,
+                  onTap: widget.onSafety!,
+                ),
+                const SizedBox(height: 10),
+              ],
               // The route button (owner 2026-11-02): dot, zigzag, dot —
               // stood upright — shows the whole route; again, back to the
               // chase.
@@ -3340,27 +3355,6 @@ class DriverNavViewState extends State<DriverNavView>
                 ),
               ),
             ),
-          // Way back to the trip sheet — navigation never traps the driver.
-          // Goes once the trip page itself is gone (owner design 2026-11-02).
-          Tooltip(
-            message: s.navExit,
-            child: GestureDetector(
-              onTap: () {
-                HapticService.lightImpact();
-                widget.onExit();
-              },
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.close_rounded,
-                    color: Colors.white70, size: 18),
-              ),
-            ),
-          ),
         ],
       ),
     );

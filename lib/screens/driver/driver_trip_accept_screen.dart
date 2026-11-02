@@ -5560,6 +5560,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               // The redesigned panel (owner design 2026-11-02).
               riderRating: widget.riderRating,
               onCancelTrip: _showDriverCancelSheet,
+              onSafety: _showSafetySupportMenu,
               receivingRides: _receivingRides,
               lastTrip: _lastTrip,
               onToggleReceiving: () =>

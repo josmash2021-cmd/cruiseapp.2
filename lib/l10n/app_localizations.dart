@@ -5936,9 +5936,6 @@ class S {
       _es ? 'Ver tus ganancias del día' : 'See today\'s earnings';
   String get helpMenuSubtitle =>
       _es ? 'Problemas con el viaje o soporte' : 'Trip problems or support';
-  String get cancelTripMenuSubtitle => _es
-      ? 'En cualquier momento del viaje'
-      : 'At any point of the trip';
 
   // Driver "trip accepted" celebration overlay.
   String get tripAcceptedTitle => _es ? 'Viaje Aceptado' : 'Trip Accepted';

@@ -3167,8 +3167,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         // slider, where it was one mis-tap away for the whole ride.
         // Available at ANY stage (user spec 2026-09-19): to-pickup the
         // trip rematches, in-trip it ends with the hold released.
-        _SheetItem(Icons.cancel_outlined, S.of(context).cancelTrip,
-            S.of(context).cancelTripMenuSubtitle,
+        _SheetItem(Icons.cancel_outlined, S.of(context).cancelTrip, '',
             () { Navigator.pop(context); _showDriverCancelSheet(); },
             danger: true),
       ],

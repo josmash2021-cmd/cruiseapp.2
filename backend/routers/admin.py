@@ -150,7 +150,30 @@ async def admin_list_users(
     query = query.order_by(User.id.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
     users = result.scalars().all()
-    return [_user_dict(u) for u in users]
+    rows = [_user_dict(u) for u in users]
+    # users has no vehicle_type column — the tier lives on the active car.
+    # The panel's "Cambiar conductor" picker for reservations lists drivers
+    # from here and labels each one by tier.
+    driver_ids = [u.id for u in users if u.role == "driver"]
+    if driver_ids:
+        vehicles = await db.execute(
+            select(Vehicle.user_id, Vehicle.vehicle_type, Vehicle.plate)
+            .where(
+                Vehicle.user_id.in_(driver_ids),
+                Vehicle.is_active == True,
+                Vehicle.archived_at.is_(None),
+            )
+            .order_by(Vehicle.created_at.asc(), Vehicle.id.asc())
+        )
+        active: dict[int, tuple] = {}
+        for user_id, vehicle_type, plate in vehicles.all():
+            active.setdefault(user_id, (vehicle_type, plate))
+        for row in rows:
+            car = active.get(row["id"])
+            if car is not None:
+                row["vehicle_type"] = car[0]
+                row["vehicle_plate"] = car[1]
+    return rows
 
 @router.patch("/admin/users/{user_id}/status", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_update_user_status(user_id: int, status: str = Body(..., embed=True), db: AsyncSession = Depends(get_db)):

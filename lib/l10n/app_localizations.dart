@@ -5396,6 +5396,45 @@ class S {
   String get navEndRoute => _es ? 'Terminar ruta' : 'End Route';
   String get navIArrived => _es ? 'He llegado' : "I've arrived";
   String get navCruiseNav => _es ? 'Cruise Maps' : 'Cruise Maps';
+  // ── Navigation panel redesign (owner design 2026-11-02) ──
+  String get navTripOptions => _es ? 'Opciones del viaje' : 'Trip options';
+  String get navCancelCurrentTrip =>
+      _es ? 'Cancelar viaje actual' : 'Cancel current trip';
+  String get navLastTrip => _es ? 'Último viaje' : 'Last trip';
+  String get navOnline => 'Online';
+  String get navOffline => 'Offline';
+  String get navPlusTips => '+ Tips';
+  String navPickUpName(String name) =>
+      _es ? 'Recoger a $name' : 'Pick up $name';
+  String navStopOf(String name) => _es ? 'Parada de $name' : "$name's stop";
+  String navDropOffName(String name) =>
+      _es ? 'Dejar a $name' : 'Drop off $name';
+  String get navContact => _es ? 'Contactar' : 'Contact';
+  String get navReceivingRides =>
+      _es ? 'Recibiendo viajes' : 'Receiving rides';
+  String get navNotReceivingRides =>
+      _es ? 'Te has desconectado' : "You're offline";
+  String get navTapToTurnOff => _es ? 'Toca para apagar' : 'Tap to turn off';
+  String get navTapToTurnOn => _es ? 'Toca para encender' : 'Tap to turn on';
+  String get navSwipeHintOptions => _es
+      ? 'Desliza hacia arriba para ver las opciones del viaje'
+      : 'Swipe up for trip options';
+  String get navSwipeHintFull => _es
+      ? 'Desliza hacia arriba para ver el viaje completo'
+      : 'Swipe up to see the whole trip';
+  String get navWaitOver => _es
+      ? 'Puedes cancelar el viaje o seguir esperando'
+      : 'You can cancel the ride or keep waiting';
+  String get navRiderNoShow => _es ? 'Pasajero no llegó' : "Rider didn't show";
+  String get navRiderNoReturn =>
+      _es ? 'Pasajero no regresó' : "Rider didn't return";
+  String get navSlideToCancelTrip =>
+      _es ? 'Desliza para cancelar el viaje' : 'Slide to cancel the ride';
+  String get navSlideToDropoff =>
+      _es ? 'Desliza para ir al destino' : 'Slide to head to drop-off';
+  String get navQueuedRideCanceled =>
+      _es ? 'Viaje en cola cancelado' : 'Queued ride canceled';
+  String get navRiderDays => _es ? 'Días' : 'Days';
   String get fetchingAddress =>
       _es ? 'Obteniendo dirección...' : 'Getting address...';
   String get passengerConfirmedOnboard => _es

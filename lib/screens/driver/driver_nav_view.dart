@@ -18,6 +18,7 @@ import '../../map/driver_road_lock.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../map/web_map_view.dart';
 import '../../models/lat_lng.dart';
+import '../../services/chat_service.dart';
 import '../../services/directions_service.dart';
 import '../../services/haptic_service.dart';
 import '../../services/resilient_position_stream.dart';
@@ -31,8 +32,8 @@ import '../../widgets/glass_style.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/neu_style.dart';
-import '../../widgets/verified_avatar.dart';
 import '../../utils/fix_kinematics.dart';
+import 'nav_trip_panel.dart';
 
 /// Who owns the navigation camera.
 ///
@@ -130,6 +131,17 @@ class DriverNavView extends StatefulWidget {
     this.prefetchedRoutePoints,
     this.prefetchedSteps = const [],
     this.onMapReady,
+    this.riderRating,
+    this.riderTrips,
+    this.riderDays,
+    this.riderVerified = false,
+    this.receivingRides = true,
+    this.lastTrip = false,
+    this.supportUnread = 0,
+    this.onCancelTrip,
+    this.onToggleReceiving,
+    this.onToggleLastTrip,
+    this.onNoShow,
   });
 
   final int tripId;
@@ -185,6 +197,28 @@ class DriverNavView extends StatefulWidget {
   /// Fired when the native map has its first controller — the parent
   /// cross-fades its expansion snapshot out on this signal.
   final VoidCallback? onMapReady;
+
+  // ── The redesigned panel (owner design 2026-11-02) ──
+  final double? riderRating;
+  final int? riderTrips;
+  final int? riderDays;
+  final bool riderVerified;
+
+  /// "Recibiendo viajes" ⇄ "Te has desconectado" in the whole-trip card.
+  final bool receivingRides;
+
+  /// "Último viaje" in the trip options: Online ⇄ Offline.
+  final bool lastTrip;
+
+  /// Unread messages from support, on the support button.
+  final int supportUnread;
+
+  final VoidCallback? onCancelTrip;
+  final VoidCallback? onToggleReceiving;
+  final VoidCallback? onToggleLastTrip;
+
+  /// The free wait is over and the rider never came (the red slider).
+  final VoidCallback? onNoShow;
 
   @override
   State<DriverNavView> createState() => DriverNavViewState();
@@ -330,6 +364,20 @@ class DriverNavViewState extends State<DriverNavView>
     if (cur == null) return true;
     return _shortestArc(cur, _dot.bearing).abs() < 0.1 &&
         _camBearingVel.abs() < 0.5;
+  }
+
+  /// Bottom inset of the chase camera (owner 2026-11-02: an open panel
+  /// "no puede tapar la ruta o la flecha, se acomoda"): when the panel's top
+  /// would come within ~70 px of the arrow, the focus rises by exactly that
+  /// much. It follows the panel's height, which glides frame by frame, so
+  /// the map lifts in step with it; closed, it is 0.
+  double get _camBottomPad {
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null || _panelH <= 0) return 0;
+    final h = mq.size.height;
+    final focus = h / 2 + (mq.padding.top + 240) / 2;
+    final want = h - _panelH - 70;
+    return math.max(0.0, 2 * (focus - want));
   }
 
   /// The camera carries the arrow's bearing exactly, frame for frame: on
@@ -495,16 +543,21 @@ class DriverNavViewState extends State<DriverNavView>
   String _waitClock = '5:00';
   static const _waitTotalSecs = 300;
 
-  /// The only bottom action the nav view ever shows: closes navigation
-  /// (reverse morph back to the sheet), never a trip-state transition.
-  static const _endRouteHeight = 44.0;
-
   ResilientPositionStream? _gps;
   StreamSubscription? _riderLocSub;
   WebMapController? _webMap;
 
-  final DraggableScrollableController _sheetCtrl =
-      DraggableScrollableController();
+  // The redesigned bottom panel (owner design 2026-11-02): its height on
+  // screen (the map controls and the overlay arrow ride on it), whether it
+  // is open, and whether the car counts as driving — driving, opening it
+  // gives only the trip options.
+  double _panelH = 0;
+  bool _panelMoving = false;
+  DateTime? _stillSince;
+  late final Stream<int> _chatUnread = ChatService().unreadCountStream(
+    rideId: widget.tripId.toString(),
+    readerRole: 'driver',
+  );
 
   LatLng get _dest =>
       widget.toPickup ? widget.pickupLatLng : widget.dropoffLatLng;
@@ -597,7 +650,6 @@ class DriverNavViewState extends State<DriverNavView>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
-    _sheetCtrl.dispose();
     unawaited(_gps?.stop());
     _gpsWatchdog?.cancel();
     _tunnelTimer?.cancel();
@@ -866,6 +918,12 @@ class DriverNavViewState extends State<DriverNavView>
         DateTime.now().difference(_speedAt) > const Duration(seconds: 3)) {
       setState(() => _speedStale = true);
     }
+    final still = _stillSince;
+    if (_panelMoving &&
+        still != null &&
+        DateTime.now().difference(still) > const Duration(seconds: 3)) {
+      setState(() => _panelMoving = false);
+    }
     final last = _lastUsableFixAt ?? _lastGpsFixAt;
     final pts = _routePts;
     final now = DateTime.now();
@@ -965,6 +1023,15 @@ class DriverNavViewState extends State<DriverNavView>
   void _setSpeed(double mps) {
     _speedMps = mps < 0.9 ? 0.0 : mps;
     _speedAt = DateTime.now();
+    // Driving vs parked for the panel (owner design 2026-11-02): driving
+    // from ~5 mph; parked once it has been under 2 mph for ~3 s — the
+    // tunnel tick settles that, since a parked iPhone stops sending fixes.
+    if (_speedMps >= 2.2) {
+      _stillSince = null;
+      if (!_panelMoving) setState(() => _panelMoving = true);
+    } else if (_speedMps < 0.9) {
+      _stillSince ??= DateTime.now();
+    }
     final mph = (_speedMps * 2.23694).round();
     if (mph != _lastMphShown || _speedStale) {
       _lastMphShown = mph;
@@ -2105,7 +2172,8 @@ class DriverNavViewState extends State<DriverNavView>
       // "como Google"); the overlay arrow shows the difference.
       bearing: _followCamBearing(_dot.bearing),
       pitch: _chasePitch,
-      padding: mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
+      padding: mapbox.MbxEdgeInsets(
+          top: topPad, left: 0, right: 0, bottom: _camBottomPad),
     ));
     _ensureCamSettle();
   }
@@ -2129,7 +2197,8 @@ class DriverNavViewState extends State<DriverNavView>
       zoom: _chaseZoom,
       bearing: _dot.bearing,
       pitch: _chasePitch,
-      padding: mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
+      padding: mapbox.MbxEdgeInsets(
+          top: topPad, left: 0, right: 0, bottom: _camBottomPad),
     ));
   }
 
@@ -2701,7 +2770,7 @@ class DriverNavViewState extends State<DriverNavView>
         top: lerp(fp.top, topPad),
         left: lerp(fp.left, 0),
         right: lerp(fp.right, 0),
-        bottom: lerp(fp.bottom, 0),
+        bottom: lerp(fp.bottom, _camBottomPad),
       ),
     ));
     if (t >= 1.0) _endRecenterBlend(_CamState.following);
@@ -2855,7 +2924,8 @@ class DriverNavViewState extends State<DriverNavView>
                   // the screen centre.
                   final topPad =
                       (MediaQuery.maybeOf(ctx)?.padding.top ?? 0) + 240;
-                  final focusY = c.maxHeight / 2 + topPad / 2;
+                  final focusY =
+                      c.maxHeight / 2 + topPad / 2 - _camBottomPad / 2;
                   return Stack(
                     children: [
                       Positioned(
@@ -2942,64 +3012,41 @@ class DriverNavViewState extends State<DriverNavView>
             ),
           ),
 
-        // ── Sheet-anchored overlays: mph, camera buttons, wait bar and the
-        //    stage control all ride the sheet's top edge, so they rebuild
-        //    with the drag rather than a frame behind it. ──
-        AnimatedBuilder(
-          animation: _sheetCtrl,
-          builder: (ctx, _) {
-            final extent = _sheetCtrl.isAttached ? _sheetCtrl.size : 0.20;
-            final lift = media.size.height * extent + 16;
-            return Stack(
-              children: [
-                // The speed box yields to the arrival button stack — it has
-                // nothing to say while parked at the destination.
-                if (!_phaseArrived)
-                  Positioned(
-                    left: 16,
-                    bottom: lift,
-                    child: _buildSpeedBox(),
-                  ),
-                Positioned(
-                  right: 14,
-                  bottom: lift,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _roundMapBtn(
-                        icon: _overview
-                            ? Icons.navigation_rounded
-                            : Icons.map_outlined,
-                        tooltip: _overview ? s.navRecenter : s.navOverview,
-                        onTap: _toggleOverview,
-                      ),
-                      // Recenter appears only once the driver has taken
-                      // the camera.
-                      if (_camState == _CamState.freeLook && !_overview) ...[
-                        const SizedBox(height: 10),
-                        _roundMapBtn(
-                          icon: Icons.my_location_rounded,
-                          tooltip: s.navRecenter,
-                          onTap: _recenter,
-                        ),
-                      ],
-                    ],
-                  ),
+        // ── Panel-anchored controls: mph and the camera buttons ride the
+        //    panel's top edge (its measured height glides with it). ──
+        Positioned(
+          left: 16,
+          bottom: _panelH + 12,
+          child: _phaseArrived ? const SizedBox.shrink() : _buildSpeedBox(),
+        ),
+        Positioned(
+          right: 14,
+          bottom: _panelH + 12,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // The route button (owner 2026-11-02): dot, zigzag, dot —
+              // stood upright — shows the whole route; again, back to the
+              // chase.
+              _roundMapBtn(
+                icon: _overview
+                    ? Icons.navigation_rounded
+                    : Icons.route_rounded,
+                quarterTurns: _overview ? 0 : 1,
+                tooltip: _overview ? s.navRecenter : s.navOverview,
+                onTap: _toggleOverview,
+              ),
+              // Recenter appears only once the driver has taken the camera.
+              if (_camState == _CamState.freeLook && !_overview) ...[
+                const SizedBox(height: 10),
+                _roundMapBtn(
+                  icon: Icons.my_location_rounded,
+                  tooltip: s.navRecenter,
+                  onTap: _recenter,
                 ),
-                if (widget.stage == 'waiting_rider' ||
-                    widget.stage == 'start_ride')
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    bottom: lift,
-                    child: _buildWaitBar(s),
-                  ),
-                // End Route lives IN the sheet now (user spec 2026-09-17):
-                // on arrival the addresses swap out and the gold button
-                // fades in below the face — never floating above the sheet.
               ],
-            );
-          },
+            ],
+          ),
         ),
 
         // ── Rider stale-fix label, next to the halo ──
@@ -3025,32 +3072,78 @@ class DriverNavViewState extends State<DriverNavView>
             ),
           ),
 
-        // ── Rider sheet ──
-        DraggableScrollableSheet(
-          controller: _sheetCtrl,
-          initialChildSize: 0.20,
-          minChildSize: 0.12,
-          maxChildSize: 0.72,
-          builder: (ctx, scrollCtrl) => Container(
-            decoration: BoxDecoration(
-              color: neuBase,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(24)),
-              border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.06), width: 1),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  blurRadius: 24,
-                  offset: const Offset(0, -6),
-                ),
-              ],
-            ),
-            child: _buildSheet(s, scrollCtrl),
+        // ── The trip panel (owner design 2026-11-02) ──
+        Positioned.fill(
+          child: NavTripPanel(
+            etaLabel: _panelEtaLabel(s),
+            riderName: widget.riderName,
+            riderPhotoUrl: widget.riderPhotoUrl,
+            riderId: widget.riderId,
+            riderRating: widget.riderRating,
+            riderTrips: widget.riderTrips,
+            riderDays: widget.riderDays,
+            riderVerified: widget.riderVerified,
+            toPickup: widget.toPickup,
+            pickupAddress: widget.pickupAddress,
+            dropoffAddress: widget.dropoffAddress,
+            stopLabel: widget.stopLabel,
+            hasStop: widget.stopLatLng != null,
+            fare: widget.fare,
+            moving: _panelMoving,
+            stage: _panelStage,
+            canPickUp: widget.stage == 'start_ride',
+            waitClock: _waitClock,
+            waitProgress: (1 - _waitRemainFrac).clamp(0.0, 1.0),
+            receivingRides: widget.receivingRides,
+            lastTrip: widget.lastTrip,
+            chatUnread: _chatUnread,
+            supportUnread: widget.supportUnread,
+            onOpenChat: widget.onOpenChat,
+            onSupport: widget.onSupport,
+            onCancelTrip: widget.onCancelTrip ?? widget.onExit,
+            onArrived: widget.onArrived,
+            onSlidePickUp: widget.onSlidePickUp,
+            onSlideFinish: widget.onSlideFinish,
+            onToggleReceiving: widget.onToggleReceiving,
+            onToggleLastTrip: widget.onToggleLastTrip,
+            onNoShow: widget.onNoShow,
+            onHeightChanged: (h) {
+              if (!mounted || (h - _panelH).abs() < 0.5) return;
+              setState(() => _panelH = h);
+            },
           ),
         ),
       ],
     );
+  }
+
+  /// "7 min · 2.9 mi" for the panel's face.
+  String _panelEtaLabel(S s) {
+    final mins = (_remainSecs / 60).ceil();
+    final distLabel = _remainMeters > 0 ? _fmtDist(_remainMeters, s) : '';
+    return _remainSecs > 0 && distLabel.isNotEmpty
+        ? '$mins min · $distLabel'
+        : distLabel;
+  }
+
+  /// What the closed panel carries: approaching the pickup (photo, name,
+  /// Contactar, "Llegué"), waiting there (the wait line, the slider), at
+  /// the destination (the finish slider), or plain driving.
+  NavPanelStage get _panelStage {
+    final st = widget.stage;
+    if (widget.toPickup && (st == 'waiting_rider' || st == 'start_ride')) {
+      return NavPanelStage.waitingPickup;
+    }
+    if (!widget.toPickup && st == 'finish') {
+      return NavPanelStage.arrivedDropoff;
+    }
+    if (widget.toPickup &&
+        (st == 'arrived' ||
+            _navPhase == _NavPhase.approachingPickup ||
+            _navPhase == _NavPhase.arrivedPickup)) {
+      return NavPanelStage.approaching;
+    }
+    return NavPanelStage.driving;
   }
 
   /// Fallback for a steps-less route: the distance left to the destination
@@ -3228,8 +3321,7 @@ class DriverNavViewState extends State<DriverNavView>
               ),
             ),
           // Way back to the trip sheet — navigation never traps the driver.
-          // The arrival close action lives at the bottom, under the stage
-          // control (_buildEndRouteButton); the bar keeps the quiet X.
+          // Goes once the trip page itself is gone (owner design 2026-11-02).
           Tooltip(
             message: s.navExit,
             child: GestureDetector(
@@ -3529,6 +3621,7 @@ class DriverNavViewState extends State<DriverNavView>
     required IconData icon,
     required String tooltip,
     required VoidCallback onTap,
+    int quarterTurns = 0,
   }) {
     return Tooltip(
       message: tooltip,
@@ -3549,329 +3642,15 @@ class DriverNavViewState extends State<DriverNavView>
               ),
             ],
           ),
-          child: Icon(icon, color: _gold, size: 22),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWaitBar(S s) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-      decoration: BoxDecoration(
-        color: _navyBar.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _gold.withValues(alpha: 0.25)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            s.navWaitFor(_waitClock),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          // The divider IS the timer: it drains to nothing over 5 minutes.
-          ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: FractionallySizedBox(
-                widthFactor: _waitRemainFrac.clamp(0.0, 1.0),
-                child: Container(height: 3, color: _gold),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// The arrival action inside the sheet (user spec 2026-09-17): gold
-  /// FILLED, where the addresses were. Closes navigation (reverse morph back
-  /// to the trip page) without touching trip state.
-  Widget _buildEndRouteButton(S s) {
-    return SizedBox(
-      width: double.infinity,
-      height: _endRouteHeight + 8,
-      child: ElevatedButton.icon(
-        onPressed: () {
-          HapticService.lightImpact();
-          widget.onExit();
-        },
-        icon: const Icon(Icons.place_rounded, color: Colors.black, size: 20),
-        label: Text(
-          // "He llegado" (user spec 2026-09-19): the button only shows once
-          // the driver is AT the client's place — it announces the arrival,
-          // back to the trip page whose controls rule the flow from here.
-          s.navIArrived,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _gold,
-          foregroundColor: Colors.black,
-          elevation: 0,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-        ),
-      ),
-    );
-  }
-
-  // ─────────────────────────────────────────────
-  //  Sheet
-  // ─────────────────────────────────────────────
-
-  Widget _buildSheet(S s, ScrollController scrollCtrl) {
-    final mins = (_remainSecs / 60).ceil();
-    final distLabel = _remainMeters > 0 ? _fmtDist(_remainMeters, s) : '';
-    final destName =
-        widget.toPickup ? widget.pickupAddress : widget.dropoffAddress;
-    // The rider's first name rides WITH the miles/minutes (user spec
-    // 2026-09-17) — never a bare "—" while we know who this is.
-    final firstName = widget.riderName.trim().split(' ').first;
-    final etaLabel = _remainSecs > 0 && distLabel.isNotEmpty
-        ? '$mins min · $distLabel'
-        : distLabel;
-    final faceTitle =
-        [etaLabel, firstName].where((e) => e.isNotEmpty).join(' · ');
-    return ListView(
-      controller: scrollCtrl,
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      children: [
-        Center(
-          child: Container(
-            margin: const EdgeInsets.only(top: 10, bottom: 10),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(2),
-            ),
+          child: RotatedBox(
+            quarterTurns: quarterTurns,
+            child: Icon(icon, color: _gold, size: 22),
           ),
         ),
-        // Collapsed face: rider, "9 min · 4.1 mi · Jhon", destination,
-        // chat/call.
-        Row(
-          children: [
-            VerifiedAvatar(
-              photoUrl: widget.riderPhotoUrl,
-              radius: 24,
-              fallbackName: widget.riderName,
-              uid: widget.riderId?.toString(),
-              role: 'rider',
-              isVerified: true,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    faceTitle.isEmpty ? '—' : faceTitle,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    destName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _sheetCircleBtn(
-                Icons.message_rounded, s.messageAction, widget.onOpenChat),
-            const SizedBox(width: 8),
-            _sheetCircleBtn(Icons.phone_rounded, s.callAction, widget.onCall,
-                filled: true),
-          ],
-        ),
-        const SizedBox(height: 16),
-        // On arrival the expanded content hands its slot to End Route (user
-        // spec 2026-09-17): addresses, instructions, earnings and report fade
-        // out, the gold button fades in — same slot, one motion. The sheet
-        // does NOT auto-raise (user spec 2026-09-27): the driver drags it up
-        // by hand when they want the button.
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 320),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          child: _endRouteVisible
-              ? Padding(
-                  key: const ValueKey('end-route'),
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: _buildEndRouteButton(s),
-                )
-              : Column(
-                  key: const ValueKey('trip-details'),
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _sheetAddressRow(Icons.place_rounded, s.pickupLabel,
-                        widget.pickupAddress),
-                    const SizedBox(height: 10),
-                    _sheetAddressRow(Icons.flag_rounded, s.dropOffLabel,
-                        widget.dropoffAddress),
-                    if (widget.passengerInstructions.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: neuBox(radius: 14),
-                        child: Text(
-                          widget.passengerInstructions,
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 13, height: 1.4),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Text(
-                          s.navEstimatedEarnings,
-                          style: const TextStyle(
-                              color: Colors.white54, fontSize: 13),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '\$${widget.fare.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            color: _gold,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    GestureDetector(
-                      onTap: () {
-                        HapticService.lightImpact();
-                        widget.onSupport();
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.12)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.report_problem_rounded,
-                                color: Colors.white54, size: 17),
-                            const SizedBox(width: 8),
-                            Text(
-                              s.navReportProblem,
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-        ),
-        const SizedBox(height: 24),
-      ],
-    );
-  }
-
-  Widget _sheetCircleBtn(IconData icon, String label, VoidCallback onTap,
-      {bool filled = false}) {
-    // Same language as the trip screen's action discs (user spec 2026-09-17):
-    // chat is the quiet dark disc, the call disc is the gold-filled one —
-    // bigger, glowing, the obvious primary action.
-    final d = filled ? 54.0 : 44.0;
-    return Tooltip(
-      message: label,
-      child: GestureDetector(
-        onTap: () {
-          HapticService.lightImpact();
-          onTap();
-        },
-        child: Container(
-          width: d,
-          height: d,
-          decoration: filled
-              ? BoxDecoration(
-                  color: _gold,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: _gold.withValues(alpha: 0.35),
-                      blurRadius: 18,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                )
-              : BoxDecoration(
-                  color: neuSurface,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.10), width: 1),
-                ),
-          child: Icon(icon, color: filled ? neuBase : _gold, size: d * 0.40),
-        ),
       ),
     );
   }
 
-  Widget _sheetAddressRow(IconData icon, String label, String address) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: _gold, size: 16),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white38,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                ),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                address,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 /// One traffic light / stop sign on the route: its parsed location and kind

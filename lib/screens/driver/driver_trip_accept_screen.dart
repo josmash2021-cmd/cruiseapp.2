@@ -243,6 +243,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   StreamSubscription? _riderConfirmSub;
   bool _riderConfirmedPickup = false;
 
+  // Nav panel switches (owner design 2026-11-02): "Recibiendo viajes"
+  // (offers during this trip) and "Último viaje" (none during it, and
+  // offline when it ends).
+  bool _receivingRides = true;
+  bool _lastTrip = false;
+
   // ── Pickup PIN (arrived / waiting-for-rider stage) ──
   // The rider reads a 4-digit code from their app; a correct entry sets the
   // same local flag the Firestore listener sets, so the "Waiting for your
@@ -5523,6 +5529,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               onCall: _call,
               onSupport: _openSupportChat,
               onMapReady: _onNavMapReady,
+              // The redesigned panel (owner design 2026-11-02).
+              riderRating: widget.riderRating,
+              onCancelTrip: _showDriverCancelSheet,
+              receivingRides: _receivingRides,
+              lastTrip: _lastTrip,
+              onToggleReceiving: () =>
+                  setState(() => _receivingRides = !_receivingRides),
+              onToggleLastTrip: () => setState(() {
+                _lastTrip = !_lastTrip;
+                // "Último viaje" stops new rides during this one too.
+                if (_lastTrip) _receivingRides = false;
+              }),
             ),
           ),
         ),

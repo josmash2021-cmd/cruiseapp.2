@@ -371,53 +371,34 @@ void main() {
       expect(nav.contains('s.navArrivedDropoff'), isTrue);
     });
 
-    test('arrival fires no backend transition — the trip page rules the flow',
-        () {
-      // User spec 2026-09-17: the nav view is navigation-only. No Arrived
-      // button, no slide to pick up / finish in here — those live on the
-      // trip page (the accept screen's own controls), which stays the flow
-      // authority exactly like before.
-      expect(nav, isNot(contains('_buildStageControl')),
-          reason: 'the arrived/start_ride/finish controls are gone from nav');
-      expect(nav, isNot(contains('_buildSlideBar')),
-          reason: 'no slide-to-finish inside navigation');
-      expect(nav, isNot(contains('widget.onSlidePickUp();')));
-      expect(nav, isNot(contains('widget.onSlideFinish();')));
-      expect(nav, isNot(contains('widget.onArrived();')),
-          reason: 'nav never fires a trip-state transition');
+    test('the panel hosts arrive / pick up / finish through the trip '
+        "page's own handlers (owner design 2026-11-02)", () {
+      // The trip page goes away in the new flow, so its controls live in
+      // the nav panel — but the nav still writes no trip state itself: every
+      // control calls the parent's existing handler.
+      expect(nav.contains('onArrived: widget.onArrived,'), isTrue);
+      expect(nav.contains('onSlidePickUp: widget.onSlidePickUp,'), isTrue);
+      expect(nav.contains('onSlideFinish: widget.onSlideFinish,'), isTrue);
+      expect(nav, isNot(contains('ApiService.updateTripStatus')),
+          reason: 'nav never writes a trip status on its own');
+      expect(nav.contains("canPickUp: widget.stage == 'start_ride',"), isTrue,
+          reason: 'the pickup slider stays locked until the rider confirms');
     });
 
-    test('arrival shows End Route INSIDE the sheet, gold, swapped in', () {
-      expect(nav.contains('_buildEndRouteButton(s)'), isTrue,
-          reason: 'the explicit close action lives in the bottom sheet');
-      expect(nav.contains("ValueKey('end-route')"), isTrue,
-          reason: 'user spec 2026-09-17: on arrival the addresses swap out '
-              'and the gold button fades in — inside the sheet');
-      expect(nav.contains("ValueKey('trip-details')"), isTrue,
-          reason: 'the swap is one AnimatedSwitcher slot');
-      expect(nav.contains('child: _endRouteVisible'), isTrue);
-      final btn =
-          bodyOf(nav, 'Widget _buildEndRouteButton(S s) {', maxLen: 900);
-      expect(btn.contains('widget.onExit();'), isTrue,
-          reason: 'End Route closes navigation only — it never fires a '
-              'trip-state transition');
-      expect(btn.contains('s.navIArrived'), isTrue,
-          reason: 'user spec 2026-09-19: the button reads "He llegado" — it '
-              'only shows once the driver is AT the client\'s place');
-      expect(btn.contains('backgroundColor: _gold'), isTrue,
-          reason: 'gold FILLED — never the outlined navy floater again');
-      expect(btn.contains('Icons.place_rounded'), isTrue,
-          reason: 'user spec 2026-09-27: pin icon on the button — the flag '
-              'is gone');
-      expect(btn, isNot(contains('Icons.flag_rounded')));
+    test('arrival lives in the panel: "Llegué", then the wait and the slider '
+        '(owner design 2026-11-02)', () {
+      expect(nav, isNot(contains('_buildEndRouteButton')),
+          reason: '"He llegado" only went back to the trip page, which goes away');
+      expect(nav.contains('NavPanelStage get _panelStage {'), isTrue);
+      final stage = bodyOf(nav, 'NavPanelStage get _panelStage {', maxLen: 900);
+      expect(stage.contains('NavPanelStage.waitingPickup'), isTrue);
+      expect(stage.contains('NavPanelStage.arrivedDropoff'), isTrue);
+      expect(stage.contains('NavPanelStage.approaching'), isTrue);
       expect(nav.contains('_endRouteRaised'), isFalse,
-          reason: 'user spec 2026-09-27: the sheet does NOT auto-raise on '
-              'arrival — the driver drags it up by hand');
-      expect(nav.contains('animateTo(0.42'), isFalse,
-          reason: 'no auto-raise animation remains in the nav view');
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 6400);
+          reason: 'the panel never auto-raises on arrival');
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 9000);
       expect(bar.contains('s.navExit'), isTrue,
-          reason: 'the top bar keeps the quiet X — End Route is below');
+          reason: 'the top bar keeps the quiet X until the trip page is gone');
       expect(bar, isNot(contains('navEndRoute')));
     });
 
@@ -896,14 +877,12 @@ void main() {
       expect(nav, isNot(contains('_chasePitch = 55.0')));
     });
 
-    test('the sheet call disc is the gold-filled one, chat stays dark', () {
-      final call = nav.indexOf('_sheetCircleBtn(Icons.phone_rounded');
-      expect(call, isNonNegative);
-      expect(nav.substring(call, call + 140), contains('filled: true'));
-      final body = bodyOf(nav, 'Widget _sheetCircleBtn(', maxLen: 1600);
-      expect(body.contains('color: _gold,'), isTrue);
-      expect(body.contains('filled ? neuBase : _gold'), isTrue,
-          reason: 'the filled disc carries a dark icon on gold');
+    test('Contactar opens the chat straight away, with the unread count '
+        '(owner design 2026-11-02)', () {
+      expect(nav.contains('onOpenChat: widget.onOpenChat,'), isTrue);
+      expect(nav.contains("readerRole: 'driver',"), isTrue,
+          reason: 'the unread badge reads the driver side of the chat');
+      expect(nav.contains('chatUnread: _chatUnread,'), isTrue);
     });
 
     test('the speed box reads the fix, then the smoother, and zeroes THE '
@@ -1001,12 +980,15 @@ void main() {
               'flip that lets the next chase frame snap');
     });
 
-    test('the sheet face carries the rider name next to min/mi', () {
-      final body = bodyOf(nav, 'Widget _buildSheet(S s, ScrollController scrollCtrl) {', maxLen: 1200);
-      expect(body.contains('firstName'), isTrue);
-      expect(body.contains(".join(' · ')"), isTrue,
-          reason: '"2 min · 0.3 mi · Jhon" — miles, minutes AND the rider '
-              'name in the collapsed face');
+    test('the panel face carries min · mi and "Recoger a <name>" '
+        '(owner design 2026-11-02)', () {
+      final eta = bodyOf(nav, 'String _panelEtaLabel(S s) {', maxLen: 400);
+      expect(eta.contains("'\$mins min · \$distLabel'"), isTrue);
+      final panel = File('lib/screens/driver/nav_trip_panel.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+      expect(panel.contains('s.navPickUpName(_firstName)'), isTrue);
+      expect(panel.contains('s.navDropOffName(_firstName)'), isTrue);
     });
   });
 }

@@ -5937,8 +5937,8 @@ class S {
   String get helpMenuSubtitle =>
       _es ? 'Problemas con el viaje o soporte' : 'Trip problems or support';
   String get cancelTripMenuSubtitle => _es
-      ? 'Solo antes de recoger al pasajero'
-      : 'Only before picking up the rider';
+      ? 'En cualquier momento del viaje'
+      : 'At any point of the trip';
 
   // Driver "trip accepted" celebration overlay.
   String get tripAcceptedTitle => _es ? 'Viaje Aceptado' : 'Trip Accepted';

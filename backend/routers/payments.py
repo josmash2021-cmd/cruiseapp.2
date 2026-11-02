@@ -2729,6 +2729,9 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
     from services.promotion_redemptions import settle_promotion_on_cancel
     await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
     await db.commit()
+    # "Último viaje" (2026-11-02): the driver goes offline with this trip.
+    from services import chain_pause
+    await chain_pause.apply_last_trip(db, trip.driver_id, trip.id)
 
     # Invalidate cache + SSE push to affected drivers
     try:

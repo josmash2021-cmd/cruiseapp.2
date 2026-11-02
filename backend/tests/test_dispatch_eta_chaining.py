@@ -198,40 +198,98 @@ async def test_no_api_key_falls_back_to_haversine(db):
 
 # ── (c) chaining eligibility ───────────────────────────────────────────
 
-async def test_driver_a_mile_from_dropoff_is_a_chained_candidate(db):
+async def test_chained_when_the_new_rider_waits_under_30_min(db):
+    """Owner rule 2026-11-02: a driver with a rider aboard gets the next
+    ride when the NEW rider would wait at most 30 min — what is left of the
+    current trip plus the drive from its dropoff to the new pickup. Routing
+    is offline in tests, so the straight-line fallback (20 mi = 30 min)
+    measures both legs."""
     from routers import dispatch
 
-    chained = await _mk_driver(db, "chained@test.com", 25.7707, -80.1918)  # ~1 km from pickup
-    busy = await _mk_driver(db, "busy@test.com", 25.7527, -80.1918)        # ~1 km from pickup
+    # Every leg runs north past the pickup, so the "on the way" ordering
+    # (_order_chained_by_detour) keeps them all; only the wait decides.
+    near_end = await _mk_driver(db, "nearend@test.com", 25.7570, -80.1918)  # ~0.5 km south
+    mid = await _mk_driver(db, "mid@test.com", 25.7527, -80.1918)           # ~1 km south
+    busy = await _mk_driver(db, "busy@test.com", 25.7577, -80.1918)         # ~0.4 km south
 
-    # Chained: mid-trip, its dropoff ~1 km from where the driver sits.
-    await _mk_trip(db, driver_id=chained.id, status="in_trip",
-                   dropoff_lat=25.7797, dropoff_lng=-80.1918)
-    # Busy: mid-trip, its dropoff ~5 km from where the driver sits.
-    await _mk_trip(db, driver_id=busy.id, status="in_trip",
+    # ~1.5 km left, dropoff ~1 km past the pickup: a few minutes.
+    await _mk_trip(db, driver_id=near_end.id, status="in_trip",
+                   dropoff_lat=25.7707, dropoff_lng=-80.1918)
+    # ~5 km left and ~4 km back — the old one-mile rule refused this one;
+    # the rider would wait ~9 min, so it is a candidate now.
+    await _mk_trip(db, driver_id=mid.id, status="in_trip",
                    dropoff_lat=25.7977, dropoff_lng=-80.1918)
+    # ~33 km left: over 30 min before even turning around.
+    await _mk_trip(db, driver_id=busy.id, status="in_trip",
+                   dropoff_lat=26.0577, dropoff_lng=-80.1918)
 
     drivers = await dispatch._find_nearest_drivers(db, *_PICKUP)
     ids = [d.id for d in drivers]
-    assert chained.id in ids
+    assert near_end.id in ids
+    assert mid.id in ids
     assert busy.id not in ids
 
 
-async def test_driver_mid_trip_far_from_dropoff_stays_excluded(db):
-    """The old behavior for genuinely busy drivers is untouched: every
-    active-trip status still excludes when the dropoff is far away."""
+async def test_wait_counts_the_drive_back_from_the_dropoff(db):
+    """A short remaining leg is not enough: the dropoff ~30 km past the
+    pickup puts the new rider over 30 min once the drive back counts."""
+    from routers import dispatch
+
+    d = await _mk_driver(db, "away@test.com", 25.7617, -80.1918)  # at the pickup
+    # ~17 km left, then ~17 km back: ~32 min in all.
+    await _mk_trip(db, driver_id=d.id, status="in_trip",
+                   dropoff_lat=25.9147, dropoff_lng=-80.1918)
+
+    assert await dispatch._find_nearest_drivers(db, *_PICKUP) == []
+
+
+async def test_before_the_pickup_the_driver_is_busy(db):
+    """Only a rider ABOARD chains: before the pickup the current rider is
+    still waiting, so every pre-pickup status blocks — even with the
+    dropoff right next to the driver."""
     from routers import dispatch
 
     for i, status in enumerate([
-        "accepted", "driver_en_route", "driver_arriving",
-        "arrived", "in_trip", "in_progress",
+        "accepted", "driver_en_route", "driver_arriving", "arrived",
     ]):
         d = await _mk_driver(db, f"busy{i}@test.com", 25.7657 + i * 0.001, -80.1918)
         await _mk_trip(db, driver_id=d.id, status=status,
-                       dropoff_lat=25.8157, dropoff_lng=-80.1918)  # ~5-6 km away
+                       dropoff_lat=25.7667 + i * 0.001, dropoff_lng=-80.1918)
 
     drivers = await dispatch._find_nearest_drivers(db, *_PICKUP)
     assert drivers == []
+
+
+async def test_receiving_off_or_last_trip_pauses_chaining_for_that_trip(db):
+    """"Recibiendo viajes" off / "Último viaje" on (owner 2026-11-02): no
+    chained offer during THAT trip. A pause naming an older trip is inert."""
+    from routers import dispatch
+    from services import chain_pause
+
+    paused = await _mk_driver(db, "paused@test.com", 25.7707, -80.1918)
+    last = await _mk_driver(db, "last@test.com", 25.7712, -80.1918)
+    stale = await _mk_driver(db, "stale@test.com", 25.7702, -80.1918)
+    t1 = await _mk_trip(db, driver_id=paused.id, status="in_trip",
+                        dropoff_lat=25.7797, dropoff_lng=-80.1918)
+    t2 = await _mk_trip(db, driver_id=last.id, status="in_trip",
+                        dropoff_lat=25.7797, dropoff_lng=-80.1918)
+    t3 = await _mk_trip(db, driver_id=stale.id, status="in_trip",
+                        dropoff_lat=25.7797, dropoff_lng=-80.1918)
+    await chain_pause.set_availability(db, paused.id, t1.id, receiving=False, last_trip=False)
+    await chain_pause.set_availability(db, last.id, t2.id, receiving=True, last_trip=True)
+    await chain_pause.set_availability(db, stale.id, t3.id + 999, receiving=False, last_trip=False)
+    await db.commit()
+
+    ids = [d.id for d in await dispatch._find_nearest_drivers(db, *_PICKUP)]
+    assert paused.id not in ids
+    assert last.id not in ids
+    assert stale.id in ids
+
+    # Switched back on: chained offers resume.
+    await chain_pause.set_availability(db, paused.id, t1.id, receiving=True, last_trip=False)
+    await db.commit()
+    ids = [d.id for d in await dispatch._find_nearest_drivers(db, *_PICKUP)]
+    assert paused.id in ids
 
 
 # ── (d) pre-existing filters intact ────────────────────────────────────

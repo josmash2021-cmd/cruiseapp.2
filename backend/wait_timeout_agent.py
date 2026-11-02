@@ -189,6 +189,16 @@ class WaitTimeoutAgent:
 
                 # Check if wait time exceeded threshold
                 if arrived_at < timeout_threshold:
+                    # Re-read under the row lock (2026-11-02): the driver's
+                    # no-show slider may be settling this very trip — never
+                    # charge the rider twice. Locked elsewhere → next scan.
+                    locked = (await db.execute(
+                        select(Trip).where(Trip.id == trip.id)
+                        .with_for_update(skip_locked=True)
+                        .execution_options(populate_existing=True)
+                    )).scalar_one_or_none()
+                    if locked is None or locked.status != "arrived":
+                        continue
                     # Cancel the trip
                     await self._cancel_trip(db, trip, auto_cancel_minutes)
                     cancelled_count += 1
@@ -208,6 +218,12 @@ class WaitTimeoutAgent:
                     "[WaitTimeout] Cancelled %d trip(s) due to passenger no-show (wait timeout)",
                     cancelled_count,
                 )
+                # "Último viaje" (2026-11-02): a driver who marked this trip
+                # as their last goes offline now.
+                from services import chain_pause
+                for t in arrived_trips:
+                    if t.status == "cancelled" and t.cancel_reason == "auto:wait_timeout":
+                        await chain_pause.apply_last_trip(db, t.driver_id, t.id)
 
             # Update stats
             self._stats["scans"] += 1

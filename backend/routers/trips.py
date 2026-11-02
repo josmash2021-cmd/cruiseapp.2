@@ -762,6 +762,15 @@ async def get_trip(
                 d["rider_verified"] = bool(_rd.is_verified)
         except Exception as _rerr:
             logging.warning("[GetTrip] rider stats failed: %s", _rerr)
+    if rider_stats and user.id == trip.driver_id:
+        # The panel's two switches, so a reopened trip shows them as set.
+        try:
+            from services import chain_pause
+            _av = await chain_pause.availability(db, user.id, trip.id)
+            d["driver_receiving"] = _av["receiving"]
+            d["driver_last_trip"] = _av["last_trip"]
+        except Exception as _aerr:
+            logging.warning("[GetTrip] availability failed: %s", _aerr)
     return d
 
 @router.get("/trips/available", dependencies=[Depends(_verify_api_key)])
@@ -1858,6 +1867,339 @@ async def _apply_deferred_face_kick(db: AsyncSession, driver_id: Optional[int]) 
                         driver_id, _kick_err)
 
 
+async def _apply_last_trip(db: AsyncSession, driver_id: Optional[int], trip_id: int) -> None:
+    """"Último viaje" (owner 2026-11-02): the trip the driver marked as their
+    last just closed — they go offline now. Fail-soft inside."""
+    from services import chain_pause
+    if await chain_pause.apply_last_trip(db, driver_id, trip_id) and _HAS_FIRESTORE:
+        try:
+            res = await db.execute(select(User.lat, User.lng).where(User.id == driver_id))
+            lat, lng = res.first() or (0, 0)
+            firestore_sync.sync_driver_location(driver_id, lat or 0, lng or 0, False)
+        except Exception:
+            pass
+
+
+@router.post("/trips/{trip_id}/driver-availability", dependencies=[Depends(_verify_api_key)])
+async def set_driver_availability(
+    trip_id: int,
+    body: dict = Body(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The navigation panel's two switches, for THIS trip (owner 2026-11-02):
+    "Recibiendo viajes" (chained offers on/off) and "Último viaje" (no
+    chained offers, offline when the trip closes)."""
+    from services import chain_pause
+    # Under the trip's row lock: two quick taps write one after the other.
+    trip = (await db.execute(
+        select(Trip).where(Trip.id == trip_id).with_for_update()
+    )).scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.driver_id != user.id:
+        raise HTTPException(403, "Not your trip")
+    if trip.status not in _ACTIVE_TRIP_STATUSES:
+        raise HTTPException(409, "Trip is not active")
+    last_trip = bool(body.get("last_trip", False))
+    receiving = bool(body.get("receiving", True)) and not last_trip
+    await chain_pause.set_availability(
+        db, user.id, trip.id, receiving=receiving, last_trip=last_trip,
+    )
+    await db.commit()
+    return await chain_pause.availability(db, user.id, trip.id)
+
+
+async def _mark_stop(trip_id: int, user: User, db: AsyncSession, field: str) -> dict:
+    """Stamps `field` (arrived_at / departed_at) on the trip's stop, once.
+    Only the trip's driver, only with the rider aboard and a stop to wait
+    at. Lives inside the `stops` JSON — no schema change."""
+    trip = (await db.execute(
+        select(Trip).where(Trip.id == trip_id).with_for_update()
+    )).scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.driver_id != user.id:
+        raise HTTPException(403, "Not your trip")
+    if _STATUS_ALIASES.get(trip.status, trip.status) != "in_trip":
+        raise HTTPException(409, "The rider is not aboard")
+    try:
+        stops = json.loads(trip.stops) if trip.stops else []
+    except (TypeError, ValueError):
+        stops = []
+    if not stops or not isinstance(stops[0], dict):
+        raise HTTPException(409, "This trip has no stop")
+    stop = stops[0]
+    if field == "arrived_at" and not stop.get("arrived_at"):
+        _at_point_or_409(user, float(stop["lat"]), float(stop["lng"]),
+                         datetime.now(timezone.utc))
+    now = utc_now().isoformat()
+    changed = False
+    if field == "departed_at" and not stop.get("arrived_at"):
+        stop["arrived_at"] = now  # left without tapping "Llegué": no wait
+        changed = True
+    if not stop.get(field):
+        stop[field] = now
+        changed = True
+    if changed:
+        trip.stops = json.dumps(stops)
+        await db.commit()
+        if _HAS_FIRESTORE:
+            _a, _d = stop.get("arrived_at"), stop.get("departed_at")
+            asyncio.get_event_loop().run_in_executor(
+                None, lambda: firestore_sync.sync_stop_wait(trip.id, _a, _d))
+    return {"changed": changed, "stop": stop, "trip": trip}
+
+
+@router.post("/trips/{trip_id}/stop-arrived", dependencies=[Depends(_verify_api_key)])
+async def driver_arrived_at_stop(
+    trip_id: int,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """"Llegué" at the rider's stop (owner design 2026-11-02): the free wait
+    starts and the rider is told the driver is waiting there."""
+    res = await _mark_stop(trip_id, user, db, "arrived_at")
+    trip = res["trip"]
+    if res["changed"] and trip.rider_id:
+        try:
+            rider = (await db.execute(select(User).where(User.id == trip.rider_id))).scalar_one_or_none()
+            if rider and rider.fcm_token:
+                await _send_fcm_push_async(
+                    rider.fcm_token,
+                    title="Tu conductor te espera",
+                    body="Tu conductor llegó a la parada.",
+                    title_en="Your driver is waiting",
+                    body_en="Your driver arrived at the stop.",
+                    locale=user_lang(rider),
+                    data={"type": "stop_arrived", "trip_id": str(trip.id)},
+                )
+        except Exception as _push_err:
+            logging.warning("[Stop] rider push failed for trip %s: %s", trip.id, _push_err)
+    return {"status": "ok", "stop": res["stop"]}
+
+
+@router.post("/trips/{trip_id}/stop-departed", dependencies=[Depends(_verify_api_key)])
+async def driver_left_stop(
+    trip_id: int,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """"Desliza para ir al destino": the wait at the stop is over."""
+    res = await _mark_stop(trip_id, user, db, "departed_at")
+    return {"status": "ok", "stop": res["stop"]}
+
+
+# How close the driver must be to the pickup / stop to say the rider never
+# came (their last reported position, when it is fresh).
+_NO_SHOW_POINT_RADIUS_M = 300
+_NO_SHOW_POSITION_FRESH_S = 180
+
+
+def _at_point_or_409(driver: User, lat: float, lng: float, now) -> None:
+    """A no-show — or "Llegué" at the stop — is only believed from the
+    point itself. Unknown or stale positions are not held against the
+    driver (a GPS gap must not block a real no-show)."""
+    seen = _aware(getattr(driver, "last_active_at", None))
+    if driver.lat is None or driver.lng is None or seen is None:
+        return
+    if (now - seen).total_seconds() > _NO_SHOW_POSITION_FRESH_S:
+        return
+    if _haversine(driver.lat, driver.lng, lat, lng) * 1000.0 > _NO_SHOW_POINT_RADIUS_M:
+        raise HTTPException(409, "The driver is not at the point")
+
+
+# The free wait before the red "Pasajero no llegó / no regresó" slider
+# (owner design 2026-11-02) — the same 5:00 the driver's panel counts down.
+# A few seconds of slack for the phone's clock.
+_NO_SHOW_FREE_WAIT_S = 300
+_NO_SHOW_CLOCK_SLACK_S = 10
+
+
+def _aware(dt):
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+async def _stop_leg_fee(db: AsyncSession, trip: Trip, stop: dict) -> float:
+    """What the pickup -> stop leg is worth (owner 2026-11-02: a rider who
+    never comes back to the stop pays that leg): priced as its own ride by
+    the same engine as every quote, and never more than the trip's fare.
+    Straight-line share of the fare when the engine cannot answer."""
+    fare = float(trip.fare or 0.0)
+    try:
+        from services.rider_pricing import (
+            _original_fare_components, _surge_multiplier, canonical_tier,
+            get_pricing_config, route_metrics,
+        )
+        request = {
+            "pickup_lat": trip.pickup_lat, "pickup_lng": trip.pickup_lng,
+            "dropoff_lat": float(stop["lat"]), "dropoff_lng": float(stop["lng"]),
+            "stop_lat": None, "stop_lng": None,
+            "is_scheduled": False, "is_airport": False, "meet_inside": False,
+        }
+        route = await route_metrics(request)
+        if not 0 < route["distance_miles"] <= 500:
+            raise ValueError("unreliable leg")
+        config = await get_pricing_config(db)
+        surge = await _surge_multiplier(db, trip.pickup_lat, trip.pickup_lng)
+        comps = _original_fare_components(
+            config, canonical_tier(trip.vehicle_type), route, surge, request,
+        )
+        leg = comps["total_cents"] / 100.0
+    except Exception as exc:
+        logging.warning("[NoShow] leg pricing failed for trip %s — fare share: %s", trip.id, exc)
+        a = _haversine(trip.pickup_lat, trip.pickup_lng, float(stop["lat"]), float(stop["lng"]))
+        b = _haversine(float(stop["lat"]), float(stop["lng"]), trip.dropoff_lat, trip.dropoff_lng)
+        leg = fare * (a / (a + b)) if (a + b) > 0 else 0.0
+    return round(max(0.0, min(leg, fare)), 2)
+
+
+@router.post("/trips/{trip_id}/no-show", dependencies=[Depends(_verify_api_key)])
+async def driver_reports_no_show(
+    trip_id: int,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The red slider after the free wait (owner design 2026-11-02):
+
+    * at the pickup ("Pasajero no llegó") — the rider pays the no-show fee,
+      the same one the wait-timeout agent charges ($5 standard tier);
+    * at the stop ("Pasajero no regresó") — the rider pays the pickup ->
+      stop leg.
+
+    Either way the driver gets the tier's share like any cancellation fee,
+    and the rider is told why — never how much. Only the trip's driver,
+    only once the 5-minute wait is really over (server clock)."""
+    # The stop leg is priced BEFORE the row lock: a routing call must not
+    # hold the trip locked (and outlast the app's request).
+    pre = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one_or_none()
+    if not pre:
+        raise HTTPException(404, "Trip not found")
+    if pre.driver_id != user.id:
+        raise HTTPException(403, "Not your trip")
+    leg_fee = None
+    if _STATUS_ALIASES.get(pre.status, pre.status) == "in_trip":
+        try:
+            _st = json.loads(pre.stops) if pre.stops else []
+        except (TypeError, ValueError):
+            _st = []
+        if _st and isinstance(_st[0], dict) and _st[0].get("lat") is not None:
+            leg_fee = await _stop_leg_fee(db, pre, _st[0])
+
+    trip = (await db.execute(
+        select(Trip).where(Trip.id == trip_id).with_for_update()
+        .execution_options(populate_existing=True)
+    )).scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.driver_id != user.id:
+        raise HTTPException(403, "Not your trip")
+    status = _STATUS_ALIASES.get(trip.status, trip.status)
+    now = datetime.now(timezone.utc)
+    min_wait = timedelta(seconds=_NO_SHOW_FREE_WAIT_S - _NO_SHOW_CLOCK_SLACK_S)
+
+    if status == "arrived":
+        _at_point_or_409(user, trip.pickup_lat, trip.pickup_lng, now)
+        kind = "pickup"
+        arrived = _aware(trip.arrived_at)
+        if arrived is None or now - arrived < min_wait:
+            raise HTTPException(409, "The free wait is not over yet")
+        from wait_timeout_agent import wait_timeout_agent as _wta
+        waited = int((now - arrived).total_seconds() // 60)
+        fee = max(_wta._calculate_wait_fee(trip, waited), _wta._get_no_show_min_fee(trip))
+        trip.wait_time_charge = fee
+    elif status == "in_trip":
+        kind = "stop"
+        try:
+            stops = json.loads(trip.stops) if trip.stops else []
+        except (TypeError, ValueError):
+            stops = []
+        stop = stops[0] if stops and isinstance(stops[0], dict) else None
+        arrived = None
+        if stop and stop.get("arrived_at") and not stop.get("departed_at"):
+            try:
+                arrived = _aware(datetime.fromisoformat(str(stop["arrived_at"])))
+            except ValueError:
+                arrived = None
+        if arrived is None:
+            raise HTTPException(409, "The driver is not waiting at a stop")
+        if now - arrived < min_wait:
+            raise HTTPException(409, "The free wait is not over yet")
+        _at_point_or_409(user, float(stop["lat"]), float(stop["lng"]), now)
+        fee = leg_fee if leg_fee is not None else await _stop_leg_fee(db, trip, stop)
+    else:
+        raise HTTPException(409, f"No no-show from status {trip.status}")
+
+    trip.status = "cancelled"
+    trip.cancel_reason = f"no_show:{kind}"
+    trip.cancellation_fee = fee
+    trip.updated_at = now
+    # Settled like the rider's own cancel (cancel_trip): a hold is
+    # partial-captured for exactly the fee and the rest released; a fare
+    # already collected is refunded down to the fee; a debit still
+    # processing is flagged for the refund once it settles. The driver's
+    # share only ever comes from money actually collected.
+    if trip.payment_status == "paid" and trip.stripe_payment_intent_id and _HAS_STRIPE:
+        await _credit_driver_cancellation_fee(db, trip)
+        refund_cents = int(round(((trip.fare or 0.0) - fee) * 100))
+        if refund_cents > 0:
+            try:
+                _stripe_mod.Refund.create(
+                    payment_intent=trip.stripe_payment_intent_id,
+                    amount=refund_cents,
+                    reason="requested_by_customer",
+                )
+                trip.payment_status = "refunded"
+            except Exception as _refund_err:
+                logging.warning("[NoShow] refund failed for trip %s — manual: %s",
+                                trip.id, _refund_err)
+                trip.payment_status = "pending_refund"
+    elif trip.payment_status == "processing" and trip.stripe_payment_intent_id and _HAS_STRIPE:
+        trip.payment_status = "pending_refund"
+    else:
+        trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
+        await _credit_driver_cancellation_fee(db, trip)
+    from services.promotion_redemptions import settle_promotion_on_cancel
+    await settle_promotion_on_cancel(db, trip, had_driver=True)
+    await db.commit()
+    logging.warning("[NoShow] trip %s cancelled at the %s — fee $%.2f (%s)",
+                    trip.id, kind, fee, trip.payment_status)
+
+    if _HAS_FIRESTORE:
+        _fee = trip.cancellation_fee
+        asyncio.get_event_loop().run_in_executor(None, lambda: firestore_sync.sync_trip_status(
+            trip.id, "cancelled", cancel_reason=f"no_show:{kind}",
+            cancelled_by="no_show", cancellation_fee=_fee,
+        ))
+    if trip.rider_id:
+        try:
+            rider = (await db.execute(select(User).where(User.id == trip.rider_id))).scalar_one_or_none()
+            if rider and rider.fcm_token:
+                # Why, never how much (owner 2026-11-02).
+                await _send_fcm_push_async(
+                    rider.fcm_token,
+                    title="Viaje cancelado",
+                    body=("Tu viaje fue cancelado porque no llegaste al punto de recogida."
+                          if kind == "pickup" else
+                          "Tu viaje fue cancelado porque no regresaste a la parada."),
+                    title_en="Trip cancelled",
+                    body_en=("Your trip was cancelled because you didn't reach the pickup."
+                             if kind == "pickup" else
+                             "Your trip was cancelled because you didn't return to the stop."),
+                    locale=user_lang(rider),
+                    data={"type": "trip_cancelled_no_show", "trip_id": str(trip.id),
+                          "reason": f"no_show_{kind}"},
+                )
+        except Exception as _push_err:
+            logging.warning("[NoShow] rider push failed for trip %s: %s", trip.id, _push_err)
+    _safe_create_task(_push_ride_live_activity(trip.id, "cancelled"))
+    await _apply_deferred_face_kick(db, user.id)
+    await _apply_last_trip(db, user.id, trip.id)
+    return {"status": "cancelled", "kind": kind}
+
+
 @router.patch("/trips/{trip_id}/status", dependencies=[Depends(_verify_api_key)])
 async def update_trip_status(trip_id: int, request: Request, status: str = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # ── Idempotency pre-check: if the same (trip, status) pair arrived in
@@ -1971,6 +2313,12 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
     is_driver_update = (user.id == trip.driver_id)
     is_privileged = user_role in ("admin", "dispatch")
     is_forward_progression = canonical_new in ("arrived", "in_trip", "completed", "driver_en_route")
+    # A no-show is final (2026-11-02): its fee was captured, the rest of the
+    # hold released and the rider told — reviving it would credit a full
+    # fare that was never collected.
+    if (canonical_current == "cancelled" and is_forward_progression
+            and (trip.cancel_reason or "").startswith(("no_show:", "auto:wait_timeout"))):
+        raise HTTPException(409, "This trip ended as a no-show")
     if (is_driver_update or is_privileged) and is_forward_progression and canonical_current in ("cancelled", "completed"):
         logging.warning(
             "[TripStatus] 🔓 %s-override resurrecting trip %d from %r → %r (user=%d role=%s)",
@@ -2430,6 +2778,7 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
     # closes — never mid-trip.
     if canonical_new in ("completed", "cancelled"):
         await _apply_deferred_face_kick(db, trip.driver_id)
+        await _apply_last_trip(db, trip.driver_id, trip.id)
 
     return _trip_dict_for_user(trip, user)
 
@@ -2761,6 +3110,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # Deferred face-check kick (2026-10-23): the rider's cancel also ends
     # the trip for the assigned driver — the cut lands here.
     await _apply_deferred_face_kick(db, trip.driver_id)
+    await _apply_last_trip(db, trip.driver_id, trip.id)
 
     return {**_trip_dict_for_user(trip, user), "cancellation_fee": cancellation_fee, "payment_status": trip.payment_status}
 
@@ -2870,6 +3220,7 @@ async def driver_cancel_trip(
         # Deferred face-check kick (2026-10-23): the trip closed — a selfie
         # rejected mid-trip takes the driver offline now.
         await _apply_deferred_face_kick(db, user.id)
+        await _apply_last_trip(db, user.id, trip.id)
         return {"status": "ok", "in_trip_cancelled": True}
     if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
@@ -2999,6 +3350,7 @@ async def driver_cancel_trip(
     # Deferred face-check kick (2026-10-23): the cancelling driver is free —
     # a selfie rejected mid-trip takes them offline now.
     await _apply_deferred_face_kick(db, user.id)
+    await _apply_last_trip(db, user.id, trip.id)
 
     return {
         "status": "cancelled_by_driver",

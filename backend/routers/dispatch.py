@@ -1,10 +1,11 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from html import escape
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, Response, StreamingResponse
-from sqlalchemy import select, func, and_, or_, text
+from sqlalchemy import select, func, and_, or_, text, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, DispatchOffer, Vehicle,
@@ -36,6 +37,7 @@ from config import (
 from services.event_bus import event_bus
 from services import vehicle_tiers
 from services import pickup_eta
+from services import chain_pause
 from services.platform_earnings import driver_fare_basis, driver_offer_dict
 from routers.admin import _pricing_config
 from utils.bounded_cache import TTLCache, BoundedDict
@@ -70,11 +72,17 @@ _ACTIVE_TRIP_STATUSES = [
     "arrived", "in_trip", "in_progress",
 ]
 
-# Chaining: a driver whose active trip ends this close to where they are
-# now (haversine, live position -> that trip's dropoff) is treated as free
-# for the next offer — the ride is stacked behind the one they are about
-# to finish, the way Uber chains back-to-back trips.
-_CHAIN_MAX_REMAINING_KM = 1.6  # 1 mile
+# Chaining: a driver with a rider aboard can be offered the next ride,
+# stacked behind the one they are finishing (the way Uber chains back-to-
+# back trips) — when the NEW rider would wait at most _CHAIN_MAX_WAIT_MIN:
+# what is left of the current trip plus the drive from its dropoff to the
+# new pickup (owner 2026-11-02; it was "within a mile of the dropoff" in a
+# straight line). Never longer than the pickup state's own limit. Only
+# in_trip counts: before the pickup the current rider is still waiting.
+# The driver can switch it off for one trip ("Recibiendo viajes" /
+# "Último viaje", services/chain_pause.py).
+_CHAIN_MAX_WAIT_MIN = 30.0
+_CHAIN_STATUSES = ("in_trip", "in_progress")
 
 # Acceptance rate (Lyft-style, 2026-08-24). Lifetime counters on the User
 # row (offers_accepted / offers_rejected / offers_expired) bumped wherever
@@ -175,6 +183,66 @@ def _filter_by_destination(drivers: list, dropoff_lat, dropoff_lng) -> list:
                 d.id, drop_to_dest, driver_to_dest,
             )
     return kept
+
+
+async def _filter_chained_by_wait(db: AsyncSession, drivers: list,
+                                  pickup_lat: float, pickup_lng: float,
+                                  max_wait_min: float) -> list:
+    """Keep a chained candidate only when the new rider would wait at most
+    [max_wait_min]: driving what is left of the current trip, then from its
+    dropoff to the new pickup. Free drivers pass untouched. Each leg falls
+    back to the straight-line estimate when no routing provider answers."""
+    if not drivers:
+        return drivers
+    try:
+        res = await db.execute(
+            select(Trip).where(
+                and_(
+                    Trip.driver_id.in_([d.id for d in drivers]),
+                    Trip.status.in_(_ACTIVE_TRIP_STATUSES),
+                )
+            )
+        )
+        active = {t.driver_id: t for t in res.scalars().all()}
+    except Exception as exc:
+        logging.warning("[Dispatch] chained wait lookup failed: %s", exc)
+        return drivers
+    if not active:
+        return drivers
+
+    chained = [(d, active[d.id]) for d in drivers if d.id in active]
+    # Leg 2 for everyone in one request: each current dropoff -> the pickup.
+    ends = [SimpleNamespace(id=-t.id, lat=t.dropoff_lat, lng=t.dropoff_lng) for _, t in chained]
+    legs = await pickup_eta.etas_to_pickup(ends, pickup_lat, pickup_lng, low_priority=True) or {}
+
+    keep_ids: set[int] = set()
+    pairs = []
+    for (d, t), end in zip(chained, ends):
+        leg = legs.get(end.id) or pickup_eta._straight_line_eta(
+            t.dropoff_lat, t.dropoff_lng, pickup_lat, pickup_lng,
+        )
+        if leg.minutes > max_wait_min:
+            continue  # the drive back alone is over the limit
+        pairs.append((d, t, leg))
+    # One request per driver (each to their own dropoff), all at once — this
+    # runs inside the rider's request and every cascade step.
+    rests = await asyncio.gather(*[
+        pickup_eta.pickup_minutes_for(d, t.dropoff_lat, t.dropoff_lng, low_priority=True)
+        for d, t, _ in pairs
+    ], return_exceptions=True)
+    for (d, t, leg), rest in zip(pairs, rests):
+        if rest is None or isinstance(rest, BaseException):
+            continue
+        wait = rest.minutes + leg.minutes
+        if wait <= max_wait_min:
+            keep_ids.add(d.id)
+        else:
+            logging.info(
+                "[Dispatch] chained candidate %s dropped: the rider would wait "
+                "%.1f min (%.1f left + %.1f to the pickup) > %.0f",
+                d.id, wait, rest.minutes, leg.minutes, max_wait_min,
+            )
+    return [d for d in drivers if d.id not in active or d.id in keep_ids]
 
 
 async def _order_chained_by_detour(db: AsyncSession, drivers: list,
@@ -392,13 +460,12 @@ async def _find_nearest_drivers(
     min_lng = pickup_lng - delta_lng
     max_lng = pickup_lng + delta_lng
 
-    # Drivers with an active trip are busy — EXCEPT the ones about to
-    # finish. A driver whose current trip's dropoff lies within ~1 mile of
-    # where they are now (haversine from their live position to that
-    # trip's dropoff) stays in the pool and gets the next ride offered as
-    # a chained one, stacked behind the trip they are finishing. An active
-    # trip with no usable dropoff, or one further out, still blocks —
-    # that driver is genuinely busy.
+    # Drivers with an active trip are busy — EXCEPT a driver with a rider
+    # aboard who could still reach the new rider inside _CHAIN_MAX_WAIT_MIN
+    # (see above). SQL only keeps the ones whose dropoff no road could make
+    # too far (prefilter_km); _filter_chained_by_wait measures the real
+    # wait. Before the pickup, with no usable dropoff, or with chained
+    # rides switched off for this trip, the driver is genuinely busy.
     chain_remaining_km = (
         6371.0 * func.acos(
             func.least(1.0, func.greatest(-1.0,
@@ -417,9 +484,11 @@ async def _find_nearest_drivers(
                 Trip.driver_id == User.id,
                 Trip.status.in_(_ACTIVE_TRIP_STATUSES),
                 or_(
+                    Trip.status.notin_(_CHAIN_STATUSES),
                     Trip.dropoff_lat.is_(None),
                     Trip.dropoff_lng.is_(None),
-                    chain_remaining_km >= _CHAIN_MAX_REMAINING_KM,
+                    chain_remaining_km >= pickup_eta.prefilter_km(_CHAIN_MAX_WAIT_MIN),
+                    chain_pause.paused_for_live_trip(),
                 ),
             )
         )
@@ -513,13 +582,22 @@ async def _find_nearest_drivers(
         func.lower(Vehicle.vehicle_type), "comfort"
     ).in_(list(vehicle_tiers.eligible_tiers(vehicle_type)))
 
+    # Free drivers fill the candidate slots before chained ones: they can
+    # start now, so a dense block of drivers mid-trip must not push them
+    # past the LIMIT.
+    has_live_trip = (
+        select(Trip.id)
+        .where(and_(Trip.driver_id == User.id, Trip.status.in_(_ACTIVE_TRIP_STATUSES)))
+        .exists()
+    )
+
     # Single JOIN query: User + Vehicle with haversine sort
     result = await db.execute(
         select(User)
         .join(Vehicle, and_(User.id == Vehicle.user_id, Vehicle.is_active == True), isouter=True)
         .where(and_(*conditions))
         .where(vehicle_condition)
-        .order_by(haversine_expr.asc())
+        .order_by(case((has_live_trip, 1), else_=0), haversine_expr.asc())
         .limit(limit)
     )
     drivers = list(result.scalars().all())
@@ -585,6 +663,9 @@ async def _find_nearest_drivers(
     limit_min = pickup_eta.max_pickup_minutes(pickup_state, max_pickup_min)
     drivers = await pickup_eta.filter_by_pickup_time(
         drivers, pickup_lat, pickup_lng, limit_min,
+    )
+    drivers = await _filter_chained_by_wait(
+        db, drivers, pickup_lat, pickup_lng, min(limit_min, _CHAIN_MAX_WAIT_MIN),
     )
 
     if drivers:

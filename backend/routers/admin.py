@@ -600,6 +600,10 @@ async def admin_cancel_trip(trip_id: int, body: AdminCancelTripIn, db: AsyncSess
     from services.promotion_redemptions import settle_promotion_on_cancel
     await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
     await db.commit()
+    # "Último viaje": the driver who marked this trip as their last goes
+    # offline now (2026-11-02).
+    from services import chain_pause
+    await chain_pause.apply_last_trip(db, trip.driver_id, trip.id)
     await db.refresh(trip)
     # The rider's lock-screen trip card dies with the trip (2026-09-23).
     try:

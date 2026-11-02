@@ -1321,6 +1321,26 @@ def send_chat_message_rtdb(trip_id: int, sender_id: int, sender_role: str, text:
         return False
 
 
+def sync_stop_wait(trip_id: int, arrived_at: Optional[str], departed_at: Optional[str]) -> bool:
+    """The driver's wait at the rider's stop (owner 2026-11-02): the rider's
+    tracking screen shows "Tu conductor te espera en la parada" with the
+    clock from `stopArrivedAt` until `stopDepartedAt` lands. ISO strings,
+    the same ones the trip's `stops` JSON keeps."""
+    _ensure_init()
+    if _db is None:
+        return False
+    data = {"stopArrivedAt": arrived_at, "stopDepartedAt": departed_at}
+    try:
+        _retry_sync(lambda: _db.collection("trips").document(f"sql_{trip_id}")
+                    .set(data, merge=True, timeout=_FS_TIMEOUT))
+        log.info("🔄 Synced stop wait sql_%d (arrived=%s departed=%s)",
+                 trip_id, arrived_at, departed_at)
+        return True
+    except Exception as e:
+        log.error("❌ stop wait sync failed for %d: %s", trip_id, e)
+        return False
+
+
 def sync_rider_confirmed_pickup(trip_id: int) -> bool:
     """The rider confirmed they are physically with the driver (2026-08-12).
 

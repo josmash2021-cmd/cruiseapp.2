@@ -2829,6 +2829,32 @@ async def list_support_chats(user: User = Depends(_get_current_user), db: AsyncS
              "created_at": c.created_at.isoformat() if c.created_at else None,
              "updated_at": c.updated_at.isoformat() if c.updated_at else None} for c in chats]
 
+@router.get("/support/unread", dependencies=[Depends(_verify_api_key)])
+async def support_unread(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Support messages this user has not read yet — the badge on the
+    support button in the driver's navigation (owner 2026-11-02). Last 12 h
+    of open chats only, so an old forgotten chat never lights it up.
+    `chat_id` = the chat with the newest unread message (opened directly)."""
+    since = datetime.now(timezone.utc) - timedelta(hours=12)
+    rows = (await db.execute(
+        select(SupportMessage.chat_id, func.count(SupportMessage.id), func.max(SupportMessage.id))
+        .join(SupportChat, SupportChat.id == SupportMessage.chat_id)
+        .where(
+            SupportChat.user_id == user.id,
+            SupportChat.status != "closed",
+            SupportMessage.is_read == False,  # noqa: E712
+            SupportMessage.sender_role != "system",
+            or_(SupportMessage.sender_id.is_(None), SupportMessage.sender_id != user.id),
+            SupportMessage.created_at >= since,
+        )
+        .group_by(SupportMessage.chat_id)
+    )).all()
+    if not rows:
+        return {"count": 0, "chat_id": None}
+    newest = max(rows, key=lambda r: r[2] or 0)
+    return {"count": int(sum(r[1] for r in rows)), "chat_id": newest[0]}
+
+
 @router.get("/support/chats/all", dependencies=[Depends(_require_dispatch_auth)])
 async def list_all_support_chats(db: AsyncSession = Depends(get_db)):
     """List ALL support chats (dispatch only)."""
@@ -3186,6 +3212,7 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
             m.is_read = True
             _flipped.append(m.id)
     await db.commit()
+    _flipped_ids = set(_flipped)
     if _flipped:
         # Read receipts (2026-10-15): the panel's ✓✓ read off the Firestore
         # mirror — it must flip together with SQL.
@@ -3219,6 +3246,9 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
         else:
             name = sender_names.get(m.sender_id, "Soporte Cruise")
         d = _support_msg_dict(m, name)
+        # Unread until this very read — the app draws "Mensajes nuevos"
+        # above the first one (owner 2026-11-02).
+        d["was_unread"] = m.id in _flipped_ids
         # Swap the stored key for a URL that works right now. Presigning is
         # local HMAC work, not a round trip, so doing it per poll is cheap.
         raw = d.get("message") or ""

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../widgets/glass_style.dart';
 
 /// Nav intro (user mockup 2026-10-08): shown ONCE, the first time a driver
 /// opens in-app navigation toward a pickup (gate lives in
@@ -11,9 +12,6 @@ import '../../services/api_service.dart';
 class NavIntroScreen extends StatelessWidget {
   const NavIntroScreen({super.key});
 
-  // Exact bg of the hero art (sampled 2026-10-10: RGB 20,21,22) — the card
-  // melts into the page instead of reading as a grey frame around it.
-  static const _navy = Color(0xFF141516);
   static const _gold = Color(0xFFE8C547);
   // The hero PNG is 740 x 420: the slot keeps that shape while it loads, so
   // nothing below it jumps when it lands.
@@ -32,102 +30,113 @@ class NavIntroScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
+    // Frosted glass over the nav map loading underneath (owner 2026-11-02:
+    // "el fondo debe ser de vidrio borroso sin que se vea nada atrás") — the
+    // open-sheet frost: heavy blur and a dense tint, so only a soft glow of
+    // the map comes through, never its streets or the arrow.
     return Scaffold(
-      backgroundColor: _navy,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 26),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Spacer(flex: 2),
-              // The design's own hero art (user spec 2026-10-10: "esta página
-              // debe tener esta imagen de esta foto"). Served from the
-              // backend because Shorebird patches never carry new assets;
-              // the code-drawn card below stays as the failure stand-in so
-              // the page never renders broken. While it loads the slot is
-              // EMPTY (2026-11-02): the drawn card showing first and the art
-              // fading over it read as a different icon appearing behind.
-              ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: Image.network(
-                  _heroUrl,
-                  fit: BoxFit.fitWidth,
-                  // Same rule as the update gate (2026-10-10): warm cache
-                  // paints with the page; a late frame fades, never pops.
-                  frameBuilder: (context, child, frame, wasSync) {
-                    if (wasSync) return child;
-                    if (frame == null) {
-                      return const AspectRatio(aspectRatio: _heroAspect);
-                    }
-                    return TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: 1),
-                      duration: const Duration(milliseconds: 320),
-                      curve: Curves.easeOut,
-                      builder: (_, v, c) => Opacity(opacity: v, child: c),
-                      child: child,
-                    );
-                  },
-                  errorBuilder: (context, error, stack) =>
-                      const _RouteIllustration(),
-                ),
-              ),
-              const SizedBox(height: 34),
-              Text(
-                s.navIntroTitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                ),
-              ),
-              const SizedBox(height: 28),
-              _feature(
-                Icons.route_rounded,
-                s.navIntroDirectionsTitle,
-                s.navIntroDirectionsBody,
-              ),
-              const SizedBox(height: 18),
-              _feature(
-                // notifications_outlined / bar_chart_rounded, not
-                // notifications_active_outlined / traffic_rounded: OTA
-                // patches can only use glyphs that shipped in the store
-                // build's icon font — those two rendered as "?" boxes.
-                Icons.notifications_outlined,
-                s.navIntroRideTitle,
-                s.navIntroRideBody,
-              ),
-              const SizedBox(height: 18),
-              _feature(
-                Icons.bar_chart_rounded,
-                s.navIntroInsightsTitle,
-                s.navIntroInsightsBody,
-              ),
-              const Spacer(flex: 3),
-              SizedBox(
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _gold,
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                  child: Text(
-                    s.navIntroStart,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
+      backgroundColor: Colors.transparent,
+      body: GlassSurface(
+        blur: kGlassSheetBlurOpen,
+        tint: glassSheetOpenTint,
+        border: const Border(),
+        width: double.infinity,
+        height: double.infinity,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 26),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Spacer(flex: 2),
+                // The design's own hero art (user spec 2026-10-10: "esta página
+                // debe tener esta imagen de esta foto"). Served from the
+                // backend because Shorebird patches never carry new assets;
+                // the code-drawn card below stays as the failure stand-in so
+                // the page never renders broken. While it loads the slot is
+                // EMPTY (2026-11-02): the drawn card showing first and the art
+                // fading over it read as a different icon appearing behind.
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(28),
+                  child: Image.network(
+                    _heroUrl,
+                    fit: BoxFit.fitWidth,
+                    // Same rule as the update gate (2026-10-10): warm cache
+                    // paints with the page; a late frame fades, never pops.
+                    frameBuilder: (context, child, frame, wasSync) {
+                      if (wasSync) return child;
+                      if (frame == null) {
+                        return const AspectRatio(aspectRatio: _heroAspect);
+                      }
+                      return TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 320),
+                        curve: Curves.easeOut,
+                        builder: (_, v, c) => Opacity(opacity: v, child: c),
+                        child: child,
+                      );
+                    },
+                    errorBuilder: (context, error, stack) =>
+                        const _RouteIllustration(),
                   ),
                 ),
-              ),
-              const SizedBox(height: 30),
-            ],
+                const SizedBox(height: 34),
+                Text(
+                  s.navIntroTitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                _feature(
+                  Icons.route_rounded,
+                  s.navIntroDirectionsTitle,
+                  s.navIntroDirectionsBody,
+                ),
+                const SizedBox(height: 18),
+                _feature(
+                  // notifications_outlined / bar_chart_rounded, not
+                  // notifications_active_outlined / traffic_rounded: OTA
+                  // patches can only use glyphs that shipped in the store
+                  // build's icon font — those two rendered as "?" boxes.
+                  Icons.notifications_outlined,
+                  s.navIntroRideTitle,
+                  s.navIntroRideBody,
+                ),
+                const SizedBox(height: 18),
+                _feature(
+                  Icons.bar_chart_rounded,
+                  s.navIntroInsightsTitle,
+                  s.navIntroInsightsBody,
+                ),
+                const Spacer(flex: 3),
+                SizedBox(
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _gold,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    child: Text(
+                      s.navIntroStart,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 30),
+              ],
+            ),
           ),
         ),
       ),
@@ -223,9 +232,12 @@ class _RoutePainter extends CustomPainter {
     final path = Path()
       ..moveTo(start.dx, start.dy)
       ..cubicTo(
-        start.dx + w * 0.05, start.dy - h * 0.34,
-        end.dx - w * 0.34, end.dy + h * 0.22,
-        end.dx, end.dy,
+        start.dx + w * 0.05,
+        start.dy - h * 0.34,
+        end.dx - w * 0.34,
+        end.dy + h * 0.22,
+        end.dx,
+        end.dy,
       );
     final routePaint = Paint()
       ..color = _gold
@@ -254,7 +266,8 @@ class _RoutePainter extends CustomPainter {
 
   void _teardrop(Canvas canvas, Offset c, double r, Color color) {
     final p = Path()
-      ..addOval(Rect.fromCircle(center: Offset(c.dx, c.dy - r * 0.5), radius: r))
+      ..addOval(
+          Rect.fromCircle(center: Offset(c.dx, c.dy - r * 0.5), radius: r))
       ..moveTo(c.dx - r * 0.7, c.dy + r * 0.2)
       ..lineTo(c.dx, c.dy + r * 1.4)
       ..lineTo(c.dx + r * 0.7, c.dy + r * 0.2)

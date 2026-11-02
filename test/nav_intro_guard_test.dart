@@ -94,6 +94,11 @@ void main() {
         .readAsStringSync()
         .replaceAll('\r\n', '\n');
     expect(intro, contains('static Future<void> precacheHero(BuildContext context)'));
+    // "el fondo debe ser de vidrio borroso sin que se vea nada atrás": the
+    // open-sheet frost over the nav map loading underneath.
+    expect(intro, contains('backgroundColor: Colors.transparent'));
+    expect(intro, contains('blur: kGlassSheetBlurOpen'));
+    expect(intro, contains('tint: glassSheetOpenTint'));
     expect(intro, contains('return const AspectRatio(aspectRatio: _heroAspect);'),
         reason: 'while loading the slot is empty, not the drawn card');
     final feature = intro.substring(intro.indexOf('Widget _feature('));

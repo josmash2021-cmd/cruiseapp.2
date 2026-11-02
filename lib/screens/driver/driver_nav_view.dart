@@ -120,6 +120,9 @@ class DriverNavView extends StatefulWidget {
     required this.dropoffInstructions,
     this.stopLatLng,
     this.stopLabel = '',
+    this.stopDone = false,
+    this.onArrivedStop,
+    this.onSlideFromStop,
     required this.waitStartedAt,
     required this.onExit,
     required this.onArrived,
@@ -138,6 +141,7 @@ class DriverNavView extends StatefulWidget {
     this.receivingRides = true,
     this.lastTrip = false,
     this.supportUnread = 0,
+    this.queuedCanceled = false,
     this.onCancelTrip,
     this.onToggleReceiving,
     this.onToggleLastTrip,
@@ -165,6 +169,15 @@ class DriverNavView extends StatefulWidget {
   /// the "arrive at the stop" maneuver) and it gets the flag pin.
   final LatLng? stopLatLng;
   final String stopLabel;
+
+  /// The driver left the stop ("Desliza para ir al destino", owner design
+  /// 2026-11-02). Until then the dropoff leg ENDS at the stop: route,
+  /// approach, "Llegué" and the wait all happen there, as at the pickup.
+  final bool stopDone;
+
+  /// "Llegué" at the stop / "Desliza para ir al destino".
+  final VoidCallback? onArrivedStop;
+  final VoidCallback? onSlideFromStop;
 
   /// The parent screen's `_actionStageKey()`: arrived / waiting_rider /
   /// start_ride / finish / *_locked.
@@ -213,6 +226,9 @@ class DriverNavView extends StatefulWidget {
 
   /// Unread messages from support, on the support button.
   final int supportUnread;
+
+  /// "Viaje en cola cancelado" is up (the parent holds it for 7 s).
+  final bool queuedCanceled;
 
   final VoidCallback? onCancelTrip;
   final VoidCallback? onToggleReceiving;
@@ -339,6 +355,58 @@ class DriverNavViewState extends State<DriverNavView>
   // Chase tilt: 45° (same owner request as the zoom above).
   static const _chasePitch = 45.0;
 
+  // Top-down at the point (owner design 2026-11-02, drawings 7 and 10):
+  // ~200 m from the pickup or the stop, and while waiting there, the camera
+  // straightens to look straight down — smoothly, without turning; leaving,
+  // it tilts back behind the car the same way. A time-based ease, so a
+  // parked car (no dot frames) still glides: the settle ticker drives it.
+  static const _pitchGlideMs = 1400;
+  double _pitch = _chasePitch;
+  double _pitchFrom = _chasePitch;
+  double _pitchTo = _chasePitch;
+  DateTime? _pitchSince;
+
+  bool get _pitchGliding => _pitchSince != null;
+
+  double get _pitchTarget {
+    switch (_panelStage) {
+      case NavPanelStage.approaching:
+      case NavPanelStage.waitingPickup:
+      case NavPanelStage.waitingStop:
+        return 0.0;
+      case NavPanelStage.driving:
+      case NavPanelStage.arrivedDropoff:
+        return _chasePitch;
+    }
+  }
+
+  /// Starts a glide when the target changed; advances the live pitch.
+  void _stepPitch() {
+    final target = _pitchTarget;
+    if (target != _pitchTo) {
+      _pitchFrom = _pitch;
+      _pitchTo = target;
+      _pitchSince = DateTime.now();
+    }
+    final since = _pitchSince;
+    if (since == null) return;
+    final t = (DateTime.now().difference(since).inMilliseconds / _pitchGlideMs)
+        .clamp(0.0, 1.0);
+    _pitch = _pitchFrom + (_pitchTo - _pitchFrom) * Curves.easeInOutCubic.transform(t);
+    if (t >= 1.0) {
+      _pitch = _pitchTo;
+      _pitchSince = null;
+    }
+  }
+
+  /// A stage or phase change may move the pitch target: wake the settle
+  /// ticker so the glide runs even with the car parked.
+  void _syncPitch() {
+    if (_pitchTarget == _pitchTo) return;
+    _stepPitch();
+    _ensureCamSettle();
+  }
+
   // Owner request 2026-10-30: "la flecha un poco más grande" on the
   // navigation map — overlay and native annotation alike.
   static const double _kNavArrowScale = 1.2;
@@ -400,7 +468,7 @@ class DriverNavViewState extends State<DriverNavView>
   }
 
   void _ensureCamSettle() {
-    if (_camBearingSettled) return;
+    if (_camBearingSettled && !_pitchGliding) return;
     final t = _camSettleTicker ??= createTicker(_onCamSettleTick);
     if (!t.isActive) {
       _camSettleLast = Duration.zero;
@@ -417,7 +485,7 @@ class DriverNavViewState extends State<DriverNavView>
         _camState != _CamState.following ||
         _overview ||
         !_mapMounted ||
-        _camBearingSettled) {
+        (_camBearingSettled && !_pitchGliding)) {
       _camSettleTicker?.stop();
       return;
     }
@@ -438,6 +506,20 @@ class DriverNavViewState extends State<DriverNavView>
   // ~2.5 writes/s) so the erase rides the glide with no steps and no delay.
   double _trimS = 0;
   DateTime _lastTrimAt = DateTime(2000);
+
+  // ── The next leg and the departure (owner design 2026-11-02, drawing 10):
+  // the stretch after this one (pickup → stop/destination, stop →
+  // destination) shows in faded gold; when the leg flips its geometry seeds
+  // the new route at once — the map is never left without a line — and the
+  // new line draws itself out from the car over 1.4 s.
+  List<LatLng> _nextLegPts = [];
+  mapbox.PolylineAnnotation? _nextLegAnnot;
+  int _nextLegSeq = 0;
+  bool _drawOnNext = false;
+  Timer? _drawOnTimer;
+  DateTime? _drawOnUntil;
+  static const _drawOnMs = 1400;
+  static const _nextLegAlpha = 0x73; // the accepted-trip overlay's faded gold
 
   // ── Traffic lights / stop signs (user spec 2026-09-19): parsed off the
   // Mapbox intersections, drawn as upright icons on the shared pins manager
@@ -567,8 +649,18 @@ class DriverNavViewState extends State<DriverNavView>
     readerRole: 'driver',
   );
 
-  LatLng get _dest =>
-      widget.toPickup ? widget.pickupLatLng : widget.dropoffLatLng;
+  /// The rider is aboard and the stop is still ahead: this leg ends there.
+  bool get _stopLeg =>
+      !widget.toPickup && widget.stopLatLng != null && !widget.stopDone;
+
+  LatLng get _dest => widget.toPickup
+      ? widget.pickupLatLng
+      : (_stopLeg ? widget.stopLatLng! : widget.dropoffLatLng);
+
+  /// The waypoint the dropoff leg runs through — none once the stop is the
+  /// destination itself, or already behind.
+  LatLng? get _routeStop =>
+      widget.toPickup || widget.stopDone || _stopLeg ? null : widget.stopLatLng;
 
   /// End Route appears once the driver has arrived — by the nav view's own
   /// arrival latch or by any post-arrival stage the parent reports. Never
@@ -578,6 +670,8 @@ class DriverNavViewState extends State<DriverNavView>
       widget.stage == 'arrived' ||
       widget.stage == 'waiting_rider' ||
       widget.stage == 'start_ride' ||
+      widget.stage == 'stop_near' ||
+      widget.stage == 'stop_waiting' ||
       widget.stage == 'finish';
 
   bool get _phaseArrived =>
@@ -627,6 +721,9 @@ class DriverNavViewState extends State<DriverNavView>
     if (oldWidget.stage != widget.stage) {
       _syncStageControls(widget.stage);
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncPitch();
+    });
     if (oldWidget.toPickup != widget.toPickup) {
       // Leg flip (pickup → dropoff): re-aim the route and drop the rider
       // dot — after the slide to pick up there is nobody left to show.
@@ -647,9 +744,10 @@ class DriverNavViewState extends State<DriverNavView>
       // The rider moved the destination mid-trip — the leg is the same,
       // the target is not.
       _onDestinationChanged();
-    } else if (oldWidget.stopLatLng != widget.stopLatLng) {
-      // A stop appeared (or moved) mid-drive — the route re-fetches through
-      // it, same invalidation path as a destination change.
+    } else if (oldWidget.stopLatLng != widget.stopLatLng ||
+        oldWidget.stopDone != widget.stopDone) {
+      // A stop appeared (or moved) mid-drive, or the driver left it — the
+      // route re-fetches from the car, same path as a destination change.
       _onDestinationChanged();
     }
   }
@@ -665,6 +763,7 @@ class DriverNavViewState extends State<DriverNavView>
     _riderLocSub?.cancel();
     _riderStaleTimer?.cancel();
     _waitTicker?.cancel();
+    _drawOnTimer?.cancel();
     _arrowWatchdog?.cancel();
     _arrowHandoffTimer?.cancel();
     _recenterTicker?.dispose();
@@ -721,6 +820,7 @@ class DriverNavViewState extends State<DriverNavView>
     final next = _derivePhase();
     if (next == _navPhase) return;
     setState(() => _navPhase = next);
+    _syncPitch();
     // User spec 2026-09-27: arrival does NOT auto-raise the sheet anymore —
     // the face keeps its collapsed summary and the driver drags it up by
     // hand to reach the gold I've-arrived button (which still crossfades in
@@ -744,6 +844,9 @@ class DriverNavViewState extends State<DriverNavView>
         _carMgr = null;
         _circleMgr = null;
         _routeAnnot = null;
+        _nextLegAnnot = null;
+        _drawOnTimer?.cancel();
+        _drawOnUntil = null;
         _driverAnnot = null;
         _destAnnot = null;
         _stopAnnot = null;
@@ -834,6 +937,9 @@ class DriverNavViewState extends State<DriverNavView>
     // redraw the route and destination pin from the State that survived.
     await _drawRoute();
     await _drawDestPin();
+    // The faded next leg (owner design 2026-11-02) — fetched once the map
+    // can draw it; its geometry also seeds the next leg's line at the flip.
+    unawaited(_loadNextLeg());
     // The signs as well (user report 2026-09-23, "no aparecen los stops y
     // los semaforos"): a surface rebirth left them on dead handles, and a
     // route/steps fetch that won the race against this setup bailed on the
@@ -1448,10 +1554,9 @@ class DriverNavViewState extends State<DriverNavView>
     }
     try {
       final o = origin ?? _driverLatLng();
-      // On the dropoff leg a stop is a waypoint: the line runs through it
-      // (Mapbox steps then carry the "arrive at the stop" maneuver), and
-      // the remaining-time math over the geometry includes the detour.
-      final stop = widget.toPickup ? null : widget.stopLatLng;
+      // The stop is the leg's end until the driver leaves it (_dest); a
+      // waypoint only when nothing else covers it.
+      final stop = _routeStop;
       final result = await DirectionsService(ApiKeys.webServices).getRoute(
         origin: o,
         destination: _dest,
@@ -1647,7 +1752,20 @@ class DriverNavViewState extends State<DriverNavView>
     unawaited(_drawDestPin());
     _recomputeNavPhase();
     _seedPrefetchedRoute();
+    // The next leg's geometry, fetched while driving the last one, starts
+    // where the car is now: the new line is there at once.
+    final next = _nextLegPts;
+    if (_routePts.length < 2 &&
+        next.length >= 2 &&
+        RouteSplice.haversineM(next.last, _dest) <= _prefetchDestMaxM &&
+        RouteSplice.haversineM(next.first, _driverLatLng()) <= 300) {
+      _routePts = List.of(next);
+      _routeLenM = _polylineLenM(_routePts);
+    }
+    _drawOnNext = true;
+    if (_routePts.length >= 2) unawaited(_drawRoute());
     unawaited(_loadRoute());
+    unawaited(_loadNextLeg(afterDrawOn: true));
   }
 
   /// Arc-length of [proj] (projected on segment [seg]) along [pts] from the
@@ -1682,6 +1800,8 @@ class DriverNavViewState extends State<DriverNavView>
     if (!kIsWeb && _routeAnnot == null) return;
     final now = DateTime.now();
     if (now.difference(_lastTrimAt).inMilliseconds < 400) return;
+    final drawOn = _drawOnUntil;
+    if (drawOn != null && now.isBefore(drawOn)) return;
     final seg = RouteSplice.closestSegmentIndex(pts, pos);
     final proj = RouteSplice.projectOnSegment(pos, pts[seg], pts[seg + 1]);
     final s = _routeSOf(pts, seg, proj);
@@ -1960,6 +2080,11 @@ class DriverNavViewState extends State<DriverNavView>
     }
     final mgr = _polyMgr;
     if (mgr == null) return;
+    if (_routeAnnot == null && _drawOnNext && _routePts.length >= 2) {
+      _drawOnNext = false;
+      await _drawOnRoute(mgr);
+      return;
+    }
     final geom = safeLineString(_routePts);
     if (geom == null) return;
     if (_routeAnnot != null) {
@@ -1985,6 +2110,146 @@ class DriverNavViewState extends State<DriverNavView>
         await _map?.style.setStyleLayerProperty(mgr.id, 'line-cap', 'round');
       } catch (_) {}
     }
+  }
+
+  /// The first [meters] of [pts], the last point interpolated.
+  static List<LatLng> _prefixOf(List<LatLng> pts, double meters) {
+    final out = <LatLng>[pts.first];
+    var acc = 0.0;
+    for (var i = 1; i < pts.length; i++) {
+      final seg = RouteSplice.haversineM(pts[i - 1], pts[i]);
+      if (acc + seg >= meters) {
+        final f = seg <= 0 ? 0.0 : ((meters - acc) / seg).clamp(0.0, 1.0);
+        out.add(LatLng(
+          pts[i - 1].latitude + (pts[i].latitude - pts[i - 1].latitude) * f,
+          pts[i - 1].longitude + (pts[i].longitude - pts[i - 1].longitude) * f,
+        ));
+        return out;
+      }
+      acc += seg;
+      out.add(pts[i]);
+    }
+    return out;
+  }
+
+  /// The new leg's line grows out from the car along the road (ease in-out,
+  /// 1.4 s), then the full line is written once more so the last frame —
+  /// the one most likely to be dropped — always lands.
+  Future<void> _drawOnRoute(mapbox.PolylineAnnotationManager mgr) async {
+    final pts = List.of(_routePts);
+    final total = _polylineLenM(pts);
+    final first = safeLineString(_prefixOf(pts, math.min(2.0, total)));
+    if (first == null || total <= 0) return;
+    try {
+      _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: first,
+        lineColor: _gold.toARGB32(),
+        lineWidth: 6.5,
+        lineJoin: mapbox.LineJoin.ROUND,
+      ));
+      await _map?.style.setStyleLayerProperty(mgr.id, 'line-cap', 'round');
+    } catch (_) {
+      return;
+    }
+    final start = DateTime.now();
+    _drawOnUntil = start.add(const Duration(milliseconds: _drawOnMs + 200));
+    _drawOnTimer?.cancel();
+    _drawOnTimer = Timer.periodic(const Duration(milliseconds: 40), (t) {
+      final annot = _routeAnnot;
+      if (!mounted || annot == null) {
+        t.cancel();
+        return;
+      }
+      final f = (DateTime.now().difference(start).inMilliseconds / _drawOnMs)
+          .clamp(0.0, 1.0);
+      if (f >= 1.0) {
+        t.cancel();
+        _drawOnUntil = null;
+        unawaited(_drawRoute());
+        return;
+      }
+      final geom = safeLineString(
+          _prefixOf(pts, math.max(2.0, total * Curves.easeInOut.transform(f))));
+      if (geom == null) return;
+      annot.geometry = geom;
+      unawaited(mgr.update(annot).catchError((Object _) {}));
+    });
+  }
+
+  /// Where the stretch after this one ends — none on the last leg.
+  LatLng? get _nextLegEnd {
+    if (widget.toPickup) {
+      final stop = widget.stopDone ? null : widget.stopLatLng;
+      return stop ?? widget.dropoffLatLng;
+    }
+    return _stopLeg ? widget.dropoffLatLng : null;
+  }
+
+  Future<void> _clearNextLeg() async {
+    final annot = _nextLegAnnot;
+    _nextLegAnnot = null;
+    final mgr = _polyMgr;
+    if (annot != null && mgr != null) {
+      try {
+        await mgr.delete(annot);
+      } catch (_) {}
+    }
+  }
+
+  /// Fetches and draws the next leg in faded gold. After a leg flip it
+  /// waits for the new line to draw itself, then fades in.
+  Future<void> _loadNextLeg({bool afterDrawOn = false}) async {
+    final seq = ++_nextLegSeq;
+    await _clearNextLeg();
+    final end = _nextLegEnd;
+    final from = _dest;
+    if (end == null || kIsWeb) {
+      _nextLegPts = [];
+      return;
+    }
+    List<LatLng> pts = const [];
+    try {
+      final result = await DirectionsService(ApiKeys.webServices).getRoute(
+        origin: from,
+        destination: end,
+        language: Localizations.localeOf(context).languageCode,
+      );
+      pts = result?.points ?? const [];
+    } catch (e) {
+      debugPrint('[Nav] next leg fetch failed: $e');
+    }
+    if (!mounted || seq != _nextLegSeq || pts.length < 2) return;
+    _nextLegPts = pts;
+    if (afterDrawOn) {
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+      if (!mounted || seq != _nextLegSeq) return;
+    }
+    final mgr = _polyMgr;
+    final geom = safeLineString(pts);
+    if (mgr == null || geom == null) return;
+    try {
+      // Fades in over ~0.8 s.
+      final annot = await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geom,
+        lineColor: _gold.withAlpha(_nextLegAlpha).toARGB32(),
+        lineWidth: 5.5,
+        lineJoin: mapbox.LineJoin.ROUND,
+        lineOpacity: 0.25,
+      ));
+      if (!mounted || seq != _nextLegSeq) {
+        unawaited(mgr.delete(annot).catchError((Object _) {}));
+        return;
+      }
+      _nextLegAnnot = annot;
+      for (final o in const [0.5, 0.75, 1.0]) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        if (!mounted || seq != _nextLegSeq || _nextLegAnnot != annot) return;
+        annot.lineOpacity = o;
+        try {
+          await mgr.update(annot);
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   Future<void> _drawDestPin() async {
@@ -2022,7 +2287,8 @@ class DriverNavViewState extends State<DriverNavView>
   Future<void> _drawStopPin() async {
     final mgr = _pointMgr;
     if (mgr == null) return;
-    final stop = widget.toPickup ? null : widget.stopLatLng;
+    // On the stop leg the destination pin already marks it.
+    final stop = _routeStop;
     if (stop == null) {
       final old = _stopAnnot;
       _stopAnnot = null;
@@ -2158,6 +2424,7 @@ class DriverNavViewState extends State<DriverNavView>
     final lat = _renderPos?.latitude ?? _dot.lat;
     final lng = _renderPos?.longitude ?? _dot.lng;
     if (lat == null || lng == null) return;
+    _stepPitch();
     // Zoom lerps toward its target at ≤0.5/sec — a speed or maneuver change
     // is felt as a glide, never as a cut. dt is the dot ticker's own vsync
     // delta (already capped at 50 ms), never a wall clock read mid-frame.
@@ -2179,7 +2446,7 @@ class DriverNavViewState extends State<DriverNavView>
       // The map follows the arrow's bearing on a damped spring (2026-10-30,
       // "como Google"); the overlay arrow shows the difference.
       bearing: _followCamBearing(_dot.bearing),
-      pitch: _chasePitch,
+      pitch: _pitch,
       padding: mapbox.MbxEdgeInsets(
           top: topPad, left: 0, right: 0, bottom: _camBottomPad),
     ));
@@ -2204,7 +2471,7 @@ class DriverNavViewState extends State<DriverNavView>
       center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
       zoom: _chaseZoom,
       bearing: _dot.bearing,
-      pitch: _chasePitch,
+      pitch: _pitch,
       padding: mapbox.MbxEdgeInsets(
           top: topPad, left: 0, right: 0, bottom: _camBottomPad),
     ));
@@ -2227,7 +2494,7 @@ class DriverNavViewState extends State<DriverNavView>
         lat: lat,
         zoom: _chaseZoom,
         bearing: _dot.bearing,
-        pitch: _chasePitch,
+        pitch: _pitch,
         durationMs: durationMs,
       );
       return;
@@ -2599,7 +2866,9 @@ class DriverNavViewState extends State<DriverNavView>
   void _syncStageControls(String stage) {
     if (stage == _lastStageSynced) return;
     _lastStageSynced = stage;
-    final waiting = stage == 'waiting_rider' || stage == 'start_ride';
+    final waiting = stage == 'waiting_rider' ||
+        stage == 'start_ride' ||
+        stage == 'stop_waiting';
     if (waiting && _waitTicker == null) {
       // The backend timestamp wins; a notes-less trip starts the clock when
       // the stage first shows.
@@ -2612,6 +2881,9 @@ class DriverNavViewState extends State<DriverNavView>
     if (!waiting && _waitTicker != null) {
       _waitTicker?.cancel();
       _waitTicker = null;
+      // The stop's wait starts its own clock.
+      _waitStartLocal = null;
+      _waitRemainFrac = 1.0;
     }
   }
 
@@ -2682,7 +2954,7 @@ class DriverNavViewState extends State<DriverNavView>
         lat: lat,
         zoom: _chaseZoom,
         bearing: _dot.bearing,
-        pitch: _chasePitch,
+        pitch: _pitch,
         durationMs: _recenterBlendMs,
       );
       _settleFollowing();
@@ -2773,7 +3045,7 @@ class DriverNavViewState extends State<DriverNavView>
               lerp(fc.lng.toDouble(), lng), lerp(fc.lat.toDouble(), lat))),
       zoom: lerp(from.zoom, _chaseZoom),
       bearing: bearing,
-      pitch: lerp(from.pitch, _chasePitch),
+      pitch: lerp(from.pitch, _pitch),
       padding: mapbox.MbxEdgeInsets(
         top: lerp(fp.top, topPad),
         left: lerp(fp.left, 0),
@@ -2946,7 +3218,7 @@ class DriverNavViewState extends State<DriverNavView>
                           // the chase tilt, with a touch of perspective.
                           transform: Matrix4.identity()
                             ..setEntry(3, 2, 0.0015)
-                            ..rotateX(_chasePitch * math.pi / 180),
+                            ..rotateX(_pitch * math.pi / 180),
                           // Heading-up chase: the camera carries the arrow's
                           // bearing, so on screen the arrow always points up.
                           // Heading-up chase with a damped map: the arrow
@@ -3123,6 +3395,11 @@ class DriverNavViewState extends State<DriverNavView>
             dropoffAddress: widget.dropoffAddress,
             stopLabel: widget.stopLabel,
             hasStop: widget.stopLatLng != null,
+            stopLeg: _stopLeg,
+            stopDone: widget.stopDone,
+            pickupNote: widget.passengerInstructions,
+            dropoffNote: widget.dropoffInstructions,
+            onSlideFromStop: widget.onSlideFromStop,
             fare: widget.fare,
             moving: _panelMoving,
             stage: _panelStage,
@@ -3133,10 +3410,13 @@ class DriverNavViewState extends State<DriverNavView>
             lastTrip: widget.lastTrip,
             chatUnread: _chatUnread,
             supportUnread: widget.supportUnread,
+            queuedCanceled: widget.queuedCanceled,
             onOpenChat: widget.onOpenChat,
             onSupport: widget.onSupport,
             onCancelTrip: widget.onCancelTrip ?? widget.onExit,
-            onArrived: widget.onArrived,
+            onArrived: _stopLeg
+                ? (widget.onArrivedStop ?? widget.onArrived)
+                : widget.onArrived,
             onSlidePickUp: widget.onSlidePickUp,
             onSlideFinish: widget.onSlideFinish,
             onToggleReceiving: widget.onToggleReceiving,
@@ -3166,6 +3446,15 @@ class DriverNavViewState extends State<DriverNavView>
   /// the destination (the finish slider), or plain driving.
   NavPanelStage get _panelStage {
     final st = widget.stage;
+    if (_stopLeg) {
+      if (st == 'stop_waiting') return NavPanelStage.waitingStop;
+      if (st == 'stop_near' ||
+          _navPhase == _NavPhase.approachingDropoff ||
+          _navPhase == _NavPhase.arrivedDropoff) {
+        return NavPanelStage.approaching;
+      }
+      return NavPanelStage.driving;
+    }
     if (widget.toPickup && (st == 'waiting_rider' || st == 'start_ride')) {
       return NavPanelStage.waitingPickup;
     }
@@ -3193,8 +3482,9 @@ class DriverNavViewState extends State<DriverNavView>
   }
 
   Widget _buildManeuverBar(S s) {
-    final destName =
-        widget.toPickup ? widget.pickupAddress : widget.dropoffAddress;
+    final destName = widget.toPickup
+        ? widget.pickupAddress
+        : (_stopLeg ? widget.stopLabel : widget.dropoffAddress);
     // Once End Route is showing (the nav's own latch OR a post-arrival stage
     // from the parent — user spec 2026-09-19) the bar stops guiding and
     // answers where you ARE: the client's address up top, the "you've
@@ -3210,7 +3500,9 @@ class DriverNavViewState extends State<DriverNavView>
             ? _instructionLabel
             : (_streetLabel.isEmpty ? s.navFollowRoute : _streetLabel));
     final subtitle = _endRouteVisible
-        ? (widget.toPickup ? s.navArrivedPickup : s.navArrivedDropoff)
+        ? (widget.toPickup
+            ? s.navArrivedPickup
+            : (_stopLeg ? s.navArrivedStop : s.navArrivedDropoff))
         : (_maneuverDistLabel.isNotEmpty
             ? _maneuverDistLabel
             : _destDistLabel(s));

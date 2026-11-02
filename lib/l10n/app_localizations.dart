@@ -5393,6 +5393,8 @@ class S {
       _es ? 'Llegaste al pickup' : "You've arrived at the pickup";
   String get navArrivedDropoff =>
       _es ? 'Llegaste al destino' : "You've arrived at the destination";
+  String get navArrivedStop =>
+      _es ? 'Llegaste a la parada' : "You've arrived at the stop";
   String get navEndRoute => _es ? 'Terminar ruta' : 'End Route';
   String get navIArrived => _es ? 'He llegado' : "I've arrived";
   String get navCruiseNav => _es ? 'Cruise Maps' : 'Cruise Maps';
@@ -5435,6 +5437,17 @@ class S {
   String get navQueuedRideCanceled =>
       _es ? 'Viaje en cola cancelado' : 'Queued ride canceled';
   String get navRiderDays => _es ? 'Días' : 'Days';
+  String get supportNewMessages => _es ? 'Mensajes nuevos' : 'New messages';
+  // Why the trip ended — never how much (owner 2026-11-02).
+  String get riderNoShowPickupMsg => _es
+      ? 'Tu viaje fue cancelado porque no llegaste al punto de recogida.'
+      : "Your trip was cancelled because you didn't reach the pickup.";
+  String get riderNoShowStopMsg => _es
+      ? 'Tu viaje fue cancelado porque no regresaste a la parada.'
+      : "Your trip was cancelled because you didn't return to the stop.";
+  String get riderStopWaiting => _es
+      ? 'Tu conductor te espera en la parada'
+      : 'Your driver is waiting at the stop';
   String get fetchingAddress =>
       _es ? 'Obteniendo dirección...' : 'Getting address...';
   String get passengerConfirmedOnboard => _es

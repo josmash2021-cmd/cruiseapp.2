@@ -58,11 +58,13 @@ void main() {
       expect(scheduled, contains('LOCKOUT_MINUTES = 60'));
     });
 
-    test('the ~1 min dropoff unlock is the existing chained window, untouched',
+    test('the dropoff unlock is the shared chained window, not its own',
         () {
-      expect(dispatch, contains('_CHAIN_MAX_REMAINING_KM = 1.6'),
-          reason: 'the chained unlock every trip already had — do not '
-              're-tune it for this spec');
+      // The chained unlock every trip has (owner 2026-11-02: the next rider
+      // waits at most 30 min, remaining trip + drive back) — this spec does
+      // not get a window of its own.
+      expect(dispatch, contains('_CHAIN_MAX_WAIT_MIN = 30.0'));
+      expect(dispatch, isNot(contains('_CHAIN_MAX_REMAINING_KM')));
     });
   });
 }

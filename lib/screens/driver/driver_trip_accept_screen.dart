@@ -52,6 +52,7 @@ import '../welcome_screen.dart';
 import 'driver_rate_rider_screen.dart';
 import '../../services/api_service.dart';
 import '../../services/masked_call_service.dart';
+import '../../services/queued_cancel_cue.dart';
 import '../../services/complimentary_drink_service.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
@@ -253,16 +254,32 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // Nav panel switches (owner design 2026-11-02): "Recibiendo viajes"
   // (offers during this trip) and "Último viaje" (none during it, and
   // offline when it ends).
-  bool _receivingRides = true;
+  late bool _receivingRides = !DriverOnlineScreen.offlineAfterTrip;
 
   // The rider's card in navigation: exact completed rides, rating, days on
   // Cruise, verified — fetched once when the trip opens.
   int? _riderTrips;
+
+  // Unread support messages while the trip runs (owner 2026-11-02): the
+  // badge on the headset, and the chat a tap opens.
+  int _supportUnread = 0;
+
+  // The ride queued behind this one (owner design 2026-11-02): if it is
+  // cancelled while this trip runs, the cue sounds at once and the panel
+  // says "Viaje en cola cancelado" for 7 s. This trip goes on as it was.
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _queuedSub;
+  Timer? _queuedPoll;
+  Timer? _queuedCanceledTimer;
+  int? _queuedTripId;
+  bool _queuedSeenOurs = false;
+  bool _queuedCanceledShown = false;
+  int? _supportUnreadChatId;
+  Timer? _supportUnreadTimer;
   int? _riderDays;
   double? _riderRatingLive;
   bool _riderVerified = false;
   late bool _pageHidden = widget.autoNav;
-  bool _lastTrip = false;
+  late bool _lastTrip = DriverOnlineScreen.offlineAfterTrip;
 
   // ── Pickup PIN (arrived / waiting-for-rider stage) ──
   // The rider reads a 4-digit code from their app; a correct entry sets the
@@ -292,6 +309,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Mid-trip route change from the rider (multi-stop v1) ──
   LatLng? _stopLatLng;
   String _stopLabel = '';
+
+  // The rider's stop (owner design 2026-11-02): "Llegué" there, the free
+  // 5-min wait, then "Desliza para ir al destino" — as at the pickup.
+  bool _nearStop = false;
+  DateTime? _stopArrivedAt;
+  bool _stopDeparted = false;
+  bool get _stopLegActive =>
+      _rideStarted && _stopLatLng != null && !_stopDeparted;
   LatLng? _dropoffOverride;
   bool _proposalDeclineShown = false;
   mapbox.PointAnnotation? _stopPinAnnot;
@@ -531,6 +556,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // ours from this moment, inside its countdown window.
       await ApiService.acceptRideOffer(offerId: offerId, driverId: _driverId!);
       ChainedRideStore.set(offer);
+      _watchQueuedRide();
       setState(() => _chainedOffer = null);
       _chainedSnack('Next ride booked — it starts after this dropoff.');
     } catch (e) {
@@ -716,6 +742,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _resolveGenericAddresses();
     _resolveRiderPhotoFromTrip();
     unawaited(_loadRiderStats());
+    _watchQueuedRide();
+    unawaited(_pollSupportUnread());
+    _supportUnreadTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => unawaited(_pollSupportUnread()),
+    );
     _loadComplimentaryDrinkIfVip();
 
     // If returning from nav (trip already started), skip slide-to-confirm
@@ -1197,10 +1229,161 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
   }
 
+  /// Follows the queued ride's trip doc (instant) with a slow poll behind
+  /// it (a muted listener must not hide a cancel until the dropoff).
+  void _watchQueuedRide() {
+    final id = (ChainedRideStore.offer?['trip_id'] as num?)?.toInt();
+    if (id == null || id == _queuedTripId) return;
+    _queuedSub?.cancel();
+    _queuedPoll?.cancel();
+    _queuedTripId = id;
+    _queuedSeenOurs = false;
+    unawaited(QueuedCancelCue.warm());
+    _queuedSub = FirebaseFirestore.instance
+        .collection('trips')
+        .doc('sql_$id')
+        .snapshots()
+        .listen((snap) {
+      final d = snap.data();
+      if (d != null) _checkQueuedRide(id, d);
+    }, onError: (Object e) {
+      debugPrint('[DriverTrip] queued ride listener: $e');
+    });
+    _queuedPoll = Timer.periodic(const Duration(seconds: 15), (_) async {
+      try {
+        final t = await ApiService.getTrip(id);
+        if (mounted) _checkQueuedRide(id, t);
+      } catch (_) {}
+    });
+  }
+
+  void _checkQueuedRide(int id, Map<String, dynamic> d) {
+    if (id != _queuedTripId) return;
+    final status = (d['status'] ?? '').toString().toLowerCase();
+    String norm(dynamic v) =>
+        (v ?? '').toString().replaceFirst('sql_', '').replaceFirst('user_', '');
+    final driver = norm(d['driver_id'] ?? d['driverId']);
+    final me = _driverId?.toString() ?? '';
+    if (driver.isNotEmpty && driver == me && status != 'requested') {
+      _queuedSeenOurs = true;
+    }
+    // Cancelled, or no longer this driver's (back in the queue / another
+    // driver): either way it left this driver's queue. The second kind only
+    // once it was seen as ours — the doc can still read "requested" for a
+    // moment right after the accept.
+    final gone = status == 'cancelled' ||
+        status == 'canceled' ||
+        (_queuedSeenOurs &&
+            (status == 'requested' ||
+                (driver.isNotEmpty && me.isNotEmpty && driver != me)));
+    if (gone) _onQueuedRideGone(id);
+  }
+
+  void _onQueuedRideGone(int id) {
+    if (!mounted || id != _queuedTripId) return;
+    _queuedSub?.cancel();
+    _queuedPoll?.cancel();
+    _queuedSub = null;
+    _queuedPoll = null;
+    _queuedTripId = null;
+    final queued = (ChainedRideStore.offer?['trip_id'] as num?)?.toInt();
+    if (queued == id) ChainedRideStore.clear();
+    unawaited(QueuedCancelCue.play());
+    HapticService.heavyImpact();
+    setState(() => _queuedCanceledShown = true);
+    _queuedCanceledTimer?.cancel();
+    _queuedCanceledTimer = Timer(const Duration(seconds: 7), () {
+      if (mounted) setState(() => _queuedCanceledShown = false);
+    });
+  }
+
+  Future<void> _pollSupportUnread() async {
+    final u = await ApiService.getSupportUnread();
+    if (!mounted || u == null) return;
+    if (u.count == _supportUnread && u.chatId == _supportUnreadChatId) return;
+    setState(() {
+      _supportUnread = u.count;
+      _supportUnreadChatId = u.chatId;
+    });
+  }
+
+  /// The stop's wait as the server keeps it — a reopened trip lands where
+  /// the driver left it (waiting at the stop, or already past it).
+  void _applyStopWait(Map<String, dynamic> trip) {
+    final w = parseTripStopWait(trip);
+    if (!mounted) return;
+    if (w.departed && !_stopDeparted) {
+      setState(() => _stopDeparted = true);
+    } else if (w.arrivedAt != null && _stopArrivedAt == null) {
+      setState(() => _stopArrivedAt = w.arrivedAt!.toLocal());
+    }
+  }
+
+  /// The red slider: "Pasajero no llegó" / "Pasajero no regresó". The
+  /// server checks the 5-minute wait, cancels and charges; the driver goes
+  /// back to the online screen like any ended trip.
+  Future<void> _reportNoShow() async {
+    if (_tripFinished) return;
+    HapticService.heavyImpact();
+    try {
+      await ApiService.reportNoShow(widget.tripId);
+    } catch (e) {
+      debugPrint('[DriverTrip] no-show refused: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(S.of(context).somethingWentWrong),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    if (!mounted || _tripFinished) return;
+    _tripFinished = true;
+    _statusPollTimer?.cancel();
+    _riderConfirmSub?.cancel();
+    _exitAfterRemoteCancel();
+  }
+
+  /// "Llegué" at the stop: the wait starts here and the rider is told.
+  Future<void> _confirmStopArrival() async {
+    if (_stopArrivedAt != null || !_stopLegActive) return;
+    HapticService.heavyImpact();
+    setState(() => _stopArrivedAt = DateTime.now());
+    for (var attempt = 0; attempt < 3 && mounted; attempt++) {
+      final stop = await ApiService.markStop(widget.tripId, departed: false);
+      if (!mounted) return;
+      if (stop != null) {
+        // The server's clock wins: the rider's countdown reads the same.
+        final at = DateTime.tryParse('${stop['arrived_at'] ?? ''}');
+        if (at != null) setState(() => _stopArrivedAt = at.toLocal());
+        return;
+      }
+      await Future<void>.delayed(Duration(seconds: 2 * (attempt + 1)));
+    }
+  }
+
+  /// "Desliza para ir al destino": the route redraws from the car to the
+  /// destination and the rider's "te espera" notice comes down.
+  void _departStop() {
+    if (_stopDeparted) return;
+    HapticService.heavyImpact();
+    setState(() => _stopDeparted = true);
+    unawaited(() async {
+      for (var attempt = 0; attempt < 3 && mounted; attempt++) {
+        if (await ApiService.markStop(widget.tripId, departed: true) != null) {
+          return;
+        }
+        await Future<void>.delayed(Duration(seconds: 2 * (attempt + 1)));
+      }
+    }());
+  }
+
   Future<void> _loadRiderStats() async {
     try {
       final t = await ApiService.getTrip(widget.tripId, riderStats: true);
       if (!mounted) return;
+      _applyStopWait(t);
       int? asInt(dynamic v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}');
       final rating = t['rider_rating'];
       setState(() {
@@ -1208,10 +1391,69 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         _riderDays = asInt(t['rider_days']);
         _riderRatingLive = rating is num ? rating.toDouble() : null;
         _riderVerified = t['rider_verified'] == true;
+        // A reopened trip shows the switches as the driver left them.
+        if (t['driver_last_trip'] == true) {
+          _lastTrip = true;
+          _receivingRides = false;
+          DriverOnlineScreen.offlineAfterTrip = true;
+        } else if (t['driver_receiving'] == false) {
+          _receivingRides = false;
+        }
       });
+      // "Último viaje" carried over from the trip before (a chained ride):
+      // this trip is now the last one.
+      if (_lastTrip && t['driver_last_trip'] != true) {
+        unawaited(_pushAvailability());
+      }
     } catch (e) {
       debugPrint('[DriverTrip] rider stats failed: $e');
     }
+  }
+
+  /// Sends the panel's switches; a refusal puts them back as they were.
+  Future<void> _pushAvailability({bool? undoReceiving, bool? undoLastTrip}) async {
+    final kept = await ApiService.setDriverAvailability(
+      widget.tripId,
+      receiving: _receivingRides,
+      lastTrip: _lastTrip,
+    );
+    if (!mounted) return;
+    if (kept == null) {
+      if (undoReceiving == null && undoLastTrip == null) return;
+      setState(() {
+        _receivingRides = undoReceiving ?? _receivingRides;
+        _lastTrip = undoLastTrip ?? _lastTrip;
+      });
+      DriverOnlineScreen.offlineAfterTrip = _lastTrip;
+      return;
+    }
+    setState(() {
+      _receivingRides = kept['receiving'] != false;
+      _lastTrip = kept['last_trip'] == true;
+    });
+    DriverOnlineScreen.offlineAfterTrip = _lastTrip;
+  }
+
+  void _toggleReceiving() {
+    final wasReceiving = _receivingRides, wasLast = _lastTrip;
+    setState(() {
+      _receivingRides = !_receivingRides;
+      // Back to receiving rides: this is no longer the last trip.
+      if (_receivingRides) _lastTrip = false;
+    });
+    DriverOnlineScreen.offlineAfterTrip = _lastTrip;
+    unawaited(_pushAvailability(undoReceiving: wasReceiving, undoLastTrip: wasLast));
+  }
+
+  void _toggleLastTrip() {
+    final wasReceiving = _receivingRides, wasLast = _lastTrip;
+    setState(() {
+      _lastTrip = !_lastTrip;
+      // "Último viaje" stops new rides during this one too.
+      if (_lastTrip) _receivingRides = false;
+    });
+    DriverOnlineScreen.offlineAfterTrip = _lastTrip;
+    unawaited(_pushAvailability(undoReceiving: wasReceiving, undoLastTrip: wasLast));
   }
 
   Future<void> _resolveRiderPhotoFromTrip() async {
@@ -1292,6 +1534,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _chainedSseSub?.cancel();
     _chainedPollTimer?.cancel();
+    _supportUnreadTimer?.cancel();
+    _queuedSub?.cancel();
+    _queuedPoll?.cancel();
+    _queuedCanceledTimer?.cancel();
     unawaited(_liveGps?.stop());
     _gpsSub?.cancel();
     _dropoffGpsSub?.cancel();
@@ -1566,6 +1812,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   void _checkDropoffProximity(LatLng driverPos) {
+    final stop = _stopLatLng;
+    if (_stopLegActive &&
+        stop != null &&
+        !_nearStop &&
+        _haversineMeters(driverPos, stop) <= _dropoffRadiusMeters) {
+      setState(() => _nearStop = true);
+      HapticService.heavyImpact();
+    }
     final distM = _haversineMeters(driverPos, _dropoffLL);
     if (distM <= _dropoffRadiusMeters && !_nearDropoff) {
       setState(() => _nearDropoff = true);
@@ -1892,6 +2146,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           // Dispatch advanced the trip while the Firestore stream lagged.
           _applyRemoteStage(status);
         }
+        _applyStopWait(trip);
         // Booking-time stop backstop: resume paths that never saw the offer
         // still read `stops` off the trip payload here — seeded once, no
         // banner (it was in the fare since booking, not a route change).
@@ -3282,8 +3537,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         // escalation that muted the bot in it (see CruiseSupportChatScreen's
         // sessionKey). Reopening support during THIS trip keeps its history.
         sessionKey: 'trip:${widget.tripId}',
+        // Support wrote first: open THAT chat, its unread on screen.
+        chatId: problem == null && _supportUnread > 0 ? _supportUnreadChatId : null,
       )),
-    );
+    ).then((_) {
+      // Back from the chat: the badge reflects what was just read.
+      if (mounted) unawaited(_pollSupportUnread());
+    });
   }
 
   // ── Submit report to Firestore ─────────────────────────────────────────
@@ -5568,12 +5828,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               stage: _actionStageKey(),
               passengerInstructions: _passengerInstructions,
               dropoffInstructions: widget.dropoffInstructions,
-              waitStartedAt: _waitStartedAt,
+              // At the stop the free wait counts from "Llegué" there.
+              waitStartedAt: _stopLegActive ? _stopArrivedAt : _waitStartedAt,
               prefetchedRoutePoints: _routePoints,
               // The stop follows the leg flips: null on the pickup leg,
               // waypoint + pin once the rider is aboard.
               stopLatLng: _stopLatLng,
               stopLabel: _stopLabel,
+              stopDone: _stopDeparted,
+              onArrivedStop: _confirmStopArrival,
+              onSlideFromStop: _departStop,
+              onNoShow: _reportNoShow,
               onExit: _exitNavMode,
               onArrived: _confirmArrival,
               onSlidePickUp: _startRideConfirmed,
@@ -5592,13 +5857,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               onSafety: _showSafetySupportMenu,
               receivingRides: _receivingRides,
               lastTrip: _lastTrip,
-              onToggleReceiving: () =>
-                  setState(() => _receivingRides = !_receivingRides),
-              onToggleLastTrip: () => setState(() {
-                _lastTrip = !_lastTrip;
-                // "Último viaje" stops new rides during this one too.
-                if (_lastTrip) _receivingRides = false;
-              }),
+              supportUnread: _supportUnread,
+              queuedCanceled: _queuedCanceledShown,
+              onToggleReceiving: _toggleReceiving,
+              onToggleLastTrip: _toggleLastTrip,
             ),
           ),
         ),
@@ -5753,6 +6015,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// One key per stage so the AnimatedSwitcher cross-fades exactly when
   /// the stage really changes.
   String _actionStageKey() {
+    if (_stopLegActive) {
+      if (_stopArrivedAt != null) return 'stop_waiting';
+      return _nearStop ? 'stop_near' : 'stop_locked';
+    }
     if (_rideStarted && _nearDropoff) return 'finish';
     if (_rideStarted) return 'finish_locked';
     if (_arrivedConfirmed) {

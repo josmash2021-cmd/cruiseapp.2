@@ -484,6 +484,60 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     );
   }
 
+  /// "Tu conductor te espera en la parada · 4:12" — the free wait the
+  /// driver sees, counting down to 0:00.
+  Widget _buildStopWaitBanner() {
+    final since = _stopWaitSince;
+    final left = since == null
+        ? 0
+        : (300 - DateTime.now().difference(since).inSeconds).clamp(0, 300);
+    final clock = '${left ~/ 60}:${(left % 60).toString().padLeft(2, '0')}';
+    return Container(
+      key: const ValueKey('rider-stop-wait'),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF14141A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.6)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.location_on_rounded, color: Color(0xFFE8C547), size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              S.of(context).riderStopWaiting,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (left > 0) ...[
+            const SizedBox(width: 10),
+            Text(
+              clock,
+              style: const TextStyle(
+                color: Color(0xFFE8C547),
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildConnectionLostBanner() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

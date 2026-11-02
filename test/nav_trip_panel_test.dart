@@ -18,6 +18,8 @@ void main() {
     bool canPickUp = true,
     bool lastTrip = false,
     bool receiving = true,
+    bool stopLeg = false,
+    bool queuedCanceled = false,
   }) {
     return MaterialApp(
       locale: const Locale('es'),
@@ -47,9 +49,14 @@ void main() {
                   riderTrips: 34,
                   riderDays: 25,
                   riderVerified: true,
-                  toPickup: stage != NavPanelStage.arrivedDropoff,
+                  toPickup: stage != NavPanelStage.arrivedDropoff &&
+                      stage != NavPanelStage.waitingStop &&
+                      !stopLeg,
+                  stopLeg: stopLeg || stage == NavPanelStage.waitingStop,
+                  onSlideFromStop: () => calls.add('fromStop'),
                   pickupAddress: '1102 Garden Woods Dr',
                   dropoffAddress: 'Pelham Civic Complex',
+                  pickupNote: 'Portón azul, código 1234',
                   stopLabel: 'AutoZone · 2180 Pelham Pkwy',
                   hasStop: true,
                   fare: 17.02,
@@ -61,6 +68,7 @@ void main() {
                   receivingRides: receiving,
                   lastTrip: lastTrip,
                   supportUnread: 2,
+                  queuedCanceled: queuedCanceled,
                   onOpenChat: () => calls.add('chat'),
                   onSupport: () => calls.add('support'),
                   onCancelTrip: () => calls.add('cancel'),
@@ -196,6 +204,66 @@ void main() {
     await settle(t);
     expect(find.text('Pasajero no llegó'), findsOneWidget);
     expect(find.text('Desliza para cancelar el viaje'), findsOneWidget);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('driving to the stop: "Parada de William"', (t) async {
+    phone(t);
+    await t.pumpWidget(host(stopLeg: true));
+    await settle(t);
+    expect(find.text('Parada de William'), findsOneWidget);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('at the stop: the wait, and the slider heads to the destination',
+      (t) async {
+    phone(t);
+    calls.clear();
+    await t.pumpWidget(host(
+        stage: NavPanelStage.waitingStop, moving: false, waitProgress: 0.5));
+    await settle(t);
+    expect(find.text('Espera 2:27'), findsOneWidget);
+    expect(find.text('Desliza para ir al destino'), findsOneWidget);
+    // The knob is what slides.
+    await t.drag(find.byKey(const ValueKey('nav-slide-knob')), const Offset(320, 0));
+    await settle(t);
+    expect(calls, contains('fromStop'));
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('stop wait over: a swipe up shows "Pasajero no regresó"',
+      (t) async {
+    phone(t);
+    await t.pumpWidget(host(
+        stage: NavPanelStage.waitingStop, moving: false, waitProgress: 1));
+    await settle(t);
+    expect(find.text('Puedes cancelar el viaje o seguir esperando'),
+        findsOneWidget);
+    await t.drag(find.text('William'), const Offset(0, -120));
+    await settle(t);
+    expect(find.text('Pasajero no regresó'), findsOneWidget);
+    expect(find.text('Desliza para ir al destino'), findsOneWidget);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('a cancelled queued ride: the gold line at the top', (t) async {
+    phone(t);
+    await t.pumpWidget(host(stage: NavPanelStage.driving, queuedCanceled: true));
+    await settle(t);
+    expect(find.text('Viaje en cola cancelado'), findsOneWidget);
+    await t.pumpWidget(host(stage: NavPanelStage.driving));
+    await settle(t);
+    expect(find.text('Viaje en cola cancelado'), findsNothing);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets("the whole trip shows the rider's pickup note", (t) async {
+    phone(t);
+    await t.pumpWidget(host(stage: NavPanelStage.approaching, moving: false));
+    await settle(t);
+    await t.drag(find.text('William'), const Offset(0, -200));
+    await settle(t);
+    expect(find.text('Portón azul, código 1234'), findsOneWidget);
     expect(t.takeException(), isNull);
   });
 

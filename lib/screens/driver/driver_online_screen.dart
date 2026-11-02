@@ -211,6 +211,16 @@ class DriverOnlineScreen extends StatefulWidget {
   /// `face_check_rejected` / `face_check_approved`, 2026-10-23): the live
   /// screen re-reads can_go_online so the GO state flips without a restart.
   static final ValueNotifier<int> faceReviewNotifier = ValueNotifier(0);
+  /// "Último viaje" (owner 2026-11-02): set from the navigation panel while
+  /// a trip runs; the online screen the driver lands on after that trip
+  /// opens OFFLINE and clears it. A chained ride accepted earlier carries
+  /// it over to itself.
+  static bool offlineAfterTrip = false;
+  static bool takeOfflineAfterTrip() {
+    final v = offlineAfterTrip && chainedHandoffOffer == null;
+    if (v) offlineAfterTrip = false;
+    return v;
+  }
 
   const DriverOnlineScreen({
     super.key,

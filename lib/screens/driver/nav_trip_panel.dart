@@ -19,6 +19,10 @@ enum NavPanelStage {
   /// "Llegué" tapped: the free wait runs, the slider picks the rider up.
   waitingPickup,
 
+  /// "Llegué" at the rider's stop: the same wait, the slider heads to the
+  /// destination, and the no-show bar says the rider did not come back.
+  waitingStop,
+
   /// At the destination: the slider finishes the ride.
   arrivedDropoff,
 }
@@ -52,6 +56,11 @@ class NavTripPanel extends StatefulWidget {
     required this.onSlideFinish,
     this.stopLabel = '',
     this.hasStop = false,
+    this.stopLeg = false,
+    this.stopDone = false,
+    this.pickupNote = '',
+    this.dropoffNote = '',
+    this.onSlideFromStop,
     this.riderRating,
     this.riderTrips,
     this.riderDays,
@@ -63,6 +72,7 @@ class NavTripPanel extends StatefulWidget {
     this.lastTrip = false,
     this.chatUnread,
     this.supportUnread = 0,
+    this.queuedCanceled = false,
     this.onToggleReceiving,
     this.onToggleLastTrip,
     this.onNoShow,
@@ -79,6 +89,21 @@ class NavTripPanel extends StatefulWidget {
   final String dropoffAddress;
   final String stopLabel;
   final bool hasStop;
+
+  /// The current leg ends at the rider's stop (the rider is aboard and the
+  /// stop is still ahead).
+  final bool stopLeg;
+
+  /// The driver already left the stop for the destination.
+  final bool stopDone;
+
+  /// The rider's own instructions for the pickup / the destination (gate
+  /// codes, "the blue door"), under each address in the whole trip.
+  final String pickupNote;
+  final String dropoffNote;
+
+  /// "Desliza para ir al destino" at the stop.
+  final VoidCallback? onSlideFromStop;
   final double fare;
 
   /// Driving (not parked): opening gives only the trip options.
@@ -102,6 +127,11 @@ class NavTripPanel extends StatefulWidget {
   final bool lastTrip;
   final Stream<int>? chatUnread;
   final int supportUnread;
+
+  /// The ride queued behind this one was cancelled: a gold line slides in
+  /// at the top of the panel while this is true (owner design 2026-11-02,
+  /// drawing 15).
+  final bool queuedCanceled;
 
   final VoidCallback onOpenChat;
   final VoidCallback onSupport;
@@ -188,8 +218,11 @@ class _NavTripPanelState extends State<NavTripPanel> {
     if (wasOpen != _open) widget.onOpenChanged?.call(_open);
   }
 
-  bool get _waitOver =>
-      widget.stage == NavPanelStage.waitingPickup && widget.waitProgress >= 1;
+  bool get _waiting =>
+      widget.stage == NavPanelStage.waitingPickup ||
+      widget.stage == NavPanelStage.waitingStop;
+
+  bool get _waitOver => _waiting && widget.waitProgress >= 1;
 
   void _openUp() {
     HapticService.lightImpact();
@@ -382,7 +415,9 @@ class _NavTripPanelState extends State<NavTripPanel> {
 
   String _legLabel(S s) => widget.toPickup
       ? s.navPickUpName(_firstName)
-      : s.navDropOffName(_firstName);
+      : (widget.stopLeg
+          ? s.navStopOf(_firstName)
+          : s.navDropOffName(_firstName));
 
   Widget _closedBody(S s) {
     final stage = widget.stage;
@@ -392,7 +427,39 @@ class _NavTripPanelState extends State<NavTripPanel> {
       mainAxisSize: MainAxisSize.min,
       children: [
         _handle(),
-        if (stage == NavPanelStage.waitingPickup) _waitRow(s),
+        AnimatedSize(
+          duration: _glideDur,
+          curve: _glide,
+          child: AnimatedOpacity(
+            opacity: widget.queuedCanceled ? 1 : 0,
+            duration: const Duration(milliseconds: 400),
+            child: widget.queuedCanceled
+                ? Column(
+                    key: const ValueKey('nav-queued-canceled'),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                        child: Text(
+                          s.navQueuedRideCanceled,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        height: 1,
+                        margin: const EdgeInsets.symmetric(horizontal: 18),
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
+                    ],
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ),
+        if (_waiting) _waitRow(s),
         Padding(
           padding: EdgeInsets.fromLTRB(18, 14, 18, atPoint ? 16 : 24),
           child: Row(
@@ -460,6 +527,10 @@ class _NavTripPanelState extends State<NavTripPanel> {
               ? _SlideBar(
                   label: s.navSlideToPickUp, onDone: widget.onSlidePickUp)
               : _SlideBar.locked(label: s.waitingForYourRider),
+        if (stage == NavPanelStage.waitingStop)
+          _SlideBar(
+              label: s.navSlideToDropoff,
+              onDone: widget.onSlideFromStop ?? () {}),
         if (stage == NavPanelStage.arrivedDropoff)
           _SlideBar(label: s.navSlideToFinish, onDone: widget.onSlideFinish),
         // The red no-show slider, under a hairline (owner 2026-11-02).
@@ -477,7 +548,9 @@ class _NavTripPanelState extends State<NavTripPanel> {
                     ),
                   ),
                   child: _SlideBar(
-                    label: s.navRiderNoShow,
+                    label: stage == NavPanelStage.waitingStop
+                        ? s.navRiderNoReturn
+                        : s.navRiderNoShow,
                     sub: s.navSlideToCancelTrip,
                     danger: true,
                     inset: false,
@@ -703,6 +776,11 @@ class _NavTripPanelState extends State<NavTripPanel> {
               onDone: widget.onSlidePickUp,
               inset: false)
           : _SlideBar.locked(label: s.waitingForYourRider, inset: false);
+    } else if (stage == NavPanelStage.waitingStop) {
+      slider = _SlideBar(
+          label: s.navSlideToDropoff,
+          onDone: widget.onSlideFromStop ?? () {},
+          inset: false);
     } else if (stage == NavPanelStage.arrivedDropoff) {
       slider = _SlideBar(
           label: s.navSlideToFinish,
@@ -778,7 +856,7 @@ class _NavTripPanelState extends State<NavTripPanel> {
               done: pickupDone,
               verified: widget.riderVerified,
               title: s.navPickUpName(_firstName),
-              lines: [widget.pickupAddress],
+              lines: [widget.pickupAddress, widget.pickupNote.trim()],
               acts: pickupActs,
               line: true,
             ),
@@ -790,7 +868,7 @@ class _NavTripPanelState extends State<NavTripPanel> {
                     ? const SizedBox(width: double.infinity)
                     : _stepRow(
                         lead: _pinDisc(),
-                        done: false,
+                        done: widget.stopDone,
                         title: s.navStopOf(_firstName),
                         lines: [widget.stopLabel],
                         line: true,
@@ -800,7 +878,7 @@ class _NavTripPanelState extends State<NavTripPanel> {
               lead: _photo(44, onTap: () => _setMode(_Mode.profile)),
               done: false,
               title: s.navDropOffName(_firstName),
-              lines: [widget.dropoffAddress],
+              lines: [widget.dropoffAddress, widget.dropoffNote.trim()],
               acts: dropActs,
               line: false,
             ),
@@ -1385,6 +1463,7 @@ class _SlideBarState extends State<_SlideBar>
                 return Positioned(
                   left: 4 + x,
                   child: GestureDetector(
+                    key: const ValueKey('nav-slide-knob'),
                     onHorizontalDragUpdate: widget.locked || _done
                         ? null
                         : (d) => setState(

@@ -24,3 +24,22 @@ import '../models/lat_lng.dart';
     return null;
   }
 }
+
+/// The driver's wait at that stop (owner design 2026-11-02): when "Llegué"
+/// was tapped there and whether the driver already left for the
+/// destination — stamped by /trips/{id}/stop-arrived and /stop-departed.
+({DateTime? arrivedAt, bool departed}) parseTripStopWait(
+    Map<String, dynamic> payload) {
+  try {
+    final raw = payload['stops'];
+    final list = raw is String ? jsonDecode(raw) : (raw is List ? raw : null);
+    if (list is List && list.isNotEmpty && list.first is Map) {
+      final s = list.first as Map;
+      return (
+        arrivedAt: DateTime.tryParse((s['arrived_at'] ?? '').toString()),
+        departed: (s['departed_at'] ?? '').toString().isNotEmpty,
+      );
+    }
+  } catch (_) {}
+  return (arrivedAt: null, departed: false);
+}

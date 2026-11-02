@@ -216,14 +216,20 @@ void main() {
       expect(accept.contains("import 'driver_nav_view.dart'"), isTrue);
       final start = accept.indexOf('child: DriverNavView(');
       expect(start, isNonNegative, reason: 'DriverNavView mount not found');
-      final mount = accept.substring(start, start + 2200);
+      final mount = accept.substring(start, start + 2800);
       expect(mount.contains('prefetchedRoutePoints: _routePoints'), isTrue,
           reason: 'the mini map\'s already-drawn route must seed the nav '
               'view — no fetch, no blank map on open');
       expect(mount.contains('toPickup: _navToPickupOverride ?? !_rideStarted'),
           isTrue);
       expect(mount.contains('stage: _actionStageKey()'), isTrue);
-      expect(mount.contains('waitStartedAt: _waitStartedAt'), isTrue);
+      // At the rider's stop the free wait counts from "Llegué" there.
+      expect(
+          mount.contains(
+              'waitStartedAt: _stopLegActive ? _stopArrivedAt : _waitStartedAt'),
+          isTrue);
+      expect(mount.contains('onArrivedStop: _confirmStopArrival'), isTrue);
+      expect(mount.contains('onSlideFromStop: _departStop'), isTrue);
       expect(mount.contains('onExit: _exitNavMode'), isTrue);
       expect(mount.contains('onArrived: _confirmArrival'), isTrue);
       expect(mount.contains('onSlidePickUp: _startRideConfirmed'), isTrue);
@@ -376,7 +382,10 @@ void main() {
       // The trip page goes away in the new flow, so its controls live in
       // the nav panel — but the nav still writes no trip state itself: every
       // control calls the parent's existing handler.
-      expect(nav.contains('onArrived: widget.onArrived,'), isTrue);
+      // "Llegué" at the stop goes to the parent's stop handler.
+      expect(nav.contains('? (widget.onArrivedStop ?? widget.onArrived)'),
+          isTrue);
+      expect(nav.contains(': widget.onArrived,'), isTrue);
       expect(nav.contains('onSlidePickUp: widget.onSlidePickUp,'), isTrue);
       expect(nav.contains('onSlideFinish: widget.onSlideFinish,'), isTrue);
       expect(nav, isNot(contains('ApiService.updateTripStatus')),

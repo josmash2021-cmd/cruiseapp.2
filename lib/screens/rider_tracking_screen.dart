@@ -349,6 +349,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   final Set<String> _feedbackChips = {};
   String _anonymousFeedback = '';
   bool _connectionLost = false;
+
+  /// The driver tapped "Llegué" at the rider's stop (owner 2026-11-02):
+  /// "Tu conductor te espera en la parada" with the free wait counting
+  /// down, until the driver heads on to the destination.
+  DateTime? _stopWaitSince;
+  Timer? _stopWaitTicker;
   int _pollFailCount = 0;
   /// When ANY live channel last delivered trip data.
   ///
@@ -654,6 +660,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void dispose() {
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _tripRouteRetryTimer?.cancel();
+    _stopWaitTicker?.cancel();
     _rcDebounce?.cancel();
     _rcSearchCtrl.dispose();
     if (_networkListener != null) {
@@ -980,6 +987,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 right: 0,
                 child: const OfflineBanner(),
               ),
+              // The driver is waiting at the rider's stop — same slot as the
+              // connection banner, which wins when both apply.
+              if (_stopWaitSince != null && !_connectionLost)
+                Positioned(
+                  top: topPad + 10 + _topCardHeight + 8,
+                  left: 24,
+                  right: 24,
+                  child: _buildStopWaitBanner(),
+                ),
               // Connection lost banner — sits under the top status bar
               // instead of on top of it.
               if (_connectionLost)

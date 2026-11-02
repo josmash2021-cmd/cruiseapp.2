@@ -105,7 +105,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // abre OFFLINE siempre, y el GO lee RESUME si el turno sigue vivo;
       // cuando llegue una oferta de verdad, el push-tap entra online solo
       // (_applyInjectedOffer), que es la vía correcta de volver.
-      if (widget.resuming ||
+      if (widget.resuming && DriverOnlineScreen.takeOfflineAfterTrip()) {
+        // "Último viaje" just ended (owner 2026-11-02): home, OFFLINE. The
+        // server already took the driver offline when the trip closed;
+        // saying it again covers a close that skipped that hook.
+        _driverWasOnlineAtBoot = false;
+        await bootPrefs.setBool('driver_was_online', false);
+        await bootPrefs.remove('driver_went_online_at');
+        unawaited(DriverBackgroundService().stop().catchError((_) {}));
+        unawaited(() async {
+          for (var i = 0; i < 20 && _driverId == null && mounted; i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+          }
+          if (mounted) _goOfflineBackend();
+        }());
+      } else if (widget.resuming ||
           widget.deepLinkOffer != null ||
           DriverOnlineScreen.chainedHandoffOffer != null) {
         unawaited(_enterOnlineMode(resuming: true));
@@ -4419,6 +4433,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       );
       if (!mounted) return;
       _hideAcceptedOverlay();
+      // "Último viaje": the trip ended and this screen was underneath —
+      // close the shift the way a manual offline would.
+      final lastTripDone = result != null &&
+          result != 'back_to_home' &&
+          DriverOnlineScreen.takeOfflineAfterTrip();
+      if (lastTripDone) unawaited(_exitOnlineMode());
       if (result == 'completed') {
         // Back on this screen for the earnings overlay — bring the map back.
         _remountMapSurface();

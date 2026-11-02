@@ -1124,6 +1124,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   /// poll merges plainly: no typing theatre for replies that landed while
   /// the app was closed, no count short-circuit against a cached list.
   bool _firstSyncDone = false;
+
+  /// The first message that was unread when the chat opened: "Mensajes
+  /// nuevos" sits above it (owner 2026-11-02 — support wrote mid-trip).
+  int? _newFromId;
   bool _sending = false;
   /// A file is on its way up — the attach button becomes a spinner and stops
   /// accepting taps, so a driver on a slow signal cannot queue five copies.
@@ -1469,6 +1473,14 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       // must show at once — a push tap lands here.
       final firstSync = !_firstSyncDone;
       _firstSyncDone = true;
+      if (firstSync) {
+        for (final m in msgs.whereType<Map>()) {
+          if (m['was_unread'] == true) {
+            _newFromId = (m['id'] as num?)?.toInt();
+            break;
+          }
+        }
+      }
       if (!firstSync &&
           newMessages.length == _messages.length + _bufferedMessages.length) {
         return;
@@ -2516,6 +2528,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     // slot next, and every bubble would replay its entrance each time one
     // arrived above it.
     for (final msg in _messages) {
+      if (_newFromId != null && msg.id == _newFromId) {
+        items.add(_buildNewMessagesMark());
+      }
       items.add(_ArrivingMessage(key: ValueKey(msg.key), child: _buildBubble(msg)));
     }
 
@@ -2829,6 +2844,35 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           decoration: neuBox(radius: 16),
           child: body,
         ),
+      ),
+    );
+  }
+
+  /// Gold hairlines around "Mensajes nuevos".
+  Widget _buildNewMessagesMark() {
+    Widget line() => Expanded(
+          child: Container(height: 1, color: _gold.withValues(alpha: 0.35)),
+        );
+    return Padding(
+      key: const ValueKey('support-new-messages'),
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          line(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              S.of(context).supportNewMessages,
+              style: const TextStyle(
+                color: _gold,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+          line(),
+        ],
       ),
     );
   }

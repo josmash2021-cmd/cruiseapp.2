@@ -2674,6 +2674,82 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Unread support messages (last 12 h, open chats) and the chat that has
+  /// the newest one — the badge on the support button in navigation.
+  /// Null when the call failed.
+  static Future<({int count, int? chatId})?> getSupportUnread() async {
+    try {
+      final h = await _authHeaders();
+      final res = await _client
+          .get(Uri.parse('$_baseUrl/support/unread'), headers: h)
+          .timeout(const Duration(seconds: 8));
+      final m = _parse(res);
+      return (
+        count: (m['count'] as num?)?.toInt() ?? 0,
+        chatId: (m['chat_id'] as num?)?.toInt(),
+      );
+    } catch (e) {
+      debugPrint('[ApiService] getSupportUnread failed: $e');
+      return null;
+    }
+  }
+
+  /// The red no-show slider after the free wait — at the pickup or at the
+  /// stop; the server checks the wait and charges the rider. Throws on a
+  /// refusal so the slider can say so.
+  static Future<void> reportNoShow(int tripId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(Uri.parse('$_baseUrl/trips/$tripId/no-show'), headers: h)
+        // The server settles the payment inside this call.
+        .timeout(const Duration(seconds: 35));
+    _parse(res);
+  }
+
+  /// "Llegué" at the rider's stop ([departed] false) or "Desliza para ir al
+  /// destino" ([departed] true). Returns the stop as the server keeps it
+  /// (`arrived_at` / `departed_at`), or null when the call failed.
+  static Future<Map<String, dynamic>?> markStop(int tripId,
+      {required bool departed}) async {
+    try {
+      final h = await _authHeaders();
+      final res = await _client
+          .post(
+            Uri.parse(
+                '$_baseUrl/trips/$tripId/${departed ? 'stop-departed' : 'stop-arrived'}'),
+            headers: h,
+          )
+          .timeout(const Duration(seconds: 8));
+      final m = _parse(res);
+      final stop = m['stop'];
+      return stop is Map ? Map<String, dynamic>.from(stop) : <String, dynamic>{};
+    } catch (e) {
+      debugPrint('[ApiService] markStop(departed: $departed) failed: $e');
+      return null;
+    }
+  }
+
+  /// The navigation panel's switches for one trip (owner 2026-11-02):
+  /// "Recibiendo viajes" and "Último viaje". Returns the state the server
+  /// kept, or null when the call failed.
+  static Future<Map<String, dynamic>?> setDriverAvailability(int tripId,
+      {required bool receiving, required bool lastTrip}) async {
+    try {
+      final h = await _authHeaders();
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/trips/$tripId/driver-availability'),
+            headers: h,
+            body: jsonEncode({'receiving': receiving, 'last_trip': lastTrip}),
+          )
+          .timeout(const Duration(seconds: 8));
+      return _parse(res);
+    } catch (e) {
+      debugPrint('[ApiService] setDriverAvailability failed: $e');
+      return null;
+    }
+  }
+
   /// Driver polls for available ride requests near their location.
   static Future<List<Map<String, dynamic>>> getAvailableTrips({
     required double lat,

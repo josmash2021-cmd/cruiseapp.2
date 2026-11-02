@@ -1199,9 +1199,38 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
+  /// The trip doc's `stopArrivedAt` / `stopDepartedAt` (written by the
+  /// backend when the driver taps "Llegué" at the stop and when they head
+  /// on). Payloads without those keys (the status poll) change nothing.
+  void _handleStopWait(Map<String, dynamic> data) {
+    if (!data.containsKey('stopArrivedAt') &&
+        !data.containsKey('stopDepartedAt')) {
+      return;
+    }
+    final departed = (data['stopDepartedAt'] ?? '').toString().isNotEmpty;
+    final at = departed
+        ? null
+        : DateTime.tryParse((data['stopArrivedAt'] ?? '').toString())?.toLocal();
+    if (at == _stopWaitSince) return;
+    _stopWaitTicker?.cancel();
+    _stopWaitTicker = null;
+    _setState(() => _stopWaitSince = at);
+    if (at == null) return;
+    _stopWaitTicker = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      _setState(() {});
+      // Past the free wait the clock has nothing left to count.
+      if (DateTime.now().difference(at).inSeconds > 300) t.cancel();
+    });
+  }
+
   void _onTripStatusUpdate(Map<String, dynamic> data) {
     // Fase 2: a driver-proposed stop/destination rides the same doc.
     _handleDriverProposal(data);
+    _handleStopWait(data);
 
     // Start RTDB listener if we have a driverId
     var did = data['driverId']?.toString() ?? data['driver_id']?.toString() ?? '';
@@ -1476,9 +1505,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       if (!_cancelDialogShown) {
         // C3 fix: capture the localised string BEFORE any async gap so we
         // never touch `context` from a stale closure.
-        final String? operatorMessage = cancelledByDriver
-            ? null
-            : S.of(context).tripCancelledByOperator;
+        // A no-show says why (owner 2026-11-02) — the driver's slider
+        // ("no_show:pickup" / "no_show:stop") or the wait-timeout agent.
+        final String? operatorMessage = cancellationReason.contains('no_show:stop')
+            ? S.of(context).riderNoShowStopMsg
+            : (cancellationReason.contains('no_show') ||
+                    cancellationReason.contains('wait_timeout'))
+                ? S.of(context).riderNoShowPickupMsg
+                : cancelledByDriver
+                    ? null
+                    : S.of(context).tripCancelledByOperator;
         _cancelDialogShown = true;
         _showDriverCancelledDialog(message: operatorMessage);
       }

@@ -3193,7 +3193,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         me = (u?['firstName'] ?? '').trim();
       } catch (_) {}
       if (!mounted) return;
-      final es = Localizations.localeOf(context).languageCode.startsWith('es');
+      final es = Localizations.maybeLocaleOf(context)
+              ?.languageCode
+              .startsWith('es') ??
+          false;
       final hello = me.isEmpty
           ? (es ? 'Hola.' : 'Hi.')
           : (es ? 'Hola, mi nombre es $me.' : 'Hi, my name is $me.');
@@ -3201,7 +3204,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
 
     if (!mounted) return;
-    Navigator.of(context).push(
+    // maybeOf: with a problem this runs after an await, where .of() crashes
+    // release builds if the screen is mid-teardown (CLAUDE.md rule #26).
+    Navigator.maybeOf(context)?.push(
       // Slides in rather than cutting: the driver is being taken somewhere
       // else mid-trip, and the motion is what tells them so.
       slideFromRightRoute(CruiseSupportChatScreen(

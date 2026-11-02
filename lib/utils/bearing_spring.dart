@@ -57,7 +57,9 @@ class BearingSpring {
   /// bearing. With no state yet it starts at [seed] (the camera's real
   /// bearing, so engaging the chase never rotates the map in one frame), or
   /// at [target] when there is no seed.
-  double step(double target, double dtSec, {double? seed}) {
+  double step(double target, double dtSec, {double? seed, double? omega}) {
+    // [omega] overrides the spring's own frequency for this step only.
+    final w = omega ?? this.omega;
     if (!target.isFinite) return _value ?? 0;
     final cur = _value;
     if (cur == null) {
@@ -70,7 +72,7 @@ class BearingSpring {
     // 50 ms so a stalled frame cannot fling the camera.
     final dt = dtSec > 0.05 ? 0.05 : dtSec;
     final err = shortestArc(_value!, target);
-    final acc = omega * omega * err - 2 * omega * _velocity;
+    final acc = w * w * err - 2 * w * _velocity;
     _velocity += acc * dt;
     _value = (_value! + _velocity * dt + 360) % 360;
     return _value!;

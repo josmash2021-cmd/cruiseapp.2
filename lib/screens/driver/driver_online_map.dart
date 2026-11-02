@@ -384,16 +384,36 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// only releases past 55 m, and on parallel lanes the projection stays on
   /// the segment it was on unless another is clearly (8 m) closer — divided
   /// highways used to flip the marker between carriageways.
-  LatLng _snapToRoute(LatLng raw) {
+  LatLng _snapToRoute(LatLng raw, {double? accuracyM, double? courseDeg}) {
     final onRoute = _routePts.length >= 2;
-    final pts = onRoute ? _routePts : _roadLinePts;
     if (_snapOnRouteSrc != onRoute) {
       _snapOnRouteSrc = onRoute;
       if (onRoute) {
         _roadLinePts = const [];
+        _matchedTracePts = const [];
         _roadSnap.reset();
       }
     }
+    // Searching (owner report 2026-11-02, "se sale de las vías y luego se
+    // pone bien… que gire siguiendo las vías"): the street the car is on,
+    // read from the map's own tiles, reaching ~300 m AHEAD — see
+    // RoadNetwork. The matched trace below only covers what was already
+    // driven, so every curve and turn ran the arrow off the street until the
+    // next match, every 6 s. The trace stays as the fallback where the tiles
+    // have no street close enough (a lot, an unmapped road, zoomed out).
+    final local = onRoute
+        ? null
+        : _roadNet?.pathFor(
+            raw,
+            headingDeg:
+                courseDeg ?? (_motion.hasPosition ? _motion.bearing : null),
+            speedMps: _motion.speedMps,
+            accuracyM: accuracyM ?? 10,
+            previousPath: _onLocalRoad ? _roadLinePts : const [],
+          );
+    _onLocalRoad = local != null;
+    if (!onRoute) _roadLinePts = local ?? _matchedTracePts;
+    final pts = onRoute ? _routePts : _roadLinePts;
     // Searching (owner report 2026-11-01, "al hacer zoom la flecha queda
     // fuera de las líneas"): the matched line is the trace of PAST fixes,
     // so a moving car is always beyond its end and was never snapped — the
@@ -403,12 +423,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // SmoothMotion glides between those targets, so the drawn arrow sits on
     // the street. Only the position is corrected there — the heading stays
     // the car's course (a turn begun past the line must turn the arrow).
+    // The street line from the tiles already reaches ahead of the car: no
+    // straight continuation on top of it.
     final result = _roadLock.project(
       pts,
       raw,
       requireConfidence: !onRoute,
       speedMps: _motion.speedMps,
-      extendPastEnd: !onRoute,
+      extendPastEnd: !onRoute && !_onLocalRoad,
       headingDeg: _motion.hasPosition ? _motion.bearing : null,
     );
     _roadLockBearing =
@@ -416,12 +438,87 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return driverDisplayPosition(result, raw);
   }
 
-  /// The RoadSnapService found a better street line: swap the projection
-  /// source (searching only — a live route always wins, and the service is
-  /// reset the moment a route appears).
+  /// The RoadSnapService found a better street line: keep it as the fallback
+  /// projection source (searching only — a live route always wins, and the
+  /// service is reset the moment a route appears). The tiles' street line
+  /// stays in charge while it has one.
   void _onRoadSnapLine(List<LatLng> line) {
     if (!mounted || line.length < 2) return;
-    _roadLinePts = line;
+    _matchedTracePts = line;
+    if (!_onLocalRoad) _roadLinePts = line;
+  }
+
+  /// Reads the drivable streets around [at] from the tiles the map already
+  /// drew (see RoadNetwork) — at most about once a second, only zoomed in
+  /// enough for the tiles to carry every street, and only while the car is
+  /// on screen. Each fix then picks its street from the latest read.
+  Future<void> _refreshRoadNet(LatLng at) async {
+    final map = _map;
+    if (map == null || _roadNetBusy) return;
+    final cam = _onlineCamState;
+    if (cam == null || cam.zoom < _kRoadNetMinZoom) {
+      _roadNet = null;
+      return;
+    }
+    final now = DateTime.now();
+    final last = _roadNetAt;
+    if (last != null && now.difference(last).inMilliseconds < 900) return;
+    _roadNetBusy = true;
+    _roadNetAt = now;
+    try {
+      final px = await map.pixelForCoordinate(mapbox.Point(
+          coordinates: mapbox.Position(at.longitude, at.latitude)));
+      if (!mounted) return;
+      // maybeOf: outside build a dying route's lookup is null (rule #26).
+      final size = MediaQuery.maybeOf(context)?.size;
+      if (size == null) return;
+      if (!px.x.isFinite ||
+          !px.y.isFinite ||
+          px.x < 0 ||
+          px.y < 0 ||
+          px.x > size.width ||
+          px.y > size.height) {
+        _roadNet = null;
+        return;
+      }
+      // ~200 m around the car at any zoom (features come back whole, so
+      // the line still reaches past the box).
+      final mPerPx = 40075016.686 *
+          math.cos(at.latitude * math.pi / 180) /
+          (512 * math.pow(2, cam.zoom));
+      final r = (200 / mPerPx).clamp(120.0, 360.0).toDouble();
+      // Only the style's street layers: the whole box would also bring
+      // every building, label and park over the channel once a second.
+      final layers = _roadLayerIds ??= [
+        for (final l in await map.style.getStyleLayers())
+          if (l != null &&
+              l.type == 'line' &&
+              (l.id.startsWith('road-') ||
+                  l.id.startsWith('bridge-') ||
+                  l.id.startsWith('tunnel-')) &&
+              !const ['-case', 'path', 'steps', 'pedestrian', 'rail']
+                  .any(l.id.contains))
+            l.id,
+      ];
+      if (!mounted || layers.isEmpty) return;
+      final feats = await map.queryRenderedFeatures(
+        mapbox.RenderedQueryGeometry.fromScreenBox(mapbox.ScreenBox(
+          min: mapbox.ScreenCoordinate(x: px.x - r, y: px.y - r),
+          max: mapbox.ScreenCoordinate(x: px.x + r, y: px.y + r),
+        )),
+        mapbox.RenderedQueryOptions(layerIds: layers, filter: null),
+      );
+      if (!mounted) return;
+      final lines = RoadNetwork.parseFeatures(
+          feats.map((f) => f?.queriedFeature.feature));
+      _roadNet = lines.isEmpty ? null : RoadNetwork(lines);
+    } catch (e) {
+      // A reloaded style may have renamed its layers: list them again.
+      _roadLayerIds = null;
+      debugPrint('[DriverOnline] road net read failed: $e');
+    } finally {
+      _roadNetBusy = false;
+    }
   }
 
   LatLng _snapRenderedToLine(LatLng p) {
@@ -434,7 +531,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       requireConfidence: !onRoute,
       speedMps: _motion.speedMps,
     );
-    if (!result.trusted) return driverDisplayPosition(result, p);
+    if (!result.trusted) {
+      // A stale street bearing must not keep steering the arrow (the tick
+      // aims it at _roadLockBearing while on the tiles' street line).
+      _roadLockBearing = null;
+      return driverDisplayPosition(result, p);
+    }
     if (result.bearing != null && _motion.speedMps >= 1.0) {
       _motion.setBearing(result.bearing!);
     }

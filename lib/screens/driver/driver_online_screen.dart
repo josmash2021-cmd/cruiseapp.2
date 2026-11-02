@@ -65,6 +65,7 @@ import '../../map/flat_map_projection.dart';
 import '../../map/camera_action_gate.dart';
 import '../../map/recenter_landing_guard.dart';
 import '../../map/driver_road_lock.dart';
+import '../../map/road_network.dart';
 import '../../map/map_gesture_guard.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../map/map_callout.dart';
@@ -286,6 +287,20 @@ final _kZeroCamPadding =
 /// The nav chase keeps 4.5 — its input is the continuous route tangent.
 /// Top-level: part files can't reach class statics reliably (rule #16).
 const double _kSearchCamBearingOmega = 3.5;
+
+/// The same spring while the arrow rides a street read from the map's tiles
+/// (owner 2026-11-02, "que gire siguiendo las vías", "no quiero que haga
+/// resorte"). There the arrow's heading is the street's own direction every
+/// frame — continuous, no 1 Hz steps to hide — so the map turns with it,
+/// ~0.2 s behind (2/ω), instead of 0.6 s.
+const double _kSearchCamBearingOmegaOnRoad = 10.0;
+
+/// Fastest the arrow turns toward the street's direction: a curve is
+/// followed exactly, a 90° corner takes ~0.5 s instead of a one-frame flip.
+const double _kArrowRoadTurnDps = 180.0;
+
+/// Below this zoom the tiles drop the small streets: no street read there.
+const double _kRoadNetMinZoom = 14.0;
 
 class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
@@ -811,6 +826,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // onto it whenever _routePts is empty. _snapOnRouteSrc tracks which line
   // the segment bookkeeping belongs to (route vs road line).
   List<LatLng> _roadLinePts = const [];
+  // The matched trace's latest line, kept apart from _roadLinePts: since
+  // 2026-11-02 the street read from the map's tiles (_roadNet) is the line
+  // the arrow rides, and the trace is only the fallback where the tiles have
+  // no street close enough. _onLocalRoad: the last fix found one.
+  List<LatLng> _matchedTracePts = const [];
+  RoadNetwork? _roadNet;
+  DateTime? _roadNetAt;
+  bool _roadNetBusy = false;
+  bool _onLocalRoad = false;
+  List<String>? _roadLayerIds;
   bool _snapOnRouteSrc = true;
   late final RoadSnapService _roadSnap = RoadSnapService()
     ..onLine = _onRoadSnapLine;
@@ -1855,6 +1880,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       if (away > const Duration(seconds: 5)) {
         _roadSnap.reset();
         _roadLinePts = const [];
+        _matchedTracePts = const [];
+        _roadNet = null;
+        _onLocalRoad = false;
         _roadLock.reset();
       }
       // Before anything else: the location stream may not have survived the

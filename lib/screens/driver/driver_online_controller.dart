@@ -1292,6 +1292,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Offline de verdad: este sí silencia los uploads de posición (RTDB).
     _leavingOffline = true;
     _gpsService.stopTracking();
+    _matchedTracePts = const [];
+    _roadNet = null;
+    _onLocalRoad = false;
     // Drop any card already up — offline means no offers, visible or not.
     _setState(() {
       _driverOnline = false;
@@ -1938,10 +1941,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
               _routePts.length < 2 &&
               _mapMounted &&
               _appInForeground) {
-            _roadSnap.onFix(pos);
+            unawaited(_refreshRoadNet(newLL));
+            // The paid matching call only where the tiles' street line is
+            // missing — it is the fallback now (2026-11-02).
+            if (!_onLocalRoad) _roadSnap.onFix(pos);
           }
           // Snap to route polyline — prevents GPS drift off-road
-          final snappedLL = _snapToRoute(newLL);
+          final snappedLL = _snapToRoute(newLL,
+              accuracyM: pos.accuracy, courseDeg: measuredCourseDeg(pos));
           // Bearing: ONLY the road lock's, never `_smoothedBearing` (owner
           // report 2026-11-01, "la cámara gira por pasos"). The heading
           // stream delivers this fix's course a microtask LATER, so
@@ -2483,7 +2490,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // road line) — the fix-level snap alone left the extrapolated lead
     // running off the road between fixes (see _snapRenderedToLine).
     _pos = _snapRenderedToLine(LatLng(_motion.lat!, _motion.lng!));
-    _heading = _motion.bearing;
+    // On a street read from the tiles the arrow points where that street
+    // goes at the spot it is drawn — straight from the line, no spring
+    // behind it (owner 2026-11-02, "que gire siguiendo las vías", "no quiero
+    // que haga resorte"); only the rate cap, so a corner turns in ~0.5 s
+    // instead of flipping in one frame. Anywhere else the engine's bearing,
+    // which never turns faster than the cap: same as before.
+    final headingAim = (_onLocalRoad &&
+            _roadLockBearing != null &&
+            _motion.speedMps >= 1.0)
+        ? _roadLockBearing!
+        : _motion.bearing;
+    final headingGap = BearingSpring.shortestArc(_heading, headingAim);
+    final maxTurn = _kArrowRoadTurnDps * dtSec;
+    _heading = (_heading + headingGap.clamp(-maxTurn, maxTurn) + 360) % 360;
+    final headingTurning = headingGap.abs() > maxTurn;
 
     // HEAT FIX (2026-08-19): un driver parado no necesita 120 escrituras de
     // cámara por segundo ni repaints del marcador — eso era el teléfono
@@ -2496,6 +2517,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // …and the camera bearing spring: the car can stop with the map still
     // turning toward the arrow, and that turn must finish, not freeze.
     final needsFrames = frameMoved ||
+        headingTurning ||
         (_phase == _Phase.searching && !_zoomEaseDone) ||
         (_phase == _Phase.searching &&
             _cameraFollowing &&
@@ -2555,7 +2577,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // 2026-11-01 ("gira por pasos"): still ONE source, on a damped spring
       // (rule #35) — see _kSearchCamBearingOmega. Seeded from the real map.
       final camBearing = _searchCamSpring.step(_heading, dtSec,
-          seed: _onlineCamState?.bearing);
+          seed: _onlineCamState?.bearing,
+          omega: _onLocalRoad ? _kSearchCamBearingOmegaOnRoad : null);
       final lastWrittenB = _lastCamWriteBearing;
       // A parked car on a frozen bearing produces the IDENTICAL camera
       // every frame — skip ONLY the write (never the rest of the tick: the

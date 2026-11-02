@@ -27,10 +27,12 @@ void main() {
 
   group('#1 the searching arrow rides the street', () {
     test('the fix-level snap extends the matched line past its end', () {
-      final body = bodyOf(map, 'LatLng _snapToRoute(LatLng raw) {', maxLen: 2600);
-      expect(body, contains('extendPastEnd: !onRoute,'),
+      final body = bodyOf(map, 'LatLng _snapToRoute(LatLng raw', maxLen: 3600);
+      expect(body, contains('extendPastEnd: !onRoute && !_onLocalRoad,'),
           reason: 'past the trace end the fix rides the straight '
-              'continuation — without it a moving car is never snapped');
+              'continuation — without it a moving car is never snapped. '
+              'The street read from the tiles already reaches ahead '
+              '(2026-11-02), so it needs none');
       expect(body, contains('headingDeg: _motion.hasPosition ? _motion.bearing : null,'),
           reason: 'the continuation is believed only along the car\'s course');
       expect(body, contains('result.trusted && !result.extended ? result.bearing : null'),
@@ -68,8 +70,12 @@ void main() {
           'if (_phase == _Phase.searching && !offerActive && _cameraFollowing)',
           maxLen: 4000);
       expect(body, contains('final camBearing = _searchCamSpring.step(_heading, dtSec,'));
-      expect(body, contains('seed: _onlineCamState?.bearing);'),
+      expect(body, contains('seed: _onlineCamState?.bearing,'),
           reason: 'engaging the chase starts from the real camera');
+      expect(body,
+          contains('omega: _onLocalRoad ? _kSearchCamBearingOmegaOnRoad : null);'),
+          reason: 'on a street read from the tiles the arrow heading is '
+              'continuous, so the map turns with it (owner 2026-11-02)');
       expect(ctrl, contains('!_searchCamSpring.isSettled(_heading));'),
           reason: 'a turn the car stops in must still finish (heat gate)');
       expect(ctrl, contains('_searchCamSpring.reset();'));

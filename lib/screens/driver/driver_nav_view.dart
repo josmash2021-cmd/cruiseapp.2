@@ -27,6 +27,7 @@ import '../../utils/gps_fix_policy.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../utils/route_splice.dart';
 import '../../utils/smooth_motion.dart';
+import '../../widgets/glass_style.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/neu_style.dart';
@@ -398,6 +399,11 @@ class DriverNavViewState extends State<DriverNavView>
   bool _routeFetching = false;
   String _streetLabel = '';
   String _thenLabel = '';
+  // The step after the current one, for the banner's gold "Luego" tab:
+  // its street (or instruction) and the maneuver that draws its icon.
+  String _thenText = '';
+  String _thenType = '';
+  String _thenModifier = '';
   String _maneuverDistLabel = '';
   String _instructionLabel = '';
   String _maneuverType = 'depart';
@@ -1214,6 +1220,8 @@ class DriverNavViewState extends State<DriverNavView>
         ? ''
         : (thenStep.name.isNotEmpty ? thenStep.name : thenStep.instruction);
     final then = thenText.isEmpty ? '' : '${s.navThen} → $thenText';
+    final thenType = thenStep?.maneuverType ?? '';
+    final thenModifier = thenStep?.modifier ?? '';
 
     // Remaining trip — the "9 min · 4.1 mi" of the sheet (user report: "no
     // marca los minutos y millas correctamente").
@@ -1254,6 +1262,8 @@ class DriverNavViewState extends State<DriverNavView>
     if (street == _streetLabel &&
         dist == _maneuverDistLabel &&
         then == _thenLabel &&
+        thenType == _thenType &&
+        thenModifier == _thenModifier &&
         instruction == _instructionLabel &&
         type == _maneuverType &&
         modifier == _maneuverModifier &&
@@ -1265,6 +1275,9 @@ class DriverNavViewState extends State<DriverNavView>
       _streetLabel = street;
       _maneuverDistLabel = dist;
       _thenLabel = then;
+      _thenText = thenText;
+      _thenType = thenType;
+      _thenModifier = thenModifier;
       _instructionLabel = instruction;
       _maneuverType = type;
       _maneuverModifier = modifier;
@@ -3097,39 +3110,61 @@ class DriverNavViewState extends State<DriverNavView>
         }
       }
     }
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
-      decoration: BoxDecoration(
-        color: _navyBar.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _gold.withValues(alpha: 0.25), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.45),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
+    // Glass banner, Lyft layout in Cruise gold (owner design 2026-11-02,
+    // https://claude.ai/artifact/HJUuivr8N4vih8WmmqGnTX): the turn arrow
+    // with its distance under it on the left, the instruction big on the
+    // right, and the next turn in a gold-glass "Luego" tab hanging under
+    // the box. Arrived: the pin, the client's address and the arrival note.
+    final showThen = !_phaseArrived && !_endRouteVisible && _thenText.isNotEmpty;
+    final mainBox = GlassSurface(
+      blur: kGlassSheetBlur,
+      tint: glassSheetTint,
+      borderRadius: BorderRadius.only(
+        topLeft: const Radius.circular(14),
+        topRight: const Radius.circular(14),
+        bottomRight: const Radius.circular(14),
+        bottomLeft: Radius.circular(showThen ? 0 : 14),
       ),
+      padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
       child: Row(
         children: [
-          // Bigger (44 → 48, user spec 2026-09-19 — the big reference
-          // card) and the indication swaps crossfade — a turn icon never
-          // snaps.
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            transitionBuilder: (child, anim) => FadeTransition(
-              opacity: anim,
-              child: ScaleTransition(scale: anim, child: child),
+          SizedBox(
+            width: 64,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Bigger (44 → 48, user spec 2026-09-19 — the big reference
+                // card) and the indication swaps crossfade — a turn icon
+                // never snaps.
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: ScaleTransition(scale: anim, child: child),
+                  ),
+                  child: Icon(
+                      _endRouteVisible
+                          ? Icons.place_rounded
+                          : _maneuverIcon(_maneuverType, _maneuverModifier),
+                      key: ValueKey(
+                          '${_endRouteVisible}_${_maneuverType}_$_maneuverModifier'),
+                      color: _gold,
+                      size: 48),
+                ),
+                if (!_endRouteVisible)
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.fade,
+                    softWrap: false,
+                    style: const TextStyle(
+                      color: _gold,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+              ],
             ),
-            child: Icon(
-                _endRouteVisible
-                    ? Icons.place_rounded
-                    : _maneuverIcon(_maneuverType, _maneuverModifier),
-                key: ValueKey(
-                    '${_endRouteVisible}_${_maneuverType}_$_maneuverModifier'),
-                color: Colors.white,
-                size: 48),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -3139,41 +3174,32 @@ class DriverNavViewState extends State<DriverNavView>
               children: [
                 Text(
                   title,
-                  maxLines: useInstruction ? 2 : 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Colors.white,
                     // Un poquito mas grande (user spec 2026-09-27): a full
-                    // instruction sentence needs the second line and a step
-                    // down in size; a bare street name keeps the big
-                    // single-line treatment.
-                    fontSize: useInstruction ? 18 : 22,
+                    // instruction sentence steps down a size; a bare street
+                    // name keeps the big treatment.
+                    fontSize: useInstruction ? 20 : 24,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.2,
+                    height: 1.15,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _gold,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (!_phaseArrived && _thenLabel.isNotEmpty)
+                if (_endRouteVisible) ...[
+                  const SizedBox(height: 2),
                   Text(
-                    _thenLabel,
+                    subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                      color: Colors.white70,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
+                ],
               ],
             ),
           ),
@@ -3225,6 +3251,63 @@ class DriverNavViewState extends State<DriverNavView>
           ),
         ],
       ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        mainBox,
+        // The gold-glass "Luego" tab: same blur, gold tint, dark text, the
+        // next turn's icon and street. Crossfades as the steps advance.
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: !showThen
+              ? const SizedBox.shrink()
+              : GlassSurface(
+                  key: ValueKey('then_$_thenText$_thenType$_thenModifier'),
+                  blur: kGlassSheetBlur,
+                  tint: _gold.withValues(alpha: 0.62),
+                  borderRadius:
+                      const BorderRadius.vertical(bottom: Radius.circular(12)),
+                  border: Border(
+                    left: BorderSide(color: _gold.withValues(alpha: 0.35)),
+                    right: BorderSide(color: _gold.withValues(alpha: 0.35)),
+                    bottom: BorderSide(color: _gold.withValues(alpha: 0.35)),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(14, 7, 14, 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        s.navThen,
+                        style: TextStyle(
+                          color: const Color(0xFF141414).withValues(alpha: 0.7),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(_maneuverIcon(_thenType, _thenModifier),
+                          color: const Color(0xFF141414), size: 20),
+                      const SizedBox(width: 6),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 220),
+                        child: Text(
+                          _thenText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF141414),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ],
     );
   }
 

@@ -623,7 +623,7 @@ void main() {
 
     test('the freeway exit number rides its own gold chip at the bar\'s '
         'top-right (user spec 2026-09-27, Google-style "exit 157")', () {
-      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 4600);
+      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 7000);
       expect(body.contains('exitLabel'), isTrue);
       expect(body.contains('_maneuverExit.isNotEmpty'), isTrue,
           reason: 'the EXACT number first: Mapbox structured maneuver.exit '
@@ -645,9 +645,9 @@ void main() {
               .readAsStringSync()
               .contains('navExitNumber'),
           isTrue);
-      expect(body.contains('fontSize: useInstruction ? 18 : 22'), isTrue,
-          reason: 'the guide letters grew a step (user spec 2026-09-27: '
-              '"un poquito mas grande las letras")');
+      expect(body.contains('fontSize: useInstruction ? 20 : 24'), isTrue,
+          reason: 'the instruction rides big in the glass banner (owner '
+              'design 2026-11-02; was 18/22 after "un poquito mas grande")');
     });
 
     test('the line is eaten forward-only, off the dot glide, cursor reset '
@@ -985,7 +985,7 @@ void main() {
       expect(nav.contains('_destDistLabel(s)'), isTrue,
           reason: 'the steps-less fallback shows distance-to-destination, '
               'never the title twice');
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 3600);
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 6400);
       expect(bar.contains('size: 48'), isTrue,
           reason: 'the big reference card (user spec 2026-09-19)');
       expect(bar.contains('AnimatedSwitcher('), isTrue,

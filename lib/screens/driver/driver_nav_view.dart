@@ -286,17 +286,18 @@ class DriverNavViewState extends State<DriverNavView>
   int _recenterSeq = -1;
   static const _recenterBlendMs = 600;
 
-  // Dynamic chase zoom: 17.5 at city pace, 17.0 past 20 m/s, 18.0 with a
-  // maneuver under 150 m — lerped at ≤0.5 zoom/sec, never a step. The
-  // chase pose is the one AGENTS.md documents ("tras aceptar, chase por
-  // frame zoom 17.5 / pitch 55") — owner decision 2026-10-28 (audit D6).
-  double _chaseZoom = 17.5;
-  static const _chaseZoomDefault = 17.5;
-  static const _chaseZoomFast = 17.0;
-  static const _chaseZoomManeuver = 18.0;
+  // Dynamic chase zoom: 16.8 at city pace, 16.3 past 20 m/s, 17.3 with a
+  // maneuver under 150 m — lerped at ≤0.5 zoom/sec, never a step. Owner
+  // request 2026-11-02 (screenshot: "como esta foto 2"): less tilt and a
+  // little further out, so more of the road ahead is on screen — replaces
+  // the 17.5 / 55 pose of 2026-10-28 (audit D6).
+  double _chaseZoom = 16.8;
+  static const _chaseZoomDefault = 16.8;
+  static const _chaseZoomFast = 16.3;
+  static const _chaseZoomManeuver = 17.3;
   static const _zoomLerpPerSec = 0.5;
-  // Chase tilt: 55° (audit D6, same spec as the zoom above).
-  static const _chasePitch = 55.0;
+  // Chase tilt: 45° (same owner request as the zoom above).
+  static const _chasePitch = 45.0;
 
   // Owner request 2026-10-30: "la flecha un poco más grande" on the
   // navigation map — overlay and native annotation alike.
@@ -849,6 +850,9 @@ class DriverNavViewState extends State<DriverNavView>
       _dot.setBearing(h);
       _headingSetAt = widget.initialDriverPos;
     }
+    // The map can be created before this post-frame seed: its own chase
+    // write then found no dot and bailed. Aim it at the seed now.
+    _snapToChasePose();
     _lastGpsFixAt = DateTime.now(); // warm-up grace for the first fix
     _armGpsWatchdog();
     _tunnelTimer?.cancel();
@@ -1049,6 +1053,17 @@ class DriverNavViewState extends State<DriverNavView>
 
   double? _routeHeadingFor(LatLng pos) {
     return _roadLock.project(_routePts, pos, speedMps: _speedMps).bearing;
+  }
+
+  /// Where the opening camera centres: the arrow itself — the seeded dot,
+  /// or the driver's last known position projected onto the route — never
+  /// the raw fix, which a parked car can have tens of metres off the road.
+  LatLng get _openCameraPos {
+    final lat = _dot.lat;
+    final lng = _dot.lng;
+    if (lat != null && lng != null) return LatLng(lat, lng);
+    return _roadLock.project(_routePts, widget.initialDriverPos).point ??
+        widget.initialDriverPos;
   }
 
   /// Approaching under 200 m; arrived after consecutive close fixes — with
@@ -1826,11 +1841,12 @@ class DriverNavViewState extends State<DriverNavView>
         _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
           geometry: geom,
           lineColor: _gold.toARGB32(),
-          // 7.0 → 8.0 (user spec 2026-09-27, "un poco mas gruesa") — at 7
-          // the route still read thin under the new tilt; 8 carries it.
+          // 8.0 → 6.5 (owner request 2026-11-02, "un poquito finita pero no
+          // tanto"): with the lighter 45° tilt the line no longer needs the
+          // extra width 8 gave it under 55°.
           // ROUND join + ROUND cap: the curve corners are eased, never
           // pointed ("las esquinas de curva no punteagudas").
-          lineWidth: 8.0,
+          lineWidth: 6.5,
           lineJoin: mapbox.LineJoin.ROUND,
         ));
         // line-cap va por capa (no es parámetro del annotation en este
@@ -1970,6 +1986,15 @@ class DriverNavViewState extends State<DriverNavView>
         }
         _trimRouteTo(projected);
       }
+    }
+    // The dot's FIRST position (seed or first fix) and a parked driver's
+    // nudges land with no vsync frames, so the per-frame chase never ran
+    // and the camera stayed on its opening pose — the arrow beside the
+    // line while the trim already ate the route up to the car (owner
+    // report 2026-11-02). One explicit pose write while the chase sleeps.
+    if (DateTime.now().difference(_lastChaseFrameAt) >
+        const Duration(milliseconds: 250)) {
+      _snapToChasePose();
     }
     _updateDriverAnnotation();
   }
@@ -2695,17 +2720,23 @@ class DriverNavViewState extends State<DriverNavView>
                       // pose (user spec 2026-09-16): tilted, aimed down-
                       // route — never a flat overview that a later write
                       // has to correct in front of the driver.
+                      // Same centre and inset as every chase write and the
+                      // overlay arrow (owner report 2026-11-02, "la flecha
+                      // fuera de la línea"): this pose used the raw fix and
+                      // +130 while the arrow sits at the +240 focus, so until
+                      // a chase write landed the arrow was 55 pt below the
+                      // car and beside the line.
                       cameraOptions: mapbox.CameraOptions(
                         center: mapbox.Point(
                             coordinates: mapbox.Position(
-                                widget.initialDriverPos.longitude,
-                                widget.initialDriverPos.latitude)),
+                                _openCameraPos.longitude,
+                                _openCameraPos.latitude)),
                         zoom: _chaseZoomDefault,
                         pitch: _chasePitch,
                         bearing:
                             _routeHeadingFor(widget.initialDriverPos) ?? 0.0,
                         padding: mapbox.MbxEdgeInsets(
-                            top: media.padding.top + 130,
+                            top: media.padding.top + 240,
                             left: 0,
                             right: 0,
                             bottom: 0),
@@ -2744,8 +2775,8 @@ class DriverNavViewState extends State<DriverNavView>
                                 (lng: p.longitude, lat: p.latitude)
                             ],
                             color: '#E8C547',
-                            // 8 como en nativo (user spec 2026-09-27).
-                            width: 8,
+                            // Same as native (owner request 2026-11-02).
+                            width: 6.5,
                           );
                         }
                       },

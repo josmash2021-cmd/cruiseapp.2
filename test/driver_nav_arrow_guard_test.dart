@@ -17,7 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///   3. D7 — while the chase follows, the arrow is the Flutter vector
 ///      overlay at the camera focus; the native annotation is never written
 ///      in that state.
-///   4. D6 — the chase pose is zoom 17.5 / pitch 55 (AGENTS.md).
+///   4. D6 — the chase pose is zoom 16.8 / pitch 45 (owner request
+///      2026-11-02; was 17.5 / 55).
 ///   5. D8/D9 — SmoothMotion's per-tick cap is 3 m and the correction floor
 ///      is max(6, 1.5×speed), capped at 45.
 ///   6. D4/D5/D10 + extras — recenter is a blend (no flyTo race), overview
@@ -183,10 +184,27 @@ void main() {
   });
 
   group('D6: chase pose', () {
-    test('zoom 17.5 / pitch 55 (AGENTS.md)', () {
-      expect(nav.contains('_chaseZoomDefault = 17.5'), isTrue);
-      expect(nav.contains('_chasePitch = 55.0'), isTrue);
-      expect(nav.contains('double _chaseZoom = 17.5;'), isTrue);
+    test('zoom 16.8 / pitch 45 (owner request 2026-11-02)', () {
+      expect(nav.contains('_chaseZoomDefault = 16.8'), isTrue);
+      expect(nav.contains('_chasePitch = 45.0'), isTrue);
+      expect(nav.contains('double _chaseZoom = 16.8;'), isTrue);
+    });
+
+    test('the nav opens with the arrow ON the line (owner report '
+        '2026-11-02)', () {
+      // The opening camera shares the chase inset (+240, the overlay
+      // arrow's focus) and centres on the projected seed, never the raw fix.
+      final build = nav.substring(nav.indexOf('cameraOptions: mapbox.CameraOptions('));
+      final cam = build.substring(0, build.indexOf('onMapCreated:'));
+      expect(cam.contains('_openCameraPos.latitude'), isTrue);
+      expect(cam.contains('media.padding.top + 240'), isTrue);
+      expect(cam, isNot(contains('+ 130')));
+      // A dot that gets its position with the chase asleep (seed, first
+      // fix, parked nudge) still re-aims the camera.
+      final tick = bodyOf(nav, 'void _onDotTick() {', maxLen: 1600);
+      expect(tick.contains('_snapToChasePose()'), isTrue);
+      final gps = bodyOf(nav, 'void _startGps() {', maxLen: 3000);
+      expect(gps.contains('_snapToChasePose()'), isTrue);
     });
   });
 

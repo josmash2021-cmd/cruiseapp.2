@@ -351,13 +351,13 @@ void main() {
           reason: 'the per-frame chase must be gated on the camera state');
     });
 
-    test('dynamic chase zoom 17.5 / 17.0 / 18.0, lerped never stepped '
-        '(owner decision 2026-10-28: the AGENTS.md chase pose 17.5 / 55)',
+    test('dynamic chase zoom 16.8 / 16.3 / 17.3, lerped never stepped '
+        '(owner request 2026-11-02: less tilt, a little further out)',
         () {
-      expect(nav.contains('_chaseZoomDefault = 17.5'), isTrue,
-          reason: 'audit D6: the documented chase pose is zoom 17.5');
-      expect(nav.contains('_chaseZoomFast = 17.0'), isTrue);
-      expect(nav.contains('_chaseZoomManeuver = 18.0'), isTrue);
+      expect(nav.contains('_chaseZoomDefault = 16.8'), isTrue,
+          reason: 'owner request 2026-11-02 ("como esta foto 2")');
+      expect(nav.contains('_chaseZoomFast = 16.3'), isTrue);
+      expect(nav.contains('_chaseZoomManeuver = 17.3'), isTrue);
       expect(nav.contains('_zoomLerpPerSec = 0.5'), isTrue);
       final frame = bodyOf(nav, 'void _chaseFrame(double dt) {', maxLen: 2400);
       expect(frame.contains('+ 240'), isTrue,
@@ -891,13 +891,12 @@ void main() {
 
   group('user spec 2026-09-17: tilted chase, gold call disc, true speed',
       () {
-    test('the chase tilt is 55° (owner decision 2026-10-28, audit D6), '
-        'never back at 50 or 25', () {
-      expect(nav.contains('_chasePitch = 55.0'), isTrue,
-          reason: 'AGENTS.md: "tras aceptar, chase por frame zoom 17.5 / '
-              'pitch 55"');
+    test('the chase tilt is 45° (owner request 2026-11-02), never back at '
+        '55 or 25', () {
+      expect(nav.contains('_chasePitch = 45.0'), isTrue,
+          reason: 'owner request 2026-11-02: "no me gusta la inclinación"');
       expect(nav, isNot(contains('_chasePitch = 25.0')));
-      expect(nav, isNot(contains('_chasePitch = 50.0')));
+      expect(nav, isNot(contains('_chasePitch = 55.0')));
     });
 
     test('the sheet call disc is the gold-filled one, chat stays dark', () {

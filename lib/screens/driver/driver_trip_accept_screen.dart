@@ -687,6 +687,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _stopLatLng = widget.stopLatLng;
     _stopLabel = widget.stopLabel;
     _riderPhotoUrl = _normalizedPhotoUrl(widget.riderPhotoUrl);
+    // The nav intro's hero art is warm by the time "Navegar" is tapped, so
+    // it paints with the page instead of after a stand-in.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(NavIntroScreen.precacheHero(context));
+    });
     _resolveGenericAddresses();
     _resolveRiderPhotoFromTrip();
     _loadComplimentaryDrinkIfVip();
@@ -934,10 +939,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // from the page (Get started or back) falls through to the nav below.
     _navEntering = true;
     if (!mounted) return;
-    await Navigator.of(context).push(
-      slideFromRightRoute(const NavIntroScreen()),
-    );
-    if (!mounted) return;
+    // The nav map loads BEHIND the intro (owner 2026-11-02: "cuando se le de
+    // get started abrirá el mapa de navegación ya cargado, no así oscuro"):
+    // the handoff below used to start only after the pop, so "Get started"
+    // landed on a dark fade while the map loaded. Now it runs while the
+    // driver reads the page, and the pop slides the intro off a ready map.
+    // Not opaque, so this screen stays laid out underneath — a platform view
+    // that is never laid out is never created on Android.
+    unawaited(Navigator.of(context).push(
+      slideFromRightRoute(const NavIntroScreen(), opaque: false),
+    ));
+    // Let the intro finish sliding in before the map work starts under it.
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    if (!mounted) {
+      _navEntering = false;
+      return;
+    }
     _navEntering = true;
     // Leg override by address card (user spec 2026-09-19): tapping the
     // dropoff card navigates to the DROPOFF even before the ride starts —

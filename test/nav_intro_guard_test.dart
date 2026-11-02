@@ -86,6 +86,30 @@ void main() {
         reason: 'the drawn card remains the loading/failure fallback');
   });
 
+  // Owner report 2026-11-02: a stand-in drawing showed before the art, the
+  // feature icons sat in tinted squares, and "Get started" landed on a dark
+  // fade while the nav map loaded.
+  test('the hero is warm, the icons are bare, the map loads behind', () {
+    final intro = File('lib/screens/driver/nav_intro_screen.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    expect(intro, contains('static Future<void> precacheHero(BuildContext context)'));
+    expect(intro, contains('return const AspectRatio(aspectRatio: _heroAspect);'),
+        reason: 'while loading the slot is empty, not the drawn card');
+    final feature = intro.substring(intro.indexOf('Widget _feature('));
+    expect(feature.substring(0, 600), isNot(contains('BoxDecoration')),
+        reason: 'no tinted square around the icons');
+    final accept = File('lib/screens/driver/driver_trip_accept_screen.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    expect(accept, contains('unawaited(NavIntroScreen.precacheHero(context));'));
+    expect(accept, contains('slideFromRightRoute(const NavIntroScreen(), opaque: false),'),
+        reason: 'the trip screen stays laid out so the nav map is created '
+            'under the intro');
+    expect(accept, isNot(contains('await Navigator.of(context).push(\n      slideFromRightRoute(const NavIntroScreen()')),
+        reason: 'the handoff no longer waits for the intro to close');
+  });
+
   test('the strings exist in ES and EN', () {
     final s = File('lib/l10n/app_localizations.dart').readAsStringSync();
     expect(s, contains("'Navega a donde quieras con Cruise'"));

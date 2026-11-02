@@ -13,15 +13,19 @@ const _easeOutBack = Cubic(0.34, 1.56, 0.64, 1);
 
 /// Slide from right + fade — primary navigation (push)
 /// Screen slides in from right while fading in, outgoing screen slides left.
-Route<T> slideFromRightRoute<T>(Widget page, {int durationMs = 320}) {
+/// [opaque] false keeps the screen below laid out and painting under a page
+/// that covers it anyway — needed when work must keep running down there
+/// (the nav map loading behind the nav intro).
+Route<T> slideFromRightRoute<T>(Widget page,
+    {int durationMs = 320, bool opaque = true}) {
   final dur = Duration(milliseconds: durationMs);
   final rev = Duration(milliseconds: (durationMs * 0.75).round());
-  
+
   return PageRouteBuilder<T>(
     pageBuilder: (context, animation, secondaryAnimation) => page,
     transitionDuration: dur,
     reverseTransitionDuration: rev,
-    opaque: true,
+    opaque: opaque,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       // Incoming: slide from right + fade in
       final inSlide = Tween<Offset>(

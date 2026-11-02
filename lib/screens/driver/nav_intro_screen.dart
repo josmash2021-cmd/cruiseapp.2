@@ -15,6 +15,19 @@ class NavIntroScreen extends StatelessWidget {
   // melts into the page instead of reading as a grey frame around it.
   static const _navy = Color(0xFF141516);
   static const _gold = Color(0xFFE8C547);
+  // The hero PNG is 740 x 420: the slot keeps that shape while it loads, so
+  // nothing below it jumps when it lands.
+  static const _heroAspect = 740 / 420;
+
+  static String get _heroUrl =>
+      '${ApiService.currentBaseUrl}/static/nav_intro_hero.png';
+
+  /// Warm the hero into the image cache ahead of the page (owner report
+  /// 2026-11-02: "aparece un ícono detrás primero y luego la parte de
+  /// arriba"): a cold cache painted the code-drawn stand-in first and faded
+  /// the real art in over it. Called when the trip screen opens.
+  static Future<void> precacheHero(BuildContext context) =>
+      precacheImage(NetworkImage(_heroUrl), context, onError: (_, __) {});
 
   @override
   Widget build(BuildContext context) {
@@ -31,18 +44,22 @@ class NavIntroScreen extends StatelessWidget {
               // The design's own hero art (user spec 2026-10-10: "esta página
               // debe tener esta imagen de esta foto"). Served from the
               // backend because Shorebird patches never carry new assets;
-              // the code-drawn card below stays as the loading/failure
-              // stand-in so the page never renders broken.
+              // the code-drawn card below stays as the failure stand-in so
+              // the page never renders broken. While it loads the slot is
+              // EMPTY (2026-11-02): the drawn card showing first and the art
+              // fading over it read as a different icon appearing behind.
               ClipRRect(
                 borderRadius: BorderRadius.circular(28),
                 child: Image.network(
-                  '${ApiService.currentBaseUrl}/static/nav_intro_hero.png',
+                  _heroUrl,
                   fit: BoxFit.fitWidth,
                   // Same rule as the update gate (2026-10-10): warm cache
                   // paints with the page; a late frame fades, never pops.
                   frameBuilder: (context, child, frame, wasSync) {
                     if (wasSync) return child;
-                    if (frame == null) return const _RouteIllustration();
+                    if (frame == null) {
+                      return const AspectRatio(aspectRatio: _heroAspect);
+                    }
                     return TweenAnimationBuilder<double>(
                       tween: Tween(begin: 0, end: 1),
                       duration: const Duration(milliseconds: 320),
@@ -121,15 +138,13 @@ class NavIntroScreen extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 40,
-          height: 40,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: _gold.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(13),
+        // Bare icon, no tinted square around it (owner 2026-11-02).
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: SizedBox(
+            width: 28,
+            child: Icon(icon, color: _gold, size: 24),
           ),
-          child: Icon(icon, color: _gold, size: 21),
         ),
         const SizedBox(width: 14),
         Expanded(

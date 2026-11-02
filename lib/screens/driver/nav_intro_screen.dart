@@ -45,11 +45,13 @@ class NavIntroScreen extends StatelessWidget {
     final s = S.of(context);
     final anim = ModalRoute.of(context)?.animation ?? kAlwaysCompleteAnimation;
     // Frosted glass over the nav map loading underneath (owner 2026-11-02:
-    // "que se vea como vidrio borroso y debajo el mapa"): the sheet's glass,
-    // so the map shows through as soft blurred colour, never readable. The
-    // fade drives the blur and the tint themselves — an Opacity around a
-    // BackdropFilter blinds it to the map, and the glass would pop to a flat
-    // tint the moment the page started to fade.
+    // "que se vea como vidrio borroso y debajo el mapa"). The OPEN sheet's
+    // glass, not the resting one (owner, same day: "se ve muy transparente…
+    // hazlo borroso y un poquito oscuro") — the resting 24 / 64 % let the
+    // trip screen read through on the phone. The fade drives the blur and
+    // the tint themselves — an Opacity around a BackdropFilter blinds it to
+    // the map, and the glass would pop to a flat tint the moment the page
+    // started to fade.
     return AnimatedBuilder(
       animation: anim,
       builder: (context, content) {
@@ -57,8 +59,9 @@ class NavIntroScreen extends StatelessWidget {
         return Scaffold(
           backgroundColor: Colors.transparent,
           body: GlassSurface(
-            blur: kGlassSheetBlur * t,
-            tint: glassSheetTint.withValues(alpha: glassSheetTint.a * t),
+            blur: kGlassSheetBlurOpen * t,
+            tint: glassSheetOpenTint.withValues(
+                alpha: glassSheetOpenTint.a * t),
             border: const Border(),
             width: double.infinity,
             height: double.infinity,

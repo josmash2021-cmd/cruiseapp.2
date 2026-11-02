@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cruise_app/widgets/glass_notification_banner.dart';
+import 'package:cruise_app/widgets/glass_style.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Guardian for the owner spec of 2026-11-01: "todas las notificaciones
@@ -47,9 +48,11 @@ void main() {
   // Owner 2026-11-01: "¿por qué está gris y no transparente blurry?" (82 %
   // tint) and then "veo que está como un cuadro, debe ser todo de vidrio
   // blurry" (the 6 px inset rim read as a box inside the card).
-  test('the whole card is glass: one frost, one light tint, no rim', () {
-    expect(kGlassBannerTint.a, lessThanOrEqualTo(0.45),
-        reason: 'the frosted map must show through');
+  // Then 2026-11-02, on the phone: "estas notificaciones también se ve el
+  // contenido que está debajo" — the "$0.00" pill read through 40 %.
+  test('the whole card is glass: one frost, the sheet tint, no rim', () {
+    expect(kGlassBannerTint, glassSheetTint,
+        reason: 'what is under the banner must not read through');
     expect(banner, contains('GlassSurface('),
         reason: 'reuses the shared glass, no second blur recipe');
     expect(banner, contains('tint: kGlassBannerTint,'));

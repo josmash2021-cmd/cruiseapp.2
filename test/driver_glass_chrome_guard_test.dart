@@ -70,7 +70,10 @@ void main() {
 
     test('tints are translucent grey, inner cards barely there', () {
       expect(glassTint.a, lessThan(0.7));
-      expect(glassSheetTint.a, lessThan(0.75));
+      // Owner 2026-11-02: "no debe verse el contenido que hay detrás" — the
+      // arrow and the map buttons read through the old 64 % on the phone.
+      expect(glassSheetTint.a, greaterThanOrEqualTo(0.88));
+      expect(glassSheetTint.a, lessThan(1.0));
       final inner = glassInnerBox(radius: 18);
       expect((inner.color!).a, lessThan(0.2));
     });
@@ -113,7 +116,9 @@ void main() {
       // tint and a much heavier blur as it opens, still translucent…
       expect(glassSheetOpenTint.a, lessThan(1.0));
       expect(glassSheetOpenTint.a, greaterThan(glassSheetTint.a));
-      expect(kGlassSheetBlurOpen, greaterThan(kGlassSheetBlur * 1.5));
+      expect(kGlassSheetBlurOpen, greaterThanOrEqualTo(kGlassSheetBlur));
+      expect(kGlassSheetBlur, greaterThanOrEqualTo(40.0),
+          reason: '2026-11-02: the resting sheet wears the open frost too');
       expect(widgets,
           contains('Color.lerp(glassSheetTint, glassSheetOpenTint, openT)!'));
       expect(widgets,

@@ -52,13 +52,13 @@ const kGlassBannerMaxWidth = 560.0;
 /// ends fully off-screen (cards are 68–82 px tall at text scale 1).
 const kGlassBannerTravel = 96.0;
 
-/// Frost: the sheet's blur under a LIGHT smoke tint. It wore the open
-/// sheet's 82 % tint until 2026-11-01 — the owner: "¿por qué está gris y no
-/// transparente blurry?" — at 82 % the blurred map barely showed and the
-/// card read as a flat grey box. 40 % lets the frosted map through; white
-/// text over the dark-navy map stays legible.
-const kGlassBannerBlur = kGlassSheetBlur; // sigma 24
-const kGlassBannerTint = Color(0x661A1A21); // #1A1A21 @ 40 %
+/// Frost: the sheet's glass. A light 40 % smoke (2026-11-01, "¿por qué está
+/// gris y no transparente blurry?") let the map's own chrome read through
+/// on the phone — the earnings "$0.00" was legible under the card (owner
+/// 2026-11-02: "no debe verse el contenido que hay detrás"). The sheet's
+/// dark smoke hides it; the blur still softens the map at the edges.
+const kGlassBannerBlur = kGlassSheetBlur;
+const kGlassBannerTint = glassSheetTint; // #1A1A21 @ 90 %
 
 /// The frost covers the WHOLE card, edge to edge, one even tint (owner
 /// 2026-11-01: "veo que está como un cuadro, debe ser todo de vidrio

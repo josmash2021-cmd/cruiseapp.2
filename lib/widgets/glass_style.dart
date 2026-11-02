@@ -26,18 +26,24 @@ import 'package:flutter/material.dart';
 /// save-layer only sees that layer, not the map — keep glass out of
 /// permanent layers (fade-in transitions are fine; at rest they drop out).
 const glassTint = Color(0x8F1E1E26); // grey glass, ~56 %
-const glassSheetTint = Color(0xA31A1A21); // a touch denser behind text, ~64 %
+// Dark smoked glass (owner 2026-11-02, on the phone: "se ve el contenido
+// que está debajo, no debe verse el contenido que hay detrás… hazlo
+// borroso y un poquito oscuro"). The frost softens the map, but what the
+// app draws OVER the map — the arrow, the round buttons, the earnings
+// pill — still read through the 64 % / 82 % tints (the "$0.00" was
+// legible under the banner). Only the tint can hide those, so every glass
+// that floats over the map wears it: the sheets, the banner, the nav panel
+// and the nav intro.
+const glassSheetTint = Color(0xE61A1A21); // ~90 %
 const glassTintLight = Color(0xB3FFFFFF);
-// The OPEN sheet stays glass (owner 2026-10-31: "estilo vidrio borroso,
-// pero que no se vea los botones del mapa ni la flecha detrás") — a denser
-// tint and a much heavier blur, so the arrow under it dissolves into the
-// frost instead of the sheet turning a flat grey.
-const glassSheetOpenTint = Color(0xD11A1A21); // ~82 %
+// The OPEN sheet (owner 2026-10-31: "estilo vidrio borroso, pero que no se
+// vea los botones del mapa ni la flecha detrás") a step denser still.
+const glassSheetOpenTint = Color(0xF01A1A21); // ~94 %
 const kGlassSheetBlurOpen = 44.0;
 // Map controls: translucent grey with depth instead of blur.
 const mapChipTint = Color(0xB81E1E26); // ~72 %
 const glassEdge = Color(0x24FFFFFF); // hairline, white 14 %
-const kGlassSheetBlur = 24.0;
+const kGlassSheetBlur = 44.0; // the open sheet's frost, resting too
 
 /// Cards and wells INSIDE a glass surface — the drop-in for [neuBox] there.
 /// An opaque neu card on glass reads as a grey slab again; this one is a

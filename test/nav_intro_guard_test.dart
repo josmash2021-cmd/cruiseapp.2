@@ -97,10 +97,14 @@ void main() {
     // "el fondo debe ser de vidrio borroso sin que se vea nada atrás": the
     // open-sheet frost over the nav map loading underneath.
     expect(intro, contains('backgroundColor: Colors.transparent'));
-    // "que se vea como vidrio borroso y debajo el mapa": the sheet's glass,
+    // "que se vea como vidrio borroso y debajo el mapa": the OPEN sheet's
+    // glass ("se ve muy transparente… hazlo borroso y un poquito oscuro"),
     // and the fade drives blur + tint (an Opacity would blind the backdrop).
-    expect(intro, contains('blur: kGlassSheetBlur * t,'));
-    expect(intro, contains('tint: glassSheetTint.withValues(alpha: glassSheetTint.a * t),'));
+    expect(intro, contains('blur: kGlassSheetBlurOpen * t,'));
+    expect(intro, contains('tint: glassSheetOpenTint.withValues(\n'
+        '                alpha: glassSheetOpenTint.a * t),'));
+    expect(intro, isNot(contains('blur: kGlassSheetBlur * t,')),
+        reason: 'the resting sheet glass let the trip screen read through');
     // "en vez de que se quite hacia un lado debe de desaparecer": no slide.
     expect(intro, contains('transitionsBuilder: (_, __, ___, child) => child,'));
     expect(intro, contains('opaque: false,'));

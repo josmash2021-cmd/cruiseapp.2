@@ -877,6 +877,20 @@ void main() {
       expect(nav, isNot(contains('_chasePitch = 55.0')));
     });
 
+    test('tapping the maneuver box unfolds the trip guide; its X folds it '
+        '(owner design 2026-11-02)', () {
+      expect(nav.contains('setState(() => _guideOpen = true);'), isTrue);
+      expect(nav.contains('setState(() => _guideOpen = false);'), isTrue);
+      final guide = bodyOf(nav, 'Widget _buildGuide(S s) {', maxLen: 2600);
+      expect(guide.contains('nav.steps[j - 1].distanceMeters'), isTrue,
+          reason: 'each row shows the distance from the turn before');
+      expect(guide.contains('s.navStopOf(first)'), isTrue,
+          reason: 'a mid-route arrive step is the stop');
+      expect(nav.contains('constraints: BoxConstraints(maxHeight: maxH * 0.62)'),
+          isTrue,
+          reason: 'it unfolds only as far as the list — the map stays below');
+    });
+
     test('Contactar opens the chat straight away, with the unread count '
         '(owner design 2026-11-02)', () {
       expect(nav.contains('onOpenChat: widget.onOpenChat,'), isTrue);

@@ -453,6 +453,9 @@ class DriverNavViewState extends State<DriverNavView>
   String _thenType = '';
   String _thenModifier = '';
   String _maneuverDistLabel = '';
+  // The trip guide (owner design 2026-11-02): the maneuver box unfolds
+  // into every turn left on the leg; its X folds it back.
+  bool _guideOpen = false;
   String _instructionLabel = '';
   String _maneuverType = 'depart';
   String _maneuverModifier = '';
@@ -2968,7 +2971,24 @@ class DriverNavViewState extends State<DriverNavView>
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildManeuverBar(s),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 750),
+                curve: const Cubic(0.32, 0.72, 0, 1),
+                alignment: Alignment.topCenter,
+                child: _guideOpen && !_endRouteVisible
+                    ? _buildGuide(s)
+                    : GestureDetector(
+                        onTap: _endRouteVisible ||
+                                _navProgress == null ||
+                                !_navProgress!.hasSteps
+                            ? null
+                            : () {
+                                HapticService.lightImpact();
+                                setState(() => _guideOpen = true);
+                              },
+                        child: _buildManeuverBar(s),
+                      ),
+              ),
               if (_navPhase == _NavPhase.rerouting)
                 _buildNavPill(s.navRerouting, spinner: true),
               if (_offlineKeepRoute)
@@ -3400,6 +3420,158 @@ class DriverNavViewState extends State<DriverNavView>
                 ),
         ),
       ],
+    );
+  }
+
+  /// The trip guide (owner design 2026-11-02, Lyft layout in Cruise gold):
+  /// the turn coming up on top in gold glass, then every turn left on the
+  /// leg with the distance from the one before, ending at the pickup, the
+  /// stop or the destination. The X folds it back onto the map; it only
+  /// unfolds as far as the list is long, so the map stays below.
+  Widget _buildGuide(S s) {
+    final nav = _navProgress;
+    final cur = nav?.current;
+    if (nav == null || cur == null) return _buildManeuverBar(s);
+    final idx = nav.steps.indexOf(cur);
+    final first = widget.riderName.trim().split(' ').first;
+    final rows = <Widget>[];
+    for (var j = idx + 1; j < nav.steps.length; j++) {
+      final st = nav.steps[j];
+      final last = j == nav.steps.length - 1;
+      final isArrive = st.maneuverType == 'arrive';
+      final title = !isArrive
+          ? (st.name.isNotEmpty ? st.name : st.instruction)
+          : (last
+              ? (widget.toPickup
+                  ? s.navPickUpName(first)
+                  : s.navDropOffName(first))
+              : s.navStopOf(first));
+      final sub = !isArrive
+          ? ''
+          : (last
+              ? (widget.toPickup ? widget.pickupAddress : widget.dropoffAddress)
+              : widget.stopLabel);
+      rows.add(Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+                isArrive
+                    ? Icons.location_on_rounded
+                    : _maneuverIcon(st.maneuverType, st.modifier),
+                color: Colors.white,
+                size: 30),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600)),
+                  if (sub.isNotEmpty)
+                    Text(sub,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            // From the turn before: Mapbox's step distance runs from its
+            // maneuver to the next one.
+            Text(_fmtDist(nav.steps[j - 1].distanceMeters, s),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.62),
+                    fontSize: 15)),
+          ],
+        ),
+      ));
+    }
+    final maxH = MediaQuery.maybeOf(context)?.size.height ?? 800;
+    return GlassSurface(
+      key: const ValueKey('nav-guide'),
+      blur: kGlassSheetBlurOpen,
+      tint: glassSheetOpenTint,
+      borderRadius: BorderRadius.circular(16),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH * 0.62),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // The turn coming up, in gold; the X goes back to the map.
+              Container(
+                color: _gold.withValues(alpha: 0.9),
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 64,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(_maneuverIcon(_maneuverType, _maneuverModifier),
+                              color: const Color(0xFF141414), size: 40),
+                          Text(_maneuverDistLabel,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.fade,
+                              style: const TextStyle(
+                                  color: Color(0xFF141414),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        cur.name.isNotEmpty ? cur.name : cur.instruction,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Color(0xFF141414),
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        HapticService.lightImpact();
+                        setState(() => _guideOpen = false);
+                      },
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF141414).withValues(alpha: 0.16),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close_rounded,
+                            color: Color(0xFF141414), size: 22),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ...rows,
+            ],
+          ),
+        ),
+      ),
     );
   }
 

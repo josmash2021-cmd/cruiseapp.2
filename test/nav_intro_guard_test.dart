@@ -23,9 +23,9 @@ void main() {
         reason: 'no pickup-phase gate');
     expect(body.contains('toPickup != false'), isFalse,
         reason: 'no leg gate — dropoff legs see it too');
-    expect(body.contains('NavIntroScreen()'), isTrue);
+    expect(body.contains('NavIntroScreen.route()'), isTrue);
     expect(body.indexOf('_navEntering = true'),
-        lessThan(body.indexOf('NavIntroScreen()')),
+        lessThan(body.indexOf('NavIntroScreen.route()')),
         reason: 'the re-entry guard goes up BEFORE the push — no stacked '
             'intros from a double-tap');
   });
@@ -97,8 +97,13 @@ void main() {
     // "el fondo debe ser de vidrio borroso sin que se vea nada atrás": the
     // open-sheet frost over the nav map loading underneath.
     expect(intro, contains('backgroundColor: Colors.transparent'));
-    expect(intro, contains('blur: kGlassSheetBlurOpen'));
-    expect(intro, contains('tint: glassSheetOpenTint'));
+    // "que se vea como vidrio borroso y debajo el mapa": the sheet's glass,
+    // and the fade drives blur + tint (an Opacity would blind the backdrop).
+    expect(intro, contains('blur: kGlassSheetBlur * t,'));
+    expect(intro, contains('tint: glassSheetTint.withValues(alpha: glassSheetTint.a * t),'));
+    // "en vez de que se quite hacia un lado debe de desaparecer": no slide.
+    expect(intro, contains('transitionsBuilder: (_, __, ___, child) => child,'));
+    expect(intro, contains('opaque: false,'));
     expect(intro, contains('return const AspectRatio(aspectRatio: _heroAspect);'),
         reason: 'while loading the slot is empty, not the drawn card');
     final feature = intro.substring(intro.indexOf('Widget _feature('));
@@ -108,9 +113,9 @@ void main() {
         .readAsStringSync()
         .replaceAll('\r\n', '\n');
     expect(accept, contains('unawaited(NavIntroScreen.precacheHero(context));'));
-    expect(accept, contains('slideFromRightRoute(const NavIntroScreen(), opaque: false),'),
-        reason: 'the trip screen stays laid out so the nav map is created '
-            'under the intro');
+    expect(accept, contains('unawaited(Navigator.of(context).push(NavIntroScreen.route()));'),
+        reason: 'pushed without waiting; the route is not opaque so the nav '
+            'map is created under the intro');
     expect(accept, isNot(contains('await Navigator.of(context).push(\n      slideFromRightRoute(const NavIntroScreen()')),
         reason: 'the handoff no longer waits for the intro to close');
   });

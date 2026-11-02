@@ -943,12 +943,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // get started abrirá el mapa de navegación ya cargado, no así oscuro"):
     // the handoff below used to start only after the pop, so "Get started"
     // landed on a dark fade while the map loaded. Now it runs while the
-    // driver reads the page, and the pop slides the intro off a ready map.
-    // Not opaque, so this screen stays laid out underneath — a platform view
-    // that is never laid out is never created on Android.
-    unawaited(Navigator.of(context).push(
-      slideFromRightRoute(const NavIntroScreen(), opaque: false),
-    ));
+    // driver reads the page, and the intro fades off a ready map
+    // (NavIntroScreen.route() is not opaque so this screen stays laid out).
+    unawaited(Navigator.of(context).push(NavIntroScreen.route()));
     // Let the intro finish sliding in before the map work starts under it.
     await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted) {

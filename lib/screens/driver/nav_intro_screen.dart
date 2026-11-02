@@ -27,116 +27,139 @@ class NavIntroScreen extends StatelessWidget {
   static Future<void> precacheHero(BuildContext context) =>
       precacheImage(NetworkImage(_heroUrl), context, onError: (_, __) {});
 
+  /// Not opaque — the trip screen stays laid out underneath, so the nav map
+  /// is created and loads behind the page (a platform view that is never
+  /// laid out is never created on Android). No slide (owner 2026-11-02: "en
+  /// vez de que se quite hacia un lado debe de desaparecer"): the page fades
+  /// itself in and out in [build].
+  static Route<void> route() => PageRouteBuilder<void>(
+        opaque: false,
+        transitionDuration: const Duration(milliseconds: 320),
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, __, ___) => const NavIntroScreen(),
+        transitionsBuilder: (_, __, ___, child) => child,
+      );
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
+    final anim = ModalRoute.of(context)?.animation ?? kAlwaysCompleteAnimation;
     // Frosted glass over the nav map loading underneath (owner 2026-11-02:
-    // "el fondo debe ser de vidrio borroso sin que se vea nada atrás") — the
-    // open-sheet frost: heavy blur and a dense tint, so only a soft glow of
-    // the map comes through, never its streets or the arrow.
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: GlassSurface(
-        blur: kGlassSheetBlurOpen,
-        tint: glassSheetOpenTint,
-        border: const Border(),
-        width: double.infinity,
-        height: double.infinity,
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 26),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Spacer(flex: 2),
-                // The design's own hero art (user spec 2026-10-10: "esta página
-                // debe tener esta imagen de esta foto"). Served from the
-                // backend because Shorebird patches never carry new assets;
-                // the code-drawn card below stays as the failure stand-in so
-                // the page never renders broken. While it loads the slot is
-                // EMPTY (2026-11-02): the drawn card showing first and the art
-                // fading over it read as a different icon appearing behind.
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(28),
-                  child: Image.network(
-                    _heroUrl,
-                    fit: BoxFit.fitWidth,
-                    // Same rule as the update gate (2026-10-10): warm cache
-                    // paints with the page; a late frame fades, never pops.
-                    frameBuilder: (context, child, frame, wasSync) {
-                      if (wasSync) return child;
-                      if (frame == null) {
-                        return const AspectRatio(aspectRatio: _heroAspect);
-                      }
-                      return TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0, end: 1),
-                        duration: const Duration(milliseconds: 320),
-                        curve: Curves.easeOut,
-                        builder: (_, v, c) => Opacity(opacity: v, child: c),
-                        child: child,
-                      );
-                    },
-                    errorBuilder: (context, error, stack) =>
-                        const _RouteIllustration(),
-                  ),
+    // "que se vea como vidrio borroso y debajo el mapa"): the sheet's glass,
+    // so the map shows through as soft blurred colour, never readable. The
+    // fade drives the blur and the tint themselves — an Opacity around a
+    // BackdropFilter blinds it to the map, and the glass would pop to a flat
+    // tint the moment the page started to fade.
+    return AnimatedBuilder(
+      animation: anim,
+      builder: (context, content) {
+        final t = Curves.easeOut.transform(anim.value);
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: GlassSurface(
+            blur: kGlassSheetBlur * t,
+            tint: glassSheetTint.withValues(alpha: glassSheetTint.a * t),
+            border: const Border(),
+            width: double.infinity,
+            height: double.infinity,
+            child: Opacity(opacity: t, child: content),
+          ),
+        );
+      },
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 26),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Spacer(flex: 2),
+              // The design's own hero art (user spec 2026-10-10: "esta página
+              // debe tener esta imagen de esta foto"). Served from the
+              // backend because Shorebird patches never carry new assets;
+              // the code-drawn card below stays as the failure stand-in so
+              // the page never renders broken. While it loads the slot is
+              // EMPTY (2026-11-02): the drawn card showing first and the art
+              // fading over it read as a different icon appearing behind.
+              ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: Image.network(
+                  _heroUrl,
+                  fit: BoxFit.fitWidth,
+                  // Same rule as the update gate (2026-10-10): warm cache
+                  // paints with the page; a late frame fades, never pops.
+                  frameBuilder: (context, child, frame, wasSync) {
+                    if (wasSync) return child;
+                    if (frame == null) {
+                      return const AspectRatio(aspectRatio: _heroAspect);
+                    }
+                    return TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 320),
+                      curve: Curves.easeOut,
+                      builder: (_, v, c) => Opacity(opacity: v, child: c),
+                      child: child,
+                    );
+                  },
+                  errorBuilder: (context, error, stack) =>
+                      const _RouteIllustration(),
                 ),
-                const SizedBox(height: 34),
-                Text(
-                  s.navIntroTitle,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
+              ),
+              const SizedBox(height: 34),
+              Text(
+                s.navIntroTitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
                 ),
-                const SizedBox(height: 28),
-                _feature(
-                  Icons.route_rounded,
-                  s.navIntroDirectionsTitle,
-                  s.navIntroDirectionsBody,
-                ),
-                const SizedBox(height: 18),
-                _feature(
-                  // notifications_outlined / bar_chart_rounded, not
-                  // notifications_active_outlined / traffic_rounded: OTA
-                  // patches can only use glyphs that shipped in the store
-                  // build's icon font — those two rendered as "?" boxes.
-                  Icons.notifications_outlined,
-                  s.navIntroRideTitle,
-                  s.navIntroRideBody,
-                ),
-                const SizedBox(height: 18),
-                _feature(
-                  Icons.bar_chart_rounded,
-                  s.navIntroInsightsTitle,
-                  s.navIntroInsightsBody,
-                ),
-                const Spacer(flex: 3),
-                SizedBox(
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _gold,
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
+              ),
+              const SizedBox(height: 28),
+              _feature(
+                Icons.route_rounded,
+                s.navIntroDirectionsTitle,
+                s.navIntroDirectionsBody,
+              ),
+              const SizedBox(height: 18),
+              _feature(
+                // notifications_outlined / bar_chart_rounded, not
+                // notifications_active_outlined / traffic_rounded: OTA
+                // patches can only use glyphs that shipped in the store
+                // build's icon font — those two rendered as "?" boxes.
+                Icons.notifications_outlined,
+                s.navIntroRideTitle,
+                s.navIntroRideBody,
+              ),
+              const SizedBox(height: 18),
+              _feature(
+                Icons.bar_chart_rounded,
+                s.navIntroInsightsTitle,
+                s.navIntroInsightsBody,
+              ),
+              const Spacer(flex: 3),
+              SizedBox(
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
                     ),
-                    child: Text(
-                      s.navIntroStart,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
+                  ),
+                  child: Text(
+                    s.navIntroStart,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-                const SizedBox(height: 30),
-              ],
-            ),
+              ),
+              const SizedBox(height: 30),
+            ],
           ),
         ),
       ),

@@ -73,6 +73,79 @@ class FlatMapProjection {
     return Offset(viewport.width / 2 + dx, viewport.height / 2 + dy);
   }
 
+  /// The flat, north-up camera that puts every one of [points] inside the
+  /// part of [viewport] left clear by the insets — the offer route above
+  /// the offer card (owner report 2026-11-02, "no se ve la ruta completa").
+  ///
+  /// Worked out here rather than by `cameraForCoordinatesPadding`: on the
+  /// phone that fit left the route running down under the card, and how
+  /// the native call combines its insets with the padding the map already
+  /// carries is not something this code can see or test. This is the map's
+  /// own Web Mercator, pinned by tests, and the returned camera is meant to
+  /// be applied with ZERO map padding.
+  ///
+  /// Null when the clear window has no room or a point is not finite.
+  static ({LatLng center, double zoom})? fitFlat({
+    required List<LatLng> points,
+    required Size viewport,
+    double top = 0,
+    double left = 0,
+    double bottom = 0,
+    double right = 0,
+    double maxZoom = 22,
+  }) {
+    if (points.isEmpty) return null;
+    final w = viewport.width - left - right;
+    final h = viewport.height - top - bottom;
+    if (!w.isFinite || !h.isFinite || w <= 0 || h <= 0) return null;
+
+    // Normalised Mercator, 0..1 across the world (multiply by worldSize).
+    double u(double lng) => (lng + 180.0) / 360.0;
+    double v(double lat) {
+      final clamped = lat.clamp(-85.05112878, 85.05112878);
+      final s = math.sin(clamped * math.pi / 180.0);
+      return 0.5 - math.log((1 + s) / (1 - s)) / (4 * math.pi);
+    }
+
+    var minU = double.infinity, maxU = -double.infinity;
+    var minV = double.infinity, maxV = -double.infinity;
+    for (final p in points) {
+      if (!p.latitude.isFinite || !p.longitude.isFinite) return null;
+      final pu = u(p.longitude), pv = v(p.latitude);
+      minU = math.min(minU, pu);
+      maxU = math.max(maxU, pu);
+      minV = math.min(minV, pv);
+      maxV = math.max(maxV, pv);
+    }
+
+    final du = (maxU - minU) * tileSize;
+    final dv = (maxV - minV) * tileSize;
+    var zoom = maxZoom;
+    if (du > 0 || dv > 0) {
+      final scale = math.min(
+        du > 0 ? w / du : double.infinity,
+        dv > 0 ? h / dv : double.infinity,
+      );
+      zoom = math.log(scale) / math.ln2;
+    }
+    if (!zoom.isFinite) return null;
+    zoom = zoom.clamp(0.0, maxZoom).toDouble();
+
+    // The camera centre is what lands mid-viewport; the box's centre has to
+    // land mid-WINDOW instead, so shift by the gap between the two.
+    final worldSize = tileSize * math.pow(2.0, zoom).toDouble();
+    final shiftX = (left + w / 2) - viewport.width / 2;
+    final shiftY = (top + h / 2) - viewport.height / 2;
+    final cu = (minU + maxU) / 2 - shiftX / worldSize;
+    final cv = (minV + maxV) / 2 - shiftY / worldSize;
+    final lat = math.atan(_sinh(math.pi * (1 - 2 * cv))) * 180.0 / math.pi;
+    final lng = cu * 360.0 - 180.0;
+    if (!lat.isFinite || !lng.isFinite) return null;
+    return (center: LatLng(lat, lng), zoom: zoom);
+  }
+
+  static double _sinh(double x) => (math.exp(x) - math.exp(-x)) / 2;
+
   /// Whether [offset] is close enough to the viewport to be worth drawing.
   ///
   /// [margin] keeps a marker that is only half off the edge visible instead

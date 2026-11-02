@@ -662,6 +662,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// font — on web a few points per row — and every point lands as an
   /// overflow stripe across the addresses and the Accept button.
   final Map<String, double> _offerCardHeights = {};
+
+  /// The whole offer block at the bottom (header, card, Accept pill, inset)
+  /// — the offer route is framed above its measured height.
+  final GlobalKey _offerBlockKey = GlobalKey(debugLabel: 'offer-block');
   bool _isAcceptPressed = false;
 
   // ── Smooth route draw ──
@@ -2818,13 +2822,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 bottom: _phase == _Phase.searching ? 0 : _mapBottomPadding,
                 left: 0,
                 right: 0,
-                child: _rideOfferCards(
-                  isDark,
-                  card,
-                  textPrimary,
-                  textMuted,
-                  borderC,
-                  shadowC,
+                child: KeyedSubtree(
+                  key: _offerBlockKey,
+                  child: _rideOfferCards(
+                    isDark,
+                    card,
+                    textPrimary,
+                    textMuted,
+                    borderC,
+                    shadowC,
+                  ),
                 ),
               ),
 

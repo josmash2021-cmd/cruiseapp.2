@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show Offset, Size;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -205,6 +206,101 @@ void main() {
         ),
         isNull,
       );
+    });
+  });
+
+  // Owner report 2026-11-02, "no se ve la ruta completa": the offer route
+  // ran down under the offer card. The fit is now our own arithmetic.
+  group('fitFlat', () {
+    const phone = Size(390, 844);
+    const top = 111.0, bottom = 522.0, side = 60.0;
+    // The test trip in the screenshot: driver north of Pelham, pickup on
+    // Pelham Park Blvd, a stop on Pelham Pkwy, drop-off at the amphitheater.
+    const route = [
+      LatLng(33.3432, -86.7838),
+      LatLng(33.2905, -86.8012),
+      LatLng(33.2961, -86.7965),
+      LatLng(33.3329, -86.7431),
+    ];
+
+    Offset at(LatLng p, ({LatLng center, double zoom}) fit) =>
+        FlatMapProjection.screenOffsetFlat(
+          target: p,
+          cameraCenter: fit.center,
+          zoom: fit.zoom,
+          bearingDeg: 0,
+          pitchDeg: 0,
+          viewport: phone,
+        )!;
+
+    test('every point lands inside the window above the card', () {
+      final fit = FlatMapProjection.fitFlat(
+        points: route,
+        viewport: phone,
+        top: top,
+        left: side,
+        bottom: bottom,
+        right: side,
+        maxZoom: 15.5,
+      )!;
+      var minY = double.infinity, maxY = -double.infinity;
+      for (final p in route) {
+        final o = at(p, fit);
+        expect(o.dx, inInclusiveRange(side - 0.5, phone.width - side + 0.5));
+        expect(o.dy,
+            inInclusiveRange(top - 0.5, phone.height - bottom + 0.5));
+        minY = math.min(minY, o.dy);
+        maxY = math.max(maxY, o.dy);
+      }
+      // Centred in the window, not in the screen.
+      expect((minY + maxY) / 2,
+          closeTo(top + (phone.height - top - bottom) / 2, 0.5));
+    });
+
+    test('the tighter side fills the window — no needless zoom-out', () {
+      final fit = FlatMapProjection.fitFlat(
+        points: route,
+        viewport: phone,
+        top: top,
+        left: side,
+        bottom: bottom,
+        right: side,
+      )!;
+      final xs = [for (final p in route) at(p, fit).dx];
+      final ys = [for (final p in route) at(p, fit).dy];
+      final spanX = xs.reduce(math.max) - xs.reduce(math.min);
+      final spanY = ys.reduce(math.max) - ys.reduce(math.min);
+      final fillsX = (spanX - (phone.width - 2 * side)).abs() < 0.5;
+      final fillsY = (spanY - (phone.height - top - bottom)).abs() < 0.5;
+      expect(fillsX || fillsY, isTrue);
+    });
+
+    test('two points a block apart stop at the cap, centred in the window',
+        () {
+      const a = LatLng(33.2900, -86.8000);
+      const b = LatLng(33.2902, -86.8001);
+      final fit = FlatMapProjection.fitFlat(
+        points: const [a, b],
+        viewport: phone,
+        top: top,
+        bottom: bottom,
+        maxZoom: 15.5,
+      )!;
+      expect(fit.zoom, 15.5);
+      final mid = (at(a, fit) + at(b, fit)) / 2;
+      expect(mid.dx, closeTo(phone.width / 2, 0.5));
+      expect(mid.dy, closeTo(top + (phone.height - top - bottom) / 2, 0.5));
+    });
+
+    test('no room or a broken point gives no camera', () {
+      expect(
+          FlatMapProjection.fitFlat(
+              points: route, viewport: phone, top: 500, bottom: 400),
+          isNull);
+      expect(
+          FlatMapProjection.fitFlat(
+              points: const [LatLng(double.nan, -86.8)], viewport: phone),
+          isNull);
     });
   });
 }

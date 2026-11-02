@@ -979,21 +979,33 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final botPad = MediaQuery.of(context).padding.bottom;
     final topPad = MediaQuery.of(context).padding.top;
     final hasCard = _pendingOffers.isNotEmpty || _previewingOffer != null;
-    // The card's real height plus its header, so the route is framed in
-    // the strip of map that is actually visible above it. 340 was a guess
-    // from when the card was shorter.
-    //
-    // The header is the drag handle + "N Viaje(s) disponible(s)" row, the
-    // dots row appears when more than one offer is stacked, and botPad is
-    // the full system-nav inset the card itself now clears on Android.
-    // Reserve what the column really occupies: less, and the framed pickup
-    // pin lands behind the header text (the overlap in the offer photo).
-    var cardArea = hasCard
-        ? _currentOfferCardHeight(context) +
-            56.0 +
-            botPad +
-            (_pendingOffers.length > 1 ? 18.0 : 0.0)
-        : 60.0;
+    // What the offer block really covers, measured: header, card(s), the
+    // Accept pill under each card and the inset under them (owner report
+    // 2026-11-02, "no se ve la ruta completa"). The estimate below left out
+    // the pill and the stop row, and the route ran down under the card.
+    final blockBox =
+        _offerBlockKey.currentContext?.findRenderObject() as RenderBox?;
+    final blockH =
+        blockBox != null && blockBox.hasSize ? blockBox.size.height : null;
+    final blockLift = _phase == _Phase.searching ? 0.0 : _mapBottomPadding;
+    // Before the block has laid out: the card estimate plus the header
+    // (handle + "N Viaje(s) disponible(s)"), the Accept pill row (4 + 54
+    // + 8), the card's own 4 + 4, and botPad — the inset in full, a little
+    // more than the card clears on iOS.
+    // Plus 16 of air, so a pin on the window's bottom edge is not half
+    // under the drag handle.
+    var cardArea = !hasCard
+        ? 60.0
+        : blockH != null
+            ? blockH + blockLift + 16.0
+            : _currentOfferCardHeight(context) +
+                56.0 +
+                66.0 +
+                8.0 +
+                _kOfferCardLift +
+                botPad +
+                blockLift +
+                16.0;
     // Top: status bar + earnings bar (~56) + breathing room
     var topArea = topPad + 80.0;
 
@@ -1006,10 +1018,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // cameraForCoordinatesPadding given more padding than screen does not
     // fail loudly: it hands back a camera that frames nothing.
     //
-    // A third of the screen is kept for the route. The card still covers
-    // what it covers — this only stops the *camera* from pretending the
-    // strip is smaller than a third, which zooms the route down to
-    // nothing to satisfy a box it cannot fit in anyway.
+    // A quarter of the screen is kept for the route (a third until
+    // 2026-11-02: once the Accept pill and the stop row were counted, a
+    // third trimmed 50 pt off the card reservation on a 6.1" phone and the
+    // route slid under the header again). The card still covers what it
+    // covers — this only stops the *camera* from pretending the strip is
+    // smaller than that, which zooms the route down to nothing to satisfy a
+    // box it cannot fit in anyway.
     //
     // The trim eats the top allowance first: shaving the card reservation
     // frames content where the card actually is, which is exactly the
@@ -1017,7 +1032,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // card area only gives once the top is down to its minimum — a phone
     // so short the card genuinely cannot fit any other way.
     final screenH = MediaQuery.of(context).size.height;
-    final maxInsets = screenH * 0.65;
+    final maxInsets = screenH * 0.75;
     if (topArea + cardArea > maxInsets) {
       final excess = topArea + cardArea - maxInsets;
       final minTop = topPad + 30.0;
@@ -1042,30 +1057,35 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
     if (_map == null) return;
-    final coords = points
-        .map((p) =>
-            mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
-        .toList();
-    // Preserve current tilt/bearing if cinematic is active
-    final currentPitch = _offerTiltAnim?.value ?? 0.0;
-    final currentBearing = _offerBearingAnim?.value ?? 0.0;
-    try {
-      final cam = await _map!.cameraForCoordinatesPadding(
-        coords,
-        mapbox.CameraOptions(
-          pitch: currentPitch > 1 ? currentPitch : 0,
-          bearing: currentBearing.abs() > 0.5 ? currentBearing : 0,
-        ),
-        mapbox.MbxEdgeInsets(
-            top: topArea, left: 60, bottom: cardArea, right: 60),
-        null,
-        null,
-      );
+    // Flat and north-up, framed by our own Mercator and flown with ZERO map
+    // padding (owner report 2026-11-02: the native fit left the route under
+    // the card). The preview never tilts any more (PHASE 3 is gone), so
+    // there is no pitch or bearing to keep.
+    final fit = FlatMapProjection.fitFlat(
+      points: points,
+      viewport: _onlineMapSize ?? MediaQuery.of(context).size,
+      top: topArea,
+      left: 60,
+      bottom: cardArea,
+      right: 60,
       // A pickup one or two blocks away would frame at street level (17+),
       // a zoom the offer card never needs — cap it at the cruise zoom.
-      if ((cam.zoom ?? 15.5) > 15.5) cam.zoom = 15.5;
+      maxZoom: 15.5,
+    );
+    if (fit == null) return;
+    try {
       if (mounted) {
-        await _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
+        await _map?.flyTo(
+            mapbox.CameraOptions(
+              center: mapbox.Point(
+                  coordinates: mapbox.Position(
+                      fit.center.longitude, fit.center.latitude)),
+              zoom: fit.zoom,
+              bearing: 0,
+              pitch: 0,
+              padding: _kZeroCamPadding,
+            ),
+            mapbox.MapAnimationOptions(duration: 700));
       }
     } catch (e) {
       debugPrint('[DriverOnline] _fitBoundsMulti error: $e');

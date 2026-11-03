@@ -133,10 +133,13 @@ async def test_rate_rejects_non_finite_or_out_of_range_tip(
     rider, token = test_rider
     driver, _ = test_driver
     trip = await _money_trip(db, rider, driver)
+    # Raw body, not json=: httpx refuses to encode NaN/Infinity, so the bad
+    # value never left the test. A buggy client CAN put them on the wire.
+    import json as _json
     response = await client.post(
         f"/trips/{trip.id}/rate",
-        json={"stars": 5, "tip_amount": bad_tip},
-        headers=_headers(token),
+        content=_json.dumps({"stars": 5, "tip_amount": bad_tip}),
+        headers={**_headers(token), "Content-Type": "application/json"},
     )
     assert response.status_code == 400, response.text
     fresh_trip = await _reload(Trip, trip.id)

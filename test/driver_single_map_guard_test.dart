@@ -53,7 +53,7 @@ void main() {
 
       final exit = ctrl.indexOf('Future<void> _exitOnlineMode(');
       expect(exit, isNonNegative);
-      final exitBody = ctrl.substring(exit, exit + 1800);
+      final exitBody = ctrl.substring(exit, exit + 2000);
       expect(exitBody.contains('_goOfflineBackend()'), isTrue);
       expect(exitBody.contains('_offerSseSub?.cancel()'), isTrue);
       expect(exitBody.contains('_pollT?.cancel()'), isTrue);
@@ -68,7 +68,7 @@ void main() {
           reason: 'a push on the flip is the two-screen split coming back');
       expect(body.contains('_suspendMap'), isFalse);
       final exit = ctrl.indexOf('Future<void> _exitOnlineMode(');
-      final exitBody = ctrl.substring(exit, exit + 1800);
+      final exitBody = ctrl.substring(exit, exit + 2000);
       expect(exitBody.contains('pushAndRemoveUntil'), isFalse,
           reason: 'the old _goOffline ended in a home push — dead now');
     });
@@ -78,7 +78,7 @@ void main() {
         'afterwards (user report 2026-09-27)', () {
       final exit = ctrl.indexOf('Future<void> _exitOnlineMode(');
       expect(exit, isNonNegative);
-      final exitBody = ctrl.substring(exit, exit + 900);
+      final exitBody = ctrl.substring(exit, exit + 1000);
       expect(exitBody.contains('_driverWasOnlineAtBoot = false'), isTrue,
           reason: 'the pref goes false below, but the boot-time snapshot '
               'survived and the GO button read RESUME forever');

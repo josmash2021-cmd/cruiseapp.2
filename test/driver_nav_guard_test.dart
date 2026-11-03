@@ -405,7 +405,7 @@ void main() {
       expect(stage.contains('NavPanelStage.approaching'), isTrue);
       expect(nav.contains('_endRouteRaised'), isFalse,
           reason: 'the panel never auto-raises on arrival');
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 9000);
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s, {double fold = 0, Widget? under}) {', maxLen: 9000);
       expect(bar, isNot(contains('widget.onExit()')),
           reason: 'the trip page is gone, so the banner has no X back to it');
       expect(bar, isNot(contains('navEndRoute')));
@@ -415,7 +415,7 @@ void main() {
 
     test('arrived: bar shows the CLIENT ADDRESS, arrow aims at the pin '
         '(user spec 2026-09-19)', () {
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 1700);
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s, {double fold = 0, Widget? under}) {', maxLen: 1700);
       expect(
           bar.contains('final title = _endRouteVisible\n'
               '        ? destName'),
@@ -607,7 +607,7 @@ void main() {
 
     test('the bar announces the full maneuver instruction — freeway exits '
         '(user report: "en el freeway no indica las salidas")', () {
-      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 1800);
+      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s, {double fold = 0, Widget? under}) {', maxLen: 1800);
       expect(body.contains('_instructionLabel'), isTrue,
           reason: '"Take exit 67B on the right onto I-4 W" beats the bare '
               'street name, which says nothing about the exit to take');
@@ -615,7 +615,7 @@ void main() {
 
     test('the freeway exit number rides its own gold chip at the bar\'s '
         'top-right (user spec 2026-09-27, Google-style "exit 157")', () {
-      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 7000);
+      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s, {double fold = 0, Widget? under}) {', maxLen: 7000);
       expect(body.contains('exitLabel'), isTrue);
       expect(body.contains('_maneuverExit.isNotEmpty'), isTrue,
           reason: 'the EXACT number first: Mapbox structured maneuver.exit '
@@ -890,9 +890,9 @@ void main() {
 
     test('tapping the maneuver box unfolds the trip guide; its X folds it '
         '(owner design 2026-11-02)', () {
-      expect(nav.contains('setState(() => _guideOpen = true);'), isTrue);
-      expect(nav.contains('setState(() => _guideOpen = false);'), isTrue);
-      final guide = bodyOf(nav, 'Widget _buildGuide(S s) {', maxLen: 2600);
+      expect(nav.contains('_setGuide(!open);'), isTrue);
+      expect(nav.contains('_setGuide(false);'), isTrue);
+      final guide = bodyOf(nav, 'Widget _buildGuide(S s, double t) {', maxLen: 3400);
       expect(guide.contains('nav.steps[j - 1].distanceMeters'), isTrue,
           reason: 'each row shows the distance from the turn before');
       expect(guide.contains('s.navStopOf(first)'), isTrue,
@@ -989,7 +989,7 @@ void main() {
       expect(nav.contains('_destDistLabel(s)'), isTrue,
           reason: 'the steps-less fallback shows distance-to-destination, '
               'never the title twice');
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 6400);
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s, {double fold = 0, Widget? under}) {', maxLen: 6400);
       expect(bar.contains('size: 48'), isTrue,
           reason: 'the big reference card (user spec 2026-09-19)');
       expect(bar.contains('AnimatedSwitcher('), isTrue,
@@ -1029,8 +1029,48 @@ void main() {
     expect(
         nav,
         contains(
-            'blur: kGlassSheetBlurOpen,\n      tint: glassSheetOpenTint,'));
-    expect(nav, contains('tint: _gold.withValues(alpha: 0.94),'));
+            'blur: kGlassSheetBlurOpen,\n        tint: glassSheetOpenTint,'));
     expect(nav, isNot(contains('tint: _gold.withValues(alpha: 0.62),')));
+  });
+
+  // Owner 2026-11-02: "cuando se abre el cuadro de guía debe de abrirse de
+  // forma smooth y cerrarse también, y así para todo… y la parte amarilla
+  // de la guía debe de verse dorada, no opaco".
+  test('the guide folds both ways; the gold is solid gold', () {
+    final nav = File('lib/screens/driver/driver_nav_view.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    // "No quiero que desaparezca, sino que el cuadro de guía cuando se
+    // cierra se guarda… se ve como que si fuera otro cuadro, el color se
+    // disuelve": the turn box stays as it is on top and the list unfolds
+    // from under it, drawn whole and clipped — nothing fades.
+    expect(nav, contains("key: const ValueKey('nav-guide-fold'),"));
+    expect(nav, contains('CurvedAnimation(parent: _guideCtrl, curve: kSmoothRevealCurve)'));
+    expect(nav, contains('_guideCtrl.reverse();'));
+    expect(nav, contains('under: t > 0 || open ? _buildGuide(s, t) : null,'));
+    final guide = nav.substring(nav.indexOf('Widget _buildGuide(S s, double t) {'));
+    expect(guide.substring(0, 6000), contains('heightFactor: t,'));
+    expect(nav, contains('bottomRight: Radius.circular(14 * (1 - fold)),'));
+    expect(nav, isNot(contains('The turn coming up, in gold; the X goes back')),
+        reason: 'no second, gold-topped box — the turn box IS the top');
+    expect(nav, contains('SmoothReveal(\n              visible: showThen,'));
+    expect(nav, contains('color: kNavGold,'));
+    expect(nav, isNot(contains('kNavGoldFace')),
+        reason: 'flat 2D gold — no gradient, no shadow');
+    // "No se puede quedar la parte dorada": the tab tucks away as the
+    // list unfolds.
+    expect(nav, contains('heightFactor: 1 - fold,'));
+    expect(nav, contains("key: const ValueKey('nav-guide-fold-up'),"));
+    expect(nav, isNot(contains('color: _gold.withValues(alpha: 0.9),')));
+    final panel = File('lib/screens/driver/nav_trip_panel.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    for (final cond in [
+      'visible: widget.queuedCanceled,',
+      'visible: _noShowShown && widget.onNoShow != null,',
+      'visible: !_stopCollapsed,',
+    ]) {
+      expect(panel, contains(cond), reason: 'folds out the way it came in');
+    }
   });
 }

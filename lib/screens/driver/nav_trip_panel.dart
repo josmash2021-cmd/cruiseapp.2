@@ -9,6 +9,8 @@ import 'package:flutter/rendering.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/haptic_service.dart';
 import '../../widgets/glass_style.dart';
+import '../../widgets/morph_box.dart';
+import '../../widgets/smooth_reveal.dart';
 import '../../widgets/verified_avatar.dart';
 
 /// Where the leg stands — it decides what the closed panel carries.
@@ -453,9 +455,9 @@ class _NavTripPanelState extends State<NavTripPanel>
             curve: _glide,
             alignment: Alignment.topCenter,
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 260),
-              switchInCurve: Curves.easeOut,
-              switchOutCurve: Curves.easeIn,
+              duration: kSmoothRevealDuration,
+              switchInCurve: kSmoothRevealCurve,
+              switchOutCurve: kSmoothRevealCurve,
               // The incoming body alone sets the height; the outgoing one
               // fades out without holding the panel tall (it used to, and
               // ghosted over the new one).
@@ -513,7 +515,7 @@ class _NavTripPanelState extends State<NavTripPanel>
                 bottomLeft: corner,
                 bottomRight: corner,
               ),
-              child: _Morph(
+              child: MorphBox(
                 key: const ValueKey('nav-panel-morph'),
                 t: t,
                 fullWidth: fullWidth,
@@ -606,7 +608,9 @@ class _NavTripPanelState extends State<NavTripPanel>
   Widget _hintBubble(S s) {
     return IgnorePointer(
       child: AnimatedOpacity(
-        duration: Duration(milliseconds: _hint ? 450 : 150),
+        // Out as softly as in (owner 2026-11-02: "así como se abre se
+        // cierra smooth").
+        duration: const Duration(milliseconds: 450),
         opacity: _hint ? 1 : 0,
         onEnd: () {
           if (!_hint && mounted) setState(() => _hintDone = true);
@@ -685,36 +689,29 @@ class _NavTripPanelState extends State<NavTripPanel>
       mainAxisSize: MainAxisSize.min,
       children: [
         _handle(),
-        AnimatedSize(
-          duration: _glideDur,
-          curve: _glide,
-          child: AnimatedOpacity(
-            opacity: widget.queuedCanceled ? 1 : 0,
-            duration: const Duration(milliseconds: 400),
-            child: widget.queuedCanceled
-                ? Column(
-                    key: const ValueKey('nav-queued-canceled'),
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                        child: Text(
-                          s.navQueuedRideCanceled,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: _gold,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        height: 1,
-                        margin: const EdgeInsets.symmetric(horizontal: 18),
-                        color: Colors.white.withValues(alpha: 0.12),
-                      ),
-                    ],
-                  )
-                : const SizedBox(width: double.infinity),
+        SmoothReveal(
+          visible: widget.queuedCanceled,
+          child: Column(
+            key: const ValueKey('nav-queued-canceled'),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Text(
+                  s.navQueuedRideCanceled,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _gold,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                height: 1,
+                margin: const EdgeInsets.symmetric(horizontal: 18),
+                color: Colors.white.withValues(alpha: 0.12),
+              ),
+            ],
           ),
         ),
         if (_waiting) _waitRow(s),
@@ -792,30 +789,26 @@ class _NavTripPanelState extends State<NavTripPanel>
         if (stage == NavPanelStage.arrivedDropoff)
           _SlideBar(label: s.navSlideToFinish, onDone: widget.onSlideFinish),
         // The red no-show slider, under a hairline (owner 2026-11-02).
-        AnimatedSize(
-          duration: _glideDur,
-          curve: _glide,
-          child: _noShowShown && widget.onNoShow != null
-              ? Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 14),
-                  padding: const EdgeInsets.only(top: 14),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.10)),
-                    ),
-                  ),
-                  child: _SlideBar(
-                    label: stage == NavPanelStage.waitingStop
-                        ? s.navRiderNoReturn
-                        : s.navRiderNoShow,
-                    sub: s.navSlideToCancelTrip,
-                    danger: true,
-                    inset: false,
-                    onDone: widget.onNoShow!,
-                  ),
-                )
-              : const SizedBox(width: double.infinity),
+        SmoothReveal(
+          visible: _noShowShown && widget.onNoShow != null,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 14),
+            padding: const EdgeInsets.only(top: 14),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+              ),
+            ),
+            child: _SlideBar(
+              label: stage == NavPanelStage.waitingStop
+                  ? s.navRiderNoReturn
+                  : s.navRiderNoShow,
+              sub: s.navSlideToCancelTrip,
+              danger: true,
+              inset: false,
+              onDone: widget.onNoShow ?? () {},
+            ),
+          ),
         ),
       ],
     );
@@ -1126,18 +1119,15 @@ class _NavTripPanelState extends State<NavTripPanel>
                   line: true,
                 ),
                 if (widget.hasStop)
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 320),
-                    curve: _glide,
-                    child: _stopCollapsed
-                        ? const SizedBox(width: double.infinity)
-                        : _stepRow(
-                            lead: _pinDisc(),
-                            done: widget.stopDone,
-                            title: s.navStopOf(_firstName),
-                            lines: [widget.stopLabel],
-                            line: true,
-                          ),
+                  SmoothReveal(
+                    visible: !_stopCollapsed,
+                    child: _stepRow(
+                      lead: _pinDisc(),
+                      done: widget.stopDone,
+                      title: s.navStopOf(_firstName),
+                      lines: [widget.stopLabel],
+                      line: true,
+                    ),
                   ),
                 _stepRow(
                   lead: _photo(44, onTap: () => _setMode(_Mode.profile)),
@@ -1833,154 +1823,6 @@ class _TrianglePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TrianglePainter old) => old.color != color;
-}
-
-/// The panel's one surface: the face and the open body both hang from its
-/// top edge at their natural heights, and it is [t] of the way from the
-/// face's height to the body's, clipping whatever is taller — so the
-/// floating panel itself grows into the open sheet under the finger.
-class _Morph extends MultiChildRenderObjectWidget {
-  const _Morph({
-    super.key,
-    required this.t,
-    required this.fullWidth,
-    required this.inset,
-    required this.onSizes,
-    required super.children,
-  });
-
-  final double t;
-
-  /// The panel's width once open (edge to edge), and its side margin when
-  /// closed: the face is laid out at its closed width and the body at its
-  /// open width the whole way, centred — so neither re-wraps while the
-  /// margins glide (the body squeezed into the floating width overflowed).
-  final double fullWidth;
-  final double inset;
-
-  /// Natural heights of the face and the body (null: no body), after the
-  /// frame that changed them.
-  final void Function(double face, double? body) onSizes;
-
-  @override
-  _RenderMorph createRenderObject(BuildContext context) =>
-      _RenderMorph(t, fullWidth, inset, onSizes);
-
-  @override
-  void updateRenderObject(BuildContext context, _RenderMorph renderObject) {
-    renderObject
-      ..t = t
-      ..fullWidth = fullWidth
-      ..inset = inset
-      ..onSizes = onSizes;
-  }
-}
-
-class _MorphData extends ContainerBoxParentData<RenderBox> {}
-
-class _RenderMorph extends RenderBox
-    with
-        ContainerRenderObjectMixin<RenderBox, _MorphData>,
-        RenderBoxContainerDefaultsMixin<RenderBox, _MorphData> {
-  _RenderMorph(this._t, this._fullWidth, this._inset, this.onSizes);
-
-  double _t;
-  set t(double v) {
-    if (v == _t) return;
-    _t = v;
-    markNeedsLayout();
-  }
-
-  double _fullWidth;
-  set fullWidth(double v) {
-    if (v == _fullWidth) return;
-    _fullWidth = v;
-    markNeedsLayout();
-  }
-
-  double _inset;
-  set inset(double v) {
-    if (v == _inset) return;
-    _inset = v;
-    markNeedsLayout();
-  }
-
-  void Function(double face, double? body) onSizes;
-  double? _lastFace;
-  double? _lastBody;
-  final LayerHandle<ClipRectLayer> _clip = LayerHandle<ClipRectLayer>();
-
-  @override
-  void setupParentData(RenderBox child) {
-    if (child.parentData is! _MorphData) child.parentData = _MorphData();
-  }
-
-  // Width fixed, height free: each part is as tall as what it carries (the
-  // whole trip caps itself to the screen and scrolls).
-  double get _faceW => math.max(0.0, _fullWidth - 2 * _inset);
-  BoxConstraints get _faceC => BoxConstraints.tightFor(width: _faceW);
-  BoxConstraints get _bodyC => BoxConstraints.tightFor(width: _fullWidth);
-
-  Size _blend(BoxConstraints c, double face, double? body) =>
-      c.constrain(Size(c.maxWidth, face + ((body ?? face) - face) * _t));
-
-  @override
-  Size computeDryLayout(BoxConstraints constraints) {
-    final face = firstChild;
-    if (face == null) return constraints.smallest;
-    final body = childAfter(face);
-    return _blend(constraints, face.getDryLayout(_faceC).height,
-        body?.getDryLayout(_bodyC).height);
-  }
-
-  @override
-  void performLayout() {
-    final face = firstChild;
-    if (face == null) {
-      size = constraints.smallest;
-      return;
-    }
-    face.layout(_faceC, parentUsesSize: true);
-    final body = childAfter(face);
-    body?.layout(_bodyC, parentUsesSize: true);
-    final f = face.size.height;
-    final b = body?.size.height;
-    size = _blend(constraints, f, b);
-    // Both centred on the panel; whatever is wider than it is clipped.
-    (face.parentData! as _MorphData).offset =
-        Offset((size.width - _faceW) / 2, 0);
-    if (body != null) {
-      (body.parentData! as _MorphData).offset =
-          Offset((size.width - _fullWidth) / 2, 0);
-    }
-    if (f != _lastFace || b != _lastBody) {
-      _lastFace = f;
-      _lastBody = b;
-      // Never call out during layout — the listener may rebuild.
-      WidgetsBinding.instance.addPostFrameCallback((_) => onSizes(f, b));
-    }
-  }
-
-  @override
-  void paint(PaintingContext context, Offset offset) {
-    _clip.layer = context.pushClipRect(
-      needsCompositing,
-      offset,
-      Offset.zero & size,
-      defaultPaint,
-      oldLayer: _clip.layer,
-    );
-  }
-
-  @override
-  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
-      defaultHitTestChildren(result, position: position);
-
-  @override
-  void dispose() {
-    _clip.layer = null;
-    super.dispose();
-  }
 }
 
 /// Reports its child's laid-out height whenever it changes — every frame of

@@ -30,16 +30,30 @@ void main() {
 
   test('color, make, model and plate are never cut', () {
     final card = read('lib/widgets/tracking/driver_info_card.dart');
-    final at = card.indexOf('  Widget _sheetCarColumn() {');
+    expect(card, contains('Widget _sheetCarColumn() => VehicleIdentityColumn('));
+    final shared = read('lib/widgets/tracking/vehicle_identity.dart');
+    final at = shared.indexOf('class VehicleIdentityColumn');
     expect(at, isNonNegative);
-    final label = card.substring(at, card.indexOf('_buildVehicleRender()', at));
+    final label = shared.substring(at);
     expect(label, contains('maxLines: 2,'));
     expect(label, isNot(contains('TextOverflow.ellipsis')));
     // The color is a small square, not a word (owner 2026-11-03).
     expect(label, contains("key: const ValueKey('vehicle-color-swatch'),"));
-    expect(label, contains('if (swatch == null) widget.vehicleColor,'));
+    expect(label, contains('if (swatch == null) colorWord,'));
     expect(card, contains('maxWidth: Responsive.w(165),'));
-    expect(card, contains('fit: BoxFit.scaleDown,'));
+    expect(label, contains('fit: BoxFit.scaleDown,'));
     expect(card, isNot(contains('width: Responsive.w(92),\n                child: Column(')));
+  });
+
+  // Owner 2026-11-03: the driver-arrived screen shows the plate, the color,
+  // "Nombre I." and the car exactly like the sheet.
+  test('the driver-arrived screen shows the driver and car like the sheet', () {
+    final arrival = read('lib/screens/rider_confirm_pickup_screen.dart');
+    expect(arrival, contains('child: _buildDriverCarRow(),'));
+    expect(arrival, contains('nh.shortName(widget.driverName),'));
+    expect(arrival, contains('VehicleIdentityColumn('));
+    expect(arrival, contains('splitVehicleColor(widget.vehicleDesc)'));
+    expect(arrival, isNot(contains('_buildSpecRow()')),
+        reason: 'the LICENSE PLATE / VEHICLE blocks gave way to the sheet row');
   });
 }

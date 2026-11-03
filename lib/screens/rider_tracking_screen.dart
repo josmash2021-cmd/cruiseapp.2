@@ -37,6 +37,7 @@ import '../widgets/offline_banner.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/glass_style.dart';
 import '../widgets/tracking/rider_trip_sheet.dart';
+import '../widgets/tracking/vehicle_identity.dart';
 import '../widgets/ota_image.dart';
 import '../widgets/cancel_reason_sheet.dart';
 import '../utils/mapbox_safe.dart';

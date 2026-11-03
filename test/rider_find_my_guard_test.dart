@@ -398,13 +398,16 @@ void main() {
     });
   });
 
-  group('vehicle color becomes a dot', () {
+  // The dot became the trip sheet's color SQUARE, with the car and the plate
+  // (owner 2026-11-03): one shared piece, vehicle_identity.dart.
+  group('vehicle color becomes a square, like the sheet', () {
     test('the leading color word is parsed off the description', () {
-      expect(src.contains('_parseVehicleColor('), isTrue);
-      expect(src.contains("'dark blue'"), isTrue);
-      final body = bodyOf('Widget _buildSpecRow() {');
-      expect(body.contains('_parseVehicleColor'), isTrue);
-      expect(body.contains('maxLines: 2'), isTrue,
+      final body = bodyOf('Widget _buildDriverCarRow() {');
+      expect(body.contains('splitVehicleColor(widget.vehicleDesc)'), isTrue);
+      final shared =
+          File('lib/widgets/tracking/vehicle_identity.dart').readAsStringSync();
+      expect(shared.contains("'dark blue'"), isTrue);
+      expect(shared.contains('maxLines: 2'), isTrue,
           reason: 'the full vehicle name wraps instead of ellipsizing');
     });
   });

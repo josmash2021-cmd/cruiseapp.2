@@ -28,6 +28,8 @@ import '../widgets/neu_style.dart';
 import '../widgets/glass_notification_banner.dart';
 import '../widgets/static_route_preview.dart';
 import '../widgets/verified_avatar.dart';
+import '../widgets/tracking/vehicle_identity.dart';
+import '../utils/name_helper.dart' as nh;
 import '../l10n/app_localizations.dart';
 import 'chat_screen.dart';
 import 'help_screen.dart';
@@ -806,154 +808,35 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     );
   }
 
-  /// The two centered spec blocks: LICENSE PLATE and VEHICLE.
-  Widget _buildSpecRow() {
-    final plate = widget.vehiclePlate;
-    final (vehicleColor, vehicleName) = _parseVehicleColor(widget.vehicleDesc);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: _spec(
-            S.of(context).licensePlateLabel.toUpperCase(),
-            (plate != null && plate.isNotEmpty) ? plate : '—',
-          ),
-        ),
-        const SizedBox(width: 24),
-        Expanded(
-          child: _spec(
-            S.of(context).vehicleLabel.toUpperCase(),
-            vehicleName,
-            dot: vehicleColor,
-            maxLines: 2,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Leading color words a vehicle description may carry ("Black Chevrolet
-  /// Camaro") mapped to the dot shown instead of the word.
-  static const Map<String, Color> _vehicleColors = {
-    'black': Color(0xFF101013),
-    'white': Color(0xFFF5F5F5),
-    'silver': Color(0xFFC0C0C8),
-    'gray': Color(0xFF8A8A92),
-    'grey': Color(0xFF8A8A92),
-    'red': Color(0xFFDC2626),
-    'blue': Color(0xFF3B82F6),
-    'dark blue': Color(0xFF1E3A8A),
-    'green': Color(0xFF16A34A),
-    'brown': Color(0xFF8B5A2B),
-    'beige': Color(0xFFD8C9A8),
-    'gold': _gold,
-    'yellow': Color(0xFFFACC15),
-    'orange': Color(0xFFF59E0B),
-    'purple': Color(0xFFA855F7),
-  };
-
-  /// Split a leading color word off a vehicle description:
-  /// ("Black Chevrolet Camaro" → (black, "Chevrolet Camaro")). An unknown
-  /// first word keeps the full text and no dot.
-  (Color?, String) _parseVehicleColor(String desc) {
-    final trimmed = desc.trim();
-    if (trimmed.isEmpty) return (null, trimmed);
-    final lower = trimmed.toLowerCase();
-    String? hit;
-    for (final name in _vehicleColors.keys) {
-      if (lower.startsWith('$name ') &&
-          (hit == null || name.length > hit.length)) {
-        hit = name;
-      }
-    }
-    if (hit == null) return (null, trimmed);
-    return (_vehicleColors[hit], trimmed.substring(hit.length).trim());
-  }
-
-  Widget _spec(String label, String value, {Color? dot, int maxLines = 1}) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Poppins',
-            color: Colors.white.withValues(alpha: 0.35),
-            fontSize: 9.5,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1.6,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (dot != null) ...[
-              Container(
-                // Bigger and closer to the name (user spec 2026-09-17).
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: dot,
-                  // The thin light ring is what keeps black and other dark
-                  // paints readable on the dark page.
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.45),
-                    width: 1,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-            ],
-            Flexible(
-              child: Text(
-                value,
-                maxLines: maxLines,
-                overflow: maxLines > 1 ? null : TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Driver info LEFT (gold-ring avatar, name, rating), free-wait badge
-  /// content RIGHT.
-  Widget _buildMetaRow() {
+  /// Photo, "Miguel M." and the rating on the left; the car on the right —
+  /// color square + make and model, the category's car, the plate — the
+  /// same piece the trip sheet shows.
+  Widget _buildDriverCarRow() {
+    final (colorWord, name) = splitVehicleColor(widget.vehicleDesc);
     return Row(
       children: [
         VerifiedAvatar(
           photoUrl: widget.driverPhotoUrl,
           uid: widget.driverId,
           fallbackName: widget.driverName,
-          radius: 23,
+          radius: 26,
           role: 'driver',
           isVerified: true,
         ),
-        const SizedBox(width: 11),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                widget.driverName,
+                nh.shortName(widget.driverName),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontFamily: 'Poppins',
                   color: Colors.white,
-                  fontSize: 14.5,
+                  fontSize: 17,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -962,14 +845,14 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.star_rounded, color: _gold, size: 12),
+                    const Icon(Icons.star_rounded, color: _gold, size: 14),
                     const SizedBox(width: 3),
                     Text(
                       widget.driverRating!.toStringAsFixed(1),
                       style: TextStyle(
                         fontFamily: 'Poppins',
-                        color: Colors.white.withValues(alpha: 0.55),
-                        fontSize: 10.5,
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 13,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -979,8 +862,14 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
             ],
           ),
         ),
-        const SizedBox(width: 12),
-        _buildWaitBlock(),
+        const SizedBox(width: 8),
+        VehicleIdentityColumn(
+          colorWord: colorWord,
+          name: name,
+          plate: widget.vehiclePlate ?? '',
+          asset: vehicleRenderAsset(
+              rideName: widget.rideTier ?? '', model: name),
+        ),
       ],
     );
   }
@@ -2299,16 +2188,22 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           _buildDivider(),
                           SizedBox(height: compact ? 10 : 14),
 
+                          // The driver and the car exactly like the trip sheet
+                          // (owner 2026-11-03): "Nombre I.", the color square,
+                          // make and model, the car, the plate.
                           Padding(
                             padding:
                                 const EdgeInsets.symmetric(horizontal: 24),
-                            child: _buildSpecRow(),
+                            child: _buildDriverCarRow(),
                           ),
                           SizedBox(height: compact ? 10 : 16),
                           Padding(
                             padding:
                                 const EdgeInsets.symmetric(horizontal: 24),
-                            child: _buildMetaRow(),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [_buildWaitBlock()],
+                            ),
                           ),
                           if (_pickupPin != null) ...[
                             SizedBox(height: compact ? 10 : 14),

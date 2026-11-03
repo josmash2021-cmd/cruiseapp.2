@@ -23,27 +23,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   /// Tier first, model as the fallback: rideName carries the tier the
   /// rider actually paid for, and a VIP booking stays a VIP render even
   /// when dispatch sends a differently-named vehicle.
-  String get _vehicleAsset {
-    final rn = widget.rideName.toLowerCase();
-    final m = widget.vehicleModel.toLowerCase();
-    // Electric Pro's own render. Every Image.asset of it falls back to
-    // car_suv.png on older bundles (OTA rule 2026-10-13) — that wiring
-    // lives in [_vehicleImageFallback], used by both render sites.
-    if (rn.contains('electric')) return 'assets/images/car_electric.png';
-    if (rn.contains('vip') || rn.contains('black') ||
-        rn.contains('suv') || rn.contains('suburban') ||
-        m.contains('suburban')) {
-      return 'assets/images/cruisert1.png';
-    }
-    if (rn.contains('sedan') || rn.contains('premium') ||
-        rn.contains('camry') || m.contains('camry')) {
-      return 'assets/images/cruisert2.png';
-    }
-    // comfort / fusion and anything unrecognised. Deliberately NOT in the
-    // branch above: the picker sends the Fusion here too, and the whole
-    // point is that both screens show the rider the same car.
-    return 'assets/images/cruisert3.png';
-  }
+  /// The category's render (shared with the driver-arrived screen).
+  String get _vehicleAsset => vehicleRenderAsset(
+      rideName: widget.rideName, model: widget.vehicleModel);
 
   /// errorBuilder for [_vehicleAsset] renders: the electric PNG is not in
   /// older bundles (Shorebird patches carry no new assets), so it tries the
@@ -154,120 +136,19 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     }
   }
 
-  /// The car's color as a small square (owner 2026-11-03: "el color será un
-  /// cuadrito"), from the color word the driver registered (EN or ES).
-  /// Null when the word is not one we know — the word is shown instead.
-  static Color? _vehicleSwatch(String name) {
-    final n = name.trim().toLowerCase();
-    if (n.isEmpty) return null;
-    const table = <String, Color>{
-      'black': Color(0xFF000000), 'negro': Color(0xFF000000),
-      'white': Color(0xFFFFFFFF), 'blanco': Color(0xFFFFFFFF),
-      'silver': Color(0xFFC0C0C0), 'plata': Color(0xFFC0C0C0),
-      'plateado': Color(0xFFC0C0C0),
-      'gray': Color(0xFF7D7D7D), 'grey': Color(0xFF7D7D7D),
-      'gris': Color(0xFF7D7D7D),
-      'red': Color(0xFFC62828), 'rojo': Color(0xFFC62828),
-      'blue': Color(0xFF1E4FA3), 'azul': Color(0xFF1E4FA3),
-      'navy': Color(0xFF1B2A4A),
-      'green': Color(0xFF2E7D32), 'verde': Color(0xFF2E7D32),
-      'beige': Color(0xFFD9C7A3), 'champagne': Color(0xFFE5D3B3),
-      'brown': Color(0xFF6D4C41), 'marrón': Color(0xFF6D4C41),
-      'marron': Color(0xFF6D4C41), 'café': Color(0xFF6D4C41),
-      'cafe': Color(0xFF6D4C41),
-      'gold': Color(0xFFC9A227), 'dorado': Color(0xFFC9A227),
-      'yellow': Color(0xFFF2C200), 'amarillo': Color(0xFFF2C200),
-      'orange': Color(0xFFEF6C00), 'naranja': Color(0xFFEF6C00),
-      'maroon': Color(0xFF6A1B1A), 'burgundy': Color(0xFF6A1B1A),
-      'vino': Color(0xFF6A1B1A),
-      'purple': Color(0xFF5E35B1), 'morado': Color(0xFF5E35B1),
-    };
-    return table[n] ?? table[n.split(RegExp(r'\s+')).last];
-  }
-
   /// Color square + "Chevrolet Suburban" (no color word when the square
-  /// says it), the category's car render, the plate — whole, never cut.
-  Widget _sheetCarColumn() {
-    final swatch = _vehicleSwatch(widget.vehicleColor);
-    final label = [
-      if (swatch == null) widget.vehicleColor,
-      widget.vehicleMake,
-      widget.vehicleModel,
-    ].where((v) => v.trim().isNotEmpty).join(' ');
-    return ConstrainedBox(
-      constraints: BoxConstraints(
+  /// says it), the category's car render, the plate — whole, never cut. The
+  /// same piece the driver-arrived screen shows (vehicle_identity.dart).
+  Widget _sheetCarColumn() => VehicleIdentityColumn(
+        colorWord: widget.vehicleColor,
+        name: '${widget.vehicleMake} ${widget.vehicleModel}'.trim(),
+        plate: widget.vehiclePlate,
+        asset: _vehicleAsset,
         minWidth: Responsive.w(92),
         maxWidth: Responsive.w(165),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (label.isNotEmpty)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (swatch != null) ...[
-                  Container(
-                    key: const ValueKey('vehicle-color-swatch'),
-                    margin: const EdgeInsets.only(top: 2),
-                    width: 11,
-                    height: 11,
-                    decoration: BoxDecoration(
-                      color: swatch,
-                      borderRadius: BorderRadius.circular(3),
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.4)),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                Flexible(
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.right,
-                    maxLines: 2,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.78),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          const SizedBox(height: 3),
-          _buildVehicleRender(),
-          const SizedBox(height: 3),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(5),
-            ),
-            // One line, whole: a long plate scales down, never cuts.
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                widget.vehiclePlate.isNotEmpty
-                    ? widget.vehiclePlate.toUpperCase()
-                    : '---',
-                maxLines: 1,
-                softWrap: false,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.0,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+        renderWidth: Responsive.w(92),
+        renderHeight: Responsive.h(34),
+      );
 
   /// Photo · "Eduardo R." · ★ 4.9 (· [sub]) · the car.
   Widget _sheetDriverRow({required double avatar, String? sub}) {
@@ -2009,80 +1890,6 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   /// clipBehavior: none — the car is letterboxed edge to edge horizontally,
   /// so a clipping Stack would cut the blur off in a straight line down both
   /// sides, which is the one thing that makes a shadow look fake.
-  Widget _buildVehicleRender() {
-    final h = Responsive.h(34);
-    return SizedBox(
-      height: h,
-      width: Responsive.w(92),
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.center,
-        children: [
-          // Ground pool. A radial gradient in a wide, short box is already
-          // an ellipse with a soft edge, so this needs no blur filter of
-          // its own — it is the cheapest of the three layers.
-          Positioned(
-            left: Responsive.w(6),
-            right: Responsive.w(6),
-            bottom: h * 0.04,
-            height: h * 0.24,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  colors: [
-                    Colors.black.withValues(alpha: 0.55),
-                    Colors.black.withValues(alpha: 0.0),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          // Silhouette: the car's own alpha, tinted black and blurred.
-          // srcIn keeps the shape and throws away the colour.
-          Transform.translate(
-            offset: Offset(0, Responsive.h(2)),
-            child: ImageFiltered(
-              imageFilter: ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-              child: Image.asset(
-                _vehicleAsset,
-                width: double.infinity,
-                height: h,
-                fit: BoxFit.contain,
-                color: Colors.black.withValues(alpha: 0.5),
-                colorBlendMode: BlendMode.srcIn,
-                // No fallback icon here: if the asset is missing the real
-                // image below already draws the icon, and a blurred black
-                // copy of it would sit behind that as a smudge.
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              ),
-            ),
-          ),
-          // The car itself. errorBuilder, not a bare Image.asset: a missing
-          // render must not take the whole card down mid-trip.
-          //
-          // width too, not height alone: the picker renders are wide, so a
-          // height-only constraint left the car floating small against the
-          // right edge. Letterboxed into the full column width it reads as
-          // the same car the rider chose.
-          Image.asset(
-            _vehicleAsset,
-            width: double.infinity,
-            height: h,
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => _vehicleImageFallback(
-              Icon(
-                Icons.directions_car_rounded,
-                color: AppColors.kGold.withValues(alpha: 0.5),
-                size: Responsive.sp(22),
-              ),
-              width: double.infinity,
-              height: h,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// Chat input pill on the rider tracking driver-info card.

@@ -22,7 +22,10 @@ import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
 import '../../services/haptic_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/resilient_position_stream.dart';
 import '../../services/scheduled_board_watcher.dart';
+import '../../utils/driver_location_settings.dart';
+import '../../utils/fix_kinematics.dart';
 import '../../utils/friendly_load_error.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../widgets/gold_location_dot.dart';
@@ -130,6 +133,15 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   final GoldLocationDot _driverDot = GoldLocationDot(heading: true);
   LatLng? _driverPos;
 
+  /// The arrow MOVES on this map too (owner 2026-11-03: "la flecha en esta
+  /// página debe moverse bien, no ser estática"): live fixes through the
+  /// shared driver GPS channel, glided by SmoothMotion, turned by the car's
+  /// own course (no compass — rule 41).
+  ResilientPositionStream? _gps;
+  bool _dotWriteBusy = false;
+  bool _dotWriteAgain = false;
+  bool _dotAlignmentSet = false;
+
   // ── Data state ──
   List<Map<String, dynamic>> _available = [];
   bool _loadingAvail = true;
@@ -206,6 +218,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     _availPollTimer?.cancel();
     _bubbleTap?.cancel();
     _bubblePopTicker?.dispose();
+    unawaited(_gps?.stop());
+    _gps = null;
     _driverDot.dispose();
     _sheetCtrl.dispose();
     super.dispose();
@@ -231,6 +245,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         _bubbleMgr = null;
         _dotMgr = null;
         _dotAnnot = null;
+        _dotAlignmentSet = false;
         _routeMgr = null;
         _routeAnnot = null;
         _dotsEndMgr = null;
@@ -247,6 +262,69 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     }
     setState(() => _mapMounted = true);
     _tryConsumePendingSelect();
+  }
+
+  /// Live position for the arrow. One Android GPS channel is shared by every
+  /// driver screen (rule 33): the same driverLocationSettings as the rest,
+  /// foreground-only here (this page tracks nothing in the background).
+  void _startLiveGps() {
+    if (kIsWeb || _gps != null || !mounted) return;
+    final s = S.of(context);
+    _gps = ResilientPositionStream(
+      label: 'ScheduledMapGps',
+      settings: driverLocationSettings(
+        distanceFilter: 0,
+        notificationTitle: s.driverLocationNotifTitle,
+        notificationText: s.driverLocationNotifOnline,
+        background: false,
+      ),
+      onPosition: (pos) {
+        if (!mounted) return;
+        if (!pos.latitude.isFinite || !pos.longitude.isFinite) return;
+        _driverPos = LatLng(pos.latitude, pos.longitude);
+        if (!_driverDot.isReady || _dotAnnot == null) {
+          unawaited(_syncDriverDot());
+          return;
+        }
+        // Android reports 0/0 when it measured nothing — only real
+        // readings steer the arrow (rule 32).
+        _driverDot.setTarget(
+          pos.latitude,
+          pos.longitude,
+          bearing: measuredCourseDeg(pos),
+          accuracyM: pos.accuracy,
+          timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
+          speedMps: measuredSpeedMps(pos),
+        );
+      },
+    )..start();
+  }
+
+  /// One glide step of the arrow onto the map: position and heading. Paced
+  /// by the dot's own throttle; a write that lands while the previous one is
+  /// in flight is queued, so the LAST position always settles (rule 25).
+  void _onDotTick() {
+    if (!mounted || _selected != null) return;
+    final mgr = _dotMgr;
+    final annot = _dotAnnot;
+    final lat = _driverDot.lat, lng = _driverDot.lng;
+    if (mgr == null || annot == null || lat == null || lng == null) return;
+    if (_dotWriteBusy) {
+      _dotWriteAgain = true;
+      return;
+    }
+    final point = safePoint(lng, lat);
+    if (point == null) return;
+    annot.geometry = point;
+    annot.iconRotate = _driverDot.bearing;
+    _dotWriteBusy = true;
+    mgr.update(annot).catchError((Object _) {}).whenComplete(() {
+      _dotWriteBusy = false;
+      if (_dotWriteAgain) {
+        _dotWriteAgain = false;
+        _onDotTick();
+      }
+    });
   }
 
   /// Last-known GPS wins; a cached trip's pickup is the fallback so the map
@@ -583,11 +661,13 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     final pos = _driverPos;
     if (mgr == null || pos == null || !mounted) return;
     if (!_driverDot.isReady) {
-      // No tick callback needed — the marker does not move on this screen.
-      await _driverDot.build(this, () {});
+      // The tick moves the arrow on the map as it glides (it used to be a
+      // still marker here).
+      await _driverDot.build(this, _onDotTick);
       if (!mounted || !_driverDot.isReady) return;
     }
-    _driverDot.snapTo(pos.latitude, pos.longitude);
+    _driverDot.snapTo(pos.latitude, pos.longitude, bearing: _driverDot.bearing);
+    _startLiveGps();
     final hiRes = _driverDot.currentBytesHiRes;
     final bytes = hiRes ?? _driverDot.currentBytes;
     if (bytes == null) return;
@@ -605,7 +685,19 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
           image: bytes,
           iconSize: iconSize,
           iconAnchor: mapbox.IconAnchor.CENTER,
+          iconRotate: _driverDot.bearing,
         ));
+        // The heading is geographic (0 = north): it turns with the map, not
+        // with the screen.
+        if (!_dotAlignmentSet) {
+          _dotAlignmentSet = true;
+          try {
+            await _map?.style.setStyleLayerProperty(
+                mgr.id, 'icon-rotation-alignment', 'map');
+          } catch (_) {
+            _dotAlignmentSet = false;
+          }
+        }
       }
     } catch (_) {}
   }

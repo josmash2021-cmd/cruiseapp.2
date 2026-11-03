@@ -20,6 +20,8 @@ void main() {
     bool receiving = true,
     bool stopLeg = false,
     bool queuedCanceled = false,
+    double screenH = 844,
+    Widget? mapControls,
   }) {
     return MaterialApp(
       locale: const Locale('es'),
@@ -31,8 +33,8 @@ void main() {
       ],
       supportedLocales: const [Locale('es'), Locale('en')],
       home: MediaQuery(
-        data: const MediaQueryData(
-          size: Size(390, 844),
+        data: MediaQueryData(
+          size: Size(390, screenH),
           padding: EdgeInsets.only(top: 47, bottom: 34),
         ),
         child: Scaffold(
@@ -41,6 +43,7 @@ void main() {
             children: [
               Positioned.fill(
                 child: NavTripPanel(
+                  mapControls: mapControls,
                   etaLabel: '7 min · 2.9 mi',
                   riderName: 'William Smith',
                   riderPhotoUrl: '',
@@ -95,8 +98,8 @@ void main() {
   setUp(calls.clear);
 
   // An iPhone 14/15 screen (390 x 844 pt), not the test's default 800 x 600.
-  void phone(WidgetTester t) {
-    t.view.physicalSize = const Size(390 * 3, 844 * 3);
+  void phone(WidgetTester t, {double h = 844}) {
+    t.view.physicalSize = Size(390 * 3, h * 3);
     t.view.devicePixelRatio = 3;
     addTearDown(t.view.reset);
   }
@@ -225,7 +228,8 @@ void main() {
     expect(find.text('Espera 2:27'), findsOneWidget);
     expect(find.text('Desliza para ir al destino'), findsOneWidget);
     // The knob is what slides.
-    await t.drag(find.byKey(const ValueKey('nav-slide-knob')), const Offset(320, 0));
+    await t.drag(
+        find.byKey(const ValueKey('nav-slide-knob')), const Offset(320, 0));
     await settle(t);
     expect(calls, contains('fromStop'));
     expect(t.takeException(), isNull);
@@ -234,8 +238,8 @@ void main() {
   testWidgets('stop wait over: a swipe up shows "Pasajero no regresó"',
       (t) async {
     phone(t);
-    await t.pumpWidget(host(
-        stage: NavPanelStage.waitingStop, moving: false, waitProgress: 1));
+    await t.pumpWidget(
+        host(stage: NavPanelStage.waitingStop, moving: false, waitProgress: 1));
     await settle(t);
     expect(find.text('Puedes cancelar el viaje o seguir esperando'),
         findsOneWidget);
@@ -248,7 +252,8 @@ void main() {
 
   testWidgets('a cancelled queued ride: the gold line at the top', (t) async {
     phone(t);
-    await t.pumpWidget(host(stage: NavPanelStage.driving, queuedCanceled: true));
+    await t
+        .pumpWidget(host(stage: NavPanelStage.driving, queuedCanceled: true));
     await settle(t);
     expect(find.text('Viaje en cola cancelado'), findsOneWidget);
     await t.pumpWidget(host(stage: NavPanelStage.driving));
@@ -319,5 +324,158 @@ void main() {
     await t.pump(const Duration(milliseconds: 300));
     expect(hint, findsNothing,
         reason: 'faded out, and out of the layout for good');
+  });
+
+  // Owner report 2026-11-02: "cuando se guarda no se guarda fluido y smooth,
+  // se guarda así de golpe; cuando se abre el sheet se abre de golpe y lo
+  // intento deslizar y no se desliza y tampoco se guarda y el contenido del
+  // mapa no se pone borroso" — and photo 3, the whole trip bouncing down
+  // inside its glass instead of closing.
+  group('the sheet', () {
+    // One surface: the floating panel itself grows into the open body
+    // (owner 2026-11-02: "este mismo sheet es el que se debe transformar").
+    double h(WidgetTester t) =>
+        t.getSize(find.byKey(const ValueKey('nav-panel-morph'))).height;
+
+    testWidgets('a swipe up grows the panel itself under the finger',
+        (t) async {
+      phone(t);
+      await t.pumpWidget(host(moving: false));
+      await settle(t);
+      final closed = h(t);
+      final g = await t.startGesture(t.getCenter(find.text('7 min · 2.9 mi')));
+      await g.moveBy(const Offset(0, -30));
+      await g.moveBy(const Offset(0, -120));
+      await t.pump();
+      final mid = h(t);
+      await g.up();
+      await settle(t);
+      final open = h(t);
+      expect(mid, greaterThan(closed + 40),
+          reason: 'part way up, with the finger — not snapped');
+      expect(mid, lessThan(open - 40));
+      expect(find.text('Viaje actual'), findsOneWidget);
+      expect(find.byKey(const ValueKey('nav-panel-morph')), findsOneWidget,
+          reason: 'the same panel, no second sheet over it');
+    });
+
+    testWidgets('a short swipe springs back down', (t) async {
+      phone(t);
+      await t.pumpWidget(host(moving: false));
+      await settle(t);
+      final closed = h(t);
+      final g = await t.startGesture(t.getCenter(find.text('7 min · 2.9 mi')));
+      await g.moveBy(const Offset(0, -20));
+      await g.moveBy(const Offset(0, -15));
+      await g.up();
+      await settle(t);
+      expect(find.text('Viaje actual'), findsNothing);
+      expect(h(t), closeTo(closed, 0.5));
+    });
+
+    testWidgets('it glides open and closed — never in one frame', (t) async {
+      phone(t);
+      await t.pumpWidget(host());
+      await settle(t);
+      final closed = h(t);
+      await t.tap(find.byIcon(Icons.more_vert_rounded));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 60));
+      final opening = h(t);
+      await settle(t);
+      final open = h(t);
+      expect(opening, greaterThan(closed + 2));
+      expect(opening, lessThan(open - 2));
+      await t.tap(find.byIcon(Icons.close_rounded));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 60));
+      final closing = h(t);
+      expect(closing, greaterThan(closed + 2));
+      expect(closing, lessThan(open - 2));
+      await settle(t);
+      expect(find.text('Opciones del viaje'), findsNothing);
+      expect(h(t), closeTo(closed, 0.5));
+    });
+
+    testWidgets('a swipe down on the open sheet puts it away', (t) async {
+      phone(t);
+      await t.pumpWidget(host(moving: false));
+      await settle(t);
+      await t.drag(find.text('7 min · 2.9 mi'), const Offset(0, -160));
+      await settle(t);
+      expect(find.text('Viaje actual'), findsOneWidget);
+      await t.drag(find.text('Viaje actual'), const Offset(0, 220));
+      await settle(t);
+      expect(find.text('Viaje actual'), findsNothing);
+      expect(find.text('7 min · 2.9 mi').hitTestable(), findsOneWidget);
+    });
+
+    testWidgets('taller than the screen: no bounce, a pull down closes it',
+        (t) async {
+      phone(t, h: 560);
+      await t.pumpWidget(host(moving: false, screenH: 560));
+      await settle(t);
+      await t.drag(find.text('7 min · 2.9 mi'), const Offset(0, -160));
+      await settle(t);
+      final pos = t.state<ScrollableState>(find.byType(Scrollable)).position;
+      expect(pos.maxScrollExtent, greaterThan(0),
+          reason: 'the whole trip really scrolls here');
+      expect(pos.physics, isA<ClampingScrollPhysics>());
+      await t.drag(find.text('Viaje actual'), const Offset(0, 220));
+      await settle(t);
+      expect(find.text('Viaje actual'), findsNothing);
+    });
+
+    testWidgets('the whole trip blurs the map; the options do not', (t) async {
+      phone(t);
+      await t.pumpWidget(host(moving: false));
+      await settle(t);
+      await t.drag(find.text('7 min · 2.9 mi'), const Offset(0, -160));
+      await settle(t);
+      expect(find.byKey(const ValueKey('nav-panel-scrim')), findsOneWidget);
+      // A tap on the blurred map puts the sheet away.
+      await t.tapAt(const Offset(195, 24));
+      await settle(t);
+      expect(find.text('Viaje actual'), findsNothing);
+
+      await t.pumpWidget(host());
+      await settle(t);
+      await t.tap(find.byIcon(Icons.more_vert_rounded));
+      await settle(t);
+      expect(find.text('Opciones del viaje'), findsOneWidget);
+      expect(find.byKey(const ValueKey('nav-panel-scrim')), findsNothing,
+          reason: 'driving: the map stays sharp so the arrow can be followed');
+    });
+
+    testWidgets('the map buttons stay sharp and tappable above the blur',
+        (t) async {
+      phone(t);
+      await t.pumpWidget(host(
+        moving: false,
+        mapControls: Stack(children: [
+          Positioned(
+            right: 14,
+            top: 8,
+            child: GestureDetector(
+              key: const ValueKey('map-btn'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => calls.add('safety'),
+              child: const SizedBox(width: 52, height: 52),
+            ),
+          ),
+        ]),
+      ));
+      await settle(t);
+      // The rider's info: a short sheet, the blurred map all around it.
+      await t.tap(find.byKey(const ValueKey('nav-panel-photo')));
+      await settle(t);
+      expect(find.byKey(const ValueKey('nav-panel-scrim')), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('map-btn')));
+      await settle(t);
+      expect(calls, contains('safety'),
+          reason: 'the button sits above the scrim, not under it');
+      expect(find.text('Calificación'), findsOneWidget,
+          reason: 'tapping a map button does not put the sheet away');
+    });
   });
 }

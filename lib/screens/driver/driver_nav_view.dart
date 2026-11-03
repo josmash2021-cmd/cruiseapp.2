@@ -3309,53 +3309,6 @@ class DriverNavViewState extends State<DriverNavView>
             ),
           ),
 
-        // ── Panel-anchored controls: mph and the camera buttons ride the
-        //    panel's top edge (its measured height glides with it). ──
-        Positioned(
-          left: 16,
-          bottom: _panelH + 12,
-          child: _phaseArrived ? const SizedBox.shrink() : _buildSpeedBox(),
-        ),
-        Positioned(
-          right: 14,
-          bottom: _panelH + 12,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Safety and support, one tap away while driving or parked
-              // (owner 2026-11-02): Emergencia 911 sits at the top.
-              if (widget.onSafety != null) ...[
-                _roundMapBtn(
-                  icon: Icons.shield_rounded,
-                  tooltip: s.safetyAndSupport,
-                  onTap: widget.onSafety!,
-                ),
-                const SizedBox(height: 10),
-              ],
-              // The route button (owner 2026-11-02): dot, zigzag, dot —
-              // stood upright — shows the whole route; again, back to the
-              // chase.
-              _roundMapBtn(
-                icon: _overview
-                    ? Icons.navigation_rounded
-                    : Icons.route_rounded,
-                quarterTurns: _overview ? 0 : 1,
-                tooltip: _overview ? s.navRecenter : s.navOverview,
-                onTap: _toggleOverview,
-              ),
-              // Recenter appears only once the driver has taken the camera.
-              if (_camState == _CamState.freeLook && !_overview) ...[
-                const SizedBox(height: 10),
-                _roundMapBtn(
-                  icon: Icons.my_location_rounded,
-                  tooltip: s.navRecenter,
-                  onTap: _recenter,
-                ),
-              ],
-            ],
-          ),
-        ),
-
         // ── Rider stale-fix label, next to the halo ──
         if (_riderLabelPos != null && widget.toPickup)
           Positioned(
@@ -3382,6 +3335,7 @@ class DriverNavViewState extends State<DriverNavView>
         // ── The trip panel (owner design 2026-11-02) ──
         Positioned.fill(
           child: NavTripPanel(
+            mapControls: _panelControls(s),
             etaLabel: _panelEtaLabel(s),
             riderName: widget.riderName,
             riderPhotoUrl: widget.riderPhotoUrl,
@@ -3426,6 +3380,61 @@ class DriverNavViewState extends State<DriverNavView>
               if (!mounted || (h - _panelH).abs() < 0.5) return;
               setState(() => _panelH = h);
             },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The mph box and the camera buttons, riding the panel's top edge (its
+  /// measured height glides with it). Handed to the panel, which lays them
+  /// ABOVE its blurred-map scrim (owner 2026-11-02: "los botones del mapa no
+  /// suben" — under the blur they faded instead of rising with the sheet).
+  Widget _panelControls(S s) {
+    return Stack(
+      children: [
+        Positioned(
+          left: 16,
+          bottom: _panelH + 12,
+          child: _phaseArrived ? const SizedBox.shrink() : _buildSpeedBox(),
+        ),
+        Positioned(
+          right: 14,
+          bottom: _panelH + 12,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Safety and support, one tap away while driving or parked
+              // (owner 2026-11-02): Emergencia 911 sits at the top.
+              if (widget.onSafety != null) ...[
+                _roundMapBtn(
+                  icon: Icons.shield_rounded,
+                  tooltip: s.safetyAndSupport,
+                  onTap: widget.onSafety!,
+                ),
+                const SizedBox(height: 10),
+              ],
+              // The route button (owner 2026-11-02): dot, zigzag, dot —
+              // stood upright — shows the whole route; again, back to the
+              // chase.
+              _roundMapBtn(
+                icon: _overview
+                    ? Icons.navigation_rounded
+                    : Icons.route_rounded,
+                quarterTurns: _overview ? 0 : 1,
+                tooltip: _overview ? s.navRecenter : s.navOverview,
+                onTap: _toggleOverview,
+              ),
+              // Recenter appears only once the driver has taken the camera.
+              if (_camState == _CamState.freeLook && !_overview) ...[
+                const SizedBox(height: 10),
+                _roundMapBtn(
+                  icon: Icons.my_location_rounded,
+                  tooltip: s.navRecenter,
+                  onTap: _recenter,
+                ),
+              ],
+            ],
           ),
         ),
       ],
@@ -3536,9 +3545,11 @@ class DriverNavViewState extends State<DriverNavView>
     // right, and the next turn in a gold-glass "Luego" tab hanging under
     // the box. Arrived: the pin, the client's address and the arrival note.
     final showThen = !_phaseArrived && !_endRouteVisible && _thenText.isNotEmpty;
+    // The open sheet's dark frost (owner 2026-11-02: "el cuadro de guía,
+    // que se vea más borroso el fondo para que no se vea nada detrás").
     final mainBox = GlassSurface(
-      blur: kGlassSheetBlur,
-      tint: glassSheetTint,
+      blur: kGlassSheetBlurOpen,
+      tint: glassSheetOpenTint,
       borderRadius: BorderRadius.only(
         topLeft: const Radius.circular(14),
         topRight: const Radius.circular(14),
@@ -3663,8 +3674,8 @@ class DriverNavViewState extends State<DriverNavView>
               ? const SizedBox.shrink()
               : GlassSurface(
                   key: ValueKey('then_$_thenText$_thenType$_thenModifier'),
-                  blur: kGlassSheetBlur,
-                  tint: _gold.withValues(alpha: 0.62),
+                  blur: kGlassSheetBlurOpen,
+                  tint: _gold.withValues(alpha: 0.94),
                   borderRadius:
                       const BorderRadius.vertical(bottom: Radius.circular(12)),
                   border: Border(

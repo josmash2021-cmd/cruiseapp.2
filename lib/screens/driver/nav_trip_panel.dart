@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -78,6 +81,7 @@ class NavTripPanel extends StatefulWidget {
     this.onNoShow,
     this.onHeightChanged,
     this.onOpenChanged,
+    this.mapControls,
   });
 
   final String etaLabel;
@@ -152,6 +156,11 @@ class NavTripPanel extends StatefulWidget {
   /// Open (options / whole trip / rider info) or closed.
   final ValueChanged<bool>? onOpenChanged;
 
+  /// The map's own buttons (mph, safety, route), positioned against the
+  /// whole screen. Laid between the blurred-map scrim and the panel, so they
+  /// rise with the sheet's top edge sharp instead of fading under the blur.
+  final Widget? mapControls;
+
   @override
   State<NavTripPanel> createState() => _NavTripPanelState();
 }
@@ -161,11 +170,29 @@ enum _Mode { closed, options, full, profile }
 const Color _gold = Color(0xFFE8C547);
 const Color _red = Color(0xFFFF6B6B);
 const Color _ink = Color(0xFF141414);
-// The iOS sheet curve, shared by every open/close/lift of the panel.
+// The iOS sheet curve, shared by every lift of the panel's insides.
 const Cubic _glide = Cubic(0.32, 0.72, 0, 1);
 const Duration _glideDur = Duration(milliseconds: 750);
 
-class _NavTripPanelState extends State<NavTripPanel> {
+/// The open sheet rides a spring (owner report 2026-11-02: "no se guarda
+/// fluido y smooth, se guarda así de golpe… se abre de golpe… lo intento
+/// deslizar y no se desliza"): critically damped, so it settles without
+/// bouncing past the edge, and a release hands it the finger's speed.
+final SpringDescription _sheetSpring =
+    SpringDescription.withDampingRatio(mass: 1, stiffness: 240, ratio: 1);
+
+/// The map behind the whole trip / the rider's info: blurred and dimmed in
+/// step with the sheet (owner 2026-11-02: "el contenido del mapa no se pone
+/// borroso").
+const double _kScrimBlur = 14;
+const double _kScrimDim = 0.34;
+
+/// A drag farther than this (or a flick) commits; less springs back.
+const double _kCommitDrag = 48;
+const double _kCommitSpeed = 300; // px/s
+
+class _NavTripPanelState extends State<NavTripPanel>
+    with SingleTickerProviderStateMixin {
   _Mode _mode = _Mode.closed;
   bool _stopCollapsed = false;
   bool _noShowShown = false;
@@ -175,7 +202,30 @@ class _NavTripPanelState extends State<NavTripPanel> {
   Timer? _hintTimer;
   double _drag = 0;
 
+  /// 0 = the floating face, 1 = the panel grown into the open body
+  /// (options / whole trip / rider's info). The SAME panel transforms
+  /// (owner 2026-11-02: "este mismo sheet es el que se debe transformar"):
+  /// its height, side margins and lower corners follow this value under the
+  /// finger both ways, the face fading out as the body fades in. It used to
+  /// swap its insides in a quarter second while the frame glided, which read
+  /// as a jump, and a scrolling whole trip swallowed the swipe down (it
+  /// bounced instead of closing — the owner's photo 3).
+  late final AnimationController _sheet = AnimationController(vsync: this)
+    ..addStatusListener(_onSheetStatus);
+
+  /// Natural heights of the face and the open body (from [_Morph]); the
+  /// finger's travel is the gap between them.
+  double _faceH = 0;
+  double? _bodyH;
+  double _dragFrom = 0;
+  bool _dragging = false;
+
+  /// Whole trip: how far an overscroll at its top has pulled the sheet down.
+  double _pull = 0;
+
   bool get _open => _mode != _Mode.closed;
+  bool get _scrim => _mode == _Mode.full || _mode == _Mode.profile;
+  double get _travel => math.max(120.0, (_bodyH ?? _faceH + 420) - _faceH);
 
   @override
   void initState() {
@@ -205,17 +255,49 @@ class _NavTripPanelState extends State<NavTripPanel> {
   @override
   void dispose() {
     _hintTimer?.cancel();
+    _sheet.dispose();
     super.dispose();
   }
 
+  void _onSheetStatus(AnimationStatus st) {
+    // All the way down: the sheet's content leaves the tree.
+    if (st == AnimationStatus.dismissed &&
+        !_dragging &&
+        _mode != _Mode.closed &&
+        mounted) {
+      setState(() {
+        _mode = _Mode.closed;
+        _bodyH = null;
+      });
+    }
+  }
+
+  void _settle(bool open, {double velocityPx = 0}) {
+    // Spring units are the sheet's own 0..1; up is positive.
+    final v = -velocityPx / _travel;
+    final sim =
+        SpringSimulation(_sheetSpring, _sheet.value, open ? 1.0 : 0.0, v);
+    if (open) {
+      _sheet.animateWith(sim);
+    } else {
+      _sheet.animateBackWith(sim);
+    }
+  }
+
   void _setMode(_Mode m) {
-    if (m == _mode) return;
-    final wasOpen = _open;
+    if (m == _Mode.closed) {
+      if (!_open) return;
+      widget.onOpenChanged?.call(false);
+      _settle(false);
+      return;
+    }
+    final wasOpen = _open && _sheet.status != AnimationStatus.reverse;
     setState(() {
       _mode = m;
-      if (m != _Mode.closed) _hint = false;
+      _hint = false;
     });
-    if (wasOpen != _open) widget.onOpenChanged?.call(_open);
+    if (!wasOpen) widget.onOpenChanged?.call(true);
+    _settle(true);
   }
 
   bool get _waiting =>
@@ -224,19 +306,25 @@ class _NavTripPanelState extends State<NavTripPanel> {
 
   bool get _waitOver => _waiting && widget.waitProgress >= 1;
 
+  /// What a swipe up on the floating panel raises — null when it reveals
+  /// the no-show slider instead (at the pickup with the wait over, owner
+  /// 2026-11-02), which stays inside the floating panel.
+  _Mode? get _swipeTarget {
+    if (widget.moving) return _Mode.options;
+    if (_waitOver && widget.onNoShow != null && !_noShowShown) return null;
+    return _Mode.full;
+  }
+
   void _openUp() {
     HapticService.lightImpact();
-    if (widget.moving) {
-      _setMode(_Mode.options);
-    } else if (_waitOver && widget.onNoShow != null && !_noShowShown) {
-      // At the pickup with the wait over, a swipe up shows the no-show
-      // slider first (owner 2026-11-02).
+    final target = _swipeTarget;
+    if (target == null) {
       setState(() {
         _noShowShown = true;
         _hint = false;
       });
     } else {
-      _setMode(_Mode.full);
+      _setMode(target);
     }
   }
 
@@ -248,98 +336,268 @@ class _NavTripPanelState extends State<NavTripPanel> {
     _setMode(_Mode.closed);
   }
 
+  // ── Drags ───────────────────────────────────────────────────────────────
+
+  /// The panel follows the finger: up grows the face into the open body,
+  /// down shrinks it back.
+  void _dragStart(DragStartDetails _) {
+    _drag = 0;
+    _dragFrom = _sheet.value;
+    _dragging = true;
+    _sheet.stop();
+  }
+
+  void _dragUpdate(DragUpdateDetails d) {
+    _drag += d.delta.dy;
+    if (!_open) {
+      final target = _swipeTarget;
+      if (target == null || _drag >= 0) return;
+      HapticService.lightImpact();
+      setState(() {
+        _mode = target;
+        _hint = false;
+      });
+      widget.onOpenChanged?.call(true);
+    }
+    _sheet.value = (_dragFrom - _drag / _travel).clamp(0.0, 1.0);
+  }
+
+  void _dragEnd(DragEndDetails d) {
+    _dragging = false;
+    final v = d.primaryVelocity ?? 0;
+    if (!_open) {
+      // Never grew: the no-show reveal (or hiding it again).
+      if (_drag < -_kCommitDrag || v < -_kCommitSpeed) {
+        _openUp();
+      } else if (_drag > 24 || v > _kCommitSpeed) {
+        _close();
+      }
+      return;
+    }
+    final bool open;
+    if (v.abs() > _kCommitSpeed) {
+      open = v < 0;
+    } else if (_dragFrom < 0.5) {
+      open = _drag < -_kCommitDrag;
+    } else {
+      open = _drag <= _kCommitDrag;
+    }
+    if (!open) widget.onOpenChanged?.call(false);
+    _settle(open, velocityPx: v);
+  }
+
+  /// A swipe the system took away (a call, a second finger): the sheet
+  /// goes to whichever end it is nearer, never left hanging half way.
+  void _dragCancel() {
+    _dragging = false;
+    if (!_open) return;
+    if (_sheet.value >= 0.5) {
+      _settle(true);
+    } else {
+      widget.onOpenChanged?.call(false);
+      _settle(false);
+    }
+  }
+
+  void _release(double velocityPx, double pulled) {
+    if (pulled > _kCommitDrag || velocityPx > _kCommitSpeed) {
+      widget.onOpenChanged?.call(false);
+      _settle(false, velocityPx: velocityPx);
+    } else {
+      _settle(true, velocityPx: velocityPx);
+    }
+  }
+
+  /// The whole trip scrolls when it is taller than the screen: at its top a
+  /// pull down moves the sheet instead (clamped physics, so nothing
+  /// bounces), and letting go settles it like any other drag.
+  bool _onFullScroll(ScrollNotification n) {
+    if (n is ScrollStartNotification && n.dragDetails != null) {
+      _pull = 0;
+      _dragging = true;
+      _sheet.stop();
+    } else if (n is OverscrollNotification &&
+        n.dragDetails != null &&
+        n.overscroll < 0) {
+      _pull -= n.overscroll;
+      _sheet.value = (1 - _pull / _travel).clamp(0.0, 1.0);
+    } else if (n is ScrollUpdateNotification &&
+        n.dragDetails != null &&
+        _pull > 0 &&
+        (n.scrollDelta ?? 0) > 0) {
+      // Back up after pulling down: the sheet climbs back first.
+      _pull = math.max(0.0, _pull - n.scrollDelta!);
+      _sheet.value = (1 - _pull / _travel).clamp(0.0, 1.0);
+    } else if (n is ScrollEndNotification && _dragging) {
+      _dragging = false;
+      if (_pull > 0) {
+        _release(n.dragDetails?.primaryVelocity ?? 0, _pull);
+      }
+      _pull = 0;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
     final bottomPad = MediaQuery.maybeOf(context)?.padding.bottom ?? 0;
     final open = _open;
-    final panel = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onVerticalDragStart: (_) => _drag = 0,
-      onVerticalDragUpdate: (d) => _drag += d.delta.dy,
-      onVerticalDragEnd: (d) {
-        final v = d.primaryVelocity ?? 0;
-        if (_drag < -24 || v < -250) {
-          if (!_open) _openUp();
-        } else if (_drag > 24 || v > 250) {
-          _close();
-        }
-      },
-      onTap: () {
-        // Driving, a tap on the closed panel opens the options too.
-        if (!_open && widget.moving) _openUp();
-      },
-      child: AnimatedPadding(
-        duration: _glideDur,
-        curve: _glide,
-        padding: open
-            ? EdgeInsets.zero
-            : EdgeInsets.fromLTRB(8, 0, 8, 8 + bottomPad * 0.5),
-        child: GlassSurface(
-          blur: kGlassSheetBlurOpen,
-          tint: glassSheetOpenTint,
-          borderRadius: open
-              ? const BorderRadius.vertical(top: Radius.circular(30))
-              : BorderRadius.circular(30),
-          border: open ? const Border(top: BorderSide(color: glassEdge)) : null,
+
+    // The open body: sized by what it carries; a switch between options,
+    // the whole trip and the rider's info glides inside it.
+    Widget body() => Padding(
+          padding: EdgeInsets.only(bottom: bottomPad),
           child: AnimatedSize(
             duration: _glideDur,
             curve: _glide,
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: EdgeInsets.only(bottom: open ? bottomPad : 0),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 260),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                layoutBuilder: (cur, prev) => Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [...prev, if (cur != null) cur],
-                ),
-                child: KeyedSubtree(
-                  key: ValueKey(_mode),
-                  child: switch (_mode) {
-                    _Mode.closed => _closedBody(s),
-                    _Mode.options => _optionsBody(s),
-                    _Mode.full => _fullBody(s, context),
-                    _Mode.profile => _profileBody(s),
-                  },
-                ),
+            alignment: Alignment.topCenter,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 260),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              // The incoming body alone sets the height; the outgoing one
+              // fades out without holding the panel tall (it used to, and
+              // ghosted over the new one).
+              layoutBuilder: (cur, prev) => Stack(
+                clipBehavior: Clip.hardEdge,
+                alignment: Alignment.topCenter,
+                children: [
+                  for (final p in prev)
+                    Positioned(left: 0, right: 0, top: 0, child: p),
+                  if (cur != null) cur,
+                ],
+              ),
+              child: KeyedSubtree(
+                key: ValueKey(_mode),
+                child: switch (_mode) {
+                  _Mode.closed => const SizedBox(width: double.infinity),
+                  _Mode.options => _optionsBody(s),
+                  _Mode.full => _fullBody(s, context),
+                  _Mode.profile => _profileBody(s),
+                },
               ),
             ),
           ),
-        ),
-      ),
-    );
+        );
 
-    return Stack(
-      children: [
-        // The rider's info is the one view with a scrim: tap the map to
-        // close it.
-        if (_mode == _Mode.profile)
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: _close,
-              child: const ColoredBox(color: Color(0x38000000)),
+    final fullWidth = MediaQuery.maybeOf(context)?.size.width ?? 390;
+
+    return AnimatedBuilder(
+      animation: _sheet,
+      builder: (context, _) {
+        final t = _sheet.value;
+        final k = 1 - t;
+        final corner = Radius.circular(30 * k);
+        final panel = GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onVerticalDragStart: _dragStart,
+          onVerticalDragUpdate: _dragUpdate,
+          onVerticalDragEnd: _dragEnd,
+          onVerticalDragCancel: _dragCancel,
+          onTap: () {
+            // Driving, a tap on the closed panel opens the options too.
+            if (!_open && widget.moving) _openUp();
+          },
+          // Floating with its margins and round corners when closed; edge to
+          // edge, square at the bottom, when open — every step in between.
+          child: Padding(
+            padding:
+                EdgeInsets.fromLTRB(8 * k, 0, 8 * k, (8 + bottomPad * 0.5) * k),
+            child: GlassSurface(
+              blur: kGlassSheetBlurOpen,
+              tint: glassSheetOpenTint,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(30),
+                topRight: const Radius.circular(30),
+                bottomLeft: corner,
+                bottomRight: corner,
+              ),
+              child: _Morph(
+                key: const ValueKey('nav-panel-morph'),
+                t: t,
+                fullWidth: fullWidth,
+                inset: 8,
+                onSizes: (face, grown) {
+                  if (!mounted) return;
+                  _faceH = face;
+                  _bodyH = grown;
+                },
+                children: [
+                  // The face: fades out over the first part of the way.
+                  IgnorePointer(
+                    ignoring: t > 0.02,
+                    child: Opacity(
+                      opacity: (1 - t / 0.4).clamp(0.0, 1.0),
+                      child: AnimatedSize(
+                        duration: _glideDur,
+                        curve: _glide,
+                        alignment: Alignment.bottomCenter,
+                        child: _closedBody(s),
+                      ),
+                    ),
+                  ),
+                  if (open)
+                    IgnorePointer(
+                      ignoring: t < 0.5,
+                      child: Opacity(
+                        opacity: ((t - 0.3) / 0.5).clamp(0.0, 1.0),
+                        child: body(),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-        Align(
-          alignment: Alignment.bottomCenter,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // The hint is never part of the measured height, and never in
-              // the layout once it is gone or the panel is open — the whole
-              // trip needs every pixel.
-              if (!open && !_hintDone) _hintBubble(s),
-              _HeightReporter(
-                onHeight: (h) => widget.onHeightChanged?.call(h),
-                child: panel,
+        );
+        return Stack(
+          children: [
+            // The whole trip and the rider's info: the map behind goes soft
+            // and dim; a tap on it puts the panel away.
+            if (_scrim && t > 0)
+              Positioned.fill(
+                key: const ValueKey('scrim'),
+                child: GestureDetector(
+                  key: const ValueKey('nav-panel-scrim'),
+                  onTap: _close,
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(
+                        sigmaX: _kScrimBlur * t, sigmaY: _kScrimBlur * t),
+                    child: ColoredBox(
+                        color: Colors.black.withValues(alpha: _kScrimDim * t)),
+                  ),
+                ),
               ),
-            ],
-          ),
-        ),
-      ],
+            // The map's buttons ride the panel's top above the blur.
+            if (widget.mapControls != null)
+              Positioned.fill(
+                key: const ValueKey('controls'),
+                child: widget.mapControls!,
+              ),
+            Align(
+              // Keyed: the scrim comes and goes around it, and an unkeyed
+              // panel would be rebuilt mid-swipe (cancelling it).
+              key: const ValueKey('panel'),
+              alignment: Alignment.bottomCenter,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // The hint is never part of the measured height, and never
+                  // in the layout once it is gone or the panel is open — the
+                  // whole trip needs every pixel.
+                  if (!open && !_hintDone) _hintBubble(s),
+                  _HeightReporter(
+                    onHeight: (h) {
+                      if (mounted) widget.onHeightChanged?.call(h);
+                    },
+                    child: panel,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -790,162 +1048,175 @@ class _NavTripPanelState extends State<NavTripPanel> {
     return ConstrainedBox(
       key: const ValueKey('full'),
       constraints: BoxConstraints(maxHeight: maxH),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(child: _handle()),
-            const SizedBox(height: 6),
-            Row(
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onFullScroll,
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(
+            overscroll: false,
+            physics: const ClampingScrollPhysics(),
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'CRUISE IN RIDE',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
-                          fontSize: 15,
-                          letterSpacing: 0.9,
-                        ),
-                      ),
-                      Text(
-                        s.currentTrip,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 23,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text.rich(
-                        TextSpan(children: [
-                          TextSpan(
-                            text: '\$${widget.fare.toStringAsFixed(2)} ',
-                            style: const TextStyle(
-                                fontSize: 21, fontWeight: FontWeight.w800),
+                Center(child: _handle()),
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'CRUISE IN RIDE',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 15,
+                              letterSpacing: 0.9,
+                            ),
                           ),
-                          TextSpan(text: s.navPlusTips),
-                        ]),
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 19),
+                          Text(
+                            s.currentTrip,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 23,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text.rich(
+                            TextSpan(children: [
+                              TextSpan(
+                                text: '\$${widget.fare.toStringAsFixed(2)} ',
+                                style: const TextStyle(
+                                    fontSize: 21, fontWeight: FontWeight.w800),
+                              ),
+                              TextSpan(text: s.navPlusTips),
+                            ]),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 19),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Support: the headset face the chat already uses, with the
+                    // unread support count (owner 2026-11-02).
+                    _badged(
+                      count: widget.supportUnread,
+                      child: _disc(
+                        size: 50,
+                        child: const Icon(Icons.support_agent_rounded,
+                            color: _gold, size: 28),
+                        onTap: widget.onSupport,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _stepRow(
+                  lead: _photo(44, onTap: () => _setMode(_Mode.profile)),
+                  done: pickupDone,
+                  verified: widget.riderVerified,
+                  title: s.navPickUpName(_firstName),
+                  lines: [widget.pickupAddress, widget.pickupNote.trim()],
+                  acts: pickupActs,
+                  line: true,
+                ),
+                if (widget.hasStop)
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 320),
+                    curve: _glide,
+                    child: _stopCollapsed
+                        ? const SizedBox(width: double.infinity)
+                        : _stepRow(
+                            lead: _pinDisc(),
+                            done: widget.stopDone,
+                            title: s.navStopOf(_firstName),
+                            lines: [widget.stopLabel],
+                            line: true,
+                          ),
+                  ),
+                _stepRow(
+                  lead: _photo(44, onTap: () => _setMode(_Mode.profile)),
+                  done: false,
+                  title: s.navDropOffName(_firstName),
+                  lines: [widget.dropoffAddress, widget.dropoffNote.trim()],
+                  acts: dropActs,
+                  line: false,
+                ),
+                if (widget.hasStop)
+                  GestureDetector(
+                    onTap: () =>
+                        setState(() => _stopCollapsed = !_stopCollapsed),
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 7, bottom: 10),
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            width: 1.5),
+                      ),
+                      child: Icon(
+                        _stopCollapsed
+                            ? Icons.unfold_more_rounded
+                            : Icons.unfold_less_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                _rowDivider(),
+                // "Recibiendo viajes" ⇄ "Te has desconectado" (owner 2026-11-02).
+                _toggleRow(
+                  on: widget.receivingRides,
+                  icon: Icons.directions_car_rounded,
+                  title: widget.receivingRides
+                      ? s.navReceivingRides
+                      : s.navNotReceivingRides,
+                  sub: widget.receivingRides
+                      ? s.navTapToTurnOff
+                      : s.navTapToTurnOn,
+                  onTap: widget.onToggleReceiving,
+                ),
+                _rowDivider(),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    HapticService.lightImpact();
+                    _setMode(_Mode.closed);
+                    widget.onCancelTrip();
+                  },
+                  child: Row(
+                    children: [
+                      _disc(
+                        size: 52,
+                        color: _red.withValues(alpha: 0.16),
+                        child: const Icon(Icons.block_rounded, color: _red),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        s.cancelTrip,
+                        style: const TextStyle(
+                          color: Color(0xFFFF8A8A),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                // Support: the headset face the chat already uses, with the
-                // unread support count (owner 2026-11-02).
-                _badged(
-                  count: widget.supportUnread,
-                  child: _disc(
-                    size: 50,
-                    child: const Icon(Icons.support_agent_rounded,
-                        color: _gold, size: 28),
-                    onTap: widget.onSupport,
-                  ),
-                ),
+                if (slider != null) ...[
+                  const SizedBox(height: 14),
+                  slider,
+                ],
               ],
             ),
-            const SizedBox(height: 12),
-            _stepRow(
-              lead: _photo(44, onTap: () => _setMode(_Mode.profile)),
-              done: pickupDone,
-              verified: widget.riderVerified,
-              title: s.navPickUpName(_firstName),
-              lines: [widget.pickupAddress, widget.pickupNote.trim()],
-              acts: pickupActs,
-              line: true,
-            ),
-            if (widget.hasStop)
-              AnimatedSize(
-                duration: const Duration(milliseconds: 320),
-                curve: _glide,
-                child: _stopCollapsed
-                    ? const SizedBox(width: double.infinity)
-                    : _stepRow(
-                        lead: _pinDisc(),
-                        done: widget.stopDone,
-                        title: s.navStopOf(_firstName),
-                        lines: [widget.stopLabel],
-                        line: true,
-                      ),
-              ),
-            _stepRow(
-              lead: _photo(44, onTap: () => _setMode(_Mode.profile)),
-              done: false,
-              title: s.navDropOffName(_firstName),
-              lines: [widget.dropoffAddress, widget.dropoffNote.trim()],
-              acts: dropActs,
-              line: false,
-            ),
-            if (widget.hasStop)
-              GestureDetector(
-                onTap: () => setState(() => _stopCollapsed = !_stopCollapsed),
-                child: Container(
-                  margin: const EdgeInsets.only(left: 7, bottom: 10),
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.4), width: 1.5),
-                  ),
-                  child: Icon(
-                    _stopCollapsed
-                        ? Icons.unfold_more_rounded
-                        : Icons.unfold_less_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-            _rowDivider(),
-            // "Recibiendo viajes" ⇄ "Te has desconectado" (owner 2026-11-02).
-            _toggleRow(
-              on: widget.receivingRides,
-              icon: Icons.directions_car_rounded,
-              title: widget.receivingRides
-                  ? s.navReceivingRides
-                  : s.navNotReceivingRides,
-              sub: widget.receivingRides ? s.navTapToTurnOff : s.navTapToTurnOn,
-              onTap: widget.onToggleReceiving,
-            ),
-            _rowDivider(),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                HapticService.lightImpact();
-                _setMode(_Mode.closed);
-                widget.onCancelTrip();
-              },
-              child: Row(
-                children: [
-                  _disc(
-                    size: 52,
-                    color: _red.withValues(alpha: 0.16),
-                    child: const Icon(Icons.block_rounded, color: _red),
-                  ),
-                  const SizedBox(width: 16),
-                  Text(
-                    s.cancelTrip,
-                    style: const TextStyle(
-                      color: Color(0xFFFF8A8A),
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (slider != null) ...[
-              const SizedBox(height: 14),
-              slider,
-            ],
-          ],
+          ),
         ),
       ),
     );
@@ -1562,6 +1833,154 @@ class _TrianglePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TrianglePainter old) => old.color != color;
+}
+
+/// The panel's one surface: the face and the open body both hang from its
+/// top edge at their natural heights, and it is [t] of the way from the
+/// face's height to the body's, clipping whatever is taller — so the
+/// floating panel itself grows into the open sheet under the finger.
+class _Morph extends MultiChildRenderObjectWidget {
+  const _Morph({
+    super.key,
+    required this.t,
+    required this.fullWidth,
+    required this.inset,
+    required this.onSizes,
+    required super.children,
+  });
+
+  final double t;
+
+  /// The panel's width once open (edge to edge), and its side margin when
+  /// closed: the face is laid out at its closed width and the body at its
+  /// open width the whole way, centred — so neither re-wraps while the
+  /// margins glide (the body squeezed into the floating width overflowed).
+  final double fullWidth;
+  final double inset;
+
+  /// Natural heights of the face and the body (null: no body), after the
+  /// frame that changed them.
+  final void Function(double face, double? body) onSizes;
+
+  @override
+  _RenderMorph createRenderObject(BuildContext context) =>
+      _RenderMorph(t, fullWidth, inset, onSizes);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderMorph renderObject) {
+    renderObject
+      ..t = t
+      ..fullWidth = fullWidth
+      ..inset = inset
+      ..onSizes = onSizes;
+  }
+}
+
+class _MorphData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderMorph extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _MorphData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _MorphData> {
+  _RenderMorph(this._t, this._fullWidth, this._inset, this.onSizes);
+
+  double _t;
+  set t(double v) {
+    if (v == _t) return;
+    _t = v;
+    markNeedsLayout();
+  }
+
+  double _fullWidth;
+  set fullWidth(double v) {
+    if (v == _fullWidth) return;
+    _fullWidth = v;
+    markNeedsLayout();
+  }
+
+  double _inset;
+  set inset(double v) {
+    if (v == _inset) return;
+    _inset = v;
+    markNeedsLayout();
+  }
+
+  void Function(double face, double? body) onSizes;
+  double? _lastFace;
+  double? _lastBody;
+  final LayerHandle<ClipRectLayer> _clip = LayerHandle<ClipRectLayer>();
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _MorphData) child.parentData = _MorphData();
+  }
+
+  // Width fixed, height free: each part is as tall as what it carries (the
+  // whole trip caps itself to the screen and scrolls).
+  double get _faceW => math.max(0.0, _fullWidth - 2 * _inset);
+  BoxConstraints get _faceC => BoxConstraints.tightFor(width: _faceW);
+  BoxConstraints get _bodyC => BoxConstraints.tightFor(width: _fullWidth);
+
+  Size _blend(BoxConstraints c, double face, double? body) =>
+      c.constrain(Size(c.maxWidth, face + ((body ?? face) - face) * _t));
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final face = firstChild;
+    if (face == null) return constraints.smallest;
+    final body = childAfter(face);
+    return _blend(constraints, face.getDryLayout(_faceC).height,
+        body?.getDryLayout(_bodyC).height);
+  }
+
+  @override
+  void performLayout() {
+    final face = firstChild;
+    if (face == null) {
+      size = constraints.smallest;
+      return;
+    }
+    face.layout(_faceC, parentUsesSize: true);
+    final body = childAfter(face);
+    body?.layout(_bodyC, parentUsesSize: true);
+    final f = face.size.height;
+    final b = body?.size.height;
+    size = _blend(constraints, f, b);
+    // Both centred on the panel; whatever is wider than it is clipped.
+    (face.parentData! as _MorphData).offset =
+        Offset((size.width - _faceW) / 2, 0);
+    if (body != null) {
+      (body.parentData! as _MorphData).offset =
+          Offset((size.width - _fullWidth) / 2, 0);
+    }
+    if (f != _lastFace || b != _lastBody) {
+      _lastFace = f;
+      _lastBody = b;
+      // Never call out during layout — the listener may rebuild.
+      WidgetsBinding.instance.addPostFrameCallback((_) => onSizes(f, b));
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    _clip.layer = context.pushClipRect(
+      needsCompositing,
+      offset,
+      Offset.zero & size,
+      defaultPaint,
+      oldLayer: _clip.layer,
+    );
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+
+  @override
+  void dispose() {
+    _clip.layer = null;
+    super.dispose();
+  }
 }
 
 /// Reports its child's laid-out height whenever it changes — every frame of

@@ -1016,4 +1016,21 @@ void main() {
       expect(panel.contains('s.navDropOffName(_firstName)'), isTrue);
     });
   });
+
+  // Owner 2026-11-02: "los botones del mapa no suben y el cuadro de guía,
+  // que se vea más borroso el fondo para que no se vea nada detrás de él".
+  test('map buttons ride above the blur; the guide box hides the map', () {
+    final nav = File('lib/screens/driver/driver_nav_view.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    expect(nav, contains('mapControls: _panelControls(s),'));
+    final controls = nav.substring(nav.indexOf('Widget _panelControls(S s)'));
+    expect(controls.substring(0, 400), contains('bottom: _panelH + 12,'));
+    expect(
+        nav,
+        contains(
+            'blur: kGlassSheetBlurOpen,\n      tint: glassSheetOpenTint,'));
+    expect(nav, contains('tint: _gold.withValues(alpha: 0.94),'));
+    expect(nav, isNot(contains('tint: _gold.withValues(alpha: 0.62),')));
+  });
 }

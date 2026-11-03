@@ -773,10 +773,12 @@ void main() {
               'road behind him');
       final draw = bodyOf(nav, 'Future<void> _drawFurniture() async {',
           maxLen: 1400);
-      expect(draw.contains('_pointMgr'), isTrue,
-          reason: 'the shared pins manager — viewport-aligned, signs never '
-              'lie down with the chase camera');
-      expect(draw.contains('iconAnchor: mapbox.IconAnchor.CENTER'), isTrue);
+      expect(draw.contains('_signMgr'), isTrue,
+          reason: 'their own viewport-aligned manager — signs never lie down '
+              'with the chase camera, and hide for the overview');
+      expect(draw.contains('iconAnchor: mapbox.IconAnchor.BOTTOM'), isTrue,
+          reason: 'owner 2026-11-02: the upright icon stands ON its corner — '
+              'centred, its lower half read as a light short of the crossing');
       expect(draw.contains('iconSize: 1.35'), isTrue,
           reason: 'user spec 2026-09-19: semaforos un poquito mas grandes — '
               '0.9 read tiny at chase zoom');
@@ -786,7 +788,7 @@ void main() {
       final succeeded =
           bodyOf(nav, 'Future<void> _onRouteFetchSucceeded', maxLen: 2400);
       expect(
-          RegExp(r'_setRouteFurniture\(result\.furniture\)')
+          RegExp(r'_setRouteFurniture\(result\.furniture, crossings: result\.crossings\)')
               .allMatches(succeeded)
               .length,
           greaterThanOrEqualTo(3),
@@ -801,35 +803,58 @@ void main() {
       expect(reroute, greaterThan(bgFill));
       final gate = succeeded.indexOf('> _routeLenM * 0.05', bgFill);
       final setFurniture =
-          succeeded.indexOf('_setRouteFurniture(result.furniture)', bgFill);
+          succeeded.indexOf('_setRouteFurniture(result.furniture', bgFill);
       expect(setFurniture, greaterThan(gate),
           reason: 'identical prefetched geometry must not skip the signs');
       final fill = bodyOf(nav, 'Future<void> _fillSteps(LatLng origin) async {',
           maxLen: 700);
-      expect(fill.contains('_setRouteFurniture(res.furniture)'), isTrue,
+      expect(fill.contains('_setRouteFurniture(res.furniture, crossings: res.crossings)'), isTrue,
           reason: 'the Mapbox steps fill carries the signs too');
     });
 
-    test('stop signs come from OSM, merged deduped and re-armed per route '
-        '(2026-09-25, "no estan apareciendo los stops")', () {
+    test('lights and stops come from the map tiles, on the route only '
+        '(2026-11-02, "no aparecen en el lugar exacto… tampoco los stops")', () {
       final svc = File('lib/services/directions_service.dart')
           .readAsStringSync().replaceAll('\r\n', '\n');
-      expect(svc.contains('fetchOsmStops('), isTrue,
-          reason: 'Mapbox stop_sign coverage is empty on US routes — the '
-              'stops come from Overpass');
-      expect(svc.contains('node["highway"="stop"]'), isTrue);
+      expect(svc, isNot(contains('overpass')),
+          reason: 'the public Overpass server timed out / 502ed — the stops '
+              'silently never came');
+      expect(svc.contains('parseTileSigns('), isTrue);
       final set = bodyOf(nav, 'void _setRouteFurniture(List<NavFurniture>',
-          maxLen: 900);
-      expect(set.contains('_mergeOsmStops()'), isTrue,
-          reason: 'every route fill path merges the OSM stops with the plan');
-      final merge = bodyOf(nav, 'Future<void> _mergeOsmStops() async {',
           maxLen: 1400);
-      expect(merge.contains('_osmStopsSeq'), isTrue,
-          reason: 'a slow Overpass answer must never land on a replaced '
-              'route (reroute / leg flip)');
+      expect(set.contains('_mergeTileSigns()'), isTrue,
+          reason: 'every route fill path reads the tiles for its signs');
+      final merge = bodyOf(nav, 'Future<void> _mergeTileSigns() async {',
+          maxLen: 2600);
+      expect(merge.contains("'composite'"), isTrue);
+      expect(merge.contains("sourceLayerIds: ['road']"), isTrue);
+      expect(merge.contains('> _kSignOnRouteM'), isTrue,
+          reason: 'a side street\'s stop sits metres off the line — it is '
+              'not the route\'s and must not be snapped onto it');
+      expect(nav.contains('static const double _kSignOnRouteM = 4.0;'), isTrue);
+      expect(merge.contains('seq != _tileSignsSeq'), isTrue,
+          reason: 'a read must never land on a replaced route');
       expect(merge.contains('< 30'), isTrue,
-          reason: 'deduped at ~30 m — a light keeps the corner, and two '
-              'stop nodes on one crossing render once');
+          reason: 'deduped at ~30 m in route order');
+      // "¿No aparecerán stops o semáforos en lugares donde no existen?":
+      // only at a crossing or on its near approach, never without them.
+      expect(merge.contains('DirectionsService.signAtCrossing(snapped.s, _crossingS)'),
+          isTrue);
+      expect(merge.contains('_crossingS.isEmpty'), isTrue);
+      final tick = bodyOf(nav, 'void _onDotTick() {', maxLen: 2600);
+      expect(tick.contains('unawaited(_mergeTileSigns());'), isTrue,
+          reason: 're-read as new tiles load along the drive');
+      // "Se ve muy mal la ruta completa con todos esos semáforos… como en
+      // Lyft": their own layer, hidden in the overview and zoomed out.
+      expect(nav.contains("setStyleLayerProperty(lid, 'minzoom', _kSignsMinZoom)"),
+          isTrue);
+      expect(nav.contains('static const double _kSignsMinZoom = 14.5;'), isTrue);
+      final sync = bodyOf(nav, 'Future<void> _syncSignsShown() async {',
+          maxLen: 600);
+      expect(sync.contains('final show = !_overview;'), isTrue);
+      final draw = bodyOf(nav, 'Future<void> _drawFurniture() async {',
+          maxLen: 400);
+      expect(draw.contains('final mgr = _signMgr;'), isTrue);
     });
 
     test('signs snap onto the DRAWN line, never the raw intersection '
@@ -854,11 +879,11 @@ void main() {
 
     test('signs survive the map-surface lifecycle '
         '(2026-09-23, "no aparecen")', () {
-      final revoke = bodyOf(nav, 'onRevoke: () async {', maxLen: 1200);
+      final revoke = bodyOf(nav, 'onRevoke: () async {', maxLen: 1500);
       expect(revoke.contains('for (final sign in _furniture)'), isTrue,
           reason: 'dead annotation handles must be nulled on revoke or the '
               'redraw skips every sign as "already drawn"');
-      final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 2200);
+      final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 3200);
       expect(created.contains('_drawFurniture()'), isTrue,
           reason: 'a surface rebirth — or a route fetch that won the race '
               'against setup — otherwise loses the signs for the session');
@@ -868,7 +893,7 @@ void main() {
   group('user spec 2026-09-16: chase opening, arrow always on, route bearing',
       () {
     test('the driver arrow is created eagerly at map ready', () {
-      final body = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 2600);
+      final body = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 3600);
       expect(body.contains('_updateDriverAnnotation()'), isTrue,
           reason: 'the dot ticker only fires on movement — without the '
               'eager create a parked driver never sees the arrow');
@@ -876,7 +901,7 @@ void main() {
 
     test('opening and route updates snap to the chase pose, never top-down',
         () {
-      final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 3000);
+      final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 4000);
       expect(created.contains('_snapToChasePose();'), isTrue);
       expect(created, isNot(contains('!_firstGpsFix || _overview')),
           reason: 'the top-down fit on open is gone — it belongs to the '
@@ -1002,8 +1027,8 @@ void main() {
       final svc = File('lib/services/directions_service.dart')
           .readAsStringSync().replaceAll('\r\n', '\n');
       expect(
-          svc.contains(
-              'Future<({List<NavStep> steps, List<NavFurniture> furniture})?> getSteps('),
+          svc.contains('List<NavStep> steps,\n        List<NavFurniture> furniture,\n'
+              '        List<LatLng> crossings,\n      })?> getSteps('),
           isTrue,
           reason: 'a race won by Google/OSRM arrives with empty steps — '
               'the bar fell back to a bare "Follow the route" forever '

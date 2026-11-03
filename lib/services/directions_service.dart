@@ -33,8 +33,14 @@ class RouteResult {
     this.durationSeconds,
     this.steps = const [],
     this.furniture = const [],
+    this.crossings = const [],
     this.estimated = false,
   });
+
+  /// Every intersection the route passes through, in route order (Mapbox
+  /// only): a stop sign only counts at or just before one of these, in the
+  /// driver's direction — see [DirectionsService.parseTileSigns].
+  final List<LatLng> crossings;
 
   /// Traffic lights / stop signs along the route, parsed from the Mapbox
   /// Directions intersections (the same data the Navigation SDK uses for
@@ -326,7 +332,12 @@ class DirectionsService {
   /// forever. This fills just the steps — and the traffic-light/stop-sign
   /// furniture riding the same intersections (2026-09-19). Null on any
   /// failure — the caller keeps navigating with no steps.
-  Future<({List<NavStep> steps, List<NavFurniture> furniture})?> getSteps({
+  Future<
+      ({
+        List<NavStep> steps,
+        List<NavFurniture> furniture,
+        List<LatLng> crossings,
+      })?> getSteps({
     required LatLng origin,
     required LatLng destination,
     String? language,
@@ -340,6 +351,7 @@ class DirectionsService {
     return (
       steps: _parseMapboxSteps(route),
       furniture: _parseMapboxFurniture(route),
+      crossings: _parseMapboxCrossings(route),
     );
   }
 
@@ -744,6 +756,7 @@ class DirectionsService {
         durationSeconds: durationSeconds > 0 ? durationSeconds : null,
         steps: _parseMapboxSteps(route),
         furniture: _parseMapboxFurniture(route),
+        crossings: _parseMapboxCrossings(route),
       );
     } catch (_) {
       return null;
@@ -786,61 +799,70 @@ class DirectionsService {
     return out;
   }
 
-  // ── OSM stop signs (user report 2026-09-25, "no estan apareciendo los
-  // stops") ─────────────────────────────────────────────────────────────
-  // Mapbox's `stop_sign` coverage rides OSM's sparse `highway=stop` tagging
-  // and in practice never fires on US routes — the stops come straight from
-  // the source instead: Overpass, nodes tagged highway=stop within 35 m of
-  // the route polyline. Fail-soft everywhere: stops are a nicety, a slow or
-  // rate-limited Overpass must never cost the navigation.
-
-  /// Evenly-spaced subsample of a route polyline, endpoints kept, so the
-  /// Overpass query stays a sane size on long trips.
-  static List<LatLng> decimatePolyline(List<LatLng> pts, {int maxPoints = 80}) {
-    if (pts.length <= maxPoints) return List.of(pts);
-    final step = (pts.length - 1) / (maxPoints - 1);
-    return [for (var i = 0; i < maxPoints; i++) pts[(i * step).round()]];
-  }
-
-  /// The Overpass QL query: highway=stop nodes within 35 m of the polyline
-  /// (around with a coordinate list is a corridor in Overpass).
-  static String buildStopSignQuery(List<LatLng> pts) {
-    final coords =
-        pts.map((p) => '${p.latitude},${p.longitude}').join(',');
-    return '[out:json][timeout:10];'
-        'node["highway"="stop"](around:35,$coords);'
-        'out body;';
-  }
-
-  /// Overpass JSON → stop coordinates, skipping anything malformed.
-  static List<LatLng> parseStopNodes(Map<String, dynamic> json) {
+  /// Every intersection of every leg, in route order, consecutive repeats
+  /// (step N's last = step N+1's first) dropped.
+  List<LatLng> _parseMapboxCrossings(Map<String, dynamic> route) {
     final out = <LatLng>[];
-    for (final e in (json['elements'] as List? ?? const [])) {
-      if (e is! Map) continue;
-      final lat = (e['lat'] as num?)?.toDouble();
-      final lon = (e['lon'] as num?)?.toDouble();
-      if (lat != null && lon != null) out.add(LatLng(lat, lon));
+    for (final leg in route['legs'] as List? ?? const []) {
+      for (final st in (leg as Map?)?['steps'] as List? ?? const []) {
+        if (st is! Map) continue;
+        for (final i in st['intersections'] as List? ?? const []) {
+          final loc = i is Map ? i['location'] as List? : null;
+          if (loc == null || loc.length < 2) continue;
+          final at =
+              LatLng((loc[1] as num).toDouble(), (loc[0] as num).toDouble());
+          if (out.isNotEmpty && _haversineMeters(out.last, at) < 3) continue;
+          out.add(at);
+        }
+      }
     }
     return out;
   }
 
-  /// Stop signs along [pts] from OpenStreetMap. Empty on any failure.
-  Future<List<LatLng>> fetchOsmStops(List<LatLng> pts) async {
-    if (pts.length < 2) return const [];
-    try {
-      final res = await http
-          .post(
-            Uri.parse('https://overpass-api.de/api/interpreter'),
-            body: {'data': buildStopSignQuery(decimatePolyline(pts))},
-          )
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode != 200) return const [];
-      final json = jsonDecode(res.body);
-      if (json is! Map<String, dynamic>) return const [];
-      return parseStopNodes(json);
-    } catch (_) {
-      return const [];
+  /// A sign at arc-length [signS] counts for the driver only at or just
+  /// before a crossing ahead of it — the node on the near approach, or the
+  /// crossing itself (owner 2026-11-02: "¿no aparecerán stops o semáforos en
+  /// lugares donde no existen?"). The far approach's stop, for oncoming
+  /// traffic, lies PAST the crossing and has none within [maxBeforeM].
+  static bool signAtCrossing(double signS, List<double> crossingS,
+      {double maxBeforeM = 30, double slackM = 3}) {
+    for (final c in crossingS) {
+      final d = c - signS;
+      if (d >= -slackM && d <= maxBeforeM) return true;
     }
+    return false;
+  }
+
+  // ── Lights and stops from the map's own tiles (2026-11-02) ───────────────
+  // The Overpass path (2026-09-25) is gone: the public server timed out or
+  // answered 502 more often than not, so the stops silently never came, and
+  // its 35 m corridor pulled in the stop signs of SIDE streets, which were
+  // then snapped onto the route — a stop drawn where the driver has none.
+  // Mapbox Streets v8 already carries the same OSM nodes as `road` points
+  // (class `traffic_signals` / `stop_sign`) in the tiles the map downloads.
+
+  /// Queried tile features → signs, skipping anything that is not a Point
+  /// of class traffic_signals / stop_sign.
+  static List<NavFurniture> parseTileSigns(
+      Iterable<Map<String?, Object?>?> features) {
+    final out = <NavFurniture>[];
+    for (final f in features) {
+      if (f == null) continue;
+      final props = f['properties'];
+      final geom = f['geometry'];
+      if (props is! Map || geom is! Map || geom['type'] != 'Point') continue;
+      final cls = props['class'];
+      if (cls != 'traffic_signals' && cls != 'stop_sign') continue;
+      final c = geom['coordinates'];
+      if (c is! List || c.length < 2) continue;
+      final lon = (c[0] as num?)?.toDouble();
+      final lat = (c[1] as num?)?.toDouble();
+      if (lon == null || lat == null || !lat.isFinite || !lon.isFinite) {
+        continue;
+      }
+      out.add((at: LatLng(lat, lon), isStopSign: cls == 'stop_sign'));
+    }
+    return out;
   }
 
   /// steps[] from every leg of a Mapbox route, as [NavStep]s. A step without

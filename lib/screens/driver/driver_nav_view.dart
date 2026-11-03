@@ -272,6 +272,13 @@ class DriverNavViewState extends State<DriverNavView>
   // down on their side every time the camera turned. _pointMgr keeps the
   // default viewport alignment, so pins stand upright at any bearing.
   mapbox.PointAnnotationManager? _carMgr;
+  // Traffic lights and stop signs get their own layer too (owner 2026-11-02,
+  // "se ve muy mal la ruta completa con todos esos semáforos… como se ve en
+  // Lyft"): it shows only close in — hidden in the route overview and below
+  // [_kSignsMinZoom] — like Lyft and Google, where the overview is clean.
+  mapbox.PointAnnotationManager? _signMgr;
+  static const double _kSignsMinZoom = 14.5;
+  bool? _signsShown;
 
   /// The arrow's drawn position after route projection (user report
   /// 2026-10-02, same "se sale de las líneas" as the online map): each fix's
@@ -874,6 +881,8 @@ class DriverNavViewState extends State<DriverNavView>
         _map = null;
         _polyMgr = null;
         _pointMgr = null;
+        _signMgr = null;
+        _signsShown = null;
         _carMgr = null;
         _circleMgr = null;
         _routeAnnot = null;
@@ -957,6 +966,8 @@ class DriverNavViewState extends State<DriverNavView>
     }
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _pointMgr = await ctrl.annotations.createPointAnnotationManager();
+    // Under the car, over the line.
+    _signMgr = await ctrl.annotations.createPointAnnotationManager();
     _carMgr = await ctrl.annotations.createPointAnnotationManager();
     _circleMgr = await ctrl.annotations.createCircleAnnotationManager();
     try {
@@ -967,6 +978,15 @@ class DriverNavViewState extends State<DriverNavView>
       final lid = _carMgr!.id;
       await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
     } catch (_) {}
+    try {
+      final lid = _signMgr!.id;
+      await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
+      // Zoomed out by hand: gone below the street zoom.
+      await ctrl.style.setStyleLayerProperty(lid, 'minzoom', _kSignsMinZoom);
+      await ctrl.style.setStyleLayerProperty(
+          lid, 'icon-opacity-transition', {'duration': 400, 'delay': 0});
+    } catch (_) {}
+    unawaited(_syncSignsShown());
     // A recreated surface (app backgrounded on Android) loses everything —
     // redraw the route and destination pin from the State that survived.
     await _drawRoute();
@@ -1407,7 +1427,7 @@ class DriverNavViewState extends State<DriverNavView>
           language: Localizations.localeOf(context).languageCode);
       if (!mounted || res == null || res.steps.length < 2) return;
       _navProgress = NavProgress(res.steps);
-      _setRouteFurniture(res.furniture);
+      _setRouteFurniture(res.furniture, crossings: res.crossings);
       _updateManeuvers(_driverLatLng());
     } finally {
       _stepsFilling = false;
@@ -1651,7 +1671,7 @@ class DriverNavViewState extends State<DriverNavView>
         // fill that returns the SAME route — never crossed the 5% gate, and
         // _fillSteps stays parked because the steps already arrived, so the
         // signs silently never drew.
-        _setRouteFurniture(result.furniture);
+        _setRouteFurniture(result.furniture, crossings: result.crossings);
         break;
       case _RouteFetchKind.reroute:
         // Atomic: state first, then ONE annotation update — the old line is
@@ -1662,7 +1682,7 @@ class DriverNavViewState extends State<DriverNavView>
         _navProgress = NavProgress(result.steps);
         await _drawRoute();
         await _drawDestPin();
-        _setRouteFurniture(result.furniture);
+        _setRouteFurniture(result.furniture, crossings: result.crossings);
         break;
       case _RouteFetchKind.initial:
       case _RouteFetchKind.retry:
@@ -1672,7 +1692,7 @@ class DriverNavViewState extends State<DriverNavView>
         _navProgress = NavProgress(result.steps);
         await _drawRoute();
         await _drawDestPin();
-        _setRouteFurniture(result.furniture);
+        _setRouteFurniture(result.furniture, crossings: result.crossings);
         break;
     }
     if (!mounted) return;
@@ -1857,7 +1877,7 @@ class DriverNavViewState extends State<DriverNavView>
     final passed = _furniture.where((e) => e.s < _trimS - 5).toList();
     if (passed.isNotEmpty) {
       _furniture.removeWhere((e) => e.s < _trimS - 5);
-      final mgr = _pointMgr;
+      final mgr = _signMgr;
       for (final sign in passed) {
         final a = sign.annot;
         sign.annot = null;
@@ -1900,8 +1920,22 @@ class DriverNavViewState extends State<DriverNavView>
   /// Swap the traffic-light / stop-sign set for the current route: each
   /// sign's arc-length is measured once so the trim cursor can eat the ones
   /// the driver passes, exactly like the line behind him.
-  void _setRouteFurniture(List<NavFurniture> furniture) {
+  void _setRouteFurniture(List<NavFurniture> furniture,
+      {List<LatLng> crossings = const []}) {
     unawaited(_clearFurniture());
+    // Where the route crosses other roads, as arc-lengths on the drawn line.
+    final cs = <double>[];
+    if (_routePts.length >= 2) {
+      for (final c in crossings) {
+        final snapped = _snapFurniture((at: c, isStopSign: false));
+        if (snapped != null &&
+            RouteSplice.haversineM(snapped.f.at, c) <= 15) {
+          cs.add(snapped.s);
+        }
+      }
+    }
+    cs.sort();
+    _crossingS = cs;
     final signs = <_NavSign>[];
     if (_routePts.length >= 2) {
       for (final f in furniture) {
@@ -1911,36 +1945,91 @@ class DriverNavViewState extends State<DriverNavView>
     }
     _furniture = signs;
     unawaited(_drawFurniture());
-    unawaited(_mergeOsmStops());
+    _tileSignsSeq++;
+    unawaited(_mergeTileSigns());
   }
 
-  /// Sequence token for [_mergeOsmStops]: a slow Overpass answer must never
-  /// land on a route that has since been replaced (reroute / leg flip).
-  int _osmStopsSeq = 0;
+  /// Sequence token for [_mergeTileSigns]: a tile read must never land on
+  /// a route that has since been replaced (reroute / leg flip).
+  int _tileSignsSeq = 0;
+  bool _tileSignsBusy = false;
+  // The route's intersections as arc-lengths (Mapbox steps). Empty = not
+  // known yet: no tile sign is taken on faith without them.
+  List<double> _crossingS = const [];
+  DateTime _lastTileSignsAt = DateTime.fromMillisecondsSinceEpoch(0);
 
-  /// OSM has the stop signs Mapbox lacks (user report 2026-09-25, "no estan
-  /// apareciendo los stops"): fetched along the drawn route, snapped onto
-  /// the line like every other sign, and deduped at ~30 m against the whole
-  /// set — Mapbox stops, lights (a light keeps the corner, same rule as the
-  /// directions parser), and the OSM stops already merged.
-  Future<void> _mergeOsmStops() async {
-    final seq = ++_osmStopsSeq;
-    final pts = _routePts;
-    if (pts.length < 2 || kIsWeb) return;
-    final stops =
-        await DirectionsService(ApiKeys.webServices).fetchOsmStops(pts);
-    if (!mounted || seq != _osmStopsSeq || stops.isEmpty) return;
-    var added = false;
-    for (final at in stops) {
-      final dup =
-          _furniture.any((e) => RouteSplice.haversineM(e.f.at, at) < 30);
-      if (dup) continue;
-      final snapped = _snapFurniture((at: at, isStopSign: true));
-      if (snapped == null) continue;
-      _furniture.add(_NavSign(s: snapped.s, f: snapped.f));
-      added = true;
+  /// How far off the drawn line a tile sign may sit and still be the
+  /// route's own: the node is ON the road the car drives. The stop of a
+  /// side street sits on that street, metres off the line (5.6 m on Pelham
+  /// Pkwy), and a crossing's lights on the other carriageway ~19 m off.
+  static const double _kSignOnRouteM = 4.0;
+
+  /// Lights and stops the map's tiles carry (owner 2026-11-02: "los
+  /// semáforos no aparecen en el lugar exacto donde están y tampoco los
+  /// stops"): read from the tiles already loaded around the car (Mapbox
+  /// Streets `road` points — the OSM nodes themselves), kept only when they
+  /// sit on the route ahead, deduped at ~30 m against the whole set in route
+  /// order. Re-read every few seconds as new tiles come in.
+  Future<void> _mergeTileSigns() async {
+    final map = _map;
+    if (kIsWeb ||
+        map == null ||
+        !_mapMounted ||
+        _tileSignsBusy ||
+        _routePts.length < 2 ||
+        _crossingS.isEmpty) {
+      return;
     }
-    if (added) unawaited(_drawFurniture());
+    _tileSignsBusy = true;
+    _lastTileSignsAt = DateTime.now();
+    final seq = _tileSignsSeq;
+    try {
+      final feats = await map.querySourceFeatures(
+        'composite',
+        mapbox.SourceQueryOptions(
+          sourceLayerIds: ['road'],
+          filter: '["in", ["get", "class"], '
+              '["literal", ["traffic_signals", "stop_sign"]]]',
+        ),
+      );
+      if (!mounted || seq != _tileSignsSeq) return;
+      final fresh = <_NavSign>[];
+      for (final f in DirectionsService.parseTileSigns(
+          feats.map((q) => q?.queriedFeature.feature))) {
+        final snapped = _snapFurniture(f);
+        if (snapped == null) continue;
+        if (RouteSplice.haversineM(snapped.f.at, f.at) > _kSignOnRouteM) {
+          continue; // a side street's sign, or the other carriageway's
+        }
+        if (snapped.s < _trimS - 5) continue; // already behind the car
+        // At a crossing or on its near approach, in the driver's direction;
+        // the far approach's stop is for oncoming traffic.
+        if (!DirectionsService.signAtCrossing(snapped.s, _crossingS)) {
+          continue;
+        }
+        fresh.add(_NavSign(s: snapped.s, f: snapped.f));
+      }
+      // Route order, lights first on a tie: the near approach's node wins
+      // the corner, the far approach's (oncoming traffic) is the dupe.
+      fresh.sort((a, b) {
+        final c = a.s.compareTo(b.s);
+        if (c != 0) return c;
+        return (a.f.isStopSign ? 1 : 0) - (b.f.isStopSign ? 1 : 0);
+      });
+      var added = false;
+      for (final sign in fresh) {
+        final dup = _furniture
+            .any((e) => RouteSplice.haversineM(e.f.at, sign.f.at) < 30);
+        if (dup) continue;
+        _furniture.add(sign);
+        added = true;
+      }
+      if (added) unawaited(_drawFurniture());
+    } catch (e) {
+      debugPrint('[Nav] tile signs read failed: $e');
+    } finally {
+      _tileSignsBusy = false;
+    }
   }
 
   /// Snap a sign onto the DRAWN line (user report 2026-09-23, "los
@@ -1970,7 +2059,7 @@ class DriverNavViewState extends State<DriverNavView>
     // iterated an empty list.
     final old = _furniture;
     _furniture = [];
-    final mgr = _pointMgr;
+    final mgr = _signMgr;
     for (final sign in old) {
       final a = sign.annot;
       sign.annot = null;
@@ -1984,14 +2073,14 @@ class DriverNavViewState extends State<DriverNavView>
 
   Future<void> _drawFurniture() async {
     if (kIsWeb) return;
-    final mgr = _pointMgr;
+    final mgr = _signMgr;
     if (mgr == null || !mounted) return;
     for (final sign in _furniture) {
       if (sign.annot != null) continue;
       final bytes = sign.f.isStopSign
           ? (_stopBytes ??= await _renderStopSignBytes())
           : (_signalBytes ??= await _renderTrafficLightBytes());
-      if (!mounted || _pointMgr != mgr) return;
+      if (!mounted || _signMgr != mgr) return;
       try {
         sign.annot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: mapbox.Point(
@@ -2002,7 +2091,11 @@ class DriverNavViewState extends State<DriverNavView>
           // bytes at the device scale (×3), so 0.9 landed at ~11×18 pt —
           // unreadably small at chase zoom.
           iconSize: 1.35,
-          iconAnchor: mapbox.IconAnchor.CENTER,
+          // Standing ON its corner (owner 2026-11-02, "no aparecen en el
+          // lugar exacto"): centred, the lower half of the upright icon
+          // covered the road before the crossing and, in the tilted chase,
+          // read as a light some metres short of it.
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
         ));
       } catch (_) {
         return; // surface died mid-draw — the next setup recreates
@@ -2425,6 +2518,11 @@ class DriverNavViewState extends State<DriverNavView>
     if (DateTime.now().difference(_lastChaseFrameAt) >
         const Duration(milliseconds: 250)) {
       _snapToChasePose();
+    }
+    // New tiles come in as the car drives: read their lights and stops.
+    if (DateTime.now().difference(_lastTileSignsAt) >
+        const Duration(seconds: 3)) {
+      unawaited(_mergeTileSigns());
     }
     _updateDriverAnnotation();
   }
@@ -2961,6 +3059,7 @@ class DriverNavViewState extends State<DriverNavView>
       _overview = true;
       _camState = _CamState.freeLook;
     });
+    unawaited(_syncSignsShown());
     _syncArrowOwner();
     unawaited(_glideToOverview());
   }
@@ -3124,6 +3223,7 @@ class DriverNavViewState extends State<DriverNavView>
       _overview = false;
       _camState = _CamState.recentering;
     });
+    unawaited(_syncSignsShown());
     _syncArrowOwner();
     _recenterTicker!.start();
   }
@@ -3136,6 +3236,24 @@ class DriverNavViewState extends State<DriverNavView>
       _camState = _CamState.following;
     });
     _syncArrowOwner();
+    unawaited(_syncSignsShown());
+  }
+
+  /// Lights and stops fade out for the route overview and back in for the
+  /// drive (owner 2026-11-02: "como se ve en Lyft") — 0.4 s, on the layer.
+  Future<void> _syncSignsShown() async {
+    final map = _map;
+    final mgr = _signMgr;
+    if (kIsWeb || map == null || mgr == null) return;
+    final show = !_overview;
+    if (_signsShown == show) return;
+    _signsShown = show;
+    try {
+      await map.style
+          .setStyleLayerProperty(mgr.id, 'icon-opacity', show ? 1.0 : 0.0);
+    } catch (_) {
+      _signsShown = null;
+    }
   }
 
   /// One frame of the recenter blend: eased lerp from [_recenterFrom] to the

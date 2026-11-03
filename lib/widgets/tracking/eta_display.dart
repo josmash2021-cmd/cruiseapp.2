@@ -504,7 +504,7 @@ extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
 
   Widget _driverRow(AppColors c) {
     final s = S.of(context);
-    final first = nh.displayName(widget.driverName, widget.rideName);
+    final first = nh.shortName(widget.driverName);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [

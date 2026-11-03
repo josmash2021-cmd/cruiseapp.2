@@ -206,8 +206,10 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // First name + surname initial, "Eduardo R." (owner
+                    // 2026-11-03): the full name ran off the card.
                     Text(
-                      nh.displayName(widget.driverName, widget.rideName),
+                      nh.shortName(widget.driverName),
                       style: TextStyle(color: Colors.white, fontSize: Responsive.sp(15), fontWeight: FontWeight.w700),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -228,8 +230,15 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
               ),
               // Vehicle identity, stacked so the rider can match the car at
               // a glance: model on top, the car itself, plate underneath.
-              SizedBox(
-                width: Responsive.w(92),
+              // As wide as the words need (up to ~45 % of the card), and the
+              // words wrap to a second line instead of being cut — color,
+              // make, model and plate always whole (owner 2026-11-03; it was
+              // a fixed 92 pt column: "Black Chevrolet ...").
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: Responsive.w(92),
+                  maxWidth: Responsive.w(165),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisSize: MainAxisSize.min,
@@ -238,8 +247,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                       Text(
                         vehicleLabel,
                         textAlign: TextAlign.right,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.55),
                           fontSize: Responsive.sp(10),
@@ -260,15 +268,21 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(5),
                       ),
-                      child: Text(
-                        widget.vehiclePlate.isNotEmpty
-                            ? widget.vehiclePlate.toUpperCase()
-                            : '---',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: Responsive.sp(11),
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.0,
+                      // One line, whole: a long plate scales down, never cuts.
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          widget.vehiclePlate.isNotEmpty
+                              ? widget.vehiclePlate.toUpperCase()
+                              : '---',
+                          maxLines: 1,
+                          softWrap: false,
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontSize: Responsive.sp(11),
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.0,
+                          ),
                         ),
                       ),
                     ),
@@ -454,7 +468,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   /// number masking on the rider side. The masked callback flow stays on
   /// the driver's own call button.
   Future<void> _handleCallDriver() async {
-    final name = nh.displayName(widget.driverName, widget.rideName);
+    final name = nh.shortName(widget.driverName);
     final phone = (widget.driverPhone ?? '').trim();
     if (phone.isEmpty) {
       _messenger?.showSnackBar(
@@ -477,7 +491,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   void _handleShareDriverLocation() {
     final lat = _animPos.latitude;
     final lng = _animPos.longitude;
-    final name = nh.displayName(widget.driverName, widget.rideName);
+    final name = nh.shortName(widget.driverName);
 
     if (lat != 0 && lng != 0) {
       // Driver live position known — share live Google Maps link
@@ -1565,7 +1579,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     final h = Responsive.h(34);
     return SizedBox(
       height: h,
-      width: double.infinity,
+      width: Responsive.w(92),
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.center,

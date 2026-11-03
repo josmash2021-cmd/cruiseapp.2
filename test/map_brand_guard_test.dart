@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Owner 2026-11-02: the Mapbox wordmark and the "i" for the credits show on
-/// every map, just above each screen's bottom panel (Mapbox's terms require
-/// the wordmark and do not allow resizing it). They used to be switched off
-/// on every map, and pushed 100 pt off-screen on two of them.
+/// Owner 2026-11-02: the Mapbox wordmark and the "i" for the credits are on
+/// for every map, at the map's bottom edge — under each screen's sheet, and
+/// in navigation in the strip under the floating panel. They used to be
+/// switched off on every map, and pushed 100 pt off-screen on two of them.
 void main() {
   String read(String p) =>
       File(p).readAsStringSync().replaceAll('\r\n', '\n');
@@ -34,26 +34,21 @@ void main() {
         contains("('brand', () => MapBrand.refresh(ctrl)),"));
   });
 
-  test('the marks ride above each screen panel, beside the map buttons', () {
-    expect(read('lib/screens/driver/driver_nav_view.dart'),
-        contains('bottom: _panelRestH.roundToDouble(), left: 16 + 64, right: 14 + 46);'));
-    expect(read('lib/screens/driver/driver_online_screen.dart'),
-        contains('bottom: bottom.roundToDouble(), left: 16 + 44, right: 16 + 44));'));
-    expect(read('lib/screens/driver/scheduled_rides_map_screen.dart'),
-        contains('MapBrand.show(ctrl, bottom: brandBottom, right: 14 + 44)'));
-    expect(read('lib/screens/ride_request_map.dart'),
-        contains('unawaited(MapBrand.show(brandMap, bottom: h));'));
-    expect(read('lib/screens/rider_tracking_screen.dart'),
-        contains('unawaited(MapBrand.show(m, bottom: h));'));
-    for (final p in [
-      'lib/screens/map_picker_screen.dart',
-      'lib/screens/set_pickup_location_screen.dart',
-      'lib/screens/waiting_for_driver_screen.dart',
-    ]) {
-      final src = read(p);
-      expect(src, contains('key: _brandPanelKey,'), reason: p);
-      expect(src, contains('MapBrand.showAbovePanel('), reason: p);
+  test('the marks sit under the sheets; in navigation, under the floating panel',
+      () {
+    // Owner 2026-11-02: "colócalo debajo del sheet" — no per-screen lift
+    // above the panels any more.
+    for (final f in dartFiles('lib')) {
+      final src = read(f.path);
+      expect(src, isNot(contains('showAbovePanel(')), reason: f.path);
+      expect(src, isNot(contains('_syncMapBrand')), reason: f.path);
     }
+    final nav = read('lib/screens/driver/driver_nav_view.dart');
+    expect(nav, contains('final strip = 8 + inset * 0.5;'));
+    expect(nav, contains('bottom: math.max(0.0, (strip - 21) / 2).roundToDouble());'));
+    expect(read('lib/screens/driver/nav_trip_panel.dart'),
+        contains('EdgeInsets.fromLTRB(8 * k, 0, 8 * k, (8 + bottomPad * 0.5) * k),'),
+        reason: 'the strip the marks sit in is this margin');
   });
 
   test('web maps keep the wordmark and the credits', () {

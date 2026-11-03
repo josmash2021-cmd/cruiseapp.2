@@ -48,9 +48,6 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   bool _mapMounted = false;
 
   mapbox.MapboxMap? _mapCtrl;
-
-  /// The bottom panel the Mapbox marks sit just above (MapBrand).
-  final GlobalKey _brandPanelKey = GlobalKey();
   // Web counterpart — GL JS surface behind the kIsWeb guard in build().
   WebMapController? _webMapCtrl;
   String _address = '';
@@ -479,9 +476,6 @@ class _MapPickerScreenState extends State<MapPickerScreen>
         !_confirming &&
         !_addressIsPlaceholder &&
         _address.isNotEmpty;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) MapBrand.showAbovePanel(_mapCtrl, _brandPanelKey);
-    });
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A1128),
@@ -541,7 +535,7 @@ class _MapPickerScreenState extends State<MapPickerScreen>
                     mapbox.ScaleBarSettings(enabled: false));
                 ctrl.compass
                     .updateSettings(mapbox.CompassSettings(enabled: false));
-                MapBrand.showAbovePanel(ctrl, _brandPanelKey);
+                unawaited(MapBrand.show(ctrl));
                 Future.delayed(
                     const Duration(milliseconds: 800), _onCameraIdle);
               },
@@ -609,7 +603,6 @@ class _MapPickerScreenState extends State<MapPickerScreen>
           // the bottom of the screen. Anchored to the three edges instead,
           // rounded only where it meets the map.
           Positioned(
-            key: _brandPanelKey,
             left: 0,
             right: 0,
             bottom: 0,

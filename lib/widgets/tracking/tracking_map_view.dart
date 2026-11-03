@@ -1444,8 +1444,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               ));
               ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
               ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-              _brandBottom = null;
-              _syncMapBrand();
+              unawaited(MapBrand.show(ctrl));
               // Every await here is a chance for the screen to go away —
               // the rider pops back, the trip completes and pushes rating,
               // the OS destroys the surface on background. Continuing past

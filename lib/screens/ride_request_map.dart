@@ -1954,9 +1954,6 @@ extension _RideRequestMap on _RideRequestScreenState {
   void _onSheetHeightChanged(double h) {
     if (!mounted || (h - _sheetHeightPx).abs() < 12) return;
     _setState(() => _sheetHeightPx = h);
-    // The Mapbox marks ride just above the sheet.
-    final brandMap = _mapCtrl;
-    if (brandMap != null) unawaited(MapBrand.show(brandMap, bottom: h));
     _sheetFitDebounce?.cancel();
     _sheetFitDebounce = Timer(const Duration(milliseconds: 450), () {
       if (!mounted) return;

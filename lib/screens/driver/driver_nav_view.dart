@@ -3655,8 +3655,6 @@ class DriverNavViewState extends State<DriverNavView>
             onRestHeightChanged: (h) {
               if (!mounted || (h - _panelRestH).abs() < 0.5) return;
               setState(() => _panelRestH = h);
-              final m = _map;
-              if (m != null) unawaited(_showMapBrand(m));
             },
           ),
         ),
@@ -3664,10 +3662,16 @@ class DriverNavViewState extends State<DriverNavView>
     );
   }
 
-  /// The Mapbox wordmark and "i" just above the resting panel, beside the
-  /// mph box (left) and the map buttons (right), never under them.
-  Future<void> _showMapBrand(mapbox.MapboxMap m) => MapBrand.show(m,
-      bottom: _panelRestH.roundToDouble(), left: 16 + 64, right: 14 + 46);
+  /// The Mapbox wordmark and "i" in the strip of map under the floating
+  /// panel (its bottom margin, 8 + half the bottom inset — nav_trip_panel),
+  /// centred in it; the wordmark is 21 pt tall. The open panel covers them.
+  Future<void> _showMapBrand(mapbox.MapboxMap m) {
+    if (!mounted) return Future<void>.value();
+    final inset = MediaQuery.maybeOf(context)?.padding.bottom ?? 0;
+    final strip = 8 + inset * 0.5;
+    return MapBrand.show(m,
+        bottom: math.max(0.0, (strip - 21) / 2).roundToDouble());
+  }
 
   /// The mph box and the camera buttons, above the panel's RESTING top:
   /// they stay where they are while the panel opens over them (owner

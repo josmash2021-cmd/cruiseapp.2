@@ -91,9 +91,6 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   bool _mapMounted = false;
 
   mapbox.MapboxMap? _map;
-
-  /// The bottom panel the Mapbox marks sit just above (MapBrand).
-  final GlobalKey _brandPanelKey = GlobalKey();
   mapbox.CircleAnnotationManager? _suggestMgr;
 
   final _places = PlacesService(ApiKeys.webServices);
@@ -200,7 +197,7 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
           .updateSettings(mapbox.ScaleBarSettings(enabled: false)),
       () =>
           ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false)),
-      () async => MapBrand.showAbovePanel(ctrl, _brandPanelKey),
+      () => MapBrand.show(ctrl),
     ]) {
       try {
         await step();
@@ -597,9 +594,6 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   Widget build(BuildContext context) {
     final s = S.of(context);
     final media = MediaQuery.of(context);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) MapBrand.showAbovePanel(_map, _brandPanelKey);
-    });
     return Scaffold(
       backgroundColor: neuBase,
       resizeToAvoidBottomInset: false,
@@ -701,7 +695,6 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
 
           // ── Bottom sheet card ──
           Positioned(
-            key: _brandPanelKey,
             left: 0,
             right: 0,
             bottom: 0,

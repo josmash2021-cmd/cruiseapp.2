@@ -82,6 +82,7 @@ class NavTripPanel extends StatefulWidget {
     this.onToggleLastTrip,
     this.onNoShow,
     this.onHeightChanged,
+    this.onRestHeightChanged,
     this.onOpenChanged,
     this.mapControls,
   });
@@ -155,6 +156,12 @@ class NavTripPanel extends StatefulWidget {
   /// ride on top of it.
   final ValueChanged<double>? onHeightChanged;
 
+  /// The floating panel's height at rest (closed), even while it is open:
+  /// the map's buttons and the mph stay above THIS (owner 2026-11-02: "los
+  /// botones del mapa y velocímetro deben de quedarse donde están cuando el
+  /// sheet se abra") — the opening panel goes over them.
+  final ValueChanged<double>? onRestHeightChanged;
+
   /// Open (options / whole trip / rider info) or closed.
   final ValueChanged<bool>? onOpenChanged;
 
@@ -219,6 +226,7 @@ class _NavTripPanelState extends State<NavTripPanel>
   /// finger's travel is the gap between them.
   double _faceH = 0;
   double? _bodyH;
+  double _restH = -1;
   double _dragFrom = 0;
   bool _dragging = false;
 
@@ -524,6 +532,12 @@ class _NavTripPanelState extends State<NavTripPanel>
                   if (!mounted) return;
                   _faceH = face;
                   _bodyH = grown;
+                  // The face plus the margins it floats on when closed.
+                  final rest = face + 8 + bottomPad * 0.5;
+                  if ((rest - _restH).abs() > 0.5) {
+                    _restH = rest;
+                    widget.onRestHeightChanged?.call(rest);
+                  }
                 },
                 children: [
                   // The face: fades out over the first part of the way.
@@ -1014,7 +1028,9 @@ class _NavTripPanelState extends State<NavTripPanel>
     final stage = widget.stage;
     final pickupActs = widget.toPickup
         ? _acts([
-            _act(Icons.close_rounded, s.cancel, widget.onCancelTrip),
+            // Red X, red word, light red disc (owner 2026-11-02).
+            _act(Icons.close_rounded, s.cancel, widget.onCancelTrip,
+                tint: _red),
             _actContact(s),
           ])
         : null;
@@ -1065,8 +1081,9 @@ class _NavTripPanelState extends State<NavTripPanel>
                         children: [
                           Text(
                             'CRUISE IN RIDE',
+                            // Gold (owner 2026-11-02).
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6),
+                              color: _gold,
                               fontSize: 15,
                               letterSpacing: 0.9,
                             ),
@@ -1300,16 +1317,21 @@ class _NavTripPanelState extends State<NavTripPanel>
         ),
       );
 
-  Widget _act(IconData icon, String label, VoidCallback onTap) => Column(
+  /// A round action under a stop. [tint] colours the glyph and the label
+  /// and lays a light wash of it in the disc.
+  Widget _act(IconData icon, String label, VoidCallback onTap,
+          {Color? tint}) =>
+      Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _disc(
               size: 56,
-              child: Icon(icon, color: Colors.white, size: 26),
+              color: tint?.withValues(alpha: 0.16),
+              child: Icon(icon, color: tint ?? Colors.white, size: 26),
               onTap: onTap),
           const SizedBox(height: 6),
           Text(label,
-              style: const TextStyle(color: Colors.white, fontSize: 15)),
+              style: TextStyle(color: tint ?? Colors.white, fontSize: 15)),
         ],
       );
 

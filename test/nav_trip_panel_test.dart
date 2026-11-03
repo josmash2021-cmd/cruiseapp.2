@@ -22,6 +22,7 @@ void main() {
     bool queuedCanceled = false,
     double screenH = 844,
     Widget? mapControls,
+    ValueChanged<double>? onRest,
   }) {
     return MaterialApp(
       locale: const Locale('es'),
@@ -44,6 +45,7 @@ void main() {
               Positioned.fill(
                 child: NavTripPanel(
                   mapControls: mapControls,
+                  onRestHeightChanged: onRest,
                   etaLabel: '7 min · 2.9 mi',
                   riderName: 'William Smith',
                   riderPhotoUrl: '',
@@ -476,6 +478,27 @@ void main() {
           reason: 'the button sits above the scrim, not under it');
       expect(find.text('Calificación'), findsOneWidget,
           reason: 'tapping a map button does not put the sheet away');
+    });
+
+    // Owner 2026-11-02: "los botones del mapa y velocímetro deben de
+    // quedarse donde están cuando el sheet se abra".
+    testWidgets('the resting height holds while the panel opens over it',
+        (t) async {
+      phone(t);
+      final rests = <double>[];
+      await t.pumpWidget(host(moving: false, onRest: rests.add));
+      await settle(t);
+      expect(rests, isNotEmpty);
+      final rest = rests.last;
+      expect(rest, greaterThan(60));
+      await t.drag(find.text('7 min · 2.9 mi'), const Offset(0, -160));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 120));
+      await settle(t);
+      expect(find.text('Viaje actual'), findsOneWidget);
+      expect(rests.last, closeTo(rest, 0.5),
+          reason: 'the buttons and the mph stay put; the panel opens over '
+              'them');
     });
   });
 }

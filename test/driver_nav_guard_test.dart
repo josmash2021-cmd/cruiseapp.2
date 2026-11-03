@@ -1025,7 +1025,11 @@ void main() {
         .replaceAll('\r\n', '\n');
     expect(nav, contains('mapControls: _panelControls(s),'));
     final controls = nav.substring(nav.indexOf('Widget _panelControls(S s)'));
-    expect(controls.substring(0, 400), contains('bottom: _panelH + 12,'));
+    // …and they stay put while the panel opens over them (owner
+    // 2026-11-02: "deben de quedarse donde están cuando el sheet se abra").
+    expect(controls.substring(0, 700), contains('bottom: _panelRestH + 12,'));
+    expect(controls.substring(0, 700), isNot(contains('bottom: _panelH + 12,')));
+    expect(nav, contains('onRestHeightChanged: (h) {'));
     expect(
         nav,
         contains(
@@ -1084,5 +1088,12 @@ void main() {
     ]) {
       expect(panel, contains(cond), reason: 'folds out the way it came in');
     }
+    // "La X en rojo y la palabra cancelar en rojo y el círculo… rojo pero
+    // más light": the Cancelar beside Contactar.
+    expect(panel, contains('tint: _red),'));
+    expect(panel, contains('color: tint?.withValues(alpha: 0.16),'));
+    // "Cruise in ride colócalo en color dorado".
+    final brand = panel.substring(panel.indexOf("'CRUISE IN RIDE',"));
+    expect(brand.substring(0, 200), contains('color: _gold,'));
   });
 }

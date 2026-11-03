@@ -670,6 +670,9 @@ class DriverNavViewState extends State<DriverNavView>
   // is open, and whether the car counts as driving — driving, opening it
   // gives only the trip options.
   double _panelH = 0;
+  // The panel's height at rest: the mph and the map buttons stay above it
+  // while the panel opens over them (the camera still follows [_panelH]).
+  double _panelRestH = 0;
   bool _panelMoving = false;
   DateTime? _stillSince;
   late final Stream<int> _chatUnread = ChatService().unreadCountStream(
@@ -3533,27 +3536,32 @@ class DriverNavViewState extends State<DriverNavView>
               if (!mounted || (h - _panelH).abs() < 0.5) return;
               setState(() => _panelH = h);
             },
+            onRestHeightChanged: (h) {
+              if (!mounted || (h - _panelRestH).abs() < 0.5) return;
+              setState(() => _panelRestH = h);
+            },
           ),
         ),
       ],
     );
   }
 
-  /// The mph box and the camera buttons, riding the panel's top edge (its
-  /// measured height glides with it). Handed to the panel, which lays them
-  /// ABOVE its blurred-map scrim (owner 2026-11-02: "los botones del mapa no
-  /// suben" — under the blur they faded instead of rising with the sheet).
+  /// The mph box and the camera buttons, above the panel's RESTING top:
+  /// they stay where they are while the panel opens over them (owner
+  /// 2026-11-02: "los botones del mapa y velocímetro deben de quedarse donde
+  /// están cuando el sheet se abra"). Handed to the panel, which lays them
+  /// above its blurred-map scrim, under the panel itself.
   Widget _panelControls(S s) {
     return Stack(
       children: [
         Positioned(
           left: 16,
-          bottom: _panelH + 12,
+          bottom: _panelRestH + 12,
           child: _phaseArrived ? const SizedBox.shrink() : _buildSpeedBox(),
         ),
         Positioned(
           right: 14,
-          bottom: _panelH + 12,
+          bottom: _panelRestH + 12,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

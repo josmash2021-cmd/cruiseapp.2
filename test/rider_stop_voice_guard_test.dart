@@ -37,4 +37,16 @@ void main() {
     expect(v, contains('await duckForOfferCue();'));
     expect(v, contains('.whenComplete(restoreAfterOfferCue));'));
   });
+
+  test('on time or not at all: from the cache, or 1.5 s to download', () {
+    final v = read('lib/services/rider_stop_voice.dart');
+    expect(v, contains('await DefaultCacheManager().getFileFromCache(_url(es));'));
+    expect(v, contains('.timeout(const Duration(milliseconds: 1500));'));
+    // Fire-and-forget at the slide, before the ride-start work.
+    final src = read('lib/screens/driver/driver_trip_accept_screen.dart');
+    final at = src.indexOf('  void _startRideConfirmed() {');
+    final play = src.indexOf('unawaited(RiderStopVoice.play(', at);
+    expect(play, greaterThan(at));
+    expect(play, lessThan(src.indexOf('Future.delayed(', at)));
+  });
 }

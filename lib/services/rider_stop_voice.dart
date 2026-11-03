@@ -48,7 +48,16 @@ class RiderStopVoice {
       if (kIsWeb) {
         source = UrlSource(_url(es));
       } else {
-        final file = await DefaultCacheManager().getSingleFile(_url(es));
+        // On time or not at all (owner 2026-11-03: "justamente en el
+        // momento"): a line that lands seconds after the pickup only
+        // confuses. The clip is normally on the phone already ([warm]);
+        // if not, it gets 1.5 s to arrive, and the download carries on
+        // for the next trip.
+        final cached = await DefaultCacheManager().getFileFromCache(_url(es));
+        final file = cached?.file ??
+            await DefaultCacheManager()
+                .getSingleFile(_url(es))
+                .timeout(const Duration(milliseconds: 1500));
         source = DeviceFileSource(file.path);
       }
       final p = _player ??= AudioPlayer();

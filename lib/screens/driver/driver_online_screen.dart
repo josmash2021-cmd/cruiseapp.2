@@ -123,6 +123,7 @@ import '../../utils/name_helper.dart' as nh;
 import '../../utils/offer_metrics.dart';
 import '../../utils/server_time.dart';
 import 'package:intl/intl.dart';
+import 'reservation_detail_page.dart';
 import 'scheduled_rides_screen.dart';
 
 part 'driver_online_controller.dart';

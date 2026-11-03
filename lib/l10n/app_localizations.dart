@@ -5129,6 +5129,66 @@ class S {
   String goOnlineBy(String time) =>
       _es ? 'Conéctate antes de las $time' : 'Go online by $time';
 
+  // ── The driver's reservation, tapped (owner 2026-11-03) ──
+  String resDetailWith(String name) => _es ? 'con $name' : 'with $name';
+  String get resDetailToday => _es ? 'Hoy' : 'Today';
+  String get resDetailTomorrow => _es ? 'Mañana' : 'Tomorrow';
+  String resDetailDateAt(String date, String time) =>
+      _es ? '$date a las $time' : '$date at $time';
+  String get resDetailPlanTitle =>
+      _es ? 'Planea llegar a tiempo' : 'Plan ahead to arrive on time';
+  String get resDetailPlanSub => _es
+      ? 'Si el pasajero se demora, la espera se suma a tu pago'
+      : 'If the rider is late, the wait is added to your pay';
+  String get resDetailRideDetails => _es ? 'Detalles del viaje' : 'Ride details';
+  String get resDetailGoOnlineSub => _es
+      ? 'Si no estás en línea 1 hora antes, la reserva vuelve al tablero'
+      : 'Not online 1 hour before, and the reservation goes back to the board';
+  String resDetailPickupAt(String time) =>
+      _es ? 'Recogida a las $time' : 'Pickup at $time';
+  String get resDetailMoreInfo => _es ? 'Más info' : 'More info';
+  String get resDetailHowTo =>
+      _es ? 'Cómo completar tu viaje' : 'How to complete your ride';
+  String resDetailHowToBody(String goOnlineBy) => _es
+      ? '1. Conéctate antes de las $goOnlineBy (1 hora antes de la recogida). '
+          'Si no estás en línea a esa hora, la reserva vuelve al tablero.\n\n'
+          '2. 30 minutos antes dejas de recibir otros viajes, y 15 minutos '
+          'antes te avisamos para salir a la recogida.\n\n'
+          '3. Recoge al pasajero y termina el viaje como cualquier otro.'
+      : '1. Go online by $goOnlineBy (1 hour before pickup). If you are not '
+          'online by then, the reservation goes back to the board.\n\n'
+          '2. 30 minutes before, other ride offers stop, and 15 minutes '
+          'before we remind you to head to the pickup.\n\n'
+          '3. Pick up the rider and finish the ride like any other.';
+  String get resDetailCancelPolicy =>
+      _es ? 'Política de cancelación' : 'Cancel policy';
+  String get resDetailCancelPolicySub => _es
+      ? 'Hasta 1 hora antes de la recogida'
+      : 'Up to 1 hour before pickup';
+  String get resDetailCancelPolicyBody => _es
+      ? 'Puedes cancelar la reserva hasta 1 hora antes de la recogida: el viaje '
+          'vuelve al tablero para otro conductor. Después de eso, escribe a '
+          'Soporte.'
+      : 'You can cancel the reservation up to 1 hour before pickup: the ride '
+          'goes back to the board for another driver. After that, write to '
+          'Support.';
+  String get resDetailFaq =>
+      _es ? 'Preguntas frecuentes de reservas' : 'Scheduled rides FAQ';
+  String get resDetailFaqSub =>
+      _es ? 'Más sobre las reservas' : 'More about scheduled rides';
+  String get resDetailCancelConfirm => _es
+      ? '¿Seguro que quieres cancelar esta reserva?'
+      : 'Are you sure you want to cancel this reservation?';
+  String get resDetailCancelConfirmBody => _es
+      ? 'El viaje vuelve al tablero para otro conductor.'
+      : 'The ride goes back to the board for another driver.';
+  String get resDetailKeep => _es ? 'Mantener' : 'Keep';
+  String get resDetailCancelled =>
+      _es ? 'Reserva cancelada' : 'Reservation cancelled';
+  String get resDetailCancelTooLate => _es
+      ? 'Falta menos de 1 hora: ya no se puede cancelar. Escribe a Soporte.'
+      : 'Less than 1 hour to go: it can no longer be cancelled. Write to Support.';
+
   // ── Vehicle page ──
   String get addVehicleAsk => _es
       ? 'Escríbele a soporte para agregar otro vehículo — hace falta revisar su registro y su seguro.'

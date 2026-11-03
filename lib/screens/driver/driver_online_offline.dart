@@ -2573,7 +2573,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     final fare = (r['fare'] as num?)?.toDouble() ?? 0;
     return GestureDetector(
       key: ValueKey('my-res-${r['id']}'),
-      onTap: _openMyReservations,
+      onTap: () => _openReservationDetail(r),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -2682,18 +2682,19 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         KeyedSubtree(key: const ValueKey('hero-demand'), child: demand));
   }
 
-  /// The card's tap: the driver's own rides ("Tus viajes" tab).
-  void _openMyReservations() {
+  /// The card's tap: the reservation's own page over the sheet, in frosted
+  /// glass (owner 2026-11-03, "una página encima… semitransparente
+  /// borrosa", Lyft's scheduled-ride detail). No map on it, so the map
+  /// surface stays ours; a cancel there refreshes the card.
+  void _openReservationDetail(Map<String, dynamic> reservation) {
     HapticService.selectionClick();
-    final nav = Navigator.maybeOf(context);
-    if (nav == null) return;
-    nav
-        .push(slideFromRightRoute(const ScheduledRidesScreen(initialTab: 1)))
-        .then((_) {
-      if (!mounted) return;
-      _fetchScheduledCount();
-      _remountMapSurface();
-    });
+    unawaited(showReservationDetail(
+      context,
+      reservation,
+      onCancelled: () {
+        if (mounted) _fetchScheduledCount();
+      },
+    ));
   }
 
   Widget _recommendItem(IconData icon, String label, VoidCallback onTap) {

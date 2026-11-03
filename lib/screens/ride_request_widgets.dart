@@ -786,10 +786,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
     // Compact line under the name: "in 5 min". Placeholder tiers carry no
     // ETA (0), so they fall back to the cached per-tier wait range.
-    final String waitText = !_isScheduledMode && _tierHasNoDrivers(opt)
-        ? S.of(context).tierNoDriversReserve
-        : opt.etaMinutes > 0
-            ? S.of(context).inMinEta(opt.etaMinutes)
+    // The real wait for THIS tier — from the nearest driver of it, not the
+    // trip's own duration (the old "in X min" was duration + 2-3, owner
+    // 2026-11-03: "arma todo"). A reservation has no wait to show.
+    final String waitText = _isScheduledMode
+        ? ''
+        : _tierHasNoDrivers(opt)
+            ? S.of(context).tierNoDriversReserve
             : _gridWaitRangeText(_tierKeyForOption(opt));
 
     return AnimatedSize(
@@ -1051,9 +1054,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final sched = _ctrl.state.scheduledAt ?? widget.scheduledAt;
     if (sched != null) return _fmtClock(sched);
     if (_tierHasNoDrivers(opt)) return S.of(context).tierNoDriversPickTime;
-    if (opt.etaMinutes <= 0) return '';
-    final eta = DateTime.now().add(Duration(minutes: opt.etaMinutes));
-    return '${S.of(context).inMinEta(opt.etaMinutes)} · ${_fmtClock(eta)}';
+    // The tier's real wait (nearest driver of it) and when that puts the
+    // car at the door — the far end of the range, never a promise early.
+    final pickup = _ctrl.state.pickup;
+    if (pickup == null) return '';
+    final est = DriverWaitEstimate.cached(pickup.lat, pickup.lng,
+        tier: _tierKeyForOption(opt));
+    if (est == null || est.driverCount <= 0) return '';
+    final eta = DateTime.now().add(Duration(minutes: est.maxMinutes));
+    return '${est.rangeLabel} · ${_fmtClock(eta)}';
   }
 
   /// "3:42 PM" — no intl DateFormat: the project never calls

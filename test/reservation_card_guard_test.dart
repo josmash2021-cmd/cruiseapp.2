@@ -14,7 +14,6 @@ void main() {
       File(p).readAsStringSync().replaceAll('\r\n', '\n');
   final offline = read('lib/screens/driver/driver_online_offline.dart');
   final ctrl = read('lib/screens/driver/driver_online_controller.dart');
-  final mine = read('lib/screens/driver/driver_scheduled_trips_screen.dart');
   final list = read('lib/screens/driver/my_reservations_page.dart');
   final l10n = read('lib/l10n/app_localizations.dart');
 
@@ -45,13 +44,12 @@ void main() {
   });
 
   test('lists fade a vanished reservation out, quietly and live', () {
-    for (final src in [mine, list]) {
+    for (final src in [list]) {
       expect(src, contains('scheduledRideRefreshNotifier'));
       expect(src, contains('AnimatedOpacity('));
       expect(src, contains('const Duration(milliseconds: 420)'));
     }
-    expect(mine, contains('ScheduledBoardWatcher.acquire();'));
-    expect(mine, contains('_leaving.contains(_trips[i][\'id\'])'));
+    expect(list, contains('ScheduledBoardWatcher.acquire();'));
     expect(list, contains("opacity: _leaving.contains(t['id']) ? 0 : 1,"));
   });
 }

@@ -11,17 +11,15 @@ void main() {
       File(p).readAsStringSync().replaceAll('\r\n', '\n');
   final map = read('lib/screens/driver/scheduled_rides_map_screen.dart');
   final list = read('lib/screens/driver/my_reservations_page.dart');
-  final mine = read('lib/screens/driver/driver_scheduled_trips_screen.dart');
   final helper = read('lib/utils/friendly_load_error.dart');
   final l10n = read('lib/l10n/app_localizations.dart');
 
   test('no ride list ever shows the raw exception text', () {
-    for (final src in [map, list, mine]) {
+    for (final src in [map, list]) {
       expect(src, contains('friendlyLoadError(context, e'));
     }
     expect(map, isNot(contains(': e.toString();')));
     expect(list, isNot(contains('_error = e.toString();')));
-    expect(mine, isNot(contains('_error = e.toString();')));
     expect(helper, contains('return s.loadRidesFailed;'));
     expect(l10n, contains("'No pudimos cargar los viajes. Revisa tu señal e intenta de nuevo.'"));
   });

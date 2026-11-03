@@ -544,11 +544,18 @@ class DriverNavViewState extends State<DriverNavView>
   // The trip guide (owner design 2026-11-02): the maneuver box unfolds
   // into every turn left on the leg; its X folds it back.
   bool _guideOpen = false;
-  // 0 = the turn box, 1 = the guide unfolded; the same curve both ways.
-  late final AnimationController _guideCtrl =
-      AnimationController(vsync: this, duration: kSmoothRevealDuration);
-  late final Animation<double> _guideT =
-      CurvedAnimation(parent: _guideCtrl, curve: kSmoothRevealCurve);
+  // 0 = the turn box, 1 = the guide unfolded. Two steps, in order (owner
+  // 2026-11-02: "primero se esconde la parte amarilla y luego sale lo
+  // demás"): the gold tab tucks away, then the box grows down with the
+  // list; folding plays the same steps backwards.
+  late final AnimationController _guideCtrl = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 560));
+  static const double _kGuideTuckEnd = 0.32;
+  double get _guideTuck => kSmoothRevealCurve
+      .transform((_guideCtrl.value / _kGuideTuckEnd).clamp(0.0, 1.0));
+  double get _guideGrow => kSmoothRevealCurve.transform(
+      ((_guideCtrl.value - _kGuideTuckEnd) / (1 - _kGuideTuckEnd))
+          .clamp(0.0, 1.0));
   String _instructionLabel = '';
   String _maneuverType = 'depart';
   String _maneuverModifier = '';
@@ -3263,9 +3270,9 @@ class DriverNavViewState extends State<DriverNavView>
               // from under it and folds back under it — nothing fades into
               // anything else. A tap on it opens or folds it.
               AnimatedBuilder(
-                animation: _guideT,
+                animation: _guideCtrl,
                 builder: (context, _) {
-                  final t = _guideT.value;
+                  final t = _guideCtrl.value;
                   // The route's end folds an open guide away, the same way.
                   if (_guideOpen && _endRouteVisible) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -3288,8 +3295,8 @@ class DriverNavViewState extends State<DriverNavView>
                         : null,
                     child: _buildManeuverBar(
                       s,
-                      fold: t,
-                      under: t > 0 || open ? _buildGuide(s, t) : null,
+                      tuck: _guideTuck,
+                      list: t > 0 || open ? _buildGuide(s, _guideGrow) : null,
                     ),
                   );
                 },
@@ -3529,7 +3536,7 @@ class DriverNavViewState extends State<DriverNavView>
     return '${s.navFollowRoute} · ${_fmtDist(d, s)}';
   }
 
-  Widget _buildManeuverBar(S s, {double fold = 0, Widget? under}) {
+  Widget _buildManeuverBar(S s, {double tuck = 0, Widget? list}) {
     final destName = widget.toPickup
         ? widget.pickupAddress
         : (_stopLeg ? widget.stopLabel : widget.dropoffAddress);
@@ -3597,112 +3604,124 @@ class DriverNavViewState extends State<DriverNavView>
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(14),
           topRight: const Radius.circular(14),
-          // Square at the bottom once the guide's list hangs from it.
-          bottomRight: Radius.circular(14 * (1 - fold)),
-          bottomLeft: Radius.circular(corner * (1 - fold)),
+          bottomRight: const Radius.circular(14),
+          // Square over the "Luego" tab; rounds as the tab tucks away.
+          bottomLeft: Radius.circular(corner + (14 - corner) * tuck),
         ),
-        padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
-        child: Row(
+        // The guide's list grows INSIDE this same glass (owner 2026-11-02:
+        // "debe de verse que es el mismo") — one surface, one edge, no
+        // second box and no divider between them.
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(
-              width: 64,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+              child: Row(
                 children: [
-                  // Bigger (44 → 48, user spec 2026-09-19 — the big reference
-                  // card) and the indication swaps crossfade — a turn icon
-                  // never snaps.
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    transitionBuilder: (child, anim) => FadeTransition(
-                      opacity: anim,
-                      child: ScaleTransition(scale: anim, child: child),
+                  SizedBox(
+                    width: 64,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Bigger (44 → 48, user spec 2026-09-19 — the big reference
+                        // card) and the indication swaps crossfade — a turn icon
+                        // never snaps.
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 220),
+                          transitionBuilder: (child, anim) => FadeTransition(
+                            opacity: anim,
+                            child: ScaleTransition(scale: anim, child: child),
+                          ),
+                          child: Icon(
+                              _endRouteVisible
+                                  ? Icons.place_rounded
+                                  : _maneuverIcon(_maneuverType, _maneuverModifier),
+                              key: ValueKey(
+                                  '${_endRouteVisible}_${_maneuverType}_$_maneuverModifier'),
+                              color: _gold,
+                              size: 48),
+                        ),
+                        if (!_endRouteVisible)
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.fade,
+                            softWrap: false,
+                            style: const TextStyle(
+                              color: _gold,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                      ],
                     ),
-                    child: Icon(
-                        _endRouteVisible
-                            ? Icons.place_rounded
-                            : _maneuverIcon(_maneuverType, _maneuverModifier),
-                        key: ValueKey(
-                            '${_endRouteVisible}_${_maneuverType}_$_maneuverModifier'),
-                        color: _gold,
-                        size: 48),
                   ),
-                  if (!_endRouteVisible)
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.fade,
-                      softWrap: false,
-                      style: const TextStyle(
-                        color: _gold,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            // Un poquito mas grande (user spec 2026-09-27): a full
+                            // instruction sentence steps down a size; a bare street
+                            // name keeps the big treatment.
+                            fontSize: useInstruction ? 20 : 24,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
+                            height: 1.15,
+                          ),
+                        ),
+                        if (_endRouteVisible) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  // The exit badge, pinned at the bar's top-right inside the guide
+                  // (user spec 2026-09-27).
+                  if (exitLabel != null)
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: Container(
+                        margin: const EdgeInsets.only(left: 8, right: 4, top: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: _gold.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: _gold.withValues(alpha: 0.55), width: 1.2),
+                        ),
+                        child: Text(
+                          exitLabel,
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                       ),
                     ),
                 ],
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      // Un poquito mas grande (user spec 2026-09-27): a full
-                      // instruction sentence steps down a size; a bare street
-                      // name keeps the big treatment.
-                      fontSize: useInstruction ? 20 : 24,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.2,
-                      height: 1.15,
-                    ),
-                  ),
-                  if (_endRouteVisible) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            // The exit badge, pinned at the bar's top-right inside the guide
-            // (user spec 2026-09-27).
-            if (exitLabel != null)
-              Align(
-                alignment: Alignment.topCenter,
-                child: Container(
-                  margin: const EdgeInsets.only(left: 8, right: 4, top: 2),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: _gold.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: _gold.withValues(alpha: 0.55), width: 1.2),
-                  ),
-                  child: Text(
-                    exitLabel,
-                    style: const TextStyle(
-                      color: _gold,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
+            if (list != null) list,
           ],
         ),
       ),
@@ -3712,13 +3731,14 @@ class DriverNavViewState extends State<DriverNavView>
       mainAxisSize: MainAxisSize.min,
       children: [
         mainBox,
-        // Opening the guide, the "Luego" tab tucks up under the box while
-        // the list unfolds out of it (owner 2026-11-02: "no se puede quedar
-        // la parte dorada"); folding the list back, the tab comes down.
+        // Opening the guide, the "Luego" tab first tucks up under the box
+        // (owner 2026-11-02: "no se puede quedar la parte dorada… primero se
+        // esconde la parte amarilla y luego sale lo demás"); folding, it
+        // comes back down last.
         ClipRect(
           child: Align(
             alignment: Alignment.bottomLeft,
-            heightFactor: 1 - fold,
+            heightFactor: 1 - tuck,
             // The "Luego" tab: flat solid gold, 2D (owner 2026-11-02: "debe
             // de verse dorada, no opaco… no quiero que se vea como 3D"),
             // dark text, the next turn's icon and street. It unfolds and
@@ -3770,7 +3790,6 @@ class DriverNavViewState extends State<DriverNavView>
             ),
           ),
         ),
-        if (under != null) SizedBox(width: double.infinity, child: under),
       ],
     );
   }
@@ -3806,10 +3825,13 @@ class DriverNavViewState extends State<DriverNavView>
               : widget.stopLabel);
       rows.add(Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+        // Hairlines between turns only — the first sits flush under the box.
         decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-          ),
+          border: j == idx + 1
+              ? null
+              : Border(
+                  top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+                ),
         ),
         child: Row(
           children: [
@@ -3854,55 +3876,42 @@ class DriverNavViewState extends State<DriverNavView>
       ));
     }
     final maxH = MediaQuery.maybeOf(context)?.size.height ?? 800;
-    // Unfolds downward from under the box: the top shows first, the list
-    // is drawn whole and clipped while it folds — it never fades.
+    // Grows down inside the turn box's own glass: the top shows first, the
+    // list is drawn whole and clipped while it folds — it never fades.
     return ClipRect(
       child: Align(
         alignment: Alignment.topCenter,
         heightFactor: t,
-        child: GlassSurface(
-          key: const ValueKey('nav-guide'),
-          blur: kGlassSheetBlurOpen,
-          tint: glassSheetOpenTint,
-          borderRadius:
-              const BorderRadius.vertical(bottom: Radius.circular(16)),
-          border: const Border(
-            left: BorderSide(color: glassEdge),
-            right: BorderSide(color: glassEdge),
-            bottom: BorderSide(color: glassEdge),
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: maxH * 0.62),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ...rows,
-                  // Folds the list back up under the box (a tap on the box
-                  // does too).
-                  GestureDetector(
-                    key: const ValueKey('nav-guide-fold-up'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      HapticService.lightImpact();
-                      _setGuide(false);
-                    },
-                    child: Container(
-                      height: 44,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        border: Border(
-                          top: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.06)),
-                        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH * 0.62),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ...rows,
+                // Folds the list back up into the box (a tap on the box
+                // does too).
+                GestureDetector(
+                  key: const ValueKey('nav-guide-fold-up'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    HapticService.lightImpact();
+                    _setGuide(false);
+                  },
+                  child: Container(
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.06)),
                       ),
-                      child: Icon(Icons.keyboard_arrow_up_rounded,
-                          color: Colors.white.withValues(alpha: 0.7),
-                          size: 28),
                     ),
+                    child: Icon(Icons.keyboard_arrow_up_rounded,
+                        color: Colors.white.withValues(alpha: 0.7), size: 28),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

@@ -76,7 +76,9 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
   Map<String, dynamic>? _trip;
   bool _cancelling = false;
 
-  Map<String, dynamic> get _r => {...widget.reservation, ...?_trip};
+  /// The card's own values win (its `fare` is the driver's pay, the trip's
+  /// may be the rider's price); the trip only adds what the card lacks.
+  Map<String, dynamic> get _r => {...?_trip, ...widget.reservation};
 
   @override
   void initState() {
@@ -93,23 +95,39 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
 
   String _time(DateTime t) => DateFormat('h:mm a', 'en_US').format(t);
 
-  /// "Hoy · 3 nov a las 3:20 PM" / "Today · Nov 3 at 3:20 PM".
-  String _dateLine(S s, DateTime at, String lang) {
+  /// "Hoy · 3 de nov a las 3:20 PM" / "Today · Nov 3 at 3:20 PM". Tables
+  /// instead of DateFormat: the project never calls initializeDateFormatting,
+  /// so a Spanish-locale DateFormat throws.
+  String _dateLine(S s, DateTime at, bool isEs) {
+    const monthsEn = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    const monthsEs = [
+      'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+      'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+    ];
+    const daysEn = [
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+      'Friday', 'Saturday', 'Sunday',
+    ];
+    const daysEs = [
+      'Lunes', 'Martes', 'Miércoles', 'Jueves',
+      'Viernes', 'Sábado', 'Domingo',
+    ];
     final now = DateTime.now();
-    final day = DateTime(at.year, at.month, at.day);
-    final today = DateTime(now.year, now.month, now.day);
-    final diff = day.difference(today).inDays;
-    final date = DateFormat(lang == 'es' ? "d 'de' MMM" : 'MMM d',
-            lang == 'es' ? 'es' : 'en_US')
-        .format(at);
+    final diff = DateTime(at.year, at.month, at.day)
+        .difference(DateTime(now.year, now.month, now.day))
+        .inDays;
+    final date = isEs
+        ? '${at.day} de ${monthsEs[at.month - 1]}'
+        : '${monthsEn[at.month - 1]} ${at.day}';
     final lead = diff == 0
         ? s.resDetailToday
         : diff == 1
             ? s.resDetailTomorrow
-            : DateFormat('EEEE', lang == 'es' ? 'es' : 'en_US').format(at);
-    final leadCap =
-        lead.isEmpty ? lead : lead[0].toUpperCase() + lead.substring(1);
-    return '$leadCap · ${s.resDetailDateAt(date, _time(at))}';
+            : (isEs ? daysEs : daysEn)[at.weekday - 1];
+    return '$lead · ${s.resDetailDateAt(date, _time(at))}';
   }
 
   Future<void> _cancel() async {
@@ -335,7 +353,7 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final lang = Localizations.localeOf(context).languageCode;
+    final isEs = Localizations.localeOf(context).languageCode == 'es';
     final mq = MediaQuery.of(context);
     final r = _r;
     final at = parseServerTime(r['scheduled_at']);
@@ -433,7 +451,7 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
                 ),
                 if (at != null) ...[
                   const SizedBox(height: 12),
-                  Text(_dateLine(s, at, lang),
+                  Text(_dateLine(s, at, isEs),
                       style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.85),
                           fontSize: 16)),

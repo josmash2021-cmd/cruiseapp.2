@@ -50,6 +50,12 @@ void main() {
         reason: 'inside 1 hour the server answers 400');
   });
 
+  test('Spanish dates without DateFormat locales (it throws here)', () {
+    expect(page, isNot(matches(RegExp(r"DateFormat\([^)]*'es'"))),
+        reason: 'initializeDateFormatting is never called in this app');
+    expect(page, contains("'ene', 'feb', 'mar'"));
+  });
+
   test('lookups off build() use maybeOf (rule 26)', () {
     expect(page, isNot(contains('Navigator.of(')));
     expect(page, isNot(contains('ScaffoldMessenger.of(')));

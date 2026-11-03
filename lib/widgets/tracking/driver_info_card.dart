@@ -128,251 +128,765 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  Widget _buildDriverCard() {
+  // ══════════════════════════════════════════════════════════════════════
+  //  THE TRIP SHEET (owner 2026-11-03, drawing J6zTb8hfeKDqfFbzpx5jXb)
+  //  Resting semi-open on [_buildSheetFace]; open on [_buildSheetBody], the
+  //  driver's whole-trip layout with the rider's data. Mechanics live in
+  //  RiderTripSheet.
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// The trip's status, in gold over the driver: what the rider does now.
+  String get _sheetStatusText {
     final s = S.of(context);
-    String statusLabel;
     switch (_phase) {
       case _TrackPhase.arriving:
-        statusLabel = s.meetDriverAtPickup;
+        return s.trackMeetAtPickup;
       case _TrackPhase.arrived:
-        statusLabel = s.yourDriverArrivedExcl;
+        return s.trackDriverWaiting;
       case _TrackPhase.onTrip:
-        statusLabel = s.onTripToDestination;
+        return s.trackOnTheWay;
       case _TrackPhase.nearDestination:
-        statusLabel = s.arrivingAtDestination;
+        return s.arrivingAtDestination;
       case _TrackPhase.completed:
-        statusLabel = s.youHaveArrived;
+        return s.tripCompletedTitle;
     }
+  }
 
-    final vehicleLabel = [
-      widget.vehicleColor,
+  /// The car's color as a small square (owner 2026-11-03: "el color será un
+  /// cuadrito"), from the color word the driver registered (EN or ES).
+  /// Null when the word is not one we know — the word is shown instead.
+  static Color? _vehicleSwatch(String name) {
+    final n = name.trim().toLowerCase();
+    if (n.isEmpty) return null;
+    const table = <String, Color>{
+      'black': Color(0xFF000000), 'negro': Color(0xFF000000),
+      'white': Color(0xFFFFFFFF), 'blanco': Color(0xFFFFFFFF),
+      'silver': Color(0xFFC0C0C0), 'plata': Color(0xFFC0C0C0),
+      'plateado': Color(0xFFC0C0C0),
+      'gray': Color(0xFF7D7D7D), 'grey': Color(0xFF7D7D7D),
+      'gris': Color(0xFF7D7D7D),
+      'red': Color(0xFFC62828), 'rojo': Color(0xFFC62828),
+      'blue': Color(0xFF1E4FA3), 'azul': Color(0xFF1E4FA3),
+      'navy': Color(0xFF1B2A4A),
+      'green': Color(0xFF2E7D32), 'verde': Color(0xFF2E7D32),
+      'beige': Color(0xFFD9C7A3), 'champagne': Color(0xFFE5D3B3),
+      'brown': Color(0xFF6D4C41), 'marrón': Color(0xFF6D4C41),
+      'marron': Color(0xFF6D4C41), 'café': Color(0xFF6D4C41),
+      'cafe': Color(0xFF6D4C41),
+      'gold': Color(0xFFC9A227), 'dorado': Color(0xFFC9A227),
+      'yellow': Color(0xFFF2C200), 'amarillo': Color(0xFFF2C200),
+      'orange': Color(0xFFEF6C00), 'naranja': Color(0xFFEF6C00),
+      'maroon': Color(0xFF6A1B1A), 'burgundy': Color(0xFF6A1B1A),
+      'vino': Color(0xFF6A1B1A),
+      'purple': Color(0xFF5E35B1), 'morado': Color(0xFF5E35B1),
+    };
+    return table[n] ?? table[n.split(RegExp(r'\s+')).last];
+  }
+
+  /// Color square + "Chevrolet Suburban" (no color word when the square
+  /// says it), the category's car render, the plate — whole, never cut.
+  Widget _sheetCarColumn() {
+    final swatch = _vehicleSwatch(widget.vehicleColor);
+    final label = [
+      if (swatch == null) widget.vehicleColor,
       widget.vehicleMake,
       widget.vehicleModel,
-    ].where((v) => v.isNotEmpty).join(' ');
+    ].where((v) => v.trim().isNotEmpty).join(' ');
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: Responsive.w(92),
+        maxWidth: Responsive.w(165),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (label.isNotEmpty)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (swatch != null) ...[
+                  Container(
+                    key: const ValueKey('vehicle-color-swatch'),
+                    margin: const EdgeInsets.only(top: 2),
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      color: swatch,
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.4)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Flexible(
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.right,
+                    maxLines: 2,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          const SizedBox(height: 3),
+          _buildVehicleRender(),
+          const SizedBox(height: 3),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(5),
+            ),
+            // One line, whole: a long plate scales down, never cuts.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                widget.vehiclePlate.isNotEmpty
+                    ? widget.vehiclePlate.toUpperCase()
+                    : '---',
+                maxLines: 1,
+                softWrap: false,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-    return Container(
-      // Welded to the bottom edge and both sides, so only the top corners
-      // round. The safe area is inside the padding, not a strip of map
-      // under the card.
-      decoration: neuBox(radius: 24).copyWith(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-        Responsive.w(14),
-        Responsive.w(14),
-        Responsive.w(14),
-        Responsive.w(14) + MediaQuery.of(context).padding.bottom,
-      ),
+  /// Photo · "Eduardo R." · ★ 4.9 (· [sub]) · the car.
+  Widget _sheetDriverRow({required double avatar, String? sub}) {
+    return Row(
+      children: [
+        VerifiedAvatar(
+          photoUrl: _driverPhotoUrl,
+          radius: avatar / 2,
+          fallbackName: widget.driverName,
+          uid: widget.driverId,
+          role: 'driver',
+          isVerified: true,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // First name + surname initial, "Eduardo R." (owner
+              // 2026-11-03): the full name ran off the card.
+              Text(
+                nh.shortName(widget.driverName),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  const Icon(Icons.star_rounded,
+                      color: AppColors.kGold, size: 15),
+                  const SizedBox(width: 3),
+                  Flexible(
+                    child: Text(
+                      sub == null
+                          ? widget.driverRating.toStringAsFixed(1)
+                          : '${widget.driverRating.toStringAsFixed(1)} · $sub',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        _sheetCarColumn(),
+      ],
+    );
+  }
+
+  /// A round action with its name under it; [badge] > 0 adds the gold count.
+  Widget _sheetAction({
+    required Key key,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    int badge = 0,
+  }) {
+    return GestureDetector(
+      key: key,
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        HapticService.selectionClick();
+        onTap();
+      },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Status label
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+                child: Icon(icon, color: AppColors.kGold, size: 22),
+              ),
+              if (badge > 0)
+                Positioned(
+                  top: -3,
+                  right: -3,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 22),
+                    height: 22,
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    decoration: BoxDecoration(
+                      color: AppColors.kGold,
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$badge',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.82),
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Subscribes ONCE (from initState) to the driver's unread chat count.
+  void _startChatUnreadWatch() {
+    final id = widget.tripId;
+    if (id == null || _chatUnreadSub != null) return;
+    _chatUnreadSub = ChatService()
+        .unreadCountStream(rideId: id.toString(), readerRole: 'rider')
+        .listen((n) => _chatUnread.value = n, onError: (Object e) {
+      debugPrint('[Tracking] chat unread stream error: $e');
+    });
+  }
+
+  /// The driver's unread chat count (0 off a trip), from the one
+  /// subscription above.
+  Widget _withChatUnread(Widget Function(int unread) child) =>
+      ValueListenableBuilder<int>(
+        valueListenable: _chatUnread,
+        builder: (context, unread, _) => child(unread),
+      );
+
+  /// Chat with the driver. Push first, resolve the id after — awaiting
+  /// getCurrentUserId made the tap feel dead for a network round trip.
+  void _openDriverChat() {
+    if (!mounted) return;
+    final nav = _nav;
+    if (nav == null) return;
+    final userIdFuture = ApiService.getCurrentUserId();
+    nav.push(
+      chatOpenRoute(
+        ChatScreen(
+          recipientName: widget.driverName,
+          recipientPhotoUrl: _driverPhotoUrl,
+          recipientId: widget.driverId,
+          recipientRole: 'driver',
+          avatarInitial: widget.driverName.isNotEmpty
+              ? widget.driverName[0].toUpperCase()
+              : 'D',
+          tripId: widget.tripId,
+          currentRole: 'rider',
+          currentUserId: null,
+        ),
+      ),
+    );
+    unawaited(userIdFuture);
+  }
+
+  /// "Contactar": write or call the driver.
+  Future<void> _showContactDriver() async {
+    final s = S.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A21),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(height: 14),
+              _withChatUnread((unread) => _buildMenuItem(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    label: unread > 0
+                        ? '${s.trackMessage} ($unread)'
+                        : s.trackMessage,
+                    color: AppColors.kGold,
+                    onTap: () {
+                      Navigator.maybeOf(ctx)?.pop();
+                      _openDriverChat();
+                    },
+                  )),
+              _menuDivider(),
+              _buildMenuItem(
+                icon: Icons.phone_rounded,
+                label: s.trackCall,
+                color: AppColors.kGold,
+                onTap: () {
+                  Navigator.maybeOf(ctx)?.pop();
+                  unawaited(_handleCallDriver());
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The support page inside the open sheet (Safety & Support, add a stop,
+  /// change the destination, 911, chat with support).
+  void _openSheetSupport() {
+    _setState(() => _supportPage = 1);
+    _tripSheet.open();
+  }
+
+  /// RESTING, semi-open: status · driver with the car · Mensaje · Llamar ·
+  /// Compartir · Soporte.
+  Widget _buildSheetFace() {
+    final s = S.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 0, 20, MediaQuery.of(context).padding.bottom + 14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
             children: [
               Container(
-                width: Responsive.w(8), height: Responsive.w(8),
+                width: 8,
+                height: 8,
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
                   color: AppColors.kGold,
                 ),
               ),
-              SizedBox(width: Responsive.w(8)),
+              const SizedBox(width: 8),
               Flexible(
                 child: Text(
-                  statusLabel,
-                  style: TextStyle(color: AppColors.kGold, fontSize: Responsive.sp(11), fontWeight: FontWeight.w600, letterSpacing: 0.6),
+                  _sheetStatusText,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.kGold,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
-          SizedBox(height: Responsive.h(10)),
-          // Driver row
-          Row(
-            children: [
-              // Driver photo with verified badge
-              VerifiedAvatar(
-                photoUrl: _driverPhotoUrl,
-                radius: Responsive.w(22),
-                fallbackName: widget.driverName,
-                uid: widget.driverId,
-                role: 'driver',
-                isVerified: true,
+          const SizedBox(height: 14),
+          _sheetDriverRow(avatar: 56),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _withChatUnread((unread) => _sheetAction(
+                      key: const ValueKey('sheet-message'),
+                      icon: Icons.chat_bubble_outline_rounded,
+                      label: s.trackMessage,
+                      badge: unread,
+                      onTap: _openDriverChat,
+                    )),
+                _sheetAction(
+                  key: const ValueKey('sheet-call'),
+                  icon: Icons.phone_rounded,
+                  label: s.trackCall,
+                  onTap: () => unawaited(_handleCallDriver()),
+                ),
+                _sheetAction(
+                  key: const ValueKey('sheet-share'),
+                  icon: Icons.share_rounded,
+                  label: s.trackShare,
+                  onTap: () => unawaited(_handleShareTrip()),
+                ),
+                _sheetAction(
+                  key: const ValueKey('sheet-support'),
+                  icon: Icons.support_agent_rounded,
+                  label: s.trackSupport,
+                  onTap: _openSheetSupport,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A gold disc for the list (pickup, stop, destination).
+  Widget _sheetGoldDisc(Widget child) => Container(
+        width: 44,
+        height: 44,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Color(0xFFE8C547),
+        ),
+        alignment: Alignment.center,
+        child: child,
+      );
+
+  /// One row of the trip list: [lead] on the left with the gold lane marks
+  /// down to the next row ([line]), title and line(s) of text on the right.
+  Widget _sheetStep({
+    required Widget lead,
+    required String title,
+    String? sub,
+    Widget? trailing,
+    bool done = false,
+    required bool line,
+  }) {
+    final dim = Colors.white.withValues(alpha: 0.42);
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 44,
+            child: Column(
+              children: [
+                lead,
+                if (line)
+                  const Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 4),
+                      child: SizedBox(width: 44, child: RiderLaneDashes()),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: done ? dim : Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (sub != null && sub.trim().isNotEmpty)
+                          Text(
+                            sub,
+                            style: TextStyle(
+                              color: done
+                                  ? dim
+                                  : Colors.white.withValues(alpha: 0.75),
+                              fontSize: 15,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (trailing != null) ...[
+                    const SizedBox(width: 8),
+                    trailing,
+                  ],
+                ],
               ),
-              SizedBox(width: Responsive.w(10)),
-              // Name + rating
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// OPEN: the driver's whole-trip layout with the rider's data. The support
+  /// and route-change pages replace it inside the same open sheet.
+  Widget _buildSheetBody() {
+    final Widget page = _supportPage == 0
+        ? KeyedSubtree(key: const ValueKey('sheet-trip'), child: _sheetTrip())
+        : _supportPage == 1
+            ? _buildSupportPanel()
+            : _buildRouteChangePanel();
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeInOutCubicEmphasized,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 340),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        layoutBuilder: (cur, prev) => Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            for (final p in prev)
+              Positioned(left: 0, right: 0, top: 0, child: p),
+            if (cur != null) cur,
+          ],
+        ),
+        transitionBuilder: (child, anim) =>
+            FadeTransition(opacity: anim, child: child),
+        child: page,
+      ),
+    );
+  }
+
+  Widget _sheetTrip() {
+    final s = S.of(context);
+    final onTrip = _phase == _TrackPhase.onTrip ||
+        _phase == _TrackPhase.nearDestination ||
+        _phase == _TrackPhase.completed;
+    final stopLabel = (_committedStopLabel.isNotEmpty
+            ? _committedStopLabel
+            : widget.stopLabel)
+        .trim();
+    final hasStop = _committedStop != null || widget.stopLatLng != null;
+    final dropLabel = (_committedDropoffLabel.isNotEmpty
+            ? _committedDropoffLabel
+            : widget.dropoffLabel)
+        .trim();
+    final fare = _fareOverride ?? widget.price;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 4, 20, MediaQuery.of(context).padding.bottom + 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // First name + surname initial, "Eduardo R." (owner
-                    // 2026-11-03): the full name ran off the card.
+                    const Text(
+                      'CRUISE IN RIDE',
+                      style: TextStyle(
+                        color: AppColors.kGold,
+                        fontSize: 15,
+                        letterSpacing: 0.9,
+                      ),
+                    ),
                     Text(
-                      nh.shortName(widget.driverName),
-                      style: TextStyle(color: Colors.white, fontSize: Responsive.sp(15), fontWeight: FontWeight.w700),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Icon(Icons.star_rounded, color: AppColors.kGold, size: Responsive.sp(14)),
-                        SizedBox(width: Responsive.w(3)),
-                        Text(
-                          widget.driverRating.toStringAsFixed(1),
-                          style: TextStyle(color: Colors.white60, fontSize: Responsive.sp(13)),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              // Vehicle identity, stacked so the rider can match the car at
-              // a glance: model on top, the car itself, plate underneath.
-              // As wide as the words need (up to ~45 % of the card), and the
-              // words wrap to a second line instead of being cut — color,
-              // make, model and plate always whole (owner 2026-11-03; it was
-              // a fixed 92 pt column: "Black Chevrolet ...").
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  minWidth: Responsive.w(92),
-                  maxWidth: Responsive.w(165),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (vehicleLabel.isNotEmpty)
-                      Text(
-                        vehicleLabel,
-                        textAlign: TextAlign.right,
-                        maxLines: 2,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          fontSize: Responsive.sp(10),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    SizedBox(height: Responsive.h(3)),
-                    _buildVehicleRender(),
-                    SizedBox(height: Responsive.h(3)),
-                    // Plate: smaller than before — it is the confirmation,
-                    // not the headline. White, because a plate should read
-                    // like a plate.
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: Responsive.w(7),
-                          vertical: Responsive.h(2)),
-                      decoration: BoxDecoration(
+                      s.trackYourTrip,
+                      style: const TextStyle(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(5),
+                        fontSize: 23,
+                        fontWeight: FontWeight.w700,
                       ),
-                      // One line, whole: a long plate scales down, never cuts.
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          widget.vehiclePlate.isNotEmpty
-                              ? widget.vehiclePlate.toUpperCase()
-                              : '---',
-                          maxLines: 1,
-                          softWrap: false,
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontSize: Responsive.sp(11),
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.0,
-                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (fare > 0)
+                      Text(
+                        '\$${fare.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      key: const ValueKey('sheet-receipt'),
+                      onTap: () {
+                        HapticService.selectionClick();
+                        unawaited(_openReceipt());
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                              color: AppColors.kGold.withValues(alpha: 0.55)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.receipt_long_rounded,
+                                color: AppColors.kGold, size: 16),
+                            const SizedBox(width: 6),
+                            Text(
+                              s.trackReceipt,
+                              style: const TextStyle(
+                                color: AppColors.kGold,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-          SizedBox(height: Responsive.h(10)),
-          // Action row: four equal round buttons, centered (2026-09-12).
-          // Chat is one of them — a circle like call/share/support, not a
-          // wide pill. Unread messages flip it to gold with a red count
-          // badge: the same attention signal the old shimmering pill had.
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              GestureDetector(
-                onTap: () async {
-                  HapticService.selectionClick();
-                  // Push FIRST, resolve the id after. Awaiting
-                  // getCurrentUserId here meant the chat only started
-                  // opening once an HTTP call came back — the tap felt
-                  // dead for as long as the network took. ChatScreen
-                  // resolves the id itself when it is not supplied.
-                  if (!mounted) return;
-                  final nav = _nav;
-                  if (nav == null) return;
-                  final userIdFuture = ApiService.getCurrentUserId();
-                  nav.push(
-                    chatOpenRoute(
-                      ChatScreen(
-                        // Full name, not just the first word — the header
-                        // showed "Jhon" where the driver is "Jhon
-                        // martinez".
-                        recipientName: widget.driverName,
-                        recipientPhotoUrl: _driverPhotoUrl,
-                        recipientId: widget.driverId,
-                        recipientRole: 'driver',
-                        avatarInitial: widget.driverName.isNotEmpty
-                            ? widget.driverName[0].toUpperCase()
-                            : 'D',
-                        tripId: widget.tripId,
-                        currentRole: 'rider',
-                        currentUserId: null,
-                      ),
-                    ),
-                  );
-                  unawaited(userIdFuture);
-                },
-                child: widget.tripId != null
-                    ? StreamBuilder<int>(
-                        stream: ChatService().unreadCountStream(
-                          rideId: widget.tripId.toString(),
-                          readerRole: 'rider',
-                        ),
-                        builder: (context, snap) =>
-                            _buildChatCircleBtn(snap.data ?? 0),
-                      )
-                    : _buildChatCircleBtn(0),
-              ),
-              SizedBox(width: Responsive.w(20)),
-              _buildCardIconBtn(icon: Icons.phone_rounded, onTap: _handleCallDriver),
-              SizedBox(width: Responsive.w(20)),
-              _buildCardIconBtn(
+              _sheetAction(
+                key: const ValueKey('sheet-open-share'),
                 icon: Icons.share_rounded,
-                onTap: _handleShareTrip,
+                label: s.trackShare,
+                onTap: () => unawaited(_handleShareTrip()),
               ),
-              SizedBox(width: Responsive.w(20)),
-              _buildMoreMenuButton(),
+              const SizedBox(width: 10),
+              _withChatUnread((unread) => _sheetAction(
+                    key: const ValueKey('sheet-open-contact'),
+                    icon: Icons.perm_phone_msg_rounded,
+                    label: s.trackContact,
+                    badge: unread,
+                    onTap: () => unawaited(_showContactDriver()),
+                  )),
+              const SizedBox(width: 10),
+              _sheetAction(
+                key: const ValueKey('sheet-open-support'),
+                icon: Icons.support_agent_rounded,
+                label: s.trackSupport,
+                onTap: () => _setState(() => _supportPage = 1),
+              ),
             ],
           ),
-          // Cancel ride — VISIBLE at every phase (user spec 2026-09-23):
-          // pre-pickup the usual fee rule, in-trip the full estimate is
-          // charged. The reason sheet + phase-correct confirm live in
-          // _showCancelDialog. Hidden once the trip is over (rating next).
+          const SizedBox(height: 22),
+          _sheetStep(
+            lead: VerifiedAvatar(
+              photoUrl: _driverPhotoUrl,
+              radius: 22,
+              fallbackName: widget.driverName,
+              uid: widget.driverId,
+              role: 'driver',
+              isVerified: true,
+            ),
+            title: nh.shortName(widget.driverName),
+            sub: '★ ${widget.driverRating.toStringAsFixed(1)} · ${s.trackYourDriver}',
+            trailing: _sheetCarColumn(),
+            line: true,
+          ),
+          _sheetStep(
+            lead: _sheetGoldDisc(Container(
+              width: 12,
+              height: 12,
+              decoration: const BoxDecoration(
+                  shape: BoxShape.circle, color: Colors.black),
+            )),
+            title: s.trackPickup,
+            sub: widget.pickupLabel,
+            done: onTrip,
+            line: true,
+          ),
+          if (hasStop)
+            _sheetStep(
+              lead: _sheetGoldDisc(const RiderStopPin()),
+              title: s.trackStop,
+              sub: stopLabel,
+              line: true,
+            ),
+          _sheetStep(
+            lead: _sheetGoldDisc(Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            )),
+            title: s.trackDestination,
+            sub: dropLabel,
+            line: false,
+          ),
           if (_phase != _TrackPhase.completed) ...[
-            SizedBox(height: Responsive.h(2)),
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              height: 1,
+              color: Colors.white.withValues(alpha: 0.10),
+            ),
             GestureDetector(
+              key: const ValueKey('sheet-cancel'),
+              behavior: HitTestBehavior.opaque,
               onTap: _showCancelDialog,
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                    horizontal: 28, vertical: Responsive.h(7)),
-                child: Text(
-                  s.cancelRide,
-                  style: TextStyle(
-                    color: const Color(0xFFEF4444).withValues(alpha: 0.75),
-                    fontSize: Responsive.sp(13),
-                    fontWeight: FontWeight.w600,
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFFF6B6B).withValues(alpha: 0.16),
+                    ),
+                    child: const Icon(Icons.block_rounded,
+                        color: Color(0xFFFF6B6B)),
                   ),
-                ),
+                  const SizedBox(width: 16),
+                  Text(
+                    s.cancelRide,
+                    style: const TextStyle(
+                      color: Color(0xFFFF8A8A),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -381,85 +895,15 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  Widget _buildCardIconBtn({required IconData icon, required VoidCallback onTap}) {
-    final d = Responsive.w(40);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: d, height: d,
-        // Sunken well — the established neumorphic idiom for icon buttons.
-        // radius = half the box, so the well reads as a circle.
-        decoration: neuBox(
-          radius: d / 2,
-          pressed: true,
-          borderColor: AppColors.kGold.withValues(alpha: 0.35),
-        ),
-        child: Icon(icon, color: AppColors.kGold, size: Responsive.sp(18)),
-      ),
-    );
-  }
-
-  /// Chat as a round button matching its row-mates (2026-09-12): a sunken
-  /// well with a gold bubble when idle; filled gold with the unread count as
-  /// a red badge when the driver has written — the same attention signal the
-  /// old shimmering pill carried, in the row's circle idiom.
-  Widget _buildChatCircleBtn(int count) {
-    final d = Responsive.w(40);
-    final hasUnread = count > 0;
-    return Container(
-      width: d, height: d,
-      decoration: hasUnread
-          ? BoxDecoration(
-              color: AppColors.kGold,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.kGold.withValues(alpha: 0.35),
-                  blurRadius: 14,
-                  spreadRadius: 1,
-                ),
-              ],
-            )
-          : neuBox(
-              radius: d / 2,
-              pressed: true,
-              borderColor: AppColors.kGold.withValues(alpha: 0.35),
-            ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Center(
-            child: Icon(
-              Icons.chat_bubble_rounded,
-              color: hasUnread ? Colors.black : AppColors.kGold,
-              size: Responsive.sp(18),
-            ),
-          ),
-          if (hasUnread)
-            Positioned(
-              top: -4,
-              right: -4,
-              child: Container(
-                constraints: const BoxConstraints(minWidth: 16),
-                height: 16,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  '$count',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+  /// "Receipt": what this trip costs, line by line, adding up to the total.
+  Future<void> _openReceipt() async {
+    final id = widget.tripId;
+    if (id == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _ReceiptSheet(tripId: id),
     );
   }
 
@@ -518,34 +962,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     }
   }
 
-  Widget _buildMoreMenuButton() {
-    final d = Responsive.w(40);
-    return GestureDetector(
-      onTap: () => _setState(
-          () => _supportPage = _supportPage == 0 ? 1 : 0),
-      child: Container(
-        width: d, height: d,
-        // Open state pops OUT of the well (pressed: false) so the button
-        // visibly holds the panel it opened.
-        decoration: neuBox(
-          radius: d / 2,
-          pressed: _supportPage == 0,
-          borderColor: AppColors.kGold
-              .withValues(alpha: _supportPage != 0 ? 0.8 : 0.35),
-        ),
-        // Support agent, not three dots: this is where the rider reaches
-        // help, and an ellipsis promises nothing.
-        child: Icon(Icons.support_agent_rounded,
-            color: AppColors.kGold, size: Responsive.sp(18)),
-      ),
-    );
-  }
-
-  // ═══ Safety & Support panel — the bottom card TRANSFORMED (2026-08-05) ═══
-
-  BoxDecoration get _panelShell => neuBox(radius: 24).copyWith(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-      );
+  /// The support / route-change pages live inside the trip sheet's glass
+  /// now (2026-11-03): no shell of their own.
+  BoxDecoration get _panelShell => const BoxDecoration();
 
   Widget _buildSupportPanel() {
     final s = S.of(context);
@@ -973,8 +1392,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     final isStop = _supportPage == 2;
     _setState(() => _rcCommitting = true);
     try {
+      final Map<String, dynamic> res;
       if (isStop) {
-        await ApiService.addTripStop(
+        res = await ApiService.addTripStop(
           tripId: tripId,
           lat: det.lat,
           lng: det.lng,
@@ -982,9 +1402,13 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           extraCents: cents,
         );
       } else {
-        final newFare =
-            (widget.price + cents / 100.0).clamp(3.0, 500.0).toDouble();
-        await ApiService.changeTripDestination(
+        // From the price as it stands NOW — the booked one plus any earlier
+        // change — not from the booked price alone (a second change used to
+        // drop the first for trips the server does not reprice).
+        final newFare = ((_fareOverride ?? widget.price) + cents / 100.0)
+            .clamp(3.0, 500.0)
+            .toDouble();
+        res = await ApiService.changeTripDestination(
           tripId: tripId,
           lat: det.lat,
           lng: det.lng,
@@ -992,11 +1416,18 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           newFare: newFare,
         );
       }
+      // The server's price is the price: quoted trips are fully repriced
+      // there and our estimate is ignored.
+      final serverFare = res['fare'];
       if (!mounted) return;
       HapticService.mediumImpact();
       _setState(() {
         _rcCommitting = false;
         _supportPage = 0;
+        // The sheet's price follows the change right away.
+        if (serverFare is num && serverFare > 0) {
+          _fareOverride = serverFare.toDouble();
+        }
       });
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
           content:
@@ -1224,6 +1655,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       unawaited(_drawStopPin(target));
     } else {
       _dropoffOverride = target;
+      _committedDropoffLabel = det.address;
       unawaited(_moveDropoffPin(target));
     }
     try {
@@ -1657,3 +2089,271 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
 ///   a shimmer sweep that loops every 1.8s to draw the eye, plus a
 ///   small unread counter on the right.
 
+/// The trip's "Receipt" (owner 2026-11-03): every line of the price, adding
+/// up to the total — base fare, distance, time, booking fee, and stop, wait,
+/// airport, scheduled, discount, tip when they apply; taxes only when one is
+/// charged (none is today). Reads GET /trips/{id}/fare-breakdown: its
+/// `items` list when the server sends it, the older flat fields otherwise.
+class _ReceiptSheet extends StatefulWidget {
+  const _ReceiptSheet({required this.tripId});
+
+  final int tripId;
+
+  @override
+  State<_ReceiptSheet> createState() => _ReceiptSheetState();
+}
+
+class _ReceiptSheetState extends State<_ReceiptSheet> {
+  Map<String, dynamic>? _data;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final d = await ApiService.getFareBreakdown(widget.tripId);
+      if (!mounted) return;
+      setState(() {
+        _data = d;
+        _failed = false;
+      });
+    } catch (e) {
+      debugPrint('[Receipt] load failed: $e');
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  static double _num(dynamic v) =>
+      v is num ? v.toDouble() : double.tryParse('${v ?? ''}') ?? 0;
+
+  static String _money(double v) =>
+      '${v < 0 ? '-' : ''}\$${v.abs().toStringAsFixed(2)}';
+
+  /// (label, detail, amount) rows, in order.
+  List<(String, String?, double)> _rows(bool es) {
+    final d = _data!;
+    final items = d['items'];
+    if (items is List && items.isNotEmpty) {
+      return [
+        for (final it in items.whereType<Map>())
+          (
+            '${(es ? it['label_es'] : it['label_en']) ?? it['key'] ?? ''}',
+            it['detail'] == null ? null : '${it['detail']}',
+            _num(it['amount']),
+          ),
+      ];
+    }
+    // Older server: the flat fields.
+    final rows = <(String, String?, double)>[
+      (es ? 'Tarifa base' : 'Base fare', null, _num(d['base_fare'])),
+      (es ? 'Distancia' : 'Distance', '${_num(d['distance_miles'])} mi',
+          _num(d['mileage_charge'])),
+      (es ? 'Tiempo' : 'Time', '${_num(d['duration_minutes']).round()} min',
+          _num(d['time_charge'])),
+    ];
+    void add(String es1, String en1, String key) {
+      final v = _num(d[key]);
+      if (v != 0) rows.add((es ? es1 : en1, null, v));
+    }
+    add('Tarifa dinámica', 'Surge', 'surge_extra');
+    add('Espera', 'Wait time', 'wait_time_charge');
+    add('Reserva programada', 'Scheduled ride', 'scheduled_surcharge');
+    add('Cargo de aeropuerto', 'Airport fee', 'airport_fee');
+    add('Meet & greet', 'Meet & greet', 'meet_greet_fee');
+    add('Propina', 'Tip', 'tip_amount');
+    return rows;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final es = Localizations.localeOf(context).languageCode == 'es';
+    final bottom = MediaQuery.of(context).padding.bottom;
+    Widget line(String label, String? detail, String amount,
+        {bool strong = false, Color color = Colors.white}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Expanded(
+              child: Text.rich(
+                TextSpan(children: [
+                  TextSpan(text: label),
+                  if (detail != null && detail.isNotEmpty)
+                    TextSpan(
+                      text: ' · $detail',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                ]),
+                style: TextStyle(
+                  color: color,
+                  fontSize: strong ? 20 : 15,
+                  fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+                ),
+              ),
+            ),
+            Text(
+              amount,
+              style: TextStyle(
+                color: color,
+                fontSize: strong ? 20 : 15,
+                fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget hr() => Container(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          height: 1,
+          color: Colors.white.withValues(alpha: 0.10),
+        );
+
+    final data = _data;
+    Widget content;
+    if (data == null) {
+      content = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+          child: _failed
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      s.receiptUnavailable,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75)),
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () {
+                        setState(() => _failed = false);
+                        _load();
+                      },
+                      child: Text(s.retry,
+                          style: const TextStyle(color: AppColors.kGold)),
+                    ),
+                  ],
+                )
+              : const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.4, color: AppColors.kGold),
+                ),
+        ),
+      );
+    } else {
+      final rows = _rows(es);
+      final taxes = (data['taxes'] is List) ? data['taxes'] as List : const [];
+      final total = _num(data['total']);
+      final subtotal = data['subtotal'] != null && taxes.isNotEmpty
+          ? _num(data['subtotal'])
+          : null;
+      final payment = '${data['payment_method'] ?? data['payment_method_display'] ?? ''}'.trim();
+      final number = '${data['receipt_number'] ?? ''}';
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (number.isNotEmpty)
+            Text(
+              number,
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
+            ),
+          const SizedBox(height: 10),
+          for (final r in rows)
+            line(r.$1, r.$2, _ReceiptSheetState._money(r.$3)),
+          if (subtotal != null) ...[
+            hr(),
+            line(s.receiptSubtotal, null, _money(subtotal)),
+            for (final t in taxes.whereType<Map>())
+              line(
+                '${(es ? t['label_es'] : t['label_en']) ?? s.receiptTaxes}',
+                t['detail'] == null ? null : '${t['detail']}',
+                _money(_num(t['amount'])),
+              ),
+          ],
+          hr(),
+          line(s.receiptTotal, null, _money(total),
+              strong: true, color: AppColors.kGold),
+          if (payment.isNotEmpty && data['is_final'] == true) ...[
+            const SizedBox(height: 6),
+            Text(
+              s.receiptPaidWith(payment),
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+            ),
+          ],
+        ],
+      );
+    }
+
+    return GlassSurface(
+      blur: kGlassSheetBlurOpen,
+      tint: glassSheetOpenTint,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(22, 10, 22, bottom + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.32),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    s.trackReceipt,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => Navigator.maybeOf(context)?.pop(),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.1),
+                    ),
+                    child: const Icon(Icons.close_rounded,
+                        color: Colors.white, size: 20),
+                  ),
+                ),
+              ],
+            ),
+            Flexible(child: SingleChildScrollView(child: content)),
+          ],
+        ),
+      ),
+    );
+  }
+}

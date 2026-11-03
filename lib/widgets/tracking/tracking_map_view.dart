@@ -83,6 +83,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Removes all trip-related polyline and pin annotations from the map.
   Future<void> _cleanupMapAnnotations() async {
+    // FIRST and synchronous: dispose() calls this right before
+    // super.dispose(), and TickerProviderStateMixin asserts that no ticker
+    // it handed out is still running there — the route glow's is.
+    _mapRoute?.disposeGlow();
     if (kIsWeb) {
       final web = _webMapCtrl;
       if (web != null) {
@@ -1005,6 +1009,15 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     unawaited(_mapCar?.setHidden(_chaseCarAnchor != null) ?? Future.value());
 
     if (_userControllingCamera) return;
+    // "Seguir" (owner 2026-11-03): only what is left of the leg, closing in
+    // a little every frame as the car nears — and close on the pickup once
+    // the driver is there. Every live phase, so it comes before the gate
+    // that only the route fits below use.
+    if (_camFollow && _phase != _TrackPhase.completed) {
+      if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+      _followCameraFrame();
+      return;
+    }
     if (!_cameraChaseAllowed) return;
     if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
 
@@ -1018,10 +1031,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // on a deactivated element while `mounted` is still true. See rule 26.
     final mq = MediaQuery.maybeOf(context);
     if (mq == null) return;
-    final topPad = mq.padding.top;
-    final bottomPad = mq.padding.bottom;
-    // Both legs fit their whole current route between the cards. No chase,
-    // no near-destination close-up and no automatic recenter after a gesture.
+    // "Ruta completa": the whole trip, fit once per content change and then
+    // held — framed under the top guide, above the RESTING sheet (never
+    // under it) and clear of the map buttons. No chase, no near-destination
+    // close-up and no automatic recenter after a gesture.
     final isOnTrip =
         _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
     if (_phase != _TrackPhase.arriving && !isOnTrip) return;
@@ -1041,8 +1054,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         _needsTripReframe = false;
         unawaited(_mapCamera!.fitBounds(
           points: _tripFramePoints(),
-          topPadding: topPad + 10 + _topCardHeight + 56,
-          bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
+          topPadding: _frameTopPad,
+          bottomPadding: _frameBottomPad,
+          leftPadding: kTrackFrameSidePad,
+          rightPadding: kTrackFrameButtonsPad,
         ));
       }
       return;
@@ -1057,12 +1072,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (sig != _lastApproachFitSig || _needsTripReframe) {
       _lastApproachFitSig = sig;
       _needsTripReframe = false;
-      final pts = _approachFramePoints();
+      // Before pickup the WHOLE trip (owner 2026-11-03): the car's road to
+      // the pickup and, fainter, the trip after it.
+      final pts = _wholeTripPoints();
       if (pts.isNotEmpty) {
         unawaited(_mapCamera!.fitBounds(
           points: pts,
-          topPadding: topPad + 10 + _topCardHeight + 32,
-          bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
+          topPadding: _frameTopPad,
+          bottomPadding: _frameBottomPad,
+          leftPadding: kTrackFrameSidePad,
+          rightPadding: kTrackFrameButtonsPad,
         ));
       }
     }
@@ -1475,7 +1494,18 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
               // Initialize new modular map components (AFTER managers are created)
               _mapAnnotations = TrackingMapAnnotations(map: ctrl, pointAnnotMgr: _pointAnnotMgr);
+              // A previous surface's route component (the Find-My overlay
+              // took the surface and gave it back) must not keep a ticker
+              // or a handle into the map that is gone.
+              _mapRoute?.disposeGlow();
               _mapRoute = TrackingMapRoute(map: ctrl, polylineAnnotMgr: _polylineAnnotMgr);
+              // Glow along the gold line. Live only while THIS map is the
+              // screen's map: the revoke nulls `_map` and the glow stops
+              // for good on its next frame, without touching the map.
+              _mapRoute!.attachGlow(
+                vsync: this,
+                isLive: () => mounted && identical(_map, ctrl),
+              );
               _mapCamera = TrackingMapCamera(ctrl);
               _mapCar = TrackingMapCar(map: ctrl, carAnnotMgr: _carAnnotMgr);
               // Load the car icon the moment the component exists. It used
@@ -2578,6 +2608,37 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     } catch (_) {
       _routeEraseBusy = false;
     }
+  }
+
+  /// Per frame (from `_interpolate`): gate the glow that travels along the
+  /// active gold line (owner design 2026-11-03, see TrackingRouteGlow).
+  ///
+  /// Web: the GL JS map has no TrackingMapRoute (`_mapRoute` is only built
+  /// in the native onMapCreated) — no glow there, nothing runs.
+  void _syncRouteGlow() {
+    if (kIsWeb) return;
+    _mapRoute?.updateGlow(allowed: _routeGlowAllowed());
+  }
+
+  /// Which line may glow in which phase:
+  ///   * arriving / arrived → only the driver→pickup APPROACH line. Before
+  ///     the road approach lands the gold line on screen is the trip
+  ///     preview, and once the driver arrives the active route is already
+  ///     the trip leg (`_routePts` IS `_tripRoutePts`) — neither glows yet.
+  ///   * onTrip / nearDestination → the remaining pickup→dropoff trip line
+  ///     (re-routes and traffic refreshes included).
+  ///   * completed → nothing.
+  /// TrackingMapRoute adds the other half: no glow while the line is being
+  /// (re)drawn, so at pickup it waits for the trip line's draw to land.
+  bool _routeGlowAllowed() {
+    final p = _phase;
+    if (p == _TrackPhase.onTrip || p == _TrackPhase.nearDestination) {
+      return true;
+    }
+    if (p == _TrackPhase.arriving || p == _TrackPhase.arrived) {
+      return _approachRouteFetched && !identical(_routePts, _tripRoutePts);
+    }
+    return false;
   }
 
   /// Remove the dimmed route (called when transitioning to onTrip gloss route)

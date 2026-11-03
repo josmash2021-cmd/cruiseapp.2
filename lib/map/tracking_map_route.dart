@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../utils/mapbox_safe.dart';
+import 'tracking_route_glow.dart';
 
 /// ═══════════════════════════════════════════════════════════════════
 ///  TrackingMapRoute — Gestión de líneas de ruta en el mapa
@@ -54,6 +55,50 @@ class TrackingMapRoute {
   /// the car, not swallowed in chunks half a second later.
   static const int _eraseIntervalMs = 66;
 
+  // ── Glow travelling along the gold line (owner design 2026-11-03) ──
+  //
+  // The glow mirrors exactly what `_remainingRouteAnnot` shows, so this
+  // component — the only writer of that line — reports it: `_drawnCoords`
+  // is the last geometry written to the gold line, `_lineSettled` says the
+  // line is on screen and NOT mid progressive-draw (a growing line gets no
+  // glow; it starts once the draw lands).
+  TrackingRouteGlow? _glow;
+  List<mapbox.Position>? _drawnCoords;
+  bool _lineSettled = false;
+
+  /// Create the glow for this map. The screen gates it per frame with
+  /// [updateGlow]; [isLive] must turn false the moment the map surface is
+  /// revoked or the screen goes away (the glow then stops for good and
+  /// drops its map handle).
+  void attachGlow({
+    required TickerProvider vsync,
+    required bool Function() isLive,
+  }) {
+    _glow?.dispose();
+    _glow = TrackingRouteGlow(
+      map: map,
+      vsync: vsync,
+      isLive: isLive,
+      line: () => _lineSettled && _remainingRouteAnnot != null
+          ? _drawnCoords
+          : null,
+      anchorLayerId: () => _polylineAnnotMgr?.id,
+    );
+  }
+
+  /// Per frame: [allowed] = the phase rule (approach line before the
+  /// pickup, trip line after it).
+  void updateGlow({required bool allowed}) =>
+      _glow?.update(allowed: allowed);
+
+  /// Synchronous stop: the ticker is disposed right here (safe inside the
+  /// screen's dispose(), before super.dispose()).
+  void disposeGlow() {
+    final g = _glow;
+    _glow = null;
+    g?.dispose(hide: true);
+  }
+
   /// Actualiza el manager de anotaciones
   void setAnnotManager(mapbox.PolylineAnnotationManager? mgr) {
     // Un cross-fade en vuelo escribe dos anotaciones del manager viejo.
@@ -63,6 +108,8 @@ class TrackingMapRoute {
     _remainingRouteAnnot = null;
     _dimmedRouteAnnot = null;
     _approachAnnot = null;
+    _drawnCoords = null;
+    _lineSettled = false;
   }
 
   /// Inicializa la ruta del viaje
@@ -103,6 +150,9 @@ class TrackingMapRoute {
     if (resetDraw) {
       _routeDrawTicker?.stop();
       _routeDrawDone = false;
+      // The line on screen is the OLD route until the redraw lands — no
+      // glow on it (approach → trip swap at pickup).
+      _lineSettled = false;
     }
   }
 
@@ -132,6 +182,11 @@ class TrackingMapRoute {
     final old = _remainingRouteAnnot;
     if (old == null) {
       await _createRouteLayer(mgr, geom);
+      if (_remainingRouteAnnot != null) {
+        _drawnCoords = geom.coordinates;
+        _lineSettled = true;
+        _glow?.lineReplaced();
+      }
       return;
     }
 
@@ -158,7 +213,13 @@ class TrackingMapRoute {
       // eraseRouteBehindCar escribe _remainingRouteAnnot — apuntarlo ya a la
       // nueva para que el camino se siga consumiendo bajo el carro durante el
       // fade.
-      if (fresh != null) _remainingRouteAnnot = fresh;
+      if (fresh != null) {
+        _remainingRouteAnnot = fresh;
+        // The glow follows the spliced line now, not at its next slot.
+        _drawnCoords = geom.coordinates;
+        _lineSettled = true;
+        _glow?.lineReplaced();
+      }
     } finally {
       _eraseBusy = false;
     }
@@ -238,6 +299,8 @@ class TrackingMapRoute {
           lineJoin: mapbox.LineJoin.ROUND,
         ),
       );
+      _drawnCoords = line.coordinates;
+      _lineSettled = true;
     } catch (e) {
       debugPrint('[TrackingMapRoute] Failed to create remaining route: $e');
     }
@@ -328,6 +391,8 @@ class TrackingMapRoute {
     try {
       _remainingRouteAnnot!.geometry = geom;
       await mgr.update(_remainingRouteAnnot!);
+      // The trimmed line is what the glow travels along (from the car on).
+      _drawnCoords = validRemaining;
     } catch (_) {
     } finally {
       _eraseBusy = false;
@@ -341,6 +406,9 @@ class TrackingMapRoute {
 
     final mgr = _polylineAnnotMgr;
     if (mgr == null) return;
+
+    // A line that is growing gets no glow — it starts when the draw lands.
+    _lineSettled = false;
 
     final allCoords = _routePts.map((p) =>
       mapbox.Position(p.longitude, p.latitude)
@@ -420,6 +488,9 @@ class TrackingMapRoute {
           _remainingRouteAnnot!.geometry = fullGeom;
           mgr.update(_remainingRouteAnnot!).catchError((_) {});
           _routeDrawTicker?.stop();
+          // Drawn in full: the glow may travel along it now.
+          _drawnCoords = allCoords;
+          _lineSettled = true;
           onComplete?.call();
         }
       })..start();
@@ -464,6 +535,9 @@ class TrackingMapRoute {
     _routeDrawTicker = null;
     _fadeTimer?.cancel();
     _fadeTimer = null;
+    // No line → the glow rests (hidden) on its next tick.
+    _drawnCoords = null;
+    _lineSettled = false;
 
     final mgr = _polylineAnnotMgr;
     if (mgr == null) return;
@@ -491,6 +565,11 @@ class TrackingMapRoute {
     _dimmedRouteAnnot = null;
     _approachAnnot = null;
     _routeDrawDone = false;
+    _drawnCoords = null;
+    _lineSettled = false;
+    // The glow's source and layer died with the style — rebuilt on the
+    // first pass after the gold line is redrawn.
+    _glow?.reset();
   }
 
   // ── Helpers privados ──

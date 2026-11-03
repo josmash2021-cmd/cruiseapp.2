@@ -174,7 +174,11 @@ void main() {
 
     test('the trip fit clears the top card AND the pin body (2026-09-17)',
         () {
-      expect(view.contains('_topCardHeight + 56'), isTrue,
+      // The frame box lives in tracking_camera_modes.dart since 2026-11-03.
+      final modes = File('lib/widgets/tracking/tracking_camera_modes.dart')
+          .readAsStringSync();
+      expect(view.contains('topPadding: _frameTopPad,'), isTrue);
+      expect(modes.contains('_topCardHeight + 56'), isTrue,
           reason: 'the dropoff pin tip anchors at the route end and its '
               'body extends ~55 px up — +32 let it poke behind the top card');
       expect(screen.contains('(h == null || h < 1) ? 140.0 : h'), isTrue,
@@ -211,10 +215,12 @@ void main() {
           .length - 1, 2,
           reason: 'both platforms include the approach route in the fit key, '
               'not the moving car');
-      expect(screen, contains('ignoring: !_userControllingCamera'),
-          reason: 'Show route is disabled before a real gesture');
-      expect(screen, contains('opacity: _userControllingCamera ? 1 : 0'),
-          reason: 'and hidden until the rider actually pans or zooms');
+      // The "Show route" pill became the zigzag button (owner 2026-11-03):
+      // after a real pan it fades in, and only a tap brings the frame back.
+      final ind = File('lib/widgets/tracking/trip_phase_indicator.dart')
+          .readAsStringSync();
+      expect(ind, contains('final showFull = _camFollow || _userControllingCamera;'));
+      expect(ind, contains('ignoring: !showFull,'));
       final recenter = view.indexOf('void _recenter()');
       final body = view.substring(recenter, recenter + 1400);
       expect(body, contains('_userControllingCamera = false'));

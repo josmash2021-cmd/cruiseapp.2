@@ -55,11 +55,17 @@ void main() {
     expect(main, contains("if (mode != 'rider') return;"));
   });
 
-  test('the guide reads the ETA estimate in both presentation paths', () {
+  // Owner 2026-11-03 (drawing J6zTb8hfeKDqfFbzpx5jXb): the top guide shows
+  // the EXACT countdown — "Tu conductor llega en 7 min · Llega a las 3:42
+  // PM" — not "un estimado de"; that copy stays for the push.
+  test('the guide counts down exactly, with the clock time it lands', () {
     final indicator = File('lib/widgets/tracking/trip_phase_indicator.dart')
         .readAsStringSync();
-    expect(
-        indicator.split('driverArrivesInEstimate(_etaMinutes)').length - 1, 2);
+    expect(indicator, contains('lead: s.trackDriverArrivesIn,'));
+    expect(indicator, contains('clockLead: s.trackArrivesAt,'));
+    expect(indicator, contains('lead: s.trackYouArriveIn,'));
+    expect(indicator, contains('S.of(context).trackDriverArrived'));
+    expect(indicator, contains('DateTime.now().add(Duration(minutes: _etaMinutes)))'));
     final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
     expect(l10n, contains('driverArrivesInEstimate(int minutes)'));
     expect(l10n, contains('Tu conductor llega en un estimado de'));

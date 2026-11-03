@@ -2301,6 +2301,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _updateCarSmooth(); // fast path: only car GeoJSON
     _updateStaticAnnotationsOnce(); // slow path: pins + route, created once
     _eraseRouteBehindCar(); // progressive route erase (throttled internally)
+    _syncRouteGlow(); // glow along the gold line — phase gate, cheap per frame
     _updateApproachLine(); // dashed approach line driver→pickup
 
     // ── Idle detection: pause ticker only when trip is completed ──

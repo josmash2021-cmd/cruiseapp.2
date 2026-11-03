@@ -35,6 +35,8 @@ import '../services/socket_service.dart';
 import '../config/feature_flags.dart';
 import '../widgets/offline_banner.dart';
 import '../widgets/neu_style.dart';
+import '../widgets/glass_style.dart';
+import '../widgets/tracking/rider_trip_sheet.dart';
 import '../widgets/ota_image.dart';
 import '../widgets/cancel_reason_sheet.dart';
 import '../utils/mapbox_safe.dart';
@@ -77,6 +79,7 @@ part '../widgets/tracking/trip_phase_indicator.dart';
 part '../widgets/tracking/trip_action_buttons.dart';
 part '../widgets/tracking/eta_display.dart';
 part '../widgets/tracking/tracking_map_view.dart';
+part '../widgets/tracking/tracking_camera_modes.dart';
 
 class RiderTrackingScreen extends StatefulWidget {
   const RiderTrackingScreen({
@@ -395,7 +398,23 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _rcCommitting = false;
   LatLng? _committedStop;
   String _committedStopLabel = '';
+  String _committedDropoffLabel = '';
   LatLng? _dropoffOverride;
+  // The price after a route change, as the server repriced it (the sheet
+  // shows it at once; null = the booked price).
+  double? _fareOverride;
+  // The driver's unread chat count: ONE subscription per screen. A stream
+  // created in build re-subscribed on every rebuild — an RTDB listener plus
+  // a GET each time, ~6 a second while the car moves.
+  final ValueNotifier<int> _chatUnread = ValueNotifier<int>(0);
+  StreamSubscription<int>? _chatUnreadSub;
+  // "Seguir": what is left of the leg, rebuilt a few times a second rather
+  // than every frame.
+  List<LatLng> _followPts = const [];
+  DateTime _followPtsAt = DateTime(2000);
+  // The trip sheet (owner 2026-11-03): its controller and resting height.
+  final RiderTripSheetController _tripSheet = RiderTripSheetController();
+  double _sheetRestH = 0;
   mapbox.PointAnnotation? _stopAnnot;
   // Fase 2: driver-proposed route change (confirm sheet latches).
   bool _proposalSheetOpen = false;
@@ -531,6 +550,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void initState() {
     super.initState();
     unawaited(_acquireMapSurface());
+    _startChatUnreadWatch();
     _stopLL = widget.stopLatLng;
     _driverPhotoUrl = _normalizeRemotePhotoUrl(widget.driverPhotoUrl);
     // If no photo URL from dispatch, proactively fetch from Firestore user doc.
@@ -659,6 +679,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   @override
   void dispose() {
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+    _chatUnreadSub?.cancel();
+    _chatUnread.dispose();
     _tripRouteRetryTimer?.cancel();
     _stopWaitTicker?.cancel();
     _rcDebounce?.cancel();
@@ -746,6 +768,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   double get _bottomCardHeight {
+    // The trip sheet reports its resting (semi-open) height: the route is
+    // framed above it, never under it (owner 2026-11-03).
+    if (!_searchingNewDriver && _sheetRestH > 0) return _sheetRestH;
     final box = _bottomCardKey.currentContext?.findRenderObject() as RenderBox?;
     // Fallback is deliberately generous (2026-09-13): before the first
     // layout (restore path) the real card is ~200 tall, and an 80-px guess
@@ -814,6 +839,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // channel with different backpressure made the marker oscillate around
   // its anchor on slow devices — see _onAnimationFrame.
   bool _userControllingCamera = false;
+
+  /// The camera follows what is left of the leg ("Seguir") instead of
+  /// holding the whole trip (owner 2026-11-03).
+  bool _camFollow = false;
 
   // Safety net: detect stale driver location (trip may have ended)
   Timer? _staleDriverTimer;
@@ -918,68 +947,53 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   child: _buildDestinationBox(),
                 ),
               ),
-              // LAYER 4: Driver info card (bottom) — avatar, plate, chat,
-              // call, share and the more menu, all within thumb reach.
-              // Welded to the edges and the floor now, like the driver
-              // app's own sheets — no floating margins, the card IS the
-              // bottom of the screen.
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: KeyedSubtree(
-                  key: _bottomCardKey,
-                  // While the trip is back in the dispatch queue the old
-                  // driver's card would still be showing their name, photo
-                  // and plate for someone who handed the trip back. Show
-                  // the search state instead until a new driver is assigned.
-                  child: _searchingNewDriver
-                      ? _buildSearchingDriverCard()
-                      : AnimatedSize(
-                          duration: const Duration(milliseconds: 420),
-                          curve: Curves.easeInOutCubicEmphasized,
-                          alignment: Alignment.bottomCenter,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 340),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, anim) =>
-                                FadeTransition(
-                              opacity: anim,
-                              child: SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0, 0.04),
-                                  end: Offset.zero,
-                                ).animate(anim),
-                                child: child,
-                              ),
-                            ),
-                            child: _supportPage == 0
-                                ? KeyedSubtree(
-                                    key: const ValueKey('driver-card'),
-                                    child: _buildDriverCard())
-                                : _supportPage == 1
-                                    ? _buildSupportPanel()
-                                    : _buildRouteChangePanel(),
-                          ),
-                        ),
+              // The map's two buttons: "Seguir" and, faded in when it
+              // applies, "Ruta completa" — just above the resting sheet.
+              if (!_searchingNewDriver && _phase != _TrackPhase.completed)
+                Positioned(
+                  right: 14,
+                  bottom: _bottomCardHeight + 14,
+                  child: _buildMapButtons(),
                 ),
-              ),
-              // Recenter — only after a real pan/pinch, and it stays visible
-              // until the rider uses it. There is no timed auto-resume.
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: _bottomCardHeight + 14,
-                child: IgnorePointer(
-                  ignoring: !_userControllingCamera,
-                  child: AnimatedOpacity(
-                    opacity: _userControllingCamera ? 1 : 0,
-                    duration: const Duration(milliseconds: 220),
-                    child: _buildResumeButton(),
+              // LAYER 4: the trip sheet (owner 2026-11-03, drawing
+              // J6zTb8hfeKDqfFbzpx5jXb): dark blurred glass, resting
+              // semi-open, opening tall like the driver's whole-trip panel.
+              // While the trip is back in the dispatch queue the old
+              // driver's card would still be showing their name, photo and
+              // plate for someone who handed the trip back — the search
+              // state shows instead until a new driver is assigned.
+              if (_searchingNewDriver)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: KeyedSubtree(
+                    key: _bottomCardKey,
+                    child: _buildSearchingDriverCard(),
+                  ),
+                )
+              else
+                Positioned.fill(
+                  key: const ValueKey('rider-trip-sheet'),
+                  child: RiderTripSheet(
+                    controller: _tripSheet,
+                    hint: S.of(context).trackSwipeHint,
+                    hintTripId: widget.tripId,
+                    onRestHeightChanged: (h) {
+                      if (!mounted || (h - _sheetRestH).abs() < 0.5) return;
+                      _setState(() => _sheetRestH = h);
+                    },
+                    // All the way down: back to the trip page for next time
+                    // (the sheet already dropped any keyboard focus).
+                    onClosed: () {
+                      if (mounted && _supportPage != 0) {
+                        _setState(() => _supportPage = 0);
+                      }
+                    },
+                    face: _buildSheetFace(),
+                    body: _buildSheetBody(),
                   ),
                 ),
-              ),
               // Offline banner
               Positioned(
                 top: topPad,

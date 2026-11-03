@@ -22,51 +22,6 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     return ''; // unit is embedded in _etaDisplayText for hour format
   }
 
-  // ── Phase-based status text (top label) ──
-  // During 'arriving', the label is refined by ETA and distance to show
-  // progressively urgent messages as the driver gets closer.
-  String get _topStatusText {
-    final s = S.of(context);
-    switch (_phase) {
-      case _TrackPhase.arriving:
-        final distM = _distanceMiles * 1609.34;
-        if (distM <= 50) return s.driverAtPickupSpot;
-        if (_etaMinutes <= 2 || distM <= 300) return s.driverArrivingCard;
-        if (_etaMinutes <= 5) return s.driverAlmostHereCard;
-        return s.driverArrivesInEstimate(_etaMinutes);
-      case _TrackPhase.arrived:
-        return s.driverHasArrived;
-      case _TrackPhase.onTrip:
-        return s.onWayToDestination;
-      case _TrackPhase.nearDestination:
-        return s.arrivingAtDestination;
-      case _TrackPhase.completed:
-        return s.tripCompletedTitle;
-    }
-  }
-
-  // ── Phase-based bottom card text ──
-  // Mirrors _topStatusText logic: smart sub-states for 'arriving' phase.
-  String get _bottomCardText {
-    final s = S.of(context);
-    switch (_phase) {
-      case _TrackPhase.arriving:
-        final distM = _distanceMiles * 1609.34;
-        // The driver is still en-route; "waiting" only makes sense at arrived phase.
-        if (_etaMinutes <= 2 || distM <= 300) return s.driverArrivingCard;
-        if (_etaMinutes <= 5) return s.driverAlmostHereCard;
-        return s.driverArrivesInEstimate(_etaMinutes);
-      case _TrackPhase.arrived:
-        return s.driverWaitingForYou;
-      case _TrackPhase.onTrip:
-        return s.onWayToDestinationCard;
-      case _TrackPhase.nearDestination:
-        return s.arrivingAtDestinationCard;
-      case _TrackPhase.completed:
-        return s.tripCompletedTitle;
-    }
-  }
-
   // ── Phase-based dot color ──
   Color get _dotColor {
     switch (_phase) {
@@ -108,11 +63,11 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
   Widget _buildDestinationBox() {
     final Color dotColor = _dotColor;
 
-    // Determine which content to show:
-    // 1. arriving → full row with status + ETA badge (pickup ETA)
-    // 2. arrived → single centered text + Confirm Pickup button inline
-    // 3. onTrip + _tripJustStarted → single centered "Your trip has started"
-    // 4. onTrip / nearDestination → row with status + ETA badge (dropoff ETA)
+    // The guide at the top (owner 2026-11-03, drawing J6zTb8hfeKDqfFbzpx5jXb):
+    // 1. arriving → "Tu conductor llega en 7 min · Llega a las 3:42 PM"
+    // 2. arrived → "Tu conductor llegó", one line
+    // 3. onTrip + _tripJustStarted → "Your trip has started", one line
+    // 4. onTrip / nearDestination → "Llegas a tu destino en 12 min · 4:05 PM"
     Widget content;
     if (_phase == _TrackPhase.arriving) {
       content = _buildArrivingContent(dotColor);
@@ -128,9 +83,13 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
       content = _buildOnTripContent(dotColor);
     }
 
-    return Container(
-      decoration: neuBox(radius: 22),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    // Dark glass like the sheet below it: the map blurs behind, nothing
+    // behind it reads.
+    return GlassSurface(
+      borderRadius: BorderRadius.circular(22),
+      blur: kGlassSheetBlurOpen,
+      tint: glassSheetOpenTint,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 500),
         switchInCurve: Curves.easeOutCubic,
@@ -142,106 +101,153 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     );
   }
 
-  /// Arriving phase: dot + status label + bold text + ETA badge
-  Widget _buildArrivingContent(Color dotColor) {
-    final String bottomText = _bottomCardText;
-    // When driver is essentially here (<= 300m or 0 min), drop the ETA
-    // badge and let the status text expand to fill the whole card so
-    // "Driver is here" / "Driver is waiting" reads big and clear.
-    final double distM = _distanceMiles * 1609.34;
-    final bool hideEta = _etaMinutes <= 0 || distM <= 300;
+  /// "7 min", or "1h 15min" past the hour.
+  String get _etaBigText => _etaMinutes < 60
+      ? S.of(context).trackMinutes(_etaMinutes)
+      : _etaDisplayText;
 
+  /// The clock time the ETA lands on, in the phone's own format ("3:42 PM",
+  /// "15:42").
+  String get _etaClockText => TimeOfDay.fromDateTime(
+          DateTime.now().add(Duration(minutes: _etaMinutes)))
+      .format(context);
+
+  /// The two-sided guide: "<lead> / 7 min" on the left, "<clockLead> /
+  /// 3:42 PM" in gold on the right. The minutes roll in place as they count
+  /// down; the row itself never swaps.
+  Widget _buildEtaGuide({
+    required String tag,
+    required Color dotColor,
+    required String lead,
+    required String clockLead,
+  }) {
     return Row(
-      key: ValueKey('arriving_${hideEta ? 'final' : _etaMinutes}'),
+      key: ValueKey('guide_$tag'),
       children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor),
+        ),
+        const SizedBox(width: 12),
         Expanded(
-          child: Row(
-            mainAxisAlignment: hideEta
-                ? MainAxisAlignment.center
-                : MainAxisAlignment.start,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 500),
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: dotColor,
+              Text(
+                lead,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.65),
+                  fontSize: 13,
                 ),
               ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 400),
-                  transitionBuilder: (child, anim) =>
-                      FadeTransition(opacity: anim, child: child),
-                  child: Text(
-                    bottomText,
-                    key: ValueKey(bottomText),
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: hideEta ? 17 : 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.3),
+                      end: Offset.zero,
+                    ).animate(anim),
+                    child: child,
+                  ),
+                ),
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [...previous, if (current != null) current],
+                ),
+                child: Text(
+                  _etaBigText,
+                  key: ValueKey('eta_$_etaMinutes'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
                   ),
                 ),
               ),
             ],
           ),
         ),
-        if (!hideEta) ...[
-          const SizedBox(width: 12),
-          // Live ETA badge — _etaMinutes is read from the controller
-          // state on every rebuild so it tracks the real-time countdown
-          // pushed by the driver-location listener.
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            // Sunken well with gold digits — reads like an instrument
-            // readout. The old white block fought the neumorphic card
-            // around it.
-            decoration: neuBox(radius: 14, pressed: true),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 350),
-                  transitionBuilder: (child, anim) {
-                    return FadeTransition(
-                      opacity: anim,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0, 0.3),
-                          end: Offset.zero,
-                        ).animate(anim),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: Text(
-                    _etaDisplayText,
-                    key: ValueKey('eta_$_etaMinutes'),
-                    style: TextStyle(
-                      color: AppColors.kGold,
-                      fontSize: _etaMinutes >= 60 ? 18 : 22,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                if (_etaUnitText.isNotEmpty)
-                  Text(
-                    _etaUnitText,
-                    style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.45),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600),
-                  ),
-              ],
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              clockLead,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 12,
+              ),
+            ),
+            Text(
+              _etaClockText,
+              style: const TextStyle(
+                color: AppColors.kGold,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// One centered line: "Tu conductor llegó", "Tu conductor está llegando",
+  /// "Llegando a tu destino".
+  Widget _buildGuideLine(String text, Color dotColor, {bool pulse = false}) {
+    final dot = Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor),
+    );
+    return Row(
+      key: ValueKey('line_$text'),
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (pulse)
+          ScaleTransition(
+            scale: Tween<double>(begin: 0.7, end: 1.3).animate(_arrivedDotPulse),
+            child: dot,
+          )
+        else
+          dot,
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
             ),
           ),
-        ],
+        ),
       ],
+    );
+  }
+
+  /// Arriving: the live countdown to the pickup and the clock time it lands.
+  Widget _buildArrivingContent(Color dotColor) {
+    final s = S.of(context);
+    final distM = _distanceMiles * 1609.34;
+    if (_etaMinutes <= 0 || distM <= 50) {
+      return _buildGuideLine(s.trackDriverAlmostThere, dotColor);
+    }
+    return _buildEtaGuide(
+      tag: 'arriving',
+      dotColor: dotColor,
+      lead: s.trackDriverArrivesIn,
+      clockLead: s.trackArrivesAt,
     );
   }
 
@@ -299,188 +305,112 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     );
   }
 
-  /// Arrived phase: single status text + Confirm Pickup button inline.
-  /// No overlay screen — the rider confirms directly from the bottom card.
-  Widget _buildArrivedContent(Color dotColor) {
-    final text = _singleStatusText;
+  /// Arrived: "Tu conductor llegó" the moment the driver taps "Llegué".
+  Widget _buildArrivedContent(Color dotColor) =>
+      _buildGuideLine(S.of(context).trackDriverArrived,
+          const Color(0xFF4ADE80),
+          pulse: true);
+
+  /// OnTrip / NearDestination: the countdown to the destination and the
+  /// clock time; one line once there.
+  Widget _buildOnTripContent(Color dotColor) {
+    final s = S.of(context);
+    final distM = _distanceMiles * 1609.34;
+    if (_etaMinutes <= 0 || distM <= 200) {
+      return _buildGuideLine(s.arrivingAtDestination, dotColor);
+    }
+    return _buildEtaGuide(
+      tag: 'ontrip',
+      dotColor: dotColor,
+      lead: s.trackYouArriveIn,
+      clockLead: s.trackYouArriveAt,
+    );
+  }
+
+  /// The two map buttons (owner 2026-11-03, drawing J6zTb8hfeKDqfFbzpx5jXb),
+  /// right side, just above the resting sheet:
+  /// - the arrow, "Seguir" — always there; gold while it leads the camera;
+  /// - the zigzag, "Ruta completa" — fades in once the camera is following
+  ///   (or the rider moved the map) and fades out when tapped, back on the
+  ///   whole trip.
+  Widget _buildMapButtons() {
+    final s = S.of(context);
+    final following = _camFollow && !_userControllingCamera;
+    final showFull = _camFollow || _userControllingCamera;
+    Widget button({
+      required Key key,
+      required String label,
+      required Widget icon,
+      required VoidCallback onTap,
+      bool active = false,
+    }) {
+      return Semantics(
+        button: true,
+        label: label,
+        child: GestureDetector(
+          key: key,
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            HapticService.selectionClick();
+            onTap();
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: active ? AppColors.kGold : Colors.transparent,
+                width: 1.5,
+              ),
+            ),
+            child: MapChipSurface(
+              circle: true,
+              width: 46,
+              height: 46,
+              child: Center(child: icon),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Column(
-      key: const ValueKey('arrived_confirm'),
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ScaleTransition(
-              scale: Tween<double>(begin: 0.7, end: 1.3)
-                  .animate(_arrivedDotPulse),
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: dotColor,
+        IgnorePointer(
+          ignoring: !showFull,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.easeInOut,
+            opacity: showFull ? 1 : 0,
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 450),
+              curve: Curves.easeOutCubic,
+              scale: showFull ? 1 : 0.85,
+              child: button(
+                key: const ValueKey('map-full-route'),
+                label: s.trackFullRoute,
+                icon: Transform.rotate(
+                  angle: 1.5708,
+                  child: const Icon(Icons.route_rounded,
+                      color: Colors.white, size: 22),
                 ),
+                onTap: () => _setCameraFollow(false),
               ),
             ),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                text,
-                style: const TextStyle(
-                  color: Color(0xFFC8A951),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
+          ),
         ),
-        // Confirm Pickup is handled by the fullscreen RiderConfirmPickupScreen overlay
+        const SizedBox(height: 12),
+        button(
+          key: const ValueKey('map-follow'),
+          label: s.trackFollow,
+          active: following,
+          icon: Icon(Icons.navigation_rounded,
+              color: following ? AppColors.kGold : Colors.white, size: 22),
+          onTap: () => _setCameraFollow(true),
+        ),
       ],
-    );
-  }
-
-  /// OnTrip / NearDestination: single status + live ETA badge.
-  /// Drops the duplicated gold mini-label that previously sat above
-  /// the white status text. Hides the ETA badge entirely once we are
-  /// essentially at the destination so the text can expand to fill
-  /// the whole card.
-  Widget _buildOnTripContent(Color dotColor) {
-    final String bottomText = _bottomCardText;
-    final double distM = _distanceMiles * 1609.34;
-    final bool hideEta = _etaMinutes <= 0 || distM <= 200;
-
-    return Row(
-      key: ValueKey('ontrip_${_phase}_${hideEta ? 'final' : _etaMinutes}'),
-      children: [
-        Expanded(
-          child: Row(
-            mainAxisAlignment: hideEta
-                ? MainAxisAlignment.center
-                : MainAxisAlignment.start,
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: dotColor,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 400),
-                  transitionBuilder: (child, anim) =>
-                      FadeTransition(opacity: anim, child: child),
-                  child: Text(
-                    bottomText,
-                    key: ValueKey(bottomText),
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: hideEta ? 17 : 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (!hideEta) ...[
-          const SizedBox(width: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            // Sunken well with gold digits — reads like an instrument
-            // readout. The old white block fought the neumorphic card
-            // around it.
-            decoration: neuBox(radius: 14, pressed: true),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 350),
-                  transitionBuilder: (child, anim) {
-                    return FadeTransition(
-                      opacity: anim,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0, 0.3),
-                          end: Offset.zero,
-                        ).animate(anim),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: Text(
-                    _etaDisplayText,
-                    key: ValueKey('eta_$_etaMinutes'),
-                    style: TextStyle(
-                      color: AppColors.kGold,
-                      fontSize: _etaMinutes >= 60 ? 18 : 22,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                if (_etaUnitText.isNotEmpty)
-                  Text(
-                    _etaUnitText,
-                    style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.45),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildResumeButton() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Center(
-        child: GestureDetector(
-          onTap: _recenter,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.my_location_rounded,
-                    color: Color(0xFFD4AF37), size: 14),
-                const SizedBox(width: 6),
-                Text(S.of(context).recenterRoute,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 

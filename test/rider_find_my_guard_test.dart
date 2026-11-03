@@ -571,8 +571,12 @@ void main() {
       expect(view, isNot(contains('_kResumeFollowAfterPanMs')));
       expect(view.split('if (_userControllingCamera) return;').length - 1, 2,
           reason: 'native and web both keep the camera with the rider');
-      expect(screen, contains('ignoring: !_userControllingCamera'));
-      expect(screen, contains('opacity: _userControllingCamera ? 1 : 0'));
+      // The "Show route" pill became the zigzag button (owner 2026-11-03):
+      // after a real pan it fades in, and only a tap brings the frame back.
+      final ind = File('lib/widgets/tracking/trip_phase_indicator.dart')
+          .readAsStringSync();
+      expect(ind, contains('final showFull = _camFollow || _userControllingCamera;'));
+      expect(ind, contains('ignoring: !showFull,'));
     });
   });
 

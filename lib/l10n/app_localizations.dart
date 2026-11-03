@@ -6064,6 +6064,51 @@ class S {
   String get driverCancelConfirmBody => _es
       ? 'El viaje volverá al marketplace y se buscará otro conductor para el pasajero.'
       : 'The trip will return to the marketplace and another driver will be matched for the rider.';
+
+  // ── Rider trip page redesign (owner 2026-11-03, drawing J6zTb8hfeKDqfFbzpx5jXb) ──
+  String get trackDriverArrivesIn =>
+      _es ? 'Tu conductor llega en' : 'Your driver arrives in';
+  String get trackArrivesAt => _es ? 'Llega a las' : 'Arrives at';
+  String get trackYouArriveIn =>
+      _es ? 'Llegas a tu destino en' : 'You arrive in';
+  String get trackYouArriveAt => _es ? 'Llegas a las' : 'Arrive at';
+  String get trackDriverArrived =>
+      _es ? 'Tu conductor llegó' : 'Your driver has arrived';
+  String get trackDriverAlmostThere =>
+      _es ? 'Tu conductor está llegando' : 'Your driver is almost there';
+  String trackMinutes(int n) => '$n min';
+  String get trackMeetAtPickup => _es
+      ? 'Encuéntrate con tu conductor en el punto de recogida'
+      : 'Meet your driver at the pickup spot';
+  String get trackDriverWaiting =>
+      _es ? 'Tu conductor te está esperando' : 'Your driver is waiting for you';
+  String get trackOnTheWay =>
+      _es ? 'Vas camino a tu destino' : 'On your way to your destination';
+  String get trackYourTrip => _es ? 'Tu viaje' : 'Your trip';
+  String get trackYourDriver => _es ? 'Tu conductor' : 'Your driver';
+  String get trackPickup => _es ? 'Recogida' : 'Pickup';
+  String get trackStop => _es ? 'Parada' : 'Stop';
+  String get trackDestination => _es ? 'Destino' : 'Destination';
+  String get trackMessage => _es ? 'Mensaje' : 'Message';
+  String get trackCall => _es ? 'Llamar' : 'Call';
+  String get trackShare => _es ? 'Compartir' : 'Share';
+  String get trackSupport => _es ? 'Soporte' : 'Support';
+  String get trackContact => _es ? 'Contactar' : 'Contact';
+  // Owner 2026-11-03: "debe decir receipt" — the same word in both languages.
+  String get trackReceipt => 'Receipt';
+  String get trackSwipeHint => _es
+      ? 'Desliza hacia arriba para ver los detalles de tu viaje'
+      : 'Swipe up to see your trip details';
+  String get trackFullRoute => _es ? 'Ruta completa' : 'Full route';
+  String get trackFollow => _es ? 'Seguir' : 'Follow';
+  String get receiptSubtotal => 'Subtotal';
+  String get receiptTaxes => _es ? 'Impuestos' : 'Taxes';
+  String get receiptTotal => 'Total';
+  String receiptPaidWith(String method) =>
+      _es ? 'Pagado con $method' : 'Paid with $method';
+  String get receiptUnavailable => _es
+      ? 'No se pudo cargar el receipt. Intenta de nuevo.'
+      : 'Could not load the receipt. Try again.';
   String get driverCancelConfirmButton =>
       _es ? 'Sí, cancelar viaje' : 'Yes, cancel trip';
   String get driverCancellingLabel => _es ? 'Cancelando...' : 'Cancelling...';

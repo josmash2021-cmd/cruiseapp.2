@@ -30,11 +30,14 @@ void main() {
 
   test('color, make, model and plate are never cut', () {
     final card = read('lib/widgets/tracking/driver_info_card.dart');
-    final at = card.indexOf('vehicleLabel,\n                        textAlign: TextAlign.right,');
+    final at = card.indexOf('  Widget _sheetCarColumn() {');
     expect(at, isNonNegative);
-    final label = card.substring(at, at + 300);
+    final label = card.substring(at, card.indexOf('_buildVehicleRender()', at));
     expect(label, contains('maxLines: 2,'));
     expect(label, isNot(contains('TextOverflow.ellipsis')));
+    // The color is a small square, not a word (owner 2026-11-03).
+    expect(label, contains("key: const ValueKey('vehicle-color-swatch'),"));
+    expect(label, contains('if (swatch == null) widget.vehicleColor,'));
     expect(card, contains('maxWidth: Responsive.w(165),'));
     expect(card, contains('fit: BoxFit.scaleDown,'));
     expect(card, isNot(contains('width: Responsive.w(92),\n                child: Column(')));

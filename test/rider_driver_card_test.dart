@@ -56,4 +56,14 @@ void main() {
     expect(arrival, isNot(contains('_buildSpecRow()')),
         reason: 'the LICENSE PLATE / VEHICLE blocks gave way to the sheet row');
   });
+
+  // Owner 2026-11-03: "en el free wait time debe tener un contador alrededor
+  // como círculo".
+  test('the free wait time counts down inside a ring', () {
+    final arrival = read('lib/screens/rider_confirm_pickup_screen.dart');
+    expect(arrival, contains("key: const ValueKey('free-wait-ring'),"));
+    expect(arrival, contains('fraction: _freeWaitSec <= 0 ? 0 : freeRemaining / _freeWaitSec,'));
+    expect(arrival, contains('class _WaitRingPainter extends CustomPainter'));
+    expect(arrival, contains('duration: const Duration(seconds: 1),'));
+  });
 }

@@ -902,9 +902,40 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       letterSpacing: 1.2,
     );
 
+    // The time sits inside a ring (owner 2026-11-03: "un contador alrededor
+    // como círculo"): gold and emptying smoothly, second by second, while
+    // the wait is free; full and red once the extra fee runs.
+    Widget ring({
+      required double fraction,
+      required Color color,
+      required Widget center,
+    }) {
+      return SizedBox(
+        key: const ValueKey('free-wait-ring'),
+        width: 96,
+        height: 96,
+        child: TweenAnimationBuilder<double>(
+          // One second per step, linear: the arc glides between the
+          // once-a-second ticks instead of jumping.
+          tween: Tween<double>(end: fraction.clamp(0.0, 1.0)),
+          duration: const Duration(seconds: 1),
+          curve: Curves.linear,
+          builder: (context, v, child) => CustomPaint(
+            painter: _WaitRingPainter(
+              progress: v,
+              color: color,
+              track: Colors.white.withValues(alpha: 0.10),
+            ),
+            child: child,
+          ),
+          child: Center(child: center),
+        ),
+      );
+    }
+
     if (isFreePhase) {
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
@@ -915,24 +946,29 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
               Text(S.of(context).freeWaitTime.toUpperCase(), style: labelStyle),
             ],
           ),
-          const SizedBox(height: 2),
-          Text(
-            fmt(freeRemaining),
-            style: const TextStyle(
-              fontFamily: 'Poppins',
-              color: _gold,
-              fontSize: 19,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
+          const SizedBox(height: 8),
+          ring(
+            fraction: _freeWaitSec <= 0 ? 0 : freeRemaining / _freeWaitSec,
+            color: _gold,
+            center: Text(
+              fmt(freeRemaining),
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                color: _gold,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
             ),
           ),
         ],
       );
     }
 
-    // Extra fee phase — count UP, accrued $ visible.
+    // Extra fee phase — count UP inside a full red ring, accrued $ below.
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
@@ -952,15 +988,30 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
             ),
           ],
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 8),
+        ring(
+          fraction: 1,
+          color: _red,
+          center: Text(
+            '+${fmt(extraSec)}',
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              color: _red,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
         Text(
-          '+${fmt(extraSec)}  ·  +\$${extraFee.toStringAsFixed(2)}',
+          '+\$${extraFee.toStringAsFixed(2)}',
           style: const TextStyle(
             fontFamily: 'Poppins',
             color: _red,
-            fontSize: 19,
+            fontSize: 16,
             fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
           ),
         ),
       ],
@@ -2423,6 +2474,55 @@ class _HeroGlowPainter extends CustomPainter {
 }
 
 /// Tiny clock with a sweeping hand — the animated icon on the wait line.
+/// The free-wait ring: a faint full track, and over it an arc from 12
+/// o'clock clockwise covering [progress] of the circle, round ends.
+class _WaitRingPainter extends CustomPainter {
+  _WaitRingPainter({
+    required this.progress,
+    required this.color,
+    required this.track,
+  });
+
+  final double progress;
+  final Color color;
+  final Color track;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 6.0;
+    final rect = Rect.fromCircle(
+      center: size.center(Offset.zero),
+      radius: math.min(size.width, size.height) / 2 - stroke / 2,
+    );
+    canvas.drawArc(
+      rect,
+      0,
+      math.pi * 2,
+      false,
+      Paint()
+        ..color = track
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke,
+    );
+    if (progress <= 0) return;
+    canvas.drawArc(
+      rect,
+      -math.pi / 2,
+      math.pi * 2 * progress,
+      false,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _WaitRingPainter old) =>
+      old.progress != progress || old.color != color || old.track != track;
+}
+
 class _AnimatedClockIcon extends StatelessWidget {
   const _AnimatedClockIcon({required this.listenable, this.size = 14});
 

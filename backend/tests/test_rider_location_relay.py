@@ -25,6 +25,15 @@ class _Capture:
 async def test_rider_location_relays_to_the_trip_room(monkeypatch):
     cap = _Capture()
     monkeypatch.setattr(s.sio, "emit", cap.emit)
+    # The sender is trip 42's own rider (2026-11-03: only the trip's
+    # parties may publish into its room).
+    monkeypatch.setitem(s._connection_meta, "sid-rider",
+                        {"user_id": 7, "role": "rider", "rooms": set()})
+
+    async def _parties(trip_id):
+        return (7, 9) if trip_id == 42 else None
+
+    monkeypatch.setattr(s, "_trip_parties", _parties)
 
     await s.rider_location("sid-rider", {
         "trip_id": 42, "lat": 33.5, "lng": -86.8,

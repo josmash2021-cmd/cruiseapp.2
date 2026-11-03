@@ -129,9 +129,79 @@ sio = socketio.AsyncServer(
     client_manager=_create_manager() if _multi_worker() else None,
 )
 
+logger.warning(
+    "[Socket.io] client manager: %s (UVICORN_WORKERS=%s)",
+    type(sio.manager).__name__, os.environ.get("UVICORN_WORKERS", "1"),
+)
+
 # In-memory connection registry
 # sid → {"user_id": int, "role": str, "rooms": set}
 _connection_meta: Dict[str, dict] = {}
+
+
+# ── Who may use a trip room (2026-11-03 review) ──────────────────────
+# Any logged-in socket could join ANY trip's room by number — and follow
+# that car live — or broadcast a fake position into it. The JWT's user id
+# is the only trusted identity here (the authenticate event's user_type is
+# the client's own claim), so membership is checked against the trip row.
+
+def _as_trip_id(raw) -> Optional[int]:
+    try:
+        v = int(str(raw).replace("sql_", ""))
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
+
+
+async def _trip_parties(trip_id: int):
+    """(rider_id, driver_id) of the trip, or None when it does not exist."""
+    from sqlalchemy import select
+    from models.database import SessionLocal, Trip
+    async with SessionLocal() as db:
+        row = (await db.execute(
+            select(Trip.rider_id, Trip.driver_id).where(Trip.id == trip_id)
+        )).first()
+    return (row[0], row[1]) if row else None
+
+
+async def _is_staff(user_id: int) -> bool:
+    from sqlalchemy import select
+    from models.database import SessionLocal, User
+    async with SessionLocal() as db:
+        role = (await db.execute(
+            select(User.role).where(User.id == user_id)
+        )).scalar()
+    return role in ("admin", "dispatch")
+
+
+async def _may_publish(sid: str, trip_id: int, side: int) -> bool:
+    """May this socket publish a position into the trip's room — as its
+    rider (side 0) or its driver (side 1)? Checked once per socket and
+    trip, then remembered: positions come several times a second."""
+    meta = _connection_meta.get(sid)
+    if meta is None:
+        return False
+    ok = meta.setdefault("publish_ok", set())
+    key = (trip_id, side)
+    if key in ok:
+        return True
+    try:
+        parties = await _trip_parties(trip_id)
+    except Exception as e:
+        logger.warning("[Socket.io] trip %s lookup failed: %s", trip_id, e)
+        return False
+    if parties is None or parties[side] != meta.get("user_id"):
+        denied = meta.setdefault("publish_denied", set())
+        if key not in denied:
+            denied.add(key)
+            logger.warning(
+                "[Socket.io] %s (user=%s) is not trip %s's %s — position dropped",
+                sid, meta.get("user_id"), trip_id,
+                "driver" if side == 1 else "rider",
+            )
+        return False
+    ok.add(key)
+    return True
 
 # Quick lookups
 _drivers_online: Set[str] = set()
@@ -281,13 +351,32 @@ async def join_trip(sid: str, data: dict):
     if trip_id is None:
         await sio.emit("error", {"reason": "missing_trip_id"}, to=sid)
         return
-
-    room = f"trip:{trip_id}"
-    await sio.enter_room(sid, room)
-
+    tid = _as_trip_id(trip_id)
     meta = _connection_meta.get(sid)
-    if meta:
-        meta["rooms"].add(room)
+    if tid is None or meta is None:
+        await sio.emit("error", {"reason": "invalid_trip"}, to=sid)
+        return
+
+    # Only the trip's own rider and driver (or staff) hear its live
+    # positions and chat. Fails closed: the rider app re-arms its RTDB
+    # feed when the socket stays quiet.
+    uid = meta.get("user_id")
+    try:
+        parties = await _trip_parties(tid)
+        allowed = parties is not None and (
+            uid in parties or await _is_staff(uid))
+    except Exception as e:
+        logger.warning("[Socket.io] join trip %s lookup failed: %s", tid, e)
+        allowed = False
+    if not allowed:
+        logger.warning("[Socket.io] %s (user=%s) refused room trip:%s",
+                       sid, uid, tid)
+        await sio.emit("error", {"reason": "forbidden"}, to=sid)
+        return
+
+    room = f"trip:{tid}"
+    await sio.enter_room(sid, room)
+    meta["rooms"].add(room)
 
     logger.info("[Socket.io] %s joined %s", sid, room)
     await sio.emit("trip_joined", {"trip_id": trip_id}, to=sid)
@@ -330,10 +419,12 @@ async def driver_location(sid: str, data: dict):
     }
     """
     trip_id = data.get("trip_id")
-    if trip_id is None:
+    tid = _as_trip_id(trip_id)
+    # Only the trip's own driver moves its car on the rider's map.
+    if tid is None or not await _may_publish(sid, tid, 1):
         return
 
-    room = f"trip:{trip_id}"
+    room = f"trip:{tid}"
     payload = {
         "trip_id": trip_id,
         "lat": data.get("lat"),
@@ -367,10 +458,12 @@ async def rider_location(sid: str, data: dict):
     Expected payload: same shape as driver_location.
     """
     trip_id = data.get("trip_id")
-    if trip_id is None:
+    tid = _as_trip_id(trip_id)
+    # Only the trip's own rider shows up on the driver's map.
+    if tid is None or not await _may_publish(sid, tid, 0):
         return
 
-    room = f"trip:{trip_id}"
+    room = f"trip:{tid}"
     payload = {
         "trip_id": trip_id,
         "lat": data.get("lat"),
@@ -408,8 +501,14 @@ async def trip_status(sid: str, data: dict):
     status = data.get("status")
     if trip_id is None or status is None:
         return
+    tid = _as_trip_id(trip_id)
+    # The rider app acts on these (a "completed" moves it to rating): only
+    # the trip's own driver may announce one (2026-11-03 review). No app
+    # build sends it today; the server's own emit_trip_status is unaffected.
+    if tid is None or not await _may_publish(sid, tid, 1):
+        return
 
-    room = f"trip:{trip_id}"
+    room = f"trip:{tid}"
     payload = {
         "trip_id": trip_id,
         "status": status,

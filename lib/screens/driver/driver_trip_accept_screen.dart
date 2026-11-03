@@ -13,6 +13,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import '../../services/haptic_service.dart';
+import '../../services/rider_stop_voice.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -315,6 +316,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   bool _nearStop = false;
   DateTime? _stopArrivedAt;
   bool _stopDeparted = false;
+
+  /// "Tu pasajero tiene una parada" was already said on this trip.
+  bool _stopVoiceSaid = false;
   bool get _stopLegActive =>
       _rideStarted && _stopLatLng != null && !_stopDeparted;
   LatLng? _dropoffOverride;
@@ -733,6 +737,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // opens already routed through it (same fields a mid-trip stop sets).
     _stopLatLng = widget.stopLatLng;
     _stopLabel = widget.stopLabel;
+    // The voice that says so at the pickup, on the phone before it is needed.
+    if (_stopLatLng != null) unawaited(RiderStopVoice.warm());
     _riderPhotoUrl = _normalizedPhotoUrl(widget.riderPhotoUrl);
     // The nav intro's hero art is warm by the time "Navegar" is tapped, so
     // it paints with the page instead of after a stand-in.
@@ -2157,6 +2163,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               _stopLatLng = st.point;
               _stopLabel = st.label;
             });
+            unawaited(RiderStopVoice.warm());
             unawaited(_redrawMiniMapForRouteChange());
           }
         }
@@ -6341,6 +6348,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   //
   /// The pickup-confirmation flow behind the on-sheet Start Ride button.
   void _startRideConfirmed() {
+    // The trip has a stop (owner 2026-11-03): say so as the rider gets in —
+    // "Tu pasajero tiene una parada" / "Your rider has a stop", in the app's
+    // language, which is the phone's. Once per trip.
+    if (_stopLatLng != null && !_stopDeparted && !_stopVoiceSaid) {
+      _stopVoiceSaid = true;
+      unawaited(RiderStopVoice.play(
+          es: Localizations.localeOf(context).languageCode == 'es'));
+    }
     Future.delayed(const Duration(milliseconds: 300), () async {
       if (!mounted) return;
       setState(() => _rideStarted = true);

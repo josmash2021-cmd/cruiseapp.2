@@ -53,6 +53,17 @@ void main() {
     expect(view, contains('_followCameraFrame();'));
   });
 
+  // Owner 2026-11-03: "cuando el conductor llega aparece la pantalla que ya
+  // existe, recuerda no la quites" — the arrival screen stays, OVER the sheet.
+  test('the driver-arrived screen stays, above the new sheet', () {
+    final sheet = screen.indexOf("key: const ValueKey('rider-trip-sheet'),");
+    final arrival =
+        screen.indexOf('if (_showPickupOverlay) _buildInlinePickupOverlay(),');
+    expect(arrival, isNonNegative);
+    expect(arrival, greaterThan(sheet));
+    expect(screen, contains('child: RiderConfirmPickupScreen('));
+  });
+
   test('the sheet reports its resting height to the framing', () {
     expect(screen,
         contains('if (!_searchingNewDriver && _sheetRestH > 0) return _sheetRestH;'));

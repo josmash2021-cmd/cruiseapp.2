@@ -144,7 +144,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       case _TrackPhase.arrived:
         return s.trackDriverWaiting;
       case _TrackPhase.onTrip:
-        return s.trackOnTheWay;
+        // At the rider's stop the driver waits: said here, not in a
+        // floating banner (owner 2026-11-03).
+        return _stopWaitSince != null ? s.riderStopWaiting : s.trackOnTheWay;
       case _TrackPhase.nearDestination:
         return s.arrivingAtDestination;
       case _TrackPhase.completed:

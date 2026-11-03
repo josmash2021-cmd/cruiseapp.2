@@ -1001,15 +1001,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 right: 0,
                 child: const OfflineBanner(),
               ),
-              // The driver is waiting at the rider's stop — same slot as the
-              // connection banner, which wins when both apply.
-              if (_stopWaitSince != null && !_connectionLost)
-                Positioned(
-                  top: topPad + 10 + _topCardHeight + 8,
-                  left: 24,
-                  right: 24,
-                  child: _buildStopWaitBanner(),
-                ),
+              // No floating "te espera en la parada" banner (owner
+              // 2026-11-03: "esto quítalo, no debe aparecer") — the sheet's
+              // status line says it.
               // Connection lost banner — sits under the top status bar
               // instead of on top of it.
               if (_connectionLost)

@@ -42,7 +42,13 @@ void main() {
     expect(ctrl.contains("data.containsKey('stopArrivedAt')"), isTrue,
         reason: 'the status poll carries no stop keys and must not clear it');
     expect(screen.contains('_stopWaitTicker?.cancel();'), isTrue);
-    expect(screen.contains('child: _buildStopWaitBanner(),'), isTrue);
+    // No floating banner (owner 2026-11-03: "esto quítalo, no debe
+    // aparecer"): the sheet's status line says it.
+    expect(screen.contains('_buildStopWaitBanner'), isFalse);
+    final card = File('lib/widgets/tracking/driver_info_card.dart')
+        .readAsStringSync();
+    expect(card.contains('_stopWaitSince != null ? s.riderStopWaiting : s.trackOnTheWay'),
+        isTrue);
   });
 
   test('the stop wait parses off the trip payload', () {

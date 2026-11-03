@@ -1214,17 +1214,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (at == _stopWaitSince) return;
     _stopWaitTicker?.cancel();
     _stopWaitTicker = null;
+    // Only the sheet's status line reads it now — no per-second clock to
+    // redraw (the floating banner and its 4:12 countdown are gone, owner
+    // 2026-11-03).
     _setState(() => _stopWaitSince = at);
-    if (at == null) return;
-    _stopWaitTicker = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
-      _setState(() {});
-      // Past the free wait the clock has nothing left to count.
-      if (DateTime.now().difference(at).inSeconds > 300) t.cancel();
-    });
   }
 
   void _onTripStatusUpdate(Map<String, dynamic> data) {

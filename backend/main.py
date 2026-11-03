@@ -2246,6 +2246,107 @@ RESERVATION_GO_ONLINE_LEAD_MIN = 60
 RELEASED_OFFLINE = "released_offline"
 
 
+# The confirm offer's own countdown is the app's (OFFER_TIMEOUT_SECONDS from
+# the offer's created_at); a few seconds more let an Accept tapped at the
+# last moment still reach the server before the ride is handed back.
+RESERVATION_CONFIRM_GRACE_S = 5
+
+
+def _aware(dt):
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+async def _reservation_confirm_step(db, trip, driver, now, minutes_until) -> bool:
+    """The 1-hour confirm offer (owner 2026-11-03), for an ONLINE driver at
+    the go-online deadline. True when this tick is handled:
+
+      * no confirm offer yet  -> send it (the normal offer card) and arm its
+        expiry, so silence releases the ride the moment the countdown ends;
+      * still pending         -> wait, or release once the countdown (plus
+        grace) is over — the backstop for a restart that lost the timer;
+      * rejected / expired    -> release (reject_offer normally already did).
+
+    Accepting goes through accept_offer (driver_en_route), so an accepted
+    reservation never reaches this loop again. False only when the offer
+    could not be sent: the old 30-minute direct assignment stays the
+    fallback rather than punishing the driver for a server failure."""
+    from routers.dispatch import send_reservation_confirm_offer  # lazy: cycle
+    from config import OFFER_TIMEOUT_SECONDS
+
+    window_start = _aware(trip.scheduled_at) - timedelta(minutes=61)
+    rows = (await db.execute(
+        select(DispatchOffer).where(
+            DispatchOffer.trip_id == trip.id,
+            DispatchOffer.driver_id == driver.id,
+        ).order_by(DispatchOffer.id.desc())
+    )).scalars().all()
+    confirm = next(
+        (o for o in rows
+         if o.status not in ("accepted", RELEASED_OFFLINE)
+         and o.created_at is not None
+         and _aware(o.created_at) >= window_start),
+        None,
+    )
+    if confirm is None:
+        # Border guard (2026-10-02), now BEFORE the ride is offered: a driver
+        # who crossed a state line since the claim must not be able to
+        # accept it. same_state fails open (a dead geocoder never excludes).
+        from routers.dispatch import same_state  # lazy: import cycle
+        if not await same_state(
+                driver.lat, driver.lng, trip.pickup_lat, trip.pickup_lng):
+            await _release_reservation(db, trip, now, minutes_until,
+                                       "driver no longer in the pickup's state")
+            return True
+        try:
+            offer = await send_reservation_confirm_offer(db, trip, driver)
+        except Exception as e:
+            logging.warning("[Reserved] trip=%d: confirm offer failed: %s", trip.id, e)
+            return False
+        _safe_create_task(_expire_reservation_confirm(trip.id, offer.id))
+        return True
+    if confirm.status == "pending":
+        waited = (now - _aware(confirm.created_at)).total_seconds()
+        if waited > OFFER_TIMEOUT_SECONDS + RESERVATION_CONFIRM_GRACE_S:
+            confirm.status = "expired"
+            await db.flush()  # autoflush is off; release re-reads the offers
+            await _release_reservation(db, trip, now, minutes_until,
+                                       "confirm offer unanswered")
+        return True
+    await _release_reservation(db, trip, now, minutes_until,
+                               f"confirm offer {confirm.status}")
+    return True
+
+
+async def _expire_reservation_confirm(trip_id: int, offer_id: int) -> None:
+    """No answer = released, the moment the countdown ends (owner
+    2026-11-03), not on the dispatcher's next minute."""
+    from config import OFFER_TIMEOUT_SECONDS
+    await asyncio.sleep(OFFER_TIMEOUT_SECONDS + RESERVATION_CONFIRM_GRACE_S)
+    try:
+        async with SessionLocal() as db:
+            # trips first, then dispatch_offers (the canonical lock order)
+            trip = (await db.execute(
+                select(Trip).where(Trip.id == trip_id).with_for_update()
+            )).scalar_one_or_none()
+            if trip is None or trip.status not in ("scheduled_accepted", "scheduled_active"):
+                return
+            offer = (await db.execute(
+                select(DispatchOffer).where(DispatchOffer.id == offer_id).with_for_update()
+            )).scalar_one_or_none()
+            if offer is None or offer.status != "pending":
+                return
+            offer.status = "expired"
+            await db.flush()  # autoflush is off; release re-reads the offers
+            now = utc_now()
+            minutes_until = (_aware(trip.scheduled_at) - now).total_seconds() / 60
+            await _release_reservation(db, trip, now, minutes_until,
+                                       "confirm offer unanswered")
+    except Exception as e:
+        logging.warning("[Reserved] trip=%d: confirm expiry failed: %s", trip_id, e)
+
+
 async def _release_reservation(db, trip, now, minutes_until, why: str) -> None:
     """Hand a reservation back to the board. SILENT for the driver who held
     it — no push, no inbox, no "cancelled": their card just fades away
@@ -2417,6 +2518,13 @@ async def _dispatch_reserved_scheduled_rides(db, now):
         if not driver.is_online:
             await _release_reservation(db, trip, now, minutes_until,
                                        "not online by the 1-hour deadline")
+            continue
+
+        # --------------------------------------------------
+        # Online at the deadline → the confirm offer (owner 2026-11-03):
+        # accept starts the ride now, reject or no answer hands it back.
+        # --------------------------------------------------
+        if await _reservation_confirm_step(db, trip, driver, now, minutes_until):
             continue
 
         # --------------------------------------------------

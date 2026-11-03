@@ -72,6 +72,31 @@ _ACTIVE_TRIP_STATUSES = [
     "arrived", "in_trip", "in_progress",
 ]
 
+# A reservation its driver holds, not started yet.
+_RESERVATION_HELD = ("scheduled_accepted", "scheduled_active")
+
+
+def is_reservation_confirm(trip, driver_id: int) -> bool:
+    """The 1-hour confirm offer (owner 2026-11-03): at the go-online
+    deadline the reservation's own driver is offered the ride he already
+    holds. Accept starts it right away; reject — or no answer before the
+    countdown ends — hands it back to the board (main.py)."""
+    return trip.status in _RESERVATION_HELD and trip.driver_id == driver_id
+
+
+def _offer_trip_fields(trip, driver_id: int) -> dict:
+    """The trip half of an offer payload. A confirm offer drops
+    `scheduled_at`: accepting it starts the ride NOW, and every app build
+    routes an offer with a pickup >= 3 min out to the "reserved for later"
+    path, which never opens the trip screen. `reservation_confirm` lets the
+    app label the card."""
+    data = driver_offer_dict(trip)
+    if is_reservation_confirm(trip, driver_id):
+        # The card still shows when the pickup is, from its own key.
+        data["reservation_pickup_at"] = data.pop("scheduled_at", None)
+        data["reservation_confirm"] = True
+    return data
+
 # Chaining: a driver with a rider aboard can be offered the next ride,
 # stacked behind the one they are finishing (the way Uber chains back-to-
 # back trips) — when the NEW rider would wait at most _CHAIN_MAX_WAIT_MIN:
@@ -856,7 +881,7 @@ async def _send_offer_to_driver(
         "created_at": offer.created_at.isoformat() if offer.created_at else None,
         "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
         "chained": chained,
-        **driver_offer_dict(trip),
+        **_offer_trip_fields(trip, driver.id),
         "fare": estimated_driver_fare,
         "driver_earnings": estimated_driver_fare,
     }]))
@@ -896,6 +921,9 @@ async def _send_offer_to_driver(
     push_data = {"type": "new_offer", "trip_id": str(trip.id),
                  "offer_id": str(offer.id),
                  "chained": "1" if chained else "0", "fare": fare_str}
+    confirm = is_reservation_confirm(trip, driver.id)
+    if confirm:
+        push_data["reservation_confirm"] = "1"
     if per_hour_str:
         push_data["per_hour"] = per_hour_str
     if miles_str:
@@ -962,15 +990,38 @@ async def _send_offer_to_driver(
     # a card painted by an older build is taken down on schedule.
     _safe_create_task(_send_fcm_push_async(
         driver.fcm_token or "",
-        title="Nueva oferta de viaje",
-        body="Abre Cruise para aceptar.",
-        title_en="New Ride Offer",
-        body_en="Open Cruise to accept.",
+        title="Confirma tu viaje reservado" if confirm else "Nueva oferta de viaje",
+        body=("Acéptalo para empezar. Si no, vuelve al tablero."
+              if confirm else "Abre Cruise para aceptar."),
+        title_en="Confirm your reserved ride" if confirm else "New Ride Offer",
+        body_en=("Accept it to start. Otherwise it goes back to the board."
+                 if confirm else "Open Cruise to accept."),
         locale=user_lang(driver),
         data=push_data,
         is_offer=True,
     ))
 
+    return offer
+
+
+async def send_reservation_confirm_offer(
+    db: AsyncSession, trip: Trip, driver: User,
+) -> DispatchOffer:
+    """Ring the reservation's own driver with the confirm offer — the same
+    offer card, sound and countdown as any ride (owner 2026-11-03)."""
+    rider = None
+    if trip.rider_id:
+        rider = (await db.execute(
+            select(User).where(User.id == trip.rider_id)
+        )).scalar_one_or_none()
+    rider_name, rider_phone = _resolve_rider_display(trip, rider)
+    rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+    offer = await _send_offer_to_driver(
+        db, trip, driver, rider_name, rider_phone, rider_photo)
+    logging.info(
+        "[Reserved] trip=%d: confirm offer %d sent to driver %d",
+        trip.id, offer.id, driver.id,
+    )
     return offer
 
 
@@ -1878,11 +1929,10 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     if user.id != driver_id or user.role != "driver":
         raise HTTPException(403, "Not authorized to access this driver's offers")
 
-    # Block offers when driver is locked for an upcoming scheduled ride
+    # Block offers when driver is locked for an upcoming scheduled ride —
+    # all but that reservation's own confirm offer (owner 2026-11-03).
     from routers.scheduled import driver_is_locked_for_scheduled
-    if await driver_is_locked_for_scheduled(driver_id, db):
-        _pending_cache[driver_id] = (time.monotonic(), [])
-        return []
+    _locked = await driver_is_locked_for_scheduled(driver_id, db)
 
     # L3: return cached result if same driver called within _PENDING_CACHE_TTL seconds
     _now = time.monotonic()
@@ -1952,10 +2002,17 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
         .where(and_(
             DispatchOffer.driver_id == driver_id,
             DispatchOffer.status == "pending",
-            Trip.status == "requested",
+            or_(
+                Trip.status == "requested",
+                # the reservation's confirm offer (is_reservation_confirm)
+                and_(Trip.status.in_(_RESERVATION_HELD),
+                     Trip.driver_id == driver_id),
+            ),
         ))
     )
     rows = result.all()
+    if _locked:
+        rows = [row for row in rows if is_reservation_confirm(row[1], driver_id)]
 
     # Chaining: when this driver is still on another trip, any pending
     # offer is a chained one — the app shows it over the trip screen.
@@ -2027,7 +2084,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
             "created_at": offer.created_at.isoformat() if offer.created_at else None,
             "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
             "chained": _chained,
-            **driver_offer_dict(trip),
+            **_offer_trip_fields(trip, driver_id),
             "fare": estimated_driver_fare,
             "driver_earnings": estimated_driver_fare,
         })
@@ -2348,11 +2405,19 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     # SKIP LOCKED so we don't block on rows another session is mutating
     # — if someone else is in the middle of accepting, we'll simply see
     # their update on the next query and fail fast.
+    #
+    # A reservation's confirm offer goes to the driver who already holds it:
+    # his own claim row (accepted) is not "another driver".
+    _own_claim = (
+        [DispatchOffer.driver_id != driver_id]
+        if is_reservation_confirm(trip, driver_id) else []
+    )
     existing_accepted = await db.execute(
         select(DispatchOffer).where(
             DispatchOffer.trip_id == offer.trip_id,
             DispatchOffer.status == "accepted",
             DispatchOffer.id != offer_id,
+            *_own_claim,
         )
     )
     if existing_accepted.scalar_one_or_none():
@@ -3505,6 +3570,28 @@ async def reject_offer(
     # Cascade: find next available driver using shared helper (exclude already-tried)
     trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id))
     trip = trip_result.scalar_one_or_none()
+
+    # Rejecting the 1-hour confirm offer IS cancelling the reservation (owner
+    # 2026-11-03): back to the board, not for this driver again, and the
+    # rider hears "finding another driver". No cascade from here — the
+    # board's own dispatcher takes the ride on its next tick.
+    if trip is not None and offer.driver_id == driver_id:
+        locked = (await db.execute(
+            select(Trip).where(Trip.id == trip.id).with_for_update()
+        )).scalar_one_or_none()
+        if locked is not None and is_reservation_confirm(locked, driver_id):
+            from main import _release_reservation  # lazy: main imports this router
+            now = utc_now()
+            sched_at = locked.scheduled_at
+            if sched_at is not None and sched_at.tzinfo is None:
+                sched_at = sched_at.replace(tzinfo=timezone.utc)
+            minutes_until = ((sched_at - now).total_seconds() / 60
+                             if sched_at is not None else 0.0)
+            await _release_reservation(db, locked, now, minutes_until,
+                                       "confirm offer rejected")
+            _dispatch_status_cache.pop(locked.id, None)
+            return {"status": "rejected", "reason_stored": reason is not None,
+                    "reservation_released": True}
 
     # The scheduled dispatcher (main.py) writes trip.driver_id at OFFER time,
     # so a rejection leaves the trip pointing at a driver who just said no —

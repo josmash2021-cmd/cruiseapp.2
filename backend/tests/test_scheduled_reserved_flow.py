@@ -65,9 +65,17 @@ async def _run_pass(db):
 
 
 async def test_reserved_online_driver_gets_direct_assignment(
-    db, test_rider, test_driver, fcm_spy
+    db, test_rider, test_driver, fcm_spy, monkeypatch
 ):
-    """(a) reserved + online -> assigned directly, no pending offer."""
+    """(a) reserved + online -> assigned directly, no pending offer — now
+    only the FALLBACK when the 1-hour confirm offer could not be sent (owner
+    2026-11-03; the confirm flow is test_reservation_confirm_offer.py)."""
+    from routers import dispatch as D
+
+    async def _send_fails(*_a, **_k):
+        raise RuntimeError("offer could not be sent")
+
+    monkeypatch.setattr(D, "send_reservation_confirm_offer", _send_fails)
     rider, _ = test_rider
     driver, _ = test_driver
     driver.is_online = True

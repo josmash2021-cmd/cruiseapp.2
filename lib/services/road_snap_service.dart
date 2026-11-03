@@ -29,7 +29,9 @@ import '../models/lat_lng.dart';
 /// until a later match succeeds.
 class RoadSnapService {
   static const _traceMax = 10;
-  static const _minInterval = Duration(seconds: 6);
+  // 20 s (was 6, owner 2026-11-02 "minimizar los gastos"): it is only the
+  // fallback where the tiles carry no street line, and every call is billed.
+  static const _minInterval = Duration(seconds: 20);
 
   /// The trace must span at least this much ground before a matching call
   /// is worth firing: a parked or crawling driver is owned by the

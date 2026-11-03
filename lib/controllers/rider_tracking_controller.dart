@@ -1642,14 +1642,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   }
 
   /// Periodic traffic-aware route refresh — fetches live traffic data
-  /// every 2 minutes to keep ETA accurate. Runs during onTrip AND arriving
+  /// every 3 minutes (2 until 2026-11-02, owner: "minimizar los gastos al
+  /// máximo"; every call is a paid route) to keep ETA accurate. Runs during onTrip AND arriving
   /// (user report: "el tiempo de que el driver llegue al pickup no es
   /// real") — the approach ETA used to be frozen at whatever the first
   /// fetch saw.
   void _startTrafficRefreshTimer() {
     _trafficRefreshTimer?.cancel();
     _trafficRefreshTimer =
-        Timer.periodic(const Duration(minutes: 2), (_) => _refreshTraffic());
+        Timer.periodic(const Duration(minutes: 3), (_) => _refreshTraffic());
   }
 
   /// One traffic-aware refresh. onTrip refreshes the remaining leg geometry

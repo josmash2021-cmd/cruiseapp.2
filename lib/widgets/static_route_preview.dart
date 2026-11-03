@@ -271,6 +271,12 @@ class StaticRoutePreview extends StatelessWidget {
           // No token injected at build time — show the placeholder rather
           // than a broken image.
           if (MapboxConfig.accessToken.isEmpty) return _placeholder();
+          // Squeezed out of sight (a collapsing card, height → 0): nothing
+          // to see, so nothing to buy — the API floor of 64 px used to turn
+          // every collapse into one more paid request (2026-11-02).
+          if (box.maxHeight < 24 || box.maxWidth < 24) {
+            return const SizedBox.shrink();
+          }
 
           return Stack(
             fit: StackFit.expand,

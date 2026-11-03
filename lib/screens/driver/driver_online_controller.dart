@@ -1957,8 +1957,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
               _appInForeground) {
             unawaited(_refreshRoadNet(newLL));
             // The paid matching call only where the tiles' street line is
-            // missing — it is the fallback now (2026-11-02).
-            if (!_onLocalRoad) _roadSnap.onFix(pos);
+            // missing — it is the fallback now (2026-11-02) — and only for
+            // an ONLINE driver at street zoom (owner 2026-11-02, "minimizar
+            // los gastos al máximo"): below zoom 14 there is no tile street
+            // line, so [_onLocalRoad] is false and the offline zones view
+            // (zoom ~10.8, the snap not even visible) paid a call every 6 s.
+            if (!_onLocalRoad &&
+                _driverOnline &&
+                (_onlineCamState?.zoom ?? 0) >= _kRoadNetMinZoom) {
+              _roadSnap.onFix(pos);
+            }
           }
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL,

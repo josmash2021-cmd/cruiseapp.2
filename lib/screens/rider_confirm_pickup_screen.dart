@@ -1543,8 +1543,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   }
 
   /// Refetch the snap route only when an anchor moved enough to matter
-  /// (10 m) and never more often than every 15 s — the strip shows a couple
-  /// of hundred metres at most.
+  /// (40 m) and never more often than every 45 s — the strip shows a couple
+  /// of hundred metres at most, the route is never drawn, and each fetch is
+  /// a paid route (10 m / 15 s until 2026-11-02: up to 4 a minute).
   void _maybeFetchSnapRoute(LatLng rider, LatLng driver) {
     if (_snapFetching) return;
     final rA = _snapAnchorRider, dA = _snapAnchorDriver;
@@ -1553,9 +1554,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
           rider.latitude, rider.longitude, rA.latitude, rA.longitude);
       final dMoved = Geolocator.distanceBetween(
           driver.latitude, driver.longitude, dA.latitude, dA.longitude);
-      if (rMoved < 10 && dMoved < 10) return;
+      if (rMoved < 40 && dMoved < 40) return;
     }
-    if (DateTime.now().difference(_lastSnapFetchAt).inSeconds < 15) return;
+    if (DateTime.now().difference(_lastSnapFetchAt).inSeconds < 45) return;
     unawaited(_fetchSnapRoute(rider, driver));
   }
 

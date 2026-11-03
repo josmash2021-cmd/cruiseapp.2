@@ -303,8 +303,9 @@ void main() {
       expect(src.contains('_drawWalkRoute'), isFalse,
           reason: 'no route line on this mini map — dot and car only');
       expect(src.contains('_walkAnnot'), isFalse);
-      expect(src.contains('if (rMoved < 10 && dMoved < 10) return;'), isTrue,
-          reason: 'refetch threshold stays at 10 m');
+      expect(src.contains('if (rMoved < 40 && dMoved < 40) return;'), isTrue,
+          reason: 'refetch at 40 m / 45 s (owner 2026-11-02, "minimizar los '
+              'gastos"): the route is never drawn and each fetch is paid');
     });
     test('the rider dot is gold, never blue', () {
       expect(src.contains('_riderBlue'), isFalse,

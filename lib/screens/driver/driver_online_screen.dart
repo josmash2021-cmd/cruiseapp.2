@@ -407,8 +407,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // Monotonically incremented every time onMapCreated fires. Guards against
   // stale annotation refs surviving a PlatformView recreation.
   int _mapGeneration = 0;
-  // Cache: offerId → Future<String> static map URL (with real routed polyline)
-  final Map<String, Future<String>> _offerMapUrlCache = {};
 
   // ── Destination filter ("heading to", Lyft-style) ──
   // Short address of the active destination filter, mirrored from the

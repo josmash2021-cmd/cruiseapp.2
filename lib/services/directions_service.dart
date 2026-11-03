@@ -419,36 +419,40 @@ class DirectionsService {
         debugPrint('[Route] Retry attempt ${attempt + 1}');
       }
 
-      // Launch all three providers in PARALLEL — take the first success
-      final googleFuture = _requestDirectionsWithFallbacks(
-        origin: origin,
-        destination: destination,
-        profile: profile,
-        waypoints: waypoints,
-      ).then((data) {
-        if (data == null) return null;
-        return _parseGoogleRoute(data, origin, destination);
-      }).timeout(const Duration(seconds: 6), onTimeout: () => null);
-
-      final osrmFuture = _requestOsrmRoute(
-              origin: origin, destination: destination, profile: profile,
-              waypoints: waypoints)
-          .timeout(const Duration(seconds: 6), onTimeout: () => null);
-
-      final mapboxFuture = _requestMapboxRoute(
+      // Mapbox FIRST, alone (owner 2026-11-02, "minimizar los gastos al
+      // máximo"): it wins whenever it answers — it aligns with the map tiles
+      // and carries the turn steps, lights and stops — so racing Google and
+      // OSRM beside it bought a Google traffic route that was thrown away on
+      // nearly every call. Google and OSRM only run when Mapbox fails.
+      var mapbox = await _requestMapboxRoute(
               origin: origin,
               destination: destination,
               profile: profile,
               language: language,
               waypoints: waypoints)
-          .timeout(const Duration(seconds: 8), onTimeout: () => null);
-
-      // Wait for all, take the first non-null result (prefer Mapbox > Google > OSRM)
-      // Mapbox route aligns best with Mapbox map tiles for accurate road overlay
-      final results = await Future.wait([googleFuture, osrmFuture, mapboxFuture]);
-      var mapbox = results[2];
-      var google = results[0];
-      var osrm = results[1];
+          .timeout(const Duration(seconds: 6), onTimeout: () => null);
+      if (mapbox != null && mapbox.points.isEmpty) mapbox = null;
+      RouteResult? google;
+      RouteResult? osrm;
+      if (mapbox == null) {
+        final fallbacks = await Future.wait([
+          _requestDirectionsWithFallbacks(
+            origin: origin,
+            destination: destination,
+            profile: profile,
+            waypoints: waypoints,
+          ).then((data) {
+            if (data == null) return null;
+            return _parseGoogleRoute(data, origin, destination);
+          }).timeout(const Duration(seconds: 6), onTimeout: () => null),
+          _requestOsrmRoute(
+                  origin: origin, destination: destination, profile: profile,
+                  waypoints: waypoints)
+              .timeout(const Duration(seconds: 6), onTimeout: () => null),
+        ]);
+        google = fallbacks[0];
+        osrm = fallbacks[1];
+      }
       // A provider that answered with no usable geometry FAILED — it must
       // not "win" over a real route from the next provider.
       if (mapbox != null && mapbox.points.isEmpty) mapbox = null;

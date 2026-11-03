@@ -222,7 +222,14 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
             // transition it lived next to the tracking screen's full-screen
             // map — two native Mapbox surfaces, which closes the app on
             // iOS. At the end of EVERY ride. No pins under that blur.
-            Positioned.fill(
+            // Screen-sized, not body-sized (owner 2026-11-02, "minimizar los
+            // gastos"): the keyboard squeezes the body frame by frame, and every
+            // new height was a new paid Static Images request.
+            Positioned(
+              left: 0,
+              top: 0,
+              width: MediaQuery.sizeOf(context).width,
+              height: MediaQuery.sizeOf(context).height,
               child: IgnorePointer(
                 child: StaticRoutePreview(
                   pickupLat: widget.dropoffLat ?? 25.7617,

@@ -296,7 +296,14 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
           //
           // No pins: a marker under that blur is a gold smudge that looks
           // like it was meant to say something.
-          Positioned.fill(
+          // Screen-sized, not body-sized (owner 2026-11-02, "minimizar los
+          // gastos"): the keyboard squeezes the body frame by frame, and every
+          // new height was a new paid Static Images request.
+          Positioned(
+            left: 0,
+            top: 0,
+            width: MediaQuery.sizeOf(context).width,
+            height: MediaQuery.sizeOf(context).height,
             child: IgnorePointer(
               child: StaticRoutePreview(
                 pickupLat: widget.dropoffLat ?? 25.7617,

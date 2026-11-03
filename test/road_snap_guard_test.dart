@@ -67,8 +67,16 @@ void main() {
   });
 
   group('the service is throttled and moving-only', () {
-    test('one call per 6 s and only when the trace spans ground', () {
-      expect(svc.contains('_minInterval = Duration(seconds: 6)'), isTrue);
+    test('one call per 20 s and only when the trace spans ground', () {
+      // 6 → 20 s (owner 2026-11-02, "minimizar los gastos al máximo").
+      expect(svc.contains('_minInterval = Duration(seconds: 20)'), isTrue);
+      final ctl = File('lib/screens/driver/driver_online_controller.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+      expect(ctl.contains('_driverOnline &&\n                (_onlineCamState?.zoom ?? 0) >= _kRoadNetMinZoom'),
+          isTrue,
+          reason: 'online drivers at street zoom only — the offline zones '
+              'view paid a call every 6 s for a snap nobody sees');
       expect(svc.contains('_minTraceSpanM = 12.0'), isTrue,
           reason: 'parked/crawling drivers are owned by the stationary '
               'freeze — matching calls are not free');

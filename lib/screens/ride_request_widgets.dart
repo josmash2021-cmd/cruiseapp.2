@@ -904,6 +904,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                           ),
                                         ),
                                       ),
+                                      // The bolt rides the name, right of
+                                      // "Electric Pro" — as on the home
+                                      // fleet title (owner 2026-11-03; it
+                                      // used to float over the price).
+                                      if (opt.id == 'electric_pro') ...[
+                                        const SizedBox(width: 6),
+                                        ElectricBoltBadge(
+                                            size: selected ? 22 : 20),
+                                      ],
                                       if (selected) ...[
                                         const SizedBox(width: 8),
                                         Icon(
@@ -954,30 +963,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 // Price crossfades dash → real fare instead
-                                // of popping. The Electric Pro bolt badge
-                                // anchors at the price — the card's
-                                // top-right corner (user spec 2026-10-13).
-                                Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    QuotedFareView(
-                                      option: opt,
-                                      cruiseCashCents: _cruiseCashCents,
-                                      selected: selected,
-                                      freeLabel: S.of(context).free,
-                                      cruiseCashLabel: S.of(context).cruiseCash,
-                                    ),
-                                    if (opt.id == 'electric_pro')
-                                      Positioned(
-                                        // 8px above the card's top edge in
-                                        // both states (16/10 vertical
-                                        // padding), 2px past its right edge.
-                                        top: selected ? -24 : -18,
-                                        right: -14,
-                                        child:
-                                            const ElectricBoltBadge(size: 30),
-                                      ),
-                                  ],
+                                // of popping.
+                                QuotedFareView(
+                                  option: opt,
+                                  cruiseCashCents: _cruiseCashCents,
+                                  selected: selected,
+                                  freeLabel: S.of(context).free,
+                                  cruiseCashLabel: S.of(context).cruiseCash,
                                 ),
                                 // Lyft layout: the "in X min · H:MM" line
                                 // sits right under the price, plain grey —

@@ -292,7 +292,8 @@ void main() {
           reason: 'no longer floating off the card corner');
     });
 
-    test('rides the booking tier row, top-right, Electric Pro only', () {
+    test('rides the booking tier row, right of the name, Electric Pro only',
+        () {
       final start = widgets.indexOf('Widget _buildTierRow(');
       final end = widgets.indexOf('Widget _buildTierExpandedDetail(');
       final block = widgets.substring(start, end);
@@ -300,10 +301,12 @@ void main() {
       expect('ElectricBoltBadge('.allMatches(block).length, 1,
           reason: 'one badge site in the row, not one per tier');
       final i = block.indexOf('ElectricBoltBadge(');
-      expect(block, contains("if (opt.id == 'electric_pro')"));
-      expect(block.substring(i - 800, i), contains('Positioned('));
-      expect(block.substring(i - 800, i), contains(RegExp(r'top: ')));
-      expect(block.substring(i - 800, i), contains(RegExp(r'right: -\d')));
+      final before = block.substring(i - 1500, i);
+      expect(before, contains("if (opt.id == 'electric_pro') ...["));
+      expect(before, contains('displayName,'),
+          reason: 'right of the "Electric Pro" text (owner 2026-11-03)');
+      expect(before, isNot(contains('Positioned(')),
+          reason: 'no longer floating over the price');
     });
   });
 

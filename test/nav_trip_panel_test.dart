@@ -23,6 +23,7 @@ void main() {
     double screenH = 844,
     Widget? mapControls,
     ValueChanged<double>? onRest,
+    int? hintTripId,
   }) {
     return MaterialApp(
       locale: const Locale('es'),
@@ -44,6 +45,7 @@ void main() {
             children: [
               Positioned.fill(
                 child: NavTripPanel(
+                  hintTripId: hintTripId,
                   mapControls: mapControls,
                   onRestHeightChanged: onRest,
                   etaLabel: '7 min · 2.9 mi',
@@ -309,7 +311,7 @@ void main() {
         findsNothing);
   });
 
-  testWidgets('the swipe hint shows and goes by itself after 7 s', (t) async {
+  testWidgets('the swipe hint shows and goes by itself after 5 s', (t) async {
     phone(t);
     await t.pumpWidget(host());
     await settle(t);
@@ -321,11 +323,46 @@ void main() {
             find.ancestor(of: hint, matching: find.byType(AnimatedOpacity)))
         .opacity;
     expect(opacity(), 1);
-    await t.pump(const Duration(seconds: 7));
+    // settle() already ran 1 s of the clock.
+    await t.pump(const Duration(seconds: 3));
+    expect(opacity(), 1, reason: 'still up at 4 s');
+    await t.pump(const Duration(seconds: 1));
     await t.pump(const Duration(milliseconds: 300));
     await t.pump(const Duration(milliseconds: 300));
     expect(hint, findsNothing,
         reason: 'faded out, and out of the layout for good');
+  });
+
+  // Owner report 2026-11-02: "no se quita a los 5 segundos y cuando abro el
+  // sheet y lo cierro vuelve a aparecer… y ya no debe aparecer más a menos
+  // que tenga otro nuevo viaje".
+  testWidgets('the swipe hint is once per trip: not back after the panel '
+      'closes, nor when the navigation opens again', (t) async {
+    phone(t);
+    const hintText = 'Desliza hacia arriba para ver las opciones del viaje';
+    await t.pumpWidget(host(hintTripId: 901));
+    await settle(t);
+    expect(find.text(hintText), findsOneWidget);
+    // Open before the 5 s are up, then close.
+    await t.tap(find.byIcon(Icons.more_vert_rounded));
+    await settle(t);
+    expect(find.text(hintText), findsNothing);
+    await t.tapAt(const Offset(195, 200));
+    await settle(t);
+    await t.pump(const Duration(seconds: 6));
+    expect(find.text(hintText), findsNothing,
+        reason: 'closing the panel does not bring it back');
+    // The navigation opens again for the same trip: still gone.
+    await t.pumpWidget(const SizedBox());
+    await t.pumpWidget(host(hintTripId: 901));
+    await settle(t);
+    expect(find.text(hintText), findsNothing);
+    // A new trip shows it once more.
+    await t.pumpWidget(const SizedBox());
+    await t.pumpWidget(host(hintTripId: 902));
+    await settle(t);
+    expect(find.text(hintText), findsOneWidget);
+    await t.pump(const Duration(seconds: 6));
   });
 
   // Owner report 2026-11-02: "cuando se guarda no se guarda fluido y smooth,

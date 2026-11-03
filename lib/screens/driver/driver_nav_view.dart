@@ -3607,6 +3607,7 @@ class DriverNavViewState extends State<DriverNavView>
         // ── The trip panel (owner design 2026-11-02) ──
         Positioned.fill(
           child: NavTripPanel(
+            hintTripId: widget.tripId,
             mapControls: _panelControls(s),
             etaLabel: _panelEtaLabel(s),
             riderName: widget.riderName,

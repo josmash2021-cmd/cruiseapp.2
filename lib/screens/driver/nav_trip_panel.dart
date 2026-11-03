@@ -85,6 +85,7 @@ class NavTripPanel extends StatefulWidget {
     this.onRestHeightChanged,
     this.onOpenChanged,
     this.mapControls,
+    this.hintTripId,
   });
 
   final String etaLabel;
@@ -170,9 +171,17 @@ class NavTripPanel extends StatefulWidget {
   /// rise with the sheet's top edge sharp instead of fading under the blur.
   final Widget? mapControls;
 
+  /// The trip the swipe hint belongs to: it shows once per trip, not every
+  /// time the navigation opens again (owner 2026-11-02). Null shows it on
+  /// every mount.
+  final int? hintTripId;
+
   @override
   State<NavTripPanel> createState() => _NavTripPanelState();
 }
+
+/// The last trip the swipe hint was shown for (see [NavTripPanel.hintTripId]).
+int? _swipeHintTrip;
 
 enum _Mode { closed, options, full, profile }
 
@@ -240,15 +249,23 @@ class _NavTripPanelState extends State<NavTripPanel>
   @override
   void initState() {
     super.initState();
-    // The swipe hint (owner 2026-11-02): every time the navigation opens,
-    // gone after 7 s or the moment the panel opens.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() => _hint = true);
-      _hintTimer = Timer(const Duration(seconds: 7), () {
-        if (mounted) setState(() => _hint = false);
+    // The swipe hint (owner 2026-11-02): once per trip — gone after 5 s or
+    // the moment the panel opens, whichever comes first, and not back when
+    // the panel closes or the navigation is opened again. It used to come
+    // back on every mount and stay 7 s. A new trip shows it again.
+    final trip = widget.hintTripId;
+    if (trip != null && trip == _swipeHintTrip) {
+      _hintDone = true;
+    } else {
+      _swipeHintTrip = trip;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _hintDone) return;
+        setState(() => _hint = true);
+        _hintTimer = Timer(const Duration(seconds: 5), () {
+          if (mounted) setState(() => _hint = false);
+        });
       });
-    });
+    }
   }
 
   @override
@@ -260,6 +277,14 @@ class _NavTripPanelState extends State<NavTripPanel>
       _setMode(_Mode.closed);
     }
     if (widget.stage != old.stage) _noShowShown = false;
+  }
+
+  /// The panel opened: the hint is done for this trip — out of the layout
+  /// at once (the panel covers its spot) and never back.
+  void _endHint() {
+    _hintTimer?.cancel();
+    _hint = false;
+    _hintDone = true;
   }
 
   @override
@@ -304,7 +329,7 @@ class _NavTripPanelState extends State<NavTripPanel>
     final wasOpen = _open && _sheet.status != AnimationStatus.reverse;
     setState(() {
       _mode = m;
-      _hint = false;
+      _endHint();
     });
     if (!wasOpen) widget.onOpenChanged?.call(true);
     _settle(true);
@@ -331,7 +356,7 @@ class _NavTripPanelState extends State<NavTripPanel>
     if (target == null) {
       setState(() {
         _noShowShown = true;
-        _hint = false;
+        _endHint();
       });
     } else {
       _setMode(target);
@@ -365,7 +390,7 @@ class _NavTripPanelState extends State<NavTripPanel>
       HapticService.lightImpact();
       setState(() {
         _mode = target;
-        _hint = false;
+        _endHint();
       });
       widget.onOpenChanged?.call(true);
     }

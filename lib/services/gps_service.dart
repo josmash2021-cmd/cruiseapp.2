@@ -67,6 +67,14 @@ class GpsService {
   static const Duration _socketIONormalInterval = Duration(milliseconds: 400);
   static const Duration _socketIOFastInterval = Duration(milliseconds: 250);
   static const Duration _rtdbInterval = Duration(seconds: 5); // Increased from 2s
+
+  /// On an active trip the rider's car rides this feed whenever the socket
+  /// relay does not reach them, and one reading every 5 s drew a car that
+  /// glided, stopped and jumped (owner 2026-11-03: "fluido, no paso a paso").
+  /// 1 s keeps it a glide; off-trip stays at 5 s for the battery.
+  static const Duration _rtdbTripInterval = Duration(seconds: 1);
+  Duration get _rtdbEvery =>
+      _activeTripId != null ? _rtdbTripInterval : _rtdbInterval;
   static const double _minDistanceMeters = 2.0; // Increased from 0.5m to reduce noise
 
   /// Hysteresis speed thresholds for switching Socket.io cadence (m/s).
@@ -92,6 +100,10 @@ class GpsService {
   bool _presenceSetUp = false;
   DateTime? _lastSocketIOAt;
   DateTime? _lastRTDBAt;
+
+  /// The secondary `drivers/$id/location` copy (fleet views) keeps the 5 s
+  /// cadence — only the rider's feed needs 1 s.
+  DateTime? _lastDriversNodeAt;
   LatLng? _lastSocketIOPos;
   LatLng? _lastRTDBPos;
   double _lastRTDBHeading = 0;
@@ -231,8 +243,8 @@ class GpsService {
       unawaited(_uploadViaSocketIO());
     }
 
-    // Eager RTDB upload if interval passed
-    if (_lastRTDBAt == null || now.difference(_lastRTDBAt!) >= _rtdbInterval) {
+    // Eager RTDB upload if interval passed (1 s on a trip, 5 s otherwise).
+    if (_lastRTDBAt == null || now.difference(_lastRTDBAt!) >= _rtdbEvery) {
       unawaited(_uploadToFirebase());
     }
   }
@@ -399,7 +411,7 @@ class GpsService {
     final now = DateTime.now();
     if (_currentPos == _lastSocketIOPos &&
         _lastRTDBAt != null &&
-        now.difference(_lastRTDBAt!).inMilliseconds < 2000) {
+        now.difference(_lastRTDBAt!) < _rtdbEvery * 2) {
       return;
     }
 
@@ -420,7 +432,10 @@ class GpsService {
           lastPos.longitude,
         );
         final headingDelta = (_currentHeading - _lastRTDBHeading).abs();
-        if (dist < 5 && headingDelta < 10) return;
+        // On a trip a car crawling in traffic moves ~1-3 m a second; the
+        // 5 m parked gate would hold its readings back 2-3 s at a time.
+        final parkedM = _activeTripId != null ? 1.5 : 5.0;
+        if (dist < parkedM && headingDelta < 10) return;
       }
     }
     _lastRTDBPos = _currentPos;
@@ -446,7 +461,11 @@ class GpsService {
 
     try {
       await _database.ref('driver_locations/$_activeDriverId').set(payload);
-      await _database.ref('drivers/$_activeDriverId/location').set(payload);
+      if (_lastDriversNodeAt == null ||
+          now.difference(_lastDriversNodeAt!) >= _rtdbInterval) {
+        await _database.ref('drivers/$_activeDriverId/location').set(payload);
+        _lastDriversNodeAt = now;
+      }
       _lastRTDBAt = now;
     } catch (e) {
       if (_isPermissionDenied(e)) {

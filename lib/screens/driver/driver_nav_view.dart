@@ -29,6 +29,7 @@ import '../../utils/mapbox_safe.dart';
 import '../../utils/route_splice.dart';
 import '../../utils/smooth_motion.dart';
 import '../../widgets/glass_style.dart';
+import '../../map/flat_map_projection.dart';
 import '../../widgets/smooth_reveal.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
@@ -341,7 +342,21 @@ class DriverNavViewState extends State<DriverNavView>
   mapbox.CameraState? _recenterFrom;
   Duration? _recenterStartedAt;
   int _recenterSeq = -1;
-  static const _recenterBlendMs = 600;
+  // The glide INTO the route overview: from the chase pose to a flat,
+  // north-up frame of the whole route.
+  Ticker? _overviewTicker;
+  mapbox.CameraState? _overviewFrom;
+  ({LatLng center, double zoom})? _overviewTo;
+  Duration? _overviewStartedAt;
+  int _overviewSeq = -1;
+  // The route overview and the way back to the chase glide the same,
+  // frame by frame (owner 2026-11-02: "debe de moverse de forma smooth y no
+  // tan de golpe, al igual cuando regresa a la vista chase" — and then, at
+  // 1.1 s easeInOutCubic, "sigue muy rápido"): 1.6 s on a sine ease, whose
+  // middle runs at about half the cubic's peak speed. It was 0.6 s back and
+  // a native 0.9 s flyTo out.
+  static const _recenterBlendMs = 1600;
+  static const Curve _camGlideCurve = Curves.easeInOutSine;
 
   // Dynamic chase zoom: 16.8 at city pace, 16.3 past 20 m/s, 17.3 with a
   // maneuver under 150 m — lerped at ≤0.5 zoom/sec, never a step. Owner
@@ -781,6 +796,7 @@ class DriverNavViewState extends State<DriverNavView>
     _arrowWatchdog?.cancel();
     _arrowHandoffTimer?.cancel();
     _recenterTicker?.dispose();
+    _overviewTicker?.dispose();
     _riderTicker?.dispose();
     _camSettleTicker?.dispose();
     _arrowScreenBearing.dispose();
@@ -884,6 +900,7 @@ class DriverNavViewState extends State<DriverNavView>
         _arrowHandoffPending = false;
         // A recenter blend mid-flight has no camera left to blend.
         _recenterTicker?.stop();
+        _stopOverviewGlide();
         _recenterFrom = null;
         _recenterStartedAt = null;
         if (_camState == _CamState.recentering) {
@@ -2942,7 +2959,108 @@ class DriverNavViewState extends State<DriverNavView>
       _camState = _CamState.freeLook;
     });
     _syncArrowOwner();
-    unawaited(_fitRouteOnce());
+    unawaited(_glideToOverview());
+  }
+
+  /// Into the route overview the same way [_recenter] comes back out: the
+  /// camera blended frame by frame from the pose it has to a flat,
+  /// north-up frame of the whole route (worked out by our own Mercator,
+  /// flown with ZERO map padding), over [_recenterBlendMs] eased.
+  Future<void> _glideToOverview() async {
+    final map = _map;
+    if (kIsWeb || map == null) {
+      await _fitRouteOnce();
+      return;
+    }
+    final media = MediaQuery.of(context);
+    final pts = _routePts
+        .where((p) => isValidLatLng(p.latitude, p.longitude))
+        .toList();
+    final to = FlatMapProjection.fitFlat(
+      points: pts,
+      viewport: media.size,
+      top: media.padding.top + 120,
+      left: 48,
+      bottom: media.size.height * 0.30,
+      right: 48,
+      maxZoom: 17,
+    );
+    if (to == null) {
+      await _fitRouteOnce();
+      return;
+    }
+    final seq = _cameraActionGate.begin();
+    mapbox.CameraState? from;
+    try {
+      from = await map
+          .getCameraState()
+          .timeout(const Duration(milliseconds: 800));
+    } catch (e) {
+      debugPrint('[Nav] overview: camera state unavailable: $e');
+    }
+    if (!mounted || !_overview || !_cameraActionGate.isCurrent(seq)) return;
+    if (from == null) {
+      await _fitRouteOnce();
+      return;
+    }
+    _overviewTicker ??= createTicker(_onOverviewTick);
+    _overviewTicker!.stop();
+    _overviewFrom = from;
+    _overviewTo = to;
+    _overviewStartedAt = null;
+    _overviewSeq = seq;
+    _overviewTicker!.start();
+  }
+
+  void _stopOverviewGlide() {
+    _overviewTicker?.stop();
+    _overviewFrom = null;
+    _overviewTo = null;
+    _overviewStartedAt = null;
+  }
+
+  /// One frame of the glide into the overview — the mirror of
+  /// [_onRecenterTick]: same length, same curve, shortest way round to
+  /// north, the tilt easing flat and the chase padding easing to none.
+  void _onOverviewTick(Duration elapsed) {
+    final from = _overviewFrom;
+    final to = _overviewTo;
+    if (!mounted ||
+        from == null ||
+        to == null ||
+        !_mapMounted ||
+        !_overview ||
+        !_cameraActionGate.isCurrent(_overviewSeq)) {
+      // Back to the chase, a gesture or a revoke took the camera: yield.
+      _stopOverviewGlide();
+      return;
+    }
+    _overviewStartedAt ??= elapsed;
+    final t =
+        ((elapsed - _overviewStartedAt!).inMilliseconds / _recenterBlendMs)
+            .clamp(0.0, 1.0);
+    final e = _camGlideCurve.transform(t);
+    double lerp(double a, double b) => a + (b - a) * e;
+    final fc = from.center.coordinates;
+    var dBrg = (0 - from.bearing) % 360;
+    if (dBrg > 180) dBrg -= 360;
+    final fp = from.padding;
+    _writeCamera(mapbox.CameraOptions(
+      center: mapbox.Point(
+          coordinates: mapbox.Position(
+              lerp(fc.lng.toDouble(), to.center.longitude),
+              lerp(fc.lat.toDouble(), to.center.latitude))),
+      zoom: lerp(from.zoom, to.zoom),
+      bearing: (from.bearing + dBrg * e) % 360,
+      pitch: lerp(from.pitch, 0),
+      padding: mapbox.MbxEdgeInsets(
+        top: lerp(fp.top, 0),
+        left: lerp(fp.left, 0),
+        right: lerp(fp.right, 0),
+        bottom: lerp(fp.bottom, 0),
+      ),
+    ));
+    if (t >= 1.0) _stopOverviewGlide();
   }
 
   /// Recenter → recentering → following. Audit D4: NOT a flyTo. The
@@ -3045,7 +3163,7 @@ class DriverNavViewState extends State<DriverNavView>
     final t =
         ((elapsed - _recenterStartedAt!).inMilliseconds / _recenterBlendMs)
             .clamp(0.0, 1.0);
-    final e = Curves.easeInOutCubic.transform(t);
+    final e = _camGlideCurve.transform(t);
     double lerp(double a, double b) => a + (b - a) * e;
     final fc = from.center.coordinates;
     var dBrg = (_dot.bearing - from.bearing) % 360;

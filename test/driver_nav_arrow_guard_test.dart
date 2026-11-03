@@ -161,12 +161,16 @@ void main() {
       expect(body, isNot(contains('map.flyTo(')),
           reason: 'the plugin flyTo returns when the animation STARTS — the '
               'next chase setCamera cancelled it (a cut by construction)');
-      expect(nav.contains('static const _recenterBlendMs = 600;'), isTrue);
+      // Both ways the same, slow and even (owner 2026-11-02: "debe de
+      // moverse de forma smooth y no tan de golpe…", then "sigue muy
+      // rápido" at 1.1 s cubic).
+      expect(nav.contains('static const _recenterBlendMs = 1600;'), isTrue);
+      expect(nav.contains('_camGlideCurve = Curves.easeInOutSine;'), isTrue);
       final tick = bodyOf(nav, 'void _onRecenterTick(Duration elapsed) {',
           maxLen: 2200);
       expect(tick.contains('!_cameraActionGate.isCurrent(_recenterSeq)'), isTrue,
           reason: 'a gesture supersedes the sequence and the blend yields');
-      expect(tick.contains('Curves.easeInOutCubic'), isTrue);
+      expect(tick.contains('_camGlideCurve.transform(t)'), isTrue);
     });
 
     test('overview only flips state with a route and a map', () {
@@ -174,6 +178,23 @@ void main() {
       expect(body.contains('_routePts.length < 2'), isTrue);
       expect(body.contains('_map == null'), isTrue);
       expect(body.contains('unawaited(_recenter());'), isTrue);
+    });
+
+    test('INTO the overview glides like the way back: same length, curve', () {
+      final body = bodyOf(nav, 'void _toggleOverview() {', maxLen: 1300);
+      expect(body.contains('unawaited(_glideToOverview());'), isTrue);
+      expect(body, isNot(contains('unawaited(_fitRouteOnce());')),
+          reason: 'the native flyTo out was the jump');
+      final glide =
+          bodyOf(nav, 'Future<void> _glideToOverview() async {', maxLen: 1600);
+      expect(glide.contains('FlatMapProjection.fitFlat('), isTrue);
+      expect(glide.contains('_overviewTicker!.start();'), isTrue);
+      final tick =
+          bodyOf(nav, 'void _onOverviewTick(Duration elapsed) {', maxLen: 2200);
+      expect(tick.contains('/ _recenterBlendMs'), isTrue);
+      expect(tick.contains('_camGlideCurve.transform(t)'), isTrue);
+      expect(tick.contains('!_cameraActionGate.isCurrent(_overviewSeq)'), isTrue,
+          reason: 'back to the chase or a gesture: the glide yields');
     });
 
     test('the remaining nav flights are 600 ms', () {

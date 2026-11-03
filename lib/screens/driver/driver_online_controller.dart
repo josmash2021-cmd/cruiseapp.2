@@ -1078,6 +1078,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // seleccionó, en online solo aparece marcada esa zona") — the
         // selection highlight reads it; it is no longer consumed on connect.
       });
+      // The chime lands WITH the flip (owner 2026-11-03: "que suene
+      // justamente cuando me pongo online") — it used to wait behind the
+      // shift bookkeeping's disk writes below. Only on a fresh GO; a resume
+      // already knows it is online.
+      if (!resuming) {
+        _onlineChimeFired = true; // the map-claim chime does not repeat it
+        NotificationService.playOnlineChime();
+      }
       _cameraActionGate.begin();
       _syncDriverSonar();
       // Mode flip rewrites the zone look NOW (the GPS-fix sync can be
@@ -1151,12 +1159,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           unawaited(closeShift());
         }
       });
-      // Chime solo en un GO fresco (los resumes ya saben) — la transición
-      // de ruta que lo congelaba murió con el push: no hay nada que esquivar.
-      if (!resuming) {
-        _onlineChimeFired = true; // el map-claim chime no lo repite
-        NotificationService.playOnlineChime();
-      }
       HapticService.lightImpact();
       // El token push tiene que existir desde aquí: es lo único que alcanza
       // al driver con la app en background.
@@ -1271,6 +1273,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // non-GO write (e.g. a boot resume).
     _explicitGoPending = false;
     if (!_driverOnline || !mounted) return;
+    // Offline before the chime ended: it stops here (owner 2026-11-03).
+    NotificationService.stopCues();
     // Silence every isOnline:true writer BEFORE the offline write leaves —
     // the other order let a queued heartbeat flip the driver back online.
     _wentOffline = true;
@@ -3767,6 +3771,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// [_handoffChainedOffer] run the normal accept flow once the current
   /// trip leaves the screen. The screen stays with the trip being driven.
   Future<void> _acceptChainedOffer(Map<String, dynamic> r, int? offerId) async {
+    NotificationService.stopCues();
     if (offerId == null || _driverId == null) {
       _snack('Unable to accept — please try again.');
       return;
@@ -3942,6 +3947,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   Future<void> _acceptOffer(Map<String, dynamic> r,
       {bool alreadyAcceptedOnBackend = false}) async {
+    // Answered before the offer cue ended: it stops here (owner 2026-11-03).
+    NotificationService.stopCues();
     debugPrint('[DriverOnline] _acceptOffer called — map=$_map, phase=$_phase');
     debugPrint('[DriverOnline] offer data: ${r.keys.toList()}');
     if (_isBoardOffer(r)) {
@@ -5023,6 +5030,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// out — only that one gets the "You declined a ride request" banner.
   Future<void> _rejectOffer(Map<String, dynamic> r,
       {bool byDriver = false}) async {
+    // The driver turned it down before the offer cue ended: it stops here
+    // (owner 2026-11-03). Not on a countdown running out — another offer's
+    // cue may be the one sounding by then.
+    if (byDriver) NotificationService.stopCues();
     // A board trip was never offered: closing it tells nobody anything.
     if (_isBoardOffer(r)) {
       HapticService.lightImpact();

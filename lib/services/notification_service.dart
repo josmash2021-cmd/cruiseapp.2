@@ -632,12 +632,32 @@ class NotificationService {
     });
   }
 
+  /// Bumped by [stopCues]: a cue still on its way (the offer cue's next
+  /// repeat, a chime behind its prefs read) sees it and stays silent.
+  static int _cueGen = 0;
+
+  /// Cut whatever cue is sounding, right now (owner 2026-11-03): the
+  /// go-online chime when the driver goes offline before it ends, the offer
+  /// cue when they accept or reject the ride before it ends — its remaining
+  /// repeats too. The driver's music comes back up at once.
+  static void stopCues() {
+    _cueGen++;
+    _lastOnlineChimeAt = null; // the next GO chimes again, however soon
+    _quietly(_offerPlayer.stop(), 'cue stop');
+    if (_offerSoundPlaying) {
+      _offerSoundPlaying = false;
+      _quietly(restoreAfterOfferCue(), 'unduck');
+    }
+  }
+
   static void playOfferSound() {
     if (_offerSoundPlaying) return; // prevent double-play
     _offerSoundPlaying = true;
+    final gen = _cueGen;
     Future.microtask(() async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
+        if (gen != _cueGen) return; // cut before it started
         if (!(prefs.getBool('sound_trips') ?? true)) {
           _offerSoundPlaying = false;
           return;
@@ -656,12 +676,16 @@ class NotificationService {
         // minute later, with no context left. Crashlytics has 15 of them,
         // new in 1.0.9.
         for (int i = 0; i < 3; i++) {
+          // Accepted or rejected meanwhile: no more repeats ([stopCues]
+          // already lifted the duck and the guard).
+          if (gen != _cueGen) return;
           _quietly(_offerPlayer.seek(Duration.zero), 'seek');
           _quietly(_offerPlayer.resume(), 'resume');
           if (i < 2) await Future.delayed(const Duration(seconds: 2));
         }
         // Reset guard + lift the duck after the last repeat finishes (~2s)
         Future.delayed(const Duration(seconds: 2), () {
+          if (gen != _cueGen) return;
           _offerSoundPlaying = false;
           _quietly(restoreAfterOfferCue(), 'unduck');
         });
@@ -705,17 +729,20 @@ class NotificationService {
       return;
     }
     _lastOnlineChimeAt = now;
+    final gen = _cueGen;
     Future.microtask(() async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
         final volume = prefs.getDouble('sound_volume') ?? 0.8;
         if (!(prefs.getBool('notif_sounds') ?? true) || volume <= 0) return;
         if (_offerSoundPlaying) return;
+        if (gen != _cueGen) return; // already offline again
         // Free once the session is configured — it hands back the cached
         // future. The case it covers is a chime that beats [init]'s preload,
         // where playing first would activate the session on audioplayers'
         // own category and stop whatever the driver is listening to.
         await ensureNonInterruptingAudio();
+        if (gen != _cueGen) return;
         // The preference above was read and then never applied: a driver who
         // pulled the slider down to 0.1 still got the chime at full volume.
         _quietly(_offerPlayer.setVolume(volume), 'chime volume');

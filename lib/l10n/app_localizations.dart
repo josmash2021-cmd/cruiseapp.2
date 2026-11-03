@@ -5152,14 +5152,18 @@ class S {
   String resDetailHowToBody(String goOnlineBy) => _es
       ? '1. Conéctate antes de las $goOnlineBy (1 hora antes de la recogida). '
           'Si no estás en línea a esa hora, la reserva vuelve al tablero.\n\n'
-          '2. 30 minutos antes dejas de recibir otros viajes, y 15 minutos '
-          'antes te avisamos para salir a la recogida.\n\n'
-          '3. Recoge al pasajero y termina el viaje como cualquier otro.'
+          '2. Desde esa hora no te llegan otros viajes: la última hora es para '
+          'esta reserva. Quédate en línea.\n\n'
+          '3. 30 minutos antes de la recogida el viaje empieza solo y la app '
+          'te lleva a la recogida.\n\n'
+          '4. Recoge al pasajero y termina el viaje como cualquier otro.'
       : '1. Go online by $goOnlineBy (1 hour before pickup). If you are not '
           'online by then, the reservation goes back to the board.\n\n'
-          '2. 30 minutes before, other ride offers stop, and 15 minutes '
-          'before we remind you to head to the pickup.\n\n'
-          '3. Pick up the rider and finish the ride like any other.';
+          '2. From then on no other rides come in: the last hour belongs to '
+          'this reservation. Stay online.\n\n'
+          '3. 30 minutes before pickup the ride starts on its own and the app '
+          'takes you to the pickup.\n\n'
+          '4. Pick up the rider and finish the ride like any other.';
   String get resDetailCancelPolicy =>
       _es ? 'Política de cancelación' : 'Cancel policy';
   String get resDetailCancelPolicySub => _es

@@ -13,6 +13,17 @@ void main() {
   final page = read('lib/screens/driver/my_reservations_page.dart');
   final map = read('lib/screens/driver/scheduled_rides_map_screen.dart');
 
+  test('the list and the map count share one filter', () {
+    // 2026-11-03: "Tus viajes (N)" counted every row the server sent; a
+    // web booking "for now" (scheduled_at < created_at + 3 min) also
+    // showed as an EN CAMINO reservation.
+    expect(page, contains('final fresh = myReservationRows(all, DateTime.now());'));
+    expect(map, contains('myReservationRows(trips, DateTime.now()).length'));
+    expect(page, contains("at.isBefore(created.add(const Duration(minutes: 3)))"));
+    // A refresh asked for mid-load is queued, not dropped.
+    expect(page, contains('_reloadQueued = true;'));
+  });
+
   test('the map opens it; the old tabbed list is gone', () {
     expect(map, contains('slideFromRightRoute(const MyReservationsPage())'));
     expect(File('lib/screens/driver/scheduled_rides_screen.dart').existsSync(),

@@ -1148,6 +1148,10 @@ class S {
       ? 'Ese viaje programado ya no está disponible — otro conductor lo tomó primero.'
       : 'That scheduled ride is no longer available — another driver took it first.';
 
+  String get scheduledGoOnlineFirst => _es
+      ? 'Conéctate para tomar esta reserva: empieza en menos de 1 hora.'
+      : 'Go online to take this reservation — it starts in under an hour.';
+
   String get scheduledOutOfState => _es
       ? 'Esta reserva es de otro estado. Solo puedes aceptar reservas del estado donde estás activo.'
       : 'This reservation is in another state. You can only take reservations in the state you are active in.';

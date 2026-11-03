@@ -2764,7 +2764,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final pin = _pinCtrl.text;
     final hasError = _pinError != null;
     final accent = hasError ? pinRed : pinGold;
-    return GestureDetector(
+    // The boxes count as part of the field (see _buildNavPickupCode).
+    return TextFieldTapRegion(
+      child: GestureDetector(
       onTap: (_pinLocked || _pinSubmitting)
           ? null
           : () => _pinFocusNode.requestFocus(),
@@ -2884,6 +2886,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           ],
         ),
       ),
+      ),
     );
   }
 
@@ -2900,7 +2903,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final pin = _pinCtrl.text;
     final ok = _riderConfirmedPickup;
     final hasError = !ok && _pinError != null;
-    return GestureDetector(
+    // The boxes count as part of the field: without the tap region,
+    // onTapOutside closed the keyboard on finger-down and onTap opened it
+    // again — a flicker on every tap.
+    return TextFieldTapRegion(
+      child: GestureDetector(
       key: const ValueKey('nav-pickup-code'),
       onTap: (ok || _pinLocked || _pinSubmitting)
           ? null
@@ -3044,6 +3051,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             ],
           ],
         ),
+      ),
       ),
     );
   }

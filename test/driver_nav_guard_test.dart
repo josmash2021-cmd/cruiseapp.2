@@ -439,7 +439,7 @@ void main() {
 
     test('the destination pin is the shared golden teardrop', () {
       final body =
-          bodyOf(nav, 'Future<void> _drawDestPin() async {', maxLen: 1000);
+          bodyOf(nav, 'Future<void> _drawDestPin() async {', maxLen: 1400);
       expect(body.contains('renderCircularPinBytes('), isTrue,
           reason: 'the same pin the mini-map and every other map draws');
       expect(body.contains('CircularPinIcon.person'), isTrue,
@@ -449,6 +449,10 @@ void main() {
       expect(body.contains('iconAnchor: mapbox.IconAnchor.BOTTOM'), isTrue,
           reason: 'the teardrop tip lands on the coordinate');
       expect(body, isNot(contains("'★'")), reason: 'the star glyph is gone');
+      // Two draws in flight (the "Reservado" redraw) must not leave two
+      // pins: a superseded draw deletes what it created (2026-11-03).
+      expect(body, contains('final seq = ++_destPinSeq;'));
+      expect(body, contains('if (!mounted || seq != _destPinSeq) {'));
     });
 
     test('prefetched geometry draws at mount behind a 150 m destination gate',

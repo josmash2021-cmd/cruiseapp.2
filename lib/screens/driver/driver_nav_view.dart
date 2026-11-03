@@ -303,6 +303,9 @@ class DriverNavViewState extends State<DriverNavView>
   mapbox.PolylineAnnotation? _routeAnnot;
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
+  // Bumped by every _drawDestPin: the "Reservado" redraw can start while
+  // another draw is still rasterising, and both would create a pin.
+  int _destPinSeq = 0;
   // The booking/mid-trip stop pin (flag pin like the dropoff) — only on
   // the dropoff leg; on the pickup leg it is nobody's business yet.
   mapbox.PointAnnotation? _stopAnnot;
@@ -906,6 +909,7 @@ class DriverNavViewState extends State<DriverNavView>
         _drawOnUntil = null;
         _driverAnnot = null;
         _destAnnot = null;
+        _destPinSeq++;
         _stopAnnot = null;
         _riderHaloAnnot = null;
         _riderDotAnnot = null;
@@ -2396,6 +2400,7 @@ class DriverNavViewState extends State<DriverNavView>
     final mgr = _pointMgr;
     final point = safePoint(_dest.longitude, _dest.latitude);
     if (mgr == null || point == null) return;
+    final seq = ++_destPinSeq;
     final old = _destAnnot;
     _destAnnot = null;
     if (old != null) {
@@ -2415,13 +2420,19 @@ class DriverNavViewState extends State<DriverNavView>
       if (widget.toPickup && badge != null) {
         bytes = await pinWithTopLabel(bytes, badge);
       }
-      if (!mounted) return;
-      _destAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+      if (!mounted || seq != _destPinSeq) return;
+      final annot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: point,
         image: bytes,
         iconSize: 0.62,
         iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
+      if (!mounted || seq != _destPinSeq) {
+        // A newer draw owns the pin now — this one must not linger.
+        unawaited(mgr.delete(annot).catchError((Object _) {}));
+        return;
+      }
+      _destAnnot = annot;
     } catch (_) {}
     unawaited(_drawStopPin());
   }

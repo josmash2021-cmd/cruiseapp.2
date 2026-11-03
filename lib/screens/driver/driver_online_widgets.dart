@@ -2726,9 +2726,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       // shortest layout with no extra height.
       // The reservation's confirm offer: its badge + the pickup-time line.
       final isConfirm = offer['reservation_confirm'] == true;
+      // The confirm's time line is only drawn when the time parses.
+      final hasConfirmTime = isConfirm &&
+          parseServerTime(offer['reservation_pickup_at']) != null;
       final bool hasBadgeRow = isScheduled || isCash || isConfirm;
       if (hasBadgeRow) extra += 32;
-      if (isScheduled || isConfirm) extra += 24; // time sublabel
+      if (isScheduled || hasConfirmTime) extra += 24; // time sublabel
     }
     // Every term of the card's height, so this stops drifting away from
     // the layout every time a gap changes. Text rows use Roboto's own

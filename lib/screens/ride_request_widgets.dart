@@ -1160,6 +1160,20 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 if (!_isScheduledMode && _tierHasNoDrivers(option)) {
                   final picked = await _openScheduleFromSheet();
                   if (!picked || !mounted) return;
+                  // A reservation is quoted again (it carries its own
+                  // surcharge): the pin page shows THAT price, not the
+                  // on-demand one this tap started with.
+                  await _ctrl.refreshQuote();
+                  if (!mounted) return;
+                  final fresh = _ctrl.state.selectedOption;
+                  if (fresh == null || !fresh.hasServerPrice) {
+                    _messenger?.showSnackBar(
+                      SnackBar(content: Text(S.of(context).quoteRefreshRequired)),
+                    );
+                    return;
+                  }
+                  _openPickupConfirm(c, fresh);
+                  return;
                 }
                 _openPickupConfirm(c, option);
               },

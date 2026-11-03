@@ -394,7 +394,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       if (!mounted) return;
       final pin = (t['pickup_pin'] ?? '').toString().trim().toUpperCase();
       if (pin.length == 4 && pin != _sheetPickupPin) {
-        setState(() => _sheetPickupPin = pin);
+        _setState(() => _sheetPickupPin = pin);
       }
     } catch (e) {
       debugPrint('[RiderTracking] pickup code failed: $e');

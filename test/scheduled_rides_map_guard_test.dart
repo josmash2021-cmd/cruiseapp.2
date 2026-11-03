@@ -71,7 +71,7 @@ void main() {
   group('claim error mapping', () {
     final claimStart = screen.indexOf('Future<void> _claimTrip');
     final claimBlock = claimStart >= 0
-        ? screen.substring(claimStart, claimStart + 2000)
+        ? screen.substring(claimStart, claimStart + 3200)
         : '';
 
     test('403 maps to the out-of-state sentence', () {
@@ -80,10 +80,15 @@ void main() {
     });
 
     test('409 maps to scheduledRideTaken', () {
-      expect(claimBlock, contains('e.statusCode == 409'));
-      final idx = claimBlock.indexOf('e.statusCode == 409');
-      expect(
-          claimBlock.substring(idx, idx + 200), contains('scheduledRideTaken'));
+      // 2026-11-03: a 409 "go_online_first" (inside the last hour, offline)
+      // has its own sentence; every other 409 is "taken" — and the taken
+      // ride's card closes and the board re-reads at once.
+      expect(claimBlock, contains("e.message == 'go_online_first'"));
+      expect(claimBlock,
+          contains('final taken = e is ApiException && e.statusCode == 409 && !goOnline;'));
+      expect(claimBlock, contains('? S.of(context).scheduledRideTaken'));
+      expect(claimBlock, contains('if (taken) _dismissSelection();'));
+      expect(claimBlock, contains('_loadAvailable(force: taken);'));
     });
 
     test('success haptic + list refresh on claim', () {

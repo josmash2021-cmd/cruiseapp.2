@@ -70,6 +70,7 @@ class _EarlyArrivalCardState extends State<EarlyArrivalCard>
     duration: kEarlyArrivalAutoClose,
   )..forward();
   bool _closed = false;
+  ModalRoute<dynamic>? _route;
 
   @override
   void initState() {
@@ -79,10 +80,29 @@ class _EarlyArrivalCardState extends State<EarlyArrivalCard>
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
+  }
+
+  /// Closes THIS card's route only. A bare pop() is wrong twice over:
+  /// when the card is already on its way out (barrier tap or back in the
+  /// last 320 ms of the clock) it pops the trip screen underneath — pop
+  /// ignores that screen's canPop: false — and when something was pushed
+  /// on top it pops that instead.
   void _close() {
     if (_closed || !mounted) return;
     _closed = true;
-    Navigator.maybeOf(context)?.pop();
+    final route = _route;
+    if (route == null || !route.isActive) return;
+    final nav = route.navigator;
+    if (nav == null) return;
+    if (route.isCurrent) {
+      nav.pop();
+    } else {
+      nav.removeRoute(route);
+    }
   }
 
   @override

@@ -21,8 +21,10 @@ void main() {
     expect(card, contains("parseServerTime(offer['reservation_pickup_at'])"));
     expect(card,
         contains('s.resDetailPickupAt(_format12Hour(confirmPickupAt)),'));
-    expect(card, contains('if (isScheduled || isConfirm) extra += 24;'),
+    // The time line is counted only when it is drawn (its time parses).
+    expect(card, contains('if (isScheduled || hasConfirmTime) extra += 24;'),
         reason: 'the card height counts the badge row and the time line');
+    expect(card, contains("parseServerTime(offer['reservation_pickup_at']) != null;"));
   });
 
   test('rejecting it says the reservation was cancelled, and the gold card '

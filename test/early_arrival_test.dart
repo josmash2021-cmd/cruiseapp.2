@@ -67,6 +67,21 @@ void main() {
     expect(find.byKey(const ValueKey('early-arrival-card')), findsNothing);
   });
 
+  testWidgets('closing it in the last instant never pops the screen under '
+      'it', (tester) async {
+    // A tap outside at 9.8 s starts the 320 ms close; the 10 s clock then
+    // ran out mid-close and its bare pop() took the trip screen with it.
+    await open(tester);
+    await tester.pump(kEarlyArrivalAutoClose - const Duration(milliseconds: 600));
+    await tester.tapAt(const Offset(20, 20)); // the barrier
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('early-arrival-card')), findsNothing);
+    expect(find.text('open'), findsOneWidget,
+        reason: 'the screen under the card is still there');
+  });
+
   test('the trip screen shows it only before the reservation time, and the '
       'nav wait counts from that time', () {
     final trip = read('lib/screens/driver/driver_trip_accept_screen.dart');

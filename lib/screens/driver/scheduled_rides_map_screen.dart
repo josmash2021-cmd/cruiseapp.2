@@ -480,7 +480,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       if (uid == null) return;
       final trips = await ApiService.getDriverScheduledTrips(uid);
       if (!mounted) return;
-      setState(() => _myRidesCount = trips.length);
+      setState(() =>
+          _myRidesCount = myReservationRows(trips, DateTime.now()).length);
     } catch (_) {}
   }
 
@@ -498,7 +499,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       final result = await ApiService.claimScheduledTrip(tripId);
       if (!mounted) return;
       HapticService.mediumImpact();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
         content: Text(
           result['message'] ?? S.of(context).scheduledRideConfirmed,
           style:
@@ -519,18 +520,26 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         syncDriverRestRefusal();
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        // The one refusal the driver can act on gets its own sentence.
+      final goOnline = e is ApiException &&
+          e.statusCode == 409 &&
+          e.message == 'go_online_first';
+      final taken = e is ApiException && e.statusCode == 409 && !goOnline;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        // The refusals the driver can act on get their own sentence.
         // Everything else keeps the raw server reason.
         content: Text(
           e is ApiException && e.message == 'maintenance'
               ? S.of(context).maintenanceClaimBlocked
+              // Inside the last hour a reservation is only for a driver
+              // who is online (offline, the next tick would hand it back).
+              : goOnline
+                  ? S.of(context).scheduledGoOnlineFirst
               : e is ApiException && e.statusCode == 403
                   ? S.of(context).scheduledOutOfState
               // 409: the row lock gave it to whoever asked first. The
               // loser was reading a raw exception for what is an ordinary
               // outcome of two drivers wanting the same ride.
-              : e is ApiException && e.statusCode == 409
+              : taken
                   ? S.of(context).scheduledRideTaken
                   : '${S.of(context).error}: $e',
         ),
@@ -538,8 +547,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
-      // The list still shows a ride that has just gone to someone else.
-      if (mounted) _loadAvailable();
+      // The ride has just gone to someone else: close its card (its
+      // Reservar is dead) and re-read now — the 10 s throttle would leave
+      // it on the map.
+      if (taken) _dismissSelection();
+      _loadAvailable(force: taken);
     } finally {
       if (mounted) setState(() => _claimingId = null);
     }
@@ -1118,7 +1130,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   Future<void> _fitRouteOnce(List<LatLng> pts) async {
     final m = _map;
     if (m == null || pts.isEmpty) return;
-    final media = MediaQuery.of(context);
+    final media = MediaQuery.maybeOf(context);
+    if (media == null) return;
     final coords = pts
         .where((p) => isValidLatLng(p.latitude, p.longitude))
         .map((p) =>

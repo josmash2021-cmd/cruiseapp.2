@@ -4292,35 +4292,38 @@ class ApiService {
   /// Each entry carries `lat`/`lng`; `distance_km` is only there when the
   /// answer came from Redis geo — the SQL fallback does not compute it — so
   /// callers that need a distance have to be able to work it out themselves.
+  ///
+  /// Throws when there is no answer (no network, timeout, an open circuit,
+  /// a 5xx during a redeploy): unknown is not "no drivers". An empty list
+  /// here sends the rider's booking into a reservation, so it may only mean
+  /// the server said nobody is near.
   static Future<List<Map<String, dynamic>>> getNearbyDrivers({
     required double lat,
     required double lng,
     double radiusKm = 15.0,
     String tier = '',
   }) async {
-    try {
-      final h = await _authHeaders();
-      final tierQ = tier.isEmpty ? '' : '&tier=$tier';
-      final res = await _cachedGet(
-        Uri.parse(
-          '$_baseUrl/drivers/nearby?lat=$lat&lng=$lng&radius_km=$radiusKm$tierQ',
-        ),
-        headers: h,
-        cacheTtl: const Duration(seconds: 15),
-      );
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final body = jsonDecode(res.body);
-        final list =
-            body is List ? body : (body is Map ? body['drivers'] : null);
-        if (list is List) {
-          return list
-              .whereType<Map>()
-              .map((e) => e.cast<String, dynamic>())
-              .toList(growable: false);
-        }
-      }
-    } catch (_) {}
-    return const <Map<String, dynamic>>[];
+    final h = await _authHeaders();
+    final tierQ = tier.isEmpty ? '' : '&tier=$tier';
+    final res = await _cachedGet(
+      Uri.parse(
+        '$_baseUrl/drivers/nearby?lat=$lat&lng=$lng&radius_km=$radiusKm$tierQ',
+      ),
+      headers: h,
+      cacheTtl: const Duration(seconds: 15),
+    );
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw ApiException(res.statusCode, 'nearby drivers');
+    }
+    final body = jsonDecode(res.body);
+    final list = body is List ? body : (body is Map ? body['drivers'] : null);
+    if (list is! List) {
+      throw const FormatException('nearby drivers: no list in the answer');
+    }
+    return list
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList(growable: false);
   }
 
   // ═══════════════════════════════════════════════════════

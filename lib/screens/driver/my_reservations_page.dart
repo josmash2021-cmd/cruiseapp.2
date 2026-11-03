@@ -73,6 +73,29 @@ const _kDaysEs = [
   'Domingo',
 ];
 
+/// The rows "Mis Reservas" lists, in pickup order — also what the
+/// reservations map counts in "Tus viajes (N)", so the two never disagree.
+/// Held by this driver (claimed, or confirmed and on the way), not more
+/// than 2 h past, and a real reservation: a web booking "for now" also
+/// carries scheduled_at, so only one booked at least 3 minutes ahead counts
+/// (same rule as the trip screen).
+List<Map<String, dynamic>> myReservationRows(
+    List<Map<String, dynamic>> all, DateTime now) {
+  const held = {'scheduled_accepted', 'scheduled_active', 'driver_en_route'};
+  return all.where((t) {
+    final st = (t['status'] ?? '').toString();
+    final at = parseServerTime(t['scheduled_at']);
+    if (!held.contains(st) || at == null) return false;
+    final created = parseServerTime(t['created_at']);
+    if (created != null && at.isBefore(created.add(const Duration(minutes: 3)))) {
+      return false;
+    }
+    return at.isAfter(now.subtract(const Duration(hours: 2)));
+  }).toList()
+    ..sort((a, b) => parseServerTime(a['scheduled_at'])!
+        .compareTo(parseServerTime(b['scheduled_at'])!));
+}
+
 /// The driver's own reserved rides (owner-approved drawing 2026-11-03,
 /// Lyft's Ride Finder cards): one card per reservation, by time — when it
 /// is, the pay, the go-online deadline, pickup and drop-off, stops, the
@@ -90,6 +113,7 @@ class _MyReservationsPageState extends State<MyReservationsPage> {
   List<Map<String, dynamic>> _trips = [];
   bool _loading = true;
   bool _fetching = false;
+  bool _reloadQueued = false;
   String? _error;
   bool _noteHidden = false;
 
@@ -139,35 +163,30 @@ class _MyReservationsPageState extends State<MyReservationsPage> {
     } catch (_) {}
   }
 
-  static const _held = {
-    'scheduled_accepted',
-    'scheduled_active',
-    'driver_en_route'
-  };
-
   Future<void> _load() async {
-    if (_fetching) return;
+    if (_fetching) {
+      // A refresh asked for mid-load (a cancel, the live board) must not
+      // be dropped: it runs once this one ends.
+      _reloadQueued = true;
+      return;
+    }
     _fetching = true;
     try {
       final uid = await ApiService.getCurrentUserId();
-      if (uid == null) return;
+      if (uid == null) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
       final all = await ApiService.getDriverScheduledTrips(uid);
       if (!mounted) return;
-      final now = DateTime.now();
-      final fresh = all.where((t) {
-        final st = (t['status'] ?? '').toString();
-        final at = parseServerTime(t['scheduled_at']);
-        return _held.contains(st) &&
-            at != null &&
-            at.isAfter(now.subtract(const Duration(hours: 2)));
-      }).toList()
-        ..sort((a, b) => parseServerTime(a['scheduled_at'])!
-            .compareTo(parseServerTime(b['scheduled_at'])!));
+      final fresh = myReservationRows(all, DateTime.now());
       final ids = fresh.map((t) => t['id']).toSet();
       final gone = _trips.where((t) => !ids.contains(t['id'])).toList();
       setState(() {
         _error = null; // data arrived
         _loading = false;
+        // One that came back is no longer on its way out.
+        _leaving.removeAll(ids);
         if (gone.isEmpty) {
           _trips = fresh;
         } else {
@@ -181,9 +200,12 @@ class _MyReservationsPageState extends State<MyReservationsPage> {
       if (gone.isNotEmpty) {
         Future.delayed(_kFade, () {
           if (!mounted) return;
+          // Only the ones still leaving: a later load may have brought one
+          // back, or added new ones this load never saw.
+          final drop = gone.map((t) => t['id']).where(_leaving.contains).toSet();
           setState(() {
-            _trips = _trips.where((t) => ids.contains(t['id'])).toList();
-            _leaving.removeAll(gone.map((t) => t['id']));
+            _trips = _trips.where((t) => !drop.contains(t['id'])).toList();
+            _leaving.removeAll(drop);
           });
         });
       }
@@ -195,6 +217,10 @@ class _MyReservationsPageState extends State<MyReservationsPage> {
       });
     } finally {
       _fetching = false;
+      if (_reloadQueued && mounted) {
+        _reloadQueued = false;
+        unawaited(_load());
+      }
     }
   }
 

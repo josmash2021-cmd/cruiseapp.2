@@ -86,6 +86,21 @@ void main() {
               "tell the rider there are no drivers and block their ride");
       expect(estimateSrc, contains('bool get hasDrivers => driverCount > 0'));
     });
+
+    test('the lookup throws on no answer, so the -1 path is reachable', () {
+      // getNearbyDrivers used to swallow every error and return [], so a
+      // Railway 502 read as a confirmed zero and every tier said "Sin
+      // conductores cerca · Reserva".
+      final api = File('lib/services/api_service.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+      final i = api.indexOf(
+          'static Future<List<Map<String, dynamic>>> getNearbyDrivers({');
+      expect(i, greaterThan(-1));
+      final body = api.substring(i, api.indexOf('\n  }\n', i));
+      expect(body, isNot(contains('catch (_) {}')));
+      expect(body, contains("throw ApiException(res.statusCode, 'nearby drivers');"));
+    });
   });
 
   group('(d) the answer stays fresh', () {

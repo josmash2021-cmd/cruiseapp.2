@@ -80,7 +80,7 @@ class _HelpScreenState extends State<HelpScreen> {
           icon: Icons.cancel_outlined,
           title: 'Dispute a cancellation fee',
           answer:
-              'A \$5.00 cancellation fee may apply when a ride is canceled more than 2 minutes after a driver has been assigned and the driver is en route to or at the pickup location. You can cancel directly in the app at any time before the trip starts — free of charge before a driver is assigned and during the first 2 minutes after assignment. Wait-time charges accrue after the free waiting period (Standard/Compact 2 min, Premium 3 min, Black/SUV XL 5 min, Airport trips 10 min); partial minutes round up.\n\n'
+              'A \$5.00 cancellation fee may apply when a ride is canceled more than 2 minutes after a driver has been assigned and the driver is en route to or at the pickup location. You can cancel directly in the app at any time before the trip starts — free of charge before a driver is assigned and during the first 2 minutes after assignment. Wait-time charges accrue after 5 free minutes on every trip (airport trips included; for a scheduled ride, counted from the scheduled pickup time); partial minutes round up.\n\n'
               'You may qualify for a refund if:\n'
               '• The driver cancelled, not you\n'
               '• The driver was significantly delayed\n'

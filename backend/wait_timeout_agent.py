@@ -347,10 +347,8 @@ class WaitTimeoutAgent:
             free_minutes, fee_per_minute = _wait_policy(trip.vehicle_type, trip.is_airport)
         except ImportError:
             # Fallback if import fails
-            if trip.is_airport:
-                free_minutes, fee_per_minute = 10, 0.40
-            else:
-                free_minutes, fee_per_minute = 2, 0.40
+            # 5 free minutes on every ride (trips.py _WAIT_POLICY_BY_TYPE).
+            free_minutes, fee_per_minute = 5, 0.40
 
         chargeable_minutes = max(0, waited_minutes - free_minutes)
         return round(chargeable_minutes * fee_per_minute, 2)

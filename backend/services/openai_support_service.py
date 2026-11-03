@@ -673,10 +673,9 @@ PAYMENTS AND HOLDS:
   - A cancellation per the rules releases the hold instead of charging.
     Banks can take a few days to show the release — that delay is the
     bank's, not ours.
-  - Wait fees at pickup: a free window, then per minute — Standard and
-    Compact: 2 free minutes, then $0.40/min. Premium: 3 free minutes,
-    then $0.60/min. VIP: 5 free minutes, then $1.00/min. Airport
-    pickups: 10 free minutes, then $0.40/min.
+  - Wait fees at pickup: 5 free minutes on every ride (airport pickups
+    included), then per minute — Standard and Compact $0.40/min,
+    Premium $0.60/min, VIP $1.00/min, airport pickups $0.40/min.
 
 FOR DRIVERS:
   - New driver accounts are reviewed by the team — the app says 24 to 72

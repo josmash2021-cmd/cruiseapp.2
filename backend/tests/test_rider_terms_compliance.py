@@ -113,16 +113,18 @@ def test_wait_fee_schedule_consistent_between_ui_and_backend():
 
     # Backend wait policy (trips.py): (free_minutes, fee_per_minute).
     for pattern in (
-        r'"sedan":\s+\(2, 0\.40\)',
-        r'"comfort":\s+\(2, 0\.40\)',
-        r'"standard":\s+\(2, 0\.40\)',
-        r'"premium":\s+\(3, 0\.60\)',
+        # 5 free minutes for every tier and airport (owner 2026-11-03).
+        r'"sedan":\s+\(5, 0\.40\)',
+        r'"comfort":\s+\(5, 0\.40\)',
+        r'"standard":\s+\(5, 0\.40\)',
+        r'"premium":\s+\(5, 0\.60\)',
         r'"suv_xl":\s+\(5, 1\.00\)',
         r'"vip":\s+\(5, 1\.00\)',
         r'"black":\s+\(5, 1\.00\)',
-        r"_AIRPORT_WAIT_POLICY = \(10, 0\.40\)",
+        r"_AIRPORT_WAIT_POLICY = \(5, 0\.40\)",
     ):
         assert re.search(pattern, backend), f"backend wait policy missing: {pattern}"
+    assert "5 free minutes" in screen, "terms screen must state the 5 free minutes"
 
     # The in-app terms text must mirror the same per-minute figures.
     for frag in ("$0.40 per minute", "$0.60 per minute", "$1.00 per minute"):

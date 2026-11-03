@@ -360,21 +360,20 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     // _WAIT_POLICY_BY_TYPE). Normalize onto the backend's groups first.
     final tier = _normalizeWaitTier(
         widget.rideTier ?? '', widget.vehicleDesc);
+    // 5 free minutes on every ride, airport included (owner 2026-11-03,
+    // trips.py _WAIT_POLICY_BY_TYPE); only the per-minute rate varies.
+    _freeWaitSec = 5 * 60;
     if (widget.isAirportTrip) {
-      _freeWaitSec = 10 * 60;
       _waitFeePerMin = 0.40;
     } else {
       switch (tier) {
         case 'vip':
-          _freeWaitSec = 5 * 60;
           _waitFeePerMin = 1.00;
           break;
         case 'premium':
-          _freeWaitSec = 3 * 60;
           _waitFeePerMin = 0.60;
           break;
         default: // standard
-          _freeWaitSec = 2 * 60;
           _waitFeePerMin = 0.40;
       }
     }

@@ -179,8 +179,10 @@ def _get_trip_commission(trip: Trip) -> tuple[float, float]:
 
 
 # ── Wait time fee policy (Uber/Lyft inspired) ──
-# (free_wait_minutes, fee_per_minute_usd). Airport rides override the
-# tier with a longer 10-min free window and the standard $0.40/min.
+# (free_wait_minutes, fee_per_minute_usd). 5 free minutes on EVERY ride,
+# airport included, and never more (owner 2026-11-03: "5 minutos gratis
+# para todos máximo"); only the per-minute rate changes by tier. Airport
+# rides keep the standard $0.40/min.
 # Mirrors lib/screens/rider_confirm_pickup_screen.dart so the rider
 # UI and the backend charge agree on the numbers.
 #
@@ -189,16 +191,16 @@ def _get_trip_commission(trip: Trip) -> tuple[float, float]:
 # and nobody has agreed a number for the new tier — inheriting the
 # cheapest existing one invents no charge.
 _WAIT_POLICY_BY_TYPE = {
-    "sedan":    (2, 0.40),
-    "comfort":  (2, 0.40),   # legacy name for standard
-    "standard": (2, 0.40),
-    "premium":  (3, 0.60),
+    "sedan":    (5, 0.40),
+    "comfort":  (5, 0.40),   # legacy name for standard
+    "standard": (5, 0.40),
+    "premium":  (5, 0.60),
     "suv_xl":   (5, 1.00),
     "vip":      (5, 1.00),
     "black":    (5, 1.00),   # legacy name for vip
 }
-_DEFAULT_WAIT_POLICY = (2, 0.40)
-_AIRPORT_WAIT_POLICY = (10, 0.40)
+_DEFAULT_WAIT_POLICY = (5, 0.40)
+_AIRPORT_WAIT_POLICY = (5, 0.40)
 
 def _wait_policy(vehicle_type: str | None, is_airport: bool) -> tuple[int, float]:
     """Return (free_wait_minutes, fee_per_minute_usd) for this trip."""

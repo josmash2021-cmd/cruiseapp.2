@@ -216,18 +216,22 @@ void main() {
       expect(accept.contains("import 'driver_nav_view.dart'"), isTrue);
       final start = accept.indexOf('child: DriverNavView(');
       expect(start, isNonNegative, reason: 'DriverNavView mount not found');
-      final mount = accept.substring(start, start + 2800);
+      // Up to the end of the call, not a fixed length (it grew 2026-11-03).
+      final end = accept.indexOf('onMapReady: _onNavMapReady', start);
+      expect(end, greaterThan(start));
+      final mount =
+          accept.substring(start, end + 'onMapReady: _onNavMapReady'.length);
       expect(mount.contains('prefetchedRoutePoints: _routePoints'), isTrue,
           reason: 'the mini map\'s already-drawn route must seed the nav '
               'view — no fetch, no blank map on open');
       expect(mount.contains('toPickup: _navToPickupOverride ?? !_rideStarted'),
           isTrue);
       expect(mount.contains('stage: _actionStageKey()'), isTrue);
-      // At the rider's stop the free wait counts from "Llegué" there.
-      expect(
-          mount.contains(
-              'waitStartedAt: _stopLegActive ? _stopArrivedAt : _waitStartedAt'),
-          isTrue);
+      // At the rider's stop the free wait counts from "Llegué" there; at a
+      // reservation's pickup reached early, from its own time (2026-11-03).
+      expect(mount.contains('waitStartedAt: _stopLegActive'), isTrue);
+      expect(mount.contains('? _stopArrivedAt'), isTrue);
+      expect(mount.contains(': (_earlyWaitStart ?? _waitStartedAt),'), isTrue);
       expect(mount.contains('onArrivedStop: _confirmStopArrival'), isTrue);
       expect(mount.contains('onSlideFromStop: _departStop'), isTrue);
       expect(mount.contains('onExit: _exitNavMode'), isTrue);

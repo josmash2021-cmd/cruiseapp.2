@@ -5999,6 +5999,19 @@ class S {
   /// The reservation's own 1-hour confirm offer (owner 2026-11-03).
   String get badgeConfirmReservation =>
       _es ? 'CONFIRMA TU RESERVA' : 'CONFIRM YOUR RESERVATION';
+  /// A driver early at a reservation's pickup (owner 2026-11-03, Lyft's
+  /// "You're here early" / "Scheduled").
+  String get earlyArrivalTitle =>
+      _es ? 'Llegaste temprano' : "You're here early";
+  String earlyArrivalBody(String name, String time) => _es
+      ? 'Le avisamos a $name que llegaste, por si ya está listo. Tu espera '
+          'empieza a contar a las $time.'
+      : "We let $name know you've arrived in case they're ready to go. Your "
+          'wait starts counting at $time.';
+  String get pickupBadgeReserved => _es ? 'Reservado' : 'Scheduled';
+  /// Rider: the free wait waits for the reservation's own time.
+  String riderWaitStartsAt(String time) =>
+      _es ? 'Tu espera empieza a las $time' : 'Your wait starts at $time';
   String get resConfirmCancelledBanner => _es
       ? 'Cancelaste tu viaje reservado'
       : 'You cancelled your reserved ride';

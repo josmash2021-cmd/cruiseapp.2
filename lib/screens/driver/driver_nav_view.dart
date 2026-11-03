@@ -15,6 +15,7 @@ import '../../config/mapbox_config.dart';
 import '../../l10n/app_localizations.dart';
 import '../../map/camera_action_gate.dart';
 import '../../map/driver_road_lock.dart';
+import '../../map/pin_top_label.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../map/web_map_view.dart';
 import '../../models/lat_lng.dart';
@@ -126,6 +127,7 @@ class DriverNavView extends StatefulWidget {
     this.onArrivedStop,
     this.onSlideFromStop,
     required this.waitStartedAt,
+    this.pickupBadge,
     required this.onExit,
     required this.onArrived,
     required this.onSlidePickUp,
@@ -191,6 +193,10 @@ class DriverNavView extends StatefulWidget {
   /// Backend wait-start timestamp parsed from the notes line, when present —
   /// the wait divider drains from this so a reopened screen stays in sync.
   final DateTime? waitStartedAt;
+
+  /// A tag over the pickup pin — "Reservado" on a reservation (owner
+  /// 2026-11-03, Lyft's "Scheduled"). Null on an on-demand ride.
+  final String? pickupBadge;
 
   final VoidCallback onExit;
   final VoidCallback onArrived;
@@ -756,6 +762,10 @@ class DriverNavViewState extends State<DriverNavView>
   @override
   void didUpdateWidget(DriverNavView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // The reservation's tag arrives with the trip read, after the first pin.
+    if (oldWidget.pickupBadge != widget.pickupBadge) {
+      unawaited(_drawDestPin());
+    }
     if (oldWidget.stage != widget.stage) {
       _syncStageControls(widget.stage);
     }
@@ -2391,11 +2401,15 @@ class DriverNavViewState extends State<DriverNavView>
     try {
       // The same golden teardrop every other map draws: person at the
       // pickup, flag at the dropoff.
-      final bytes = await renderCircularPinBytes(
+      var bytes = await renderCircularPinBytes(
         icon: widget.toPickup ? CircularPinIcon.person : CircularPinIcon.flag,
         isPickup: widget.toPickup,
         radius: 32,
       );
+      final badge = widget.pickupBadge;
+      if (widget.toPickup && badge != null) {
+        bytes = await pinWithTopLabel(bytes, badge);
+      }
       if (!mounted) return;
       _destAnnot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: point,

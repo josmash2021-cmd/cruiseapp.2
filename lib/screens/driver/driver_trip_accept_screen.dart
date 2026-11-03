@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import '../../widgets/neu_style.dart';
 import '../../widgets/glass_notification_banner.dart';
+import '../../widgets/early_arrival_sheet.dart';
 import 'driver_earnings_screen.dart';
 import 'driver_menu_screen.dart';
 import 'dart:math' as math;
@@ -39,6 +40,7 @@ import '../../services/resilient_position_stream.dart';
 import '../../utils/driver_location_settings.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../utils/smooth_motion.dart';
+import '../../utils/server_time.dart';
 import '../../utils/trip_stops.dart';
 import '../../services/map_controller_cache.dart';
 import '../chat_screen.dart';
@@ -985,6 +987,16 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// The backend appends `Wait started: <iso>` to the trip notes when the
   /// pickup wait timer opens; the nav view's wait divider drains from it so
   /// a reopened screen shows the real remaining time, not a fresh 5:00.
+  /// A reservation's pickup time (null for an on-demand ride): the nav map
+  /// tags the pickup "Reservado", and arriving before it brings up
+  /// "Llegaste temprano" (owner 2026-11-03).
+  DateTime? _reservationPickupAt;
+
+  /// Arrived before that time: the pickup wait counts from it, as on the
+  /// server (wait_clock_start) — the nav bar stays full and "Pasajero no
+  /// llegó" away until then.
+  DateTime? _earlyWaitStart;
+
   DateTime? get _waitStartedAt {
     for (final line in widget.pickupInstructions.split('\n')) {
       final t = line.trim();
@@ -1390,6 +1402,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       final t = await ApiService.getTrip(widget.tripId, riderStats: true);
       if (!mounted) return;
       _applyStopWait(t);
+      _applyReservationTime(t);
       int? asInt(dynamic v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}');
       final rating = t['rider_rating'];
       setState(() {
@@ -1414,6 +1427,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     } catch (e) {
       debugPrint('[DriverTrip] rider stats failed: $e');
     }
+  }
+
+  /// A reservation = booked ahead (same 3-minute line the offer card uses:
+  /// a web booking "for now" also carries scheduled_at). A reopened screen
+  /// that already arrived early keeps the wait at the pickup time.
+  void _applyReservationTime(Map<String, dynamic> t) {
+    final at = parseServerTime(t['scheduled_at']);
+    final created = parseServerTime(t['created_at']);
+    if (at == null ||
+        (created != null && at.difference(created).inMinutes < 3)) {
+      return;
+    }
+    final arrived = parseServerTime(t['arrived_at']);
+    setState(() {
+      _reservationPickupAt = at;
+      if (arrived != null && arrived.isBefore(at)) _earlyWaitStart = at;
+    });
   }
 
   /// Sends the panel's switches; a refusal puts them back as they were.
@@ -1939,6 +1969,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       return;
     }
     debugPrint('[Driver] arrived confirmed → $_fsDocId');
+    final pickupAt = _reservationPickupAt;
+    if (pickupAt != null && pickupAt.isAfter(DateTime.now()) && mounted) {
+      setState(() => _earlyWaitStart = pickupAt);
+      unawaited(showEarlyArrivalSheet(
+        context,
+        riderFirstName: widget.riderName.trim().split(' ').first,
+        waitStartsAt: pickupAt,
+      ));
+    }
   }
 
   // ── Listen for rider confirming they are with the driver ────────────────
@@ -5833,7 +5872,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               passengerInstructions: _passengerInstructions,
               dropoffInstructions: widget.dropoffInstructions,
               // At the stop the free wait counts from "Llegué" there.
-              waitStartedAt: _stopLegActive ? _stopArrivedAt : _waitStartedAt,
+              waitStartedAt: _stopLegActive
+                  ? _stopArrivedAt
+                  : (_earlyWaitStart ?? _waitStartedAt),
+              pickupBadge: _reservationPickupAt == null
+                  ? null
+                  : S.of(context).pickupBadgeReserved,
               prefetchedRoutePoints: _routePoints,
               // The stop follows the leg flips: null on the pickup leg,
               // waypoint + pin once the rider is aboard.

@@ -17,12 +17,14 @@ import '../config/mapbox_config.dart';
 import '../config/page_transitions.dart';
 import '../map/map_surface_coordinator.dart';
 import '../models/lat_lng.dart';
+import '../services/api_service.dart';
 import '../services/directions_service.dart';
 import '../services/haptic_service.dart';
 import '../services/socket_service.dart';
 import '../utils/mapbox_safe.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/route_splice.dart';
+import '../utils/server_time.dart';
 import '../utils/smooth_motion.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/glass_notification_banner.dart';
@@ -200,6 +202,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   // (while < _freeWaitSec) and the count-up (while >= _freeWaitSec).
   int _waitElapsedSec = 0;
 
+  /// A reservation's pickup time while it is still ahead (owner 2026-11-03,
+  /// like Lyft): the driver came early, the ring stays full and still until
+  /// then — the server starts the wait there too (wait_clock_start).
+  DateTime? _waitStartsAt;
+
   // ── Mini map (the app's one native Mapbox surface) ──
   /// Identifies this screen to [MapSurfaceCoordinator]. The page is an
   /// inline overlay on top of the rider tracking screen, which holds the
@@ -374,8 +381,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     // 1 Hz tick — cheap, drives both phases of the timer.
     _waitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || _driverStarted) return;
+      final holdUntil = _waitStartsAt;
+      if (holdUntil != null && DateTime.now().isBefore(holdUntil)) return;
       setState(() => _waitElapsedSec++);
     });
+    unawaited(_loadReservationTime());
 
     // Content fade-in
     _fadeInCtrl = AnimationController(
@@ -962,6 +972,20 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
               ),
             ),
           ),
+          if (_waitStartsAt != null &&
+              DateTime.now().isBefore(_waitStartsAt!)) ...[
+            const SizedBox(height: 8),
+            Text(
+              S.of(context).riderWaitStartsAt(_format12h(_waitStartsAt!)),
+              key: const ValueKey('rider-wait-starts-at'),
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white.withValues(alpha: 0.75),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ],
       );
     }
@@ -1939,6 +1963,25 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     setState(() => _driverDetected = true);
   }
 
+  /// The poll payload carries no `scheduled_at`: ask the trip once.
+  Future<void> _loadReservationTime() async {
+    final id = widget.tripId;
+    if (id == null) return;
+    try {
+      final t = await ApiService.getTrip(id);
+      if (!mounted) return;
+      final at = parseServerTime(t['scheduled_at']);
+      if (at == null || !at.isAfter(DateTime.now())) return;
+      // The seconds that ticked before the answer came were not wait.
+      setState(() {
+        _waitStartsAt = at;
+        _waitElapsedSec = 0;
+      });
+    } catch (e) {
+      debugPrint('[RiderConfirmPickup] reservation time failed: $e');
+    }
+  }
+
   @override
   void dispose() {
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
@@ -2474,6 +2517,12 @@ class _HeroGlowPainter extends CustomPainter {
 }
 
 /// Tiny clock with a sweeping hand — the animated icon on the wait line.
+/// "3:20 PM" — 12-hour clock without DateFormat (no locale data needed).
+String _format12h(DateTime t) {
+  final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+  return '$h:${t.minute.toString().padLeft(2, '0')} ${t.hour < 12 ? 'AM' : 'PM'}';
+}
+
 /// The free-wait ring: a faint full track, and over it an arc from 12
 /// o'clock clockwise covering [progress] of the circle, round ends.
 class _WaitRingPainter extends CustomPainter {

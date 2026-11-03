@@ -100,3 +100,55 @@ async def test_firestore_block_still_lands(client, db, test_driver, monkeypatch)
     assert res.status_code == 200, res.text
     await db.refresh(user)
     assert user.status == "blocked"
+
+
+def _bearer(token):
+    return {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+
+
+async def test_go_check_lifts_a_stranded_waitlist(client, db, test_driver):
+    # 2026-11-03: Julio Morales still had it — can-go-online said yes, the
+    # selfie went through, then 2,458 heartbeats came back 403.
+    user, token = test_driver
+    user.status = "waitlist"
+    user.verification_status = "approved"
+    await db.commit()
+    res = await client.get("/drivers/can-go-online", headers=_bearer(token))
+    assert res.status_code == 200, res.text
+    await db.refresh(user)
+    assert user.status == "active"
+
+
+async def test_heartbeat_lifts_a_stranded_waitlist(client, db, test_driver):
+    # An app that goes online without asking can-go-online first.
+    user, token = test_driver
+    user.status = "waitlist"
+    user.verification_status = "approved"
+    await db.commit()
+    res = await client.patch(f"/drivers/{user.id}/location",
+                             headers=_bearer(token),
+                             json={"lat": 25.77, "lng": -80.19, "is_online": True})
+    assert res.status_code == 200, res.text
+    await db.refresh(user)
+    assert user.status == "active"
+    assert user.is_online is True
+
+
+@pytest.mark.parametrize("status,verification", [
+    ("waitlist", "waitlist"),   # dispatch put them on the waitlist
+    ("blocked", "approved"),    # a real block
+    ("suspended", "approved"),
+])
+async def test_go_never_lifts_a_real_hold(client, db, test_driver,
+                                          status, verification):
+    user, token = test_driver
+    user.status = status
+    user.verification_status = verification
+    await db.commit()
+    await client.get("/drivers/can-go-online", headers=_bearer(token))
+    res = await client.patch(f"/drivers/{user.id}/location",
+                             headers=_bearer(token),
+                             json={"lat": 25.77, "lng": -80.19, "is_online": True})
+    assert res.status_code == 403, res.text
+    await db.refresh(user)
+    assert user.status == status

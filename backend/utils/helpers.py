@@ -328,6 +328,24 @@ def synced_account_status(value: str | None) -> str | None:
 STRANDED_REVIEW_STATUSES = ("waitlist", "pending", "rejected", "unwaitlist")
 
 
+def heal_stranded_account_status(user) -> bool:
+    """An approved driver whose account column still holds a review word
+    gets the "active" the approval meant (owner 2026-11-03). The same lift
+    the approve endpoints do — here at GO time, so a stale word can never
+    again pass can-go-online and then 403 every heartbeat (Julio Morales:
+    2,458 refused heartbeats on 2026-11-03). A real block, a dispatch
+    waitlist (verification "waitlist") or a pending review is left alone.
+    True when it changed something; the caller commits."""
+    if (user.verification_status or "").lower() != "approved":
+        return False
+    if (user.status or "").lower() not in STRANDED_REVIEW_STATUSES:
+        return False
+    logging.warning("[Account] driver %s approved but status=%r — lifted to "
+                    "active", user.id, user.status)
+    user.status = "active"
+    return True
+
+
 def normalise_account_status(value: str | None) -> str | None:
     """Fold verification words into the account status they meant.
 

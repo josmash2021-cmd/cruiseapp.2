@@ -24,7 +24,7 @@ from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
     _haversine, _user_dict, _vehicle_dict, _doc_dict, _trip_dict, _safe_create_task,
     _compute_user_rating, validate_driver_minimum_age, user_lang,
-    ACTIVE_ACCOUNT_STATUSES, _active_destination,
+    ACTIVE_ACCOUNT_STATUSES, _active_destination, heal_stranded_account_status,
 )
 # Both of these were used below without ever being imported: every
 # driver photo upload and every surge lookup raised NameError, which
@@ -301,6 +301,8 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     # because an approved driver carries status "approved", and comparing
     # against one spelling turned approval into a permanent 403 on every
     # heartbeat — which is what stopped trips reaching them at all.
+    if body.is_online and heal_stranded_account_status(user):
+        await db.commit()
     if body.is_online and (user.status or "active") not in ACTIVE_ACCOUNT_STATUSES:
         _driver_locations.pop(driver_id, None)
         raise HTTPException(403, f"Account {user.status} — cannot go online")
@@ -3189,6 +3191,10 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     # which a go-online may lift a Dispatch-forced offline latch.
     from services import presence_latch
     presence_latch.note_gate_check(user.id)
+    # The location gate refuses a non-active account; a "yes" here followed
+    # by a 403 on every heartbeat left the driver selfie'd and stuck.
+    if heal_stranded_account_status(user):
+        await db.commit()
     reasons = []
 
     # 1. Account must be approved

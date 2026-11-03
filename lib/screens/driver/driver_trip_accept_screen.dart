@@ -3732,7 +3732,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
+        // #141414 exactly (owner 2026-11-02); no Material tint over it.
+        backgroundColor: const Color(0xFF141414),
+        surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(s.driverCancelConfirmTitle,
           style: const TextStyle(color: Colors.white,

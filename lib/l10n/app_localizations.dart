@@ -6057,8 +6057,10 @@ class S {
   String get driverCancelReasonPersonal =>
       _es ? 'Problema personal' : 'Personal issue';
   String get nextLabel => _es ? 'Siguiente' : 'Next';
-  String get driverCancelConfirmTitle =>
-      _es ? '¿Cancelar este viaje?' : 'Cancel this trip?';
+  // Owner 2026-11-02: "debe decir are you sure you quieres cancelar el viaje?"
+  String get driverCancelConfirmTitle => _es
+      ? '¿Seguro que quieres cancelar el viaje?'
+      : 'Are you sure you want to cancel the trip?';
   String get driverCancelConfirmBody => _es
       ? 'El viaje volverá al marketplace y se buscará otro conductor para el pasajero.'
       : 'The trip will return to the marketplace and another driver will be matched for the rider.';

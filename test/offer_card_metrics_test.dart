@@ -78,8 +78,11 @@ void main() {
             reason: '$path caps offer minutes again — a far pickup prints '
                 '"1 h 39 min" whatever its miles say');
         expect(code, contains('offerLegMinutes('));
-        expect(code, contains('offerTotalMinutes('));
       }
+      // The reservations map's Lyft-style card (owner 2026-11-03) shows the
+      // ride's own minutes, not a pickup + ride total.
+      expect(src('lib/screens/driver/driver_online_widgets.dart'),
+          contains('offerTotalMinutes('));
       final widgets = src('lib/screens/driver/driver_online_widgets.dart');
       expect(widgets, contains('offerPayPerHour(fare, totalMin)'));
       expect(widgets, isNot(contains('driverToPickupMin ?? 1')));

@@ -5314,6 +5314,29 @@ class S {
   String get myResDetails => _es ? 'Ver detalles' : 'View details';
   String get myResNavigate =>
       _es ? 'Navegar a la recogida' : 'Navigate to pickup';
+  // ── Reservations map, Lyft-style (owner 2026-11-03) ──
+  String get resvConfirmTitle =>
+      _es ? '¿Reservar este viaje?' : 'Reserve this ride?';
+  String resvConfirmBody(String when) => _es
+      ? 'Te comprometes a recoger a este pasajero el $when.'
+      : "You're committing to pick up this passenger on $when.";
+  String get resvImportant =>
+      _es ? 'Detalles importantes' : 'Important details';
+  String resvGoOnlineBold(String time) =>
+      _es ? 'Conéctate antes de las $time' : 'Go online by $time';
+  String get resvGoOnlineRest => _es
+      ? ' y a esa hora te llega la oferta para confirmar el viaje.'
+      : " and that's when the offer to confirm the ride comes in.";
+  String get resvMissed => _es
+      ? 'Si no te conectas a tiempo o rechazas esa oferta, la reserva vuelve '
+          'al tablero y ya no se te ofrece.'
+      : 'If you are not online in time or reject that offer, the reservation '
+          'goes back to the board and is not offered to you again.';
+  String get resvCancelInfo => _es
+      ? 'Puedes cancelarla hasta 1 hora antes desde la página de la reserva.'
+      : 'You can cancel it up to 1 hour before, from the reservation page.';
+  String get resvReserve => _es ? 'Reservar' : 'Reserve';
+  String get resvViewPolicy => _es ? 'Ver política' : 'View policy';
   String get myResEnd => _es
       ? 'Viste todos tus viajes reservados. Más sobre las reservas.'
       : "You've seen all your reserved rides. More about reservations.";

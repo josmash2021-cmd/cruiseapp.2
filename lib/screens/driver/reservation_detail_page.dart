@@ -84,6 +84,7 @@ Future<void> showReservationDetail(
   Map<String, dynamic> reservation, {
   VoidCallback? onCancelled,
   bool faqOnly = false,
+  bool policyOnly = false,
 }) {
   final nav = Navigator.maybeOf(context);
   if (nav == null) return Future.value();
@@ -96,6 +97,7 @@ Future<void> showReservationDetail(
       reservation: reservation,
       onCancelled: onCancelled,
       faqOnly: faqOnly,
+      policyOnly: policyOnly,
     ),
     transitionsBuilder: (_, anim, __, child) {
       final a = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
@@ -117,12 +119,19 @@ Future<void> showReservationDetail(
 Future<void> showReservationFaq(BuildContext context) =>
     showReservationDetail(context, const {}, faqOnly: true);
 
+/// The cancel policy on its own — "Ver política" on the reservations map's
+/// confirm card. [reservation] gives it the ride's own times.
+Future<void> showReservationPolicy(
+        BuildContext context, Map<String, dynamic> reservation) =>
+    showReservationDetail(context, reservation, policyOnly: true);
+
 class ReservationDetailPage extends StatefulWidget {
   const ReservationDetailPage({
     super.key,
     required this.reservation,
     this.onCancelled,
     this.faqOnly = false,
+    this.policyOnly = false,
   });
 
   final Map<String, dynamic> reservation;
@@ -130,6 +139,9 @@ class ReservationDetailPage extends StatefulWidget {
 
   /// Only the FAQ page; its back arrow closes the whole page.
   final bool faqOnly;
+
+  /// Only the cancel policy page, the same way.
+  final bool policyOnly;
 
   @override
   State<ReservationDetailPage> createState() => _ReservationDetailPageState();
@@ -157,8 +169,15 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
         _shownSub = sub;
       });
 
+  /// The one page shown alone (FAQ or policy), or null for the full page.
+  _ResSub? get _solo => widget.faqOnly
+      ? _ResSub.faq
+      : widget.policyOnly
+          ? _ResSub.policy
+          : null;
+
   void _closeSub() {
-    if (widget.faqOnly) {
+    if (_solo != null) {
       Navigator.maybeOf(context)?.pop();
       return;
     }
@@ -172,9 +191,10 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
   @override
   void initState() {
     super.initState();
-    if (widget.faqOnly) {
-      _sub = _ResSub.faq;
-      _shownSub = _ResSub.faq;
+    final solo = _solo;
+    if (solo != null) {
+      _sub = solo;
+      _shownSub = solo;
     }
     final id = (widget.reservation['id'] as num?)?.toInt();
     if (id != null) {
@@ -760,7 +780,7 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
     return PopScope(
       // Back (gesture or Android button) on a "More info" page returns to
       // the reservation; on the reservation it closes the page.
-      canPop: _sub == null || widget.faqOnly,
+      canPop: _sub == null || _solo != null,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && _sub != null) _closeSub();
       },
@@ -781,7 +801,7 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
               child: ClipRect(
                 child: Stack(
                   children: [
-                    if (!widget.faqOnly)
+                    if (_solo == null)
                       Positioned.fill(
                         child: IgnorePointer(
                           ignoring: _sub != null,

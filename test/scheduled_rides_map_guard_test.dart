@@ -34,10 +34,11 @@ void main() {
   });
 
   group('reserve button placement', () {
-    // The card builder must not contain the Reserve button — it rides below
-    // the card inside the detail sheet, never floating over the map.
+    // The card builder must not contain the Reserve button — it rides
+    // right below the card (owner 2026-11-03: the selected ride floats
+    // like an offer card, Reservar under it).
     final cardStart = screen.indexOf('Widget _rideCard(');
-    final cardEnd = screen.indexOf('Widget _offerMetric(');
+    final cardEnd = screen.indexOf('Widget _lyftRail(');
     final cardBlock = cardStart >= 0 && cardEnd > cardStart
         ? screen.substring(cardStart, cardEnd)
         : '';
@@ -49,16 +50,15 @@ void main() {
       expect(cardBlock.contains('schedMapReserve'), isFalse);
     });
 
-    test('reserve sits below the card inside the detail sheet', () {
-      final sheetStart = screen.indexOf('Widget _buildDetailSheet(');
-      expect(sheetStart, greaterThan(-1));
-      final sheetBlock = screen.substring(sheetStart, sheetStart + 1200);
-      final cardIdx = sheetBlock.indexOf('_rideCard(trip)');
-      final reserveIdx = sheetBlock.indexOf('_buildReserveButton(s, trip)');
+    test('reserve sits right below the floating card', () {
+      final start = screen.indexOf('Widget _buildFloatingDetail(');
+      expect(start, greaterThan(-1));
+      final block = screen.substring(start, start + 600);
+      final cardIdx = block.indexOf('_rideCard(trip, floating: true)');
+      final reserveIdx = block.indexOf('_buildReserveButton(s, trip)');
       expect(cardIdx, greaterThan(-1));
       expect(reserveIdx, greaterThan(cardIdx),
-          reason:
-              'Reserve must build after the card inside _buildDetailSheet — in the sheet flow, below the card.');
+          reason: 'Reservar builds right after the card, below it.');
     });
 
     test('no floating reserve pill survives in the root Stack', () {

@@ -138,6 +138,14 @@ def _scheduled_trip_card(trip: Trip, driver_lat: float = 0, driver_lng: float = 
         "distance_km": dist_km,
         "rider_name": rider_name,
         "rider_photo": rider_photo,
+        # Lyft-style cards (owner 2026-11-03): rating, verified badge, and
+        # the trip's own route minutes/miles instead of a straight line.
+        "rider_rating": (round(float(rider.average_rating), 1)
+                         if rider is not None and rider.average_rating is not None
+                         else None),
+        "rider_verified": bool(getattr(rider, "is_verified", False)) if rider is not None else False,
+        "duration_minutes": int(trip.duration) if trip.duration else None,
+        "distance_miles": float(trip.distance) if trip.distance else None,
         "created_at": trip.created_at.isoformat() if trip.created_at else None,
     }
 

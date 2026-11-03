@@ -203,7 +203,9 @@ void main() {
       expect(sched,
           contains('glassSheetTint, glassSheetOpenTint, _sheetOpenT())!'));
       expect(sched, isNot(contains('color: neuBase,\n                borderRadius:')));
-      expect(sched, contains('decoration: glassInnerBox(\n        radius: 20,'));
+      // List cards lift the sheet's glass (the floating ride is solid,
+      // like an offer card — owner 2026-11-03).
+      expect(sched, contains(RegExp(r'glassInnerBox\(\s*radius: 20,')));
     });
 
     test('a drag rests closed or fully open — never half way', () {

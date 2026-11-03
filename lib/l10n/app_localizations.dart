@@ -5149,33 +5149,11 @@ class S {
   String get resDetailMoreInfo => _es ? 'Más info' : 'More info';
   String get resDetailHowTo =>
       _es ? 'Cómo completar tu viaje' : 'How to complete your ride';
-  String resDetailHowToBody(String goOnlineBy) => _es
-      ? '1. Conéctate antes de las $goOnlineBy (1 hora antes de la recogida). '
-          'Si no estás en línea a esa hora, la reserva vuelve al tablero.\n\n'
-          '2. Desde esa hora no te llegan otros viajes: la última hora es para '
-          'esta reserva. Quédate en línea.\n\n'
-          '3. 30 minutos antes de la recogida el viaje empieza solo y la app '
-          'te lleva a la recogida.\n\n'
-          '4. Recoge al pasajero y termina el viaje como cualquier otro.'
-      : '1. Go online by $goOnlineBy (1 hour before pickup). If you are not '
-          'online by then, the reservation goes back to the board.\n\n'
-          '2. From then on no other rides come in: the last hour belongs to '
-          'this reservation. Stay online.\n\n'
-          '3. 30 minutes before pickup the ride starts on its own and the app '
-          'takes you to the pickup.\n\n'
-          '4. Pick up the rider and finish the ride like any other.';
   String get resDetailCancelPolicy =>
       _es ? 'Política de cancelación' : 'Cancel policy';
   String get resDetailCancelPolicySub => _es
       ? 'Hasta 1 hora antes de la recogida'
       : 'Up to 1 hour before pickup';
-  String get resDetailCancelPolicyBody => _es
-      ? 'Puedes cancelar la reserva hasta 1 hora antes de la recogida: el viaje '
-          'vuelve al tablero para otro conductor. Después de eso, escribe a '
-          'Soporte.'
-      : 'You can cancel the reservation up to 1 hour before pickup: the ride '
-          'goes back to the board for another driver. After that, write to '
-          'Support.';
   String get resDetailFaq =>
       _es ? 'Preguntas frecuentes de reservas' : 'Scheduled rides FAQ';
   String get resDetailFaqSub =>
@@ -5192,6 +5170,127 @@ class S {
   String get resDetailCancelTooLate => _es
       ? 'Falta menos de 1 hora: ya no se puede cancelar. Escribe a Soporte.'
       : 'Less than 1 hour to go: it can no longer be cancelled. Write to Support.';
+
+  // ── Its "More info" pages (owner-approved drawing 2026-11-03) ──
+  /// [day] is "hoy"/"mañana"/"viernes 7 de nov" (es) or "today"/... (en).
+  String resSubLead(String day, String time) => _es
+      ? 'Tu reserva: $day, recogida a las $time'
+      : 'Your reservation: $day, pickup at $time';
+  String resHowStep1Body(String remindAt) => _es
+      ? 'Es 1 hora antes de la recogida. Si a esa hora no estás en línea, la '
+          'reserva vuelve al tablero y ya no se te ofrece. Si a las $remindAt '
+          'sigues desconectado, te mandamos un aviso.'
+      : "It's 1 hour before pickup. If you're not online by then, the "
+          'reservation goes back to the board and is no longer offered to '
+          "you. If you're still offline at $remindAt, we send you a reminder.";
+  String get resHowStep2Title => _es
+      ? 'La última hora es para esta reserva'
+      : 'The last hour is for this reservation';
+  String get resHowStep2Body => _es
+      ? 'No te llegan otros viajes. Quédate en línea.'
+      : 'No other rides come in. Stay online.';
+  String get resHowStep3Title =>
+      _es ? 'El viaje empieza solo' : 'The ride starts on its own';
+  String get resHowStep3Body => _es
+      ? '30 minutos antes de la recogida pasa a ser tu viaje en curso, sin '
+          'aceptar nada, y la app te lleva a la recogida. Si a esa hora no '
+          'estás en línea, vuelve al tablero.'
+      : '30 minutes before pickup it becomes your current ride, nothing to '
+          "accept, and the app takes you to the pickup. If you're not online "
+          'then, it goes back to the board.';
+  String get resHowStep4Title => _es
+      ? 'Recoge al pasajero y termina el viaje'
+      : 'Pick up the rider and finish the ride';
+  String get resHowStep4Body => _es
+      ? 'Como cualquier otro viaje. Si el pasajero se demora, la espera se '
+          'suma a tu pago.'
+      : 'Like any other ride. If the rider is late, the wait is added to your '
+          'pay.';
+  String get resPolYouTitle => _es ? 'Si tú cancelas' : 'If you cancel';
+  String resPolYouBody(String goOnlineBy) => _es
+      ? 'Hasta las $goOnlineBy (1 hora antes) con "Cancelar viaje". El viaje '
+          'vuelve al tablero para otro conductor y al pasajero le avisamos que '
+          'buscamos otro. Después de esa hora ya no se puede desde la app: '
+          'escribe a Soporte.'
+      : 'Until $goOnlineBy (1 hour before) with "Cancel ride". The ride goes '
+          'back to the board for another driver and we tell the rider we are '
+          "finding another one. After that it can't be done in the app: write "
+          'to Support.';
+  String get resPolOfflineTitle =>
+      _es ? 'Si no te conectas a tiempo' : "If you don't go online in time";
+  String resPolOfflineBody(String goOnlineBy) => _es
+      ? 'A las $goOnlineBy, si no estás en línea, la reserva vuelve al tablero '
+          'sola y ya no se te ofrece.'
+      : "At $goOnlineBy, if you're not online, the reservation goes back to "
+          'the board on its own and is no longer offered to you.';
+  String get resPolRiderTitle =>
+      _es ? 'Si el pasajero cancela' : 'If the rider cancels';
+  String get resPolRiderBody => _es
+      ? 'Más de 1 hora antes: no paga nada. En la última hora: paga una tarifa '
+          'según la categoría (nunca más que el viaje) y te llega tu parte. Te '
+          'avisamos al momento.'
+      : "More than 1 hour before: they pay nothing. In the last hour: they pay "
+          'a fee by ride type (never more than the ride) and you get your '
+          'share. We let you know right away.';
+  String get resPolNoShowTitle =>
+      _es ? 'Si el pasajero no sale' : "If the rider doesn't show";
+  /// [slider] is the no-show slider's own label (navRiderNoShow).
+  String resPolNoShowBody(String slider) => _es
+      ? 'Después de 5 minutos esperando en la recogida, desliza "$slider": se '
+          'cobra la tarifa de no presentación y te llega tu parte.'
+      : 'After 5 minutes waiting at the pickup, slide "$slider": the no-show '
+          'fee is charged and you get your share.';
+  String get resFaqQ1 => _es
+      ? '¿Qué pasa si no me conecto a tiempo?'
+      : "What if I don't go online in time?";
+  String get resFaqA1 => _es
+      ? 'Si a la hora de "Conéctate antes de" no estás en línea, la reserva '
+          'vuelve al tablero y otro conductor la puede tomar. Ya no se te '
+          'ofrece. 15 minutos antes te mandamos un aviso si sigues '
+          'desconectado.'
+      : 'If you\'re not online by the "Go online by" time, the reservation '
+          'goes back to the board and another driver can take it. It is no '
+          "longer offered to you. 15 minutes before, we remind you if you're "
+          'still offline.';
+  String get resFaqQ2 => _es
+      ? '¿Me llegan otros viajes antes de la reserva?'
+      : 'Do I get other rides before the reservation?';
+  String get resFaqA2 => _es
+      ? 'Sí, hasta 1 hora antes de la recogida. En la última hora no te llegan '
+          'otros viajes: esa hora es para esta reserva.'
+      : 'Yes, until 1 hour before pickup. In the last hour no other rides come '
+          'in: that hour is for this reservation.';
+  String get resFaqQ3 =>
+      _es ? '¿Cuándo empieza el viaje?' : 'When does the ride start?';
+  String get resFaqA3 => _es
+      ? '30 minutos antes de la recogida pasa a ser tu viaje en curso, sin '
+          'aceptar nada, y la app te lleva a la recogida. Tienes que estar en '
+          'línea.'
+      : '30 minutes before pickup it becomes your current ride, nothing to '
+          'accept, and the app takes you to the pickup. You have to be online.';
+  String get resFaqQ4 => _es ? '¿Me pagan la espera?' : 'Am I paid for waiting?';
+  String get resFaqA4 => _es
+      ? 'Sí. Si el pasajero se demora más de los minutos gratis, la espera se '
+          'suma a tu pago.'
+      : 'Yes. If the rider takes longer than the free minutes, the wait is '
+          'added to your pay.';
+  String get resFaqQ5 => _es
+      ? '¿Qué pasa si el pasajero cancela?'
+      : 'What if the rider cancels?';
+  String get resFaqA5 => _es
+      ? 'Más de 1 hora antes no paga nada. En la última hora paga una tarifa '
+          'según la categoría y te llega tu parte. Te avisamos al momento.'
+      : 'More than 1 hour before, they pay nothing. In the last hour they pay a '
+          'fee by ride type and you get your share. We let you know right '
+          'away.';
+  String get resFaqQ6 =>
+      _es ? '¿Cómo cancelo una reserva?' : 'How do I cancel a reservation?';
+  String get resFaqA6 => _es
+      ? 'Con "Cancelar viaje" en la página de la reserva, hasta 1 hora antes de '
+          'la recogida. Después de esa hora, escribe a Soporte.'
+      : 'With "Cancel ride" on the reservation page, up to 1 hour before '
+          'pickup. After that, write to Support.';
+  String get resFaqSupport => _es ? 'Escribir a Soporte' : 'Write to Support';
 
   // ── Vehicle page ──
   String get addVehicleAsk => _es

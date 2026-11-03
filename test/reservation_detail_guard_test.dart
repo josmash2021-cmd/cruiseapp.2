@@ -43,6 +43,21 @@ void main() {
     }
   });
 
+  test('owner 2026-11-03: CRUISE in capitals and gold', () {
+    expect(page, contains("text: 'CRUISE', style: TextStyle(color: _gold)"));
+    expect(page, isNot(contains(" Cruise'")));
+  });
+
+  test('"More info" rows open their own pages in the same glass', () {
+    expect(page, contains('() => _openSub(_ResSub.how),'));
+    expect(page, contains('() => _openSub(_ResSub.policy),'));
+    expect(page, contains('() => _openSub(_ResSub.faq),'));
+    expect(page, isNot(contains('showDriverHelpSheet')),
+        reason: 'the FAQ row used to open the general Help sheet');
+    expect(page, contains('canPop: _sub == null,'),
+        reason: 'system back on a sub page returns to the reservation');
+  });
+
   test('cancel asks first and hands the ride back to the board', () {
     expect(page, contains('await ApiService.cancelScheduledTrip(id);'));
     expect(page, contains('s.resDetailCancelConfirm'));
@@ -53,7 +68,8 @@ void main() {
   test('Spanish dates without DateFormat locales (it throws here)', () {
     expect(page, isNot(matches(RegExp(r"DateFormat\([^)]*'es'"))),
         reason: 'initializeDateFormatting is never called in this app');
-    expect(page, contains("'ene', 'feb', 'mar'"));
+    expect(page, contains('const _kMonthsEs = ['));
+    expect(page, contains("'ene',"));
   });
 
   test('lookups off build() use maybeOf (rule 26)', () {

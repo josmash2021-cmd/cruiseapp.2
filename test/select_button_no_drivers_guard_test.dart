@@ -2,15 +2,19 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guardian for the "Select {tier}" no-drivers gate (2026-09-11).
+/// Guardian for the "Select {tier}" no-drivers gate (2026-09-11; changed
+/// by the owner 2026-11-03).
 ///
-/// The booking button must be DISABLED when the server confirms zero
-/// drivers around the pickup — taking a request nobody can serve means a
-/// hold on the rider's card and ten minutes watching a dead search.
+/// An IMMEDIATE request nobody can serve means a hold on the rider's card
+/// and minutes watching a dead search. It used to disable the button; now
+/// (owner: "si no hay cerca, al darle seleccionar aparecerá encima la
+/// página de schedule … y hará como reserva") the button stays live and,
+/// with nobody of that tier nearby, opens the schedule page and continues
+/// as a reservation.
 ///
 /// What a source-grep test CAN pin (same style as ride_hold_guard_test):
-///   a. The Select button's enabled state includes the gate, and
-///      scheduled rides bypass it (a reservation needs nobody online NOW).
+///   a. Select with nobody of the tier nearby opens the schedule page, and
+///      scheduled rides go straight on (a reservation needs nobody NOW).
 ///   b. The gate trips only on a CONFIRMED zero — it reads the shared
 ///      DriverWaitEstimate cache and requires driverCount == 0.
 ///   c. A failed lookup is unknown, not none: the error path returns
@@ -26,14 +30,25 @@ void main() {
       File('lib/screens/ride_request_controller.dart').readAsStringSync();
 
   group('(a) the Select button carries the gate', () {
-    test('enabled state includes the no-drivers rule', () {
-      expect(
-        widgetsSrc,
-        contains('(_isScheduledMode || !_noDriversNearby)'),
-        reason:
-            'the Select button must stay disabled while a confirmed zero '
-            'stands — and scheduled rides must bypass the gate entirely',
-      );
+    test('nobody of the tier nearby: Select opens the schedule page', () {
+      final src = widgetsSrc.replaceAll('\r\n', '\n');
+      expect(src, contains(
+          'if (!_isScheduledMode && _tierHasNoDrivers(option)) {'));
+      expect(src, contains('final picked = await _openScheduleFromSheet();'));
+      expect(src, contains('if (!picked || !mounted) return;'),
+          reason: 'no day picked = nothing booked; a day picked = on to '
+              'the reservation');
+      expect(src, isNot(contains('(_isScheduledMode || !_noDriversNearby)')),
+          reason: 'the button is no longer disabled for it');
+    });
+
+    test('per tier, and the tile says it is a reservation', () {
+      final src = widgetsSrc.replaceAll('\r\n', '\n');
+      expect(src, contains('bool _tierHasNoDrivers(RideOption opt) {'));
+      expect(src, contains('return est.driverCount == 0;'));
+      expect(src, contains('? S.of(context).tierNoDriversReserve'));
+      expect(controllerSrc, contains("'electric_pro'"),
+          reason: 'the 20 s refresh asks every tier');
     });
 
     test('scheduled mode covers param, airport and controller state', () {

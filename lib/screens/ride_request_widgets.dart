@@ -786,9 +786,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
     // Compact line under the name: "in 5 min". Placeholder tiers carry no
     // ETA (0), so they fall back to the cached per-tier wait range.
-    final String waitText = opt.etaMinutes > 0
-        ? S.of(context).inMinEta(opt.etaMinutes)
-        : _gridWaitRangeText(_tierKeyForOption(opt));
+    final String waitText = !_isScheduledMode && _tierHasNoDrivers(opt)
+        ? S.of(context).tierNoDriversReserve
+        : opt.etaMinutes > 0
+            ? S.of(context).inMinEta(opt.etaMinutes)
+            : _gridWaitRangeText(_tierKeyForOption(opt));
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 280),
@@ -1056,6 +1058,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   String _tierEtaLine(RideOption opt) {
     final sched = _ctrl.state.scheduledAt ?? widget.scheduledAt;
     if (sched != null) return _fmtClock(sched);
+    if (_tierHasNoDrivers(opt)) return S.of(context).tierNoDriversPickTime;
     if (opt.etaMinutes <= 0) return '';
     final eta = DateTime.now().add(Duration(minutes: opt.etaMinutes));
     return '${S.of(context).inMinEta(opt.etaMinutes)} · ${_fmtClock(eta)}';
@@ -1134,15 +1137,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               // Nobody within fifteen miles means there is nothing to
               // request. Better to show it disabled than to take the
               // request and leave the rider watching a search that was
-              // never going to find anyone. Only a confirmed zero disables
-              // it — an unknown count leaves the button live. Only an
-              // IMMEDIATE request is gated on drivers being around: a
-              // reservation goes to the scheduled marketplace (2026-08-17).
-              // And not before the fares are real, or Cruise Cash comes up
+              // never going to find anyone — so with nobody nearby for this
+              // tier the button turns the booking into a reservation
+              // instead (owner 2026-11-03): the schedule page opens on top,
+              // and the picked day and time continue straight to the
+              // reservation. An unknown count still requests now.
+              // Not before the fares are real, or Cruise Cash comes up
               // short of the FULL fare (user spec 2026-08-04).
               enabled: !_isProcessingPayment &&
                   (!needsPaymentMethod || _hasAnyPaymentMethod) &&
-                  (_isScheduledMode || !_noDriversNearby) &&
                   faresReady &&
                   !_cruiseCashShort(option),
               isLoading: _isProcessingPayment,
@@ -1151,8 +1154,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               // payment pipeline runs from there. The label crossfades on
               // every tier change inside the button itself.
               label: S.of(context).selectTierLabel(_tierDisplayName(option)),
-              onTap: () {
+              onTap: () async {
                 HapticService.mediumImpact();
+                if (!_isScheduledMode && _tierHasNoDrivers(option)) {
+                  final picked = await _openScheduleFromSheet();
+                  if (!picked || !mounted) return;
+                }
                 _openPickupConfirm(c, option);
               },
             ),
@@ -1201,7 +1208,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   /// _ctrl.state.scheduledAt, the expanded card swaps its ETA line for the
   /// scheduled clock, and the no-drivers gate lifts, all on the next
   //  frame. No flicker, no second RideRequestScreen.
-  Future<void> _openScheduleFromSheet() async {
+  /// True when a day and time were picked (the booking is now a
+  /// reservation).
+  Future<bool> _openScheduleFromSheet() async {
     HapticService.selectionClick();
     final st = _ctrl.state;
     final dropoff = st.dropoff;
@@ -1214,7 +1223,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           behavior: SnackBarBehavior.floating,
         ),
       );
-      return;
+      return false;
     }
     final pickup = st.pickup;
     final secs = st.route?.durationSeconds;
@@ -1236,10 +1245,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             st.dropoffLabel.isNotEmpty ? st.dropoffLabel : dropoff.address,
       )),
     );
-    if (record == null || !mounted) return;
+    if (record == null || !mounted) return false;
     final (scheduledAt, _) = record;
     _ctrl.setSchedule(scheduledAt);
     _setState(() {});
+    return true;
   }
 
   /// True when Cruise Cash is the selected method but the balance does
@@ -1796,6 +1806,25 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         ],
       ),
     );
+  }
+
+  /// Nobody of [opt]'s tier nearby — confirmed by the server (its own
+  /// per-tier count; the untiered one while that is not in yet). Cache
+  /// only, like [_gridWaitRangeText]: a missing tier is fetched once and
+  /// repaints; until then the tier counts as available.
+  bool _tierHasNoDrivers(RideOption opt) {
+    final pickup = _ctrl.state.pickup;
+    if (pickup == null) return false;
+    final tier = _tierKeyForOption(opt);
+    final est = DriverWaitEstimate.cached(pickup.lat, pickup.lng, tier: tier);
+    if (est == null) {
+      unawaited(
+        DriverWaitEstimate.fetch(lat: pickup.lat, lng: pickup.lng, tier: tier)
+            .then((_) => _setState(() {})),
+      );
+      return _noDriversNearby;
+    }
+    return est.driverCount == 0;
   }
 
   /// True only when the server has confirmed there is nobody in range.

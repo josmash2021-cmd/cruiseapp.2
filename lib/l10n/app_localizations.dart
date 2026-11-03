@@ -2582,6 +2582,12 @@ class S {
   // ── Ride Request / Schedule Booking Screens ────────────────────────────────
   String get nowLabel => _es ? 'Ahora' : 'Now';
   String get scheduleLabel => _es ? 'Programar' : 'Schedule';
+  /// A tier with nobody nearby is booked for later (owner 2026-11-03).
+  String get tierNoDriversReserve =>
+      _es ? 'Sin conductores cerca · Reserva' : 'No drivers nearby · Schedule';
+  String get tierNoDriversPickTime => _es
+      ? 'Sin conductores cerca · elige día y hora'
+      : 'No drivers nearby · pick a day and time';
   // Matches the Shopify widget's step 3 heading
   // (vipRide__pricesTitle in 005_09-28-46_260627b.liquid).
   String get chooseARide => _es ? 'Elige un vehículo' : 'Choose a vehicle';

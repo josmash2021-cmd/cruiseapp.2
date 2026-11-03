@@ -1095,5 +1095,17 @@ void main() {
     // "Cruise in ride colócalo en color dorado".
     final brand = panel.substring(panel.indexOf("'CRUISE IN RIDE',"));
     expect(brand.substring(0, 200), contains('color: _gold,'));
+    // "El botón de receiving rides coloca el logo de Cruise, y la línea de
+    // puntos haz que sea como líneas de vía y que conecte con el botón de
+    // expandir, y el ícono del stop dorado con ícono negro".
+    expect(panel, contains("Image.asset('assets/images/cruise_logo.png',\n                  width: 52, height: 52),"));
+    expect(panel, contains('line: widget.hasStop,'));
+    expect(panel, contains('..strokeCap = StrokeCap.round;'));
+    // …and "más moderno": a drawn teardrop pin with a hole, in black.
+    expect(panel, contains('painter: _ModernPinPainter(Colors.black),'));
+    expect(panel, contains('..fillType = PathFillType.evenOdd'));
+    // "El + tips colócalo dorado".
+    expect(panel, contains('text: s.navPlusTips,\n'
+        '                                style: const TextStyle(color: _gold),'));
   });
 }

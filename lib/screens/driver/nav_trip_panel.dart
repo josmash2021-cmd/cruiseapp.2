@@ -1104,7 +1104,12 @@ class _NavTripPanelState extends State<NavTripPanel>
                                 style: const TextStyle(
                                     fontSize: 21, fontWeight: FontWeight.w800),
                               ),
-                              TextSpan(text: s.navPlusTips),
+                              // Gold (owner 2026-11-02: "el + tips colócalo
+                              // dorado").
+                              TextSpan(
+                                text: s.navPlusTips,
+                                style: const TextStyle(color: _gold),
+                              ),
                             ]),
                             style: const TextStyle(
                                 color: Colors.white, fontSize: 19),
@@ -1152,7 +1157,9 @@ class _NavTripPanelState extends State<NavTripPanel>
                   title: s.navDropOffName(_firstName),
                   lines: [widget.dropoffAddress, widget.dropoffNote.trim()],
                   acts: dropActs,
-                  line: false,
+                  // On to the expand button under it (owner 2026-11-02:
+                  // "que conecte con el botón de expandir").
+                  line: widget.hasStop,
                 ),
                 if (widget.hasStop)
                   GestureDetector(
@@ -1182,6 +1189,7 @@ class _NavTripPanelState extends State<NavTripPanel>
                 _toggleRow(
                   on: widget.receivingRides,
                   icon: Icons.directions_car_rounded,
+                  logo: true,
                   title: widget.receivingRides
                       ? s.navReceivingRides
                       : s.navNotReceivingRides,
@@ -1351,6 +1359,7 @@ class _NavTripPanelState extends State<NavTripPanel>
     required String title,
     required String sub,
     VoidCallback? onTap,
+    bool logo = false,
   }) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -1362,17 +1371,27 @@ class _NavTripPanelState extends State<NavTripPanel>
             },
       child: Row(
         children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: on ? _gold : Colors.white.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
+          if (logo)
+            // The Cruise logo (gold car in its gold ring, owner 2026-11-02):
+            // full gold while rides come in, faded when they are off.
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 220),
+              opacity: on ? 1 : 0.35,
+              child: Image.asset('assets/images/cruise_logo.png',
+                  width: 52, height: 52),
+            )
+          else
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: on ? _gold : Colors.white.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon,
+                  color: on ? _ink : Colors.white.withValues(alpha: 0.6)),
             ),
-            child: Icon(icon,
-                color: on ? _ink : Colors.white.withValues(alpha: 0.6)),
-          ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -1560,14 +1579,20 @@ class _NavTripPanelState extends State<NavTripPanel>
     );
   }
 
+  // The stop: a gold disc with a black pin (owner 2026-11-02), a modern
+  // drawn pin rather than the stock glyph ("colócalo más moderno").
   Widget _pinDisc() => Container(
         width: 44,
         height: 44,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.18),
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(
+          color: _gold,
           shape: BoxShape.circle,
         ),
-        child: const Icon(Icons.location_on_rounded, color: Colors.white),
+        child: const CustomPaint(
+          size: Size(18, 23),
+          painter: _ModernPinPainter(Colors.black),
+        ),
       );
 
   /// Contactar: straight into the chat with the rider (the call lives in
@@ -1810,23 +1835,63 @@ class _DottedLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      size: const Size(2, double.infinity),
+      size: const Size(3, double.infinity),
       painter: _DotsPainter(),
     );
   }
 }
 
+/// The line between the stops, drawn like a road's lane markings (owner
+/// 2026-11-02: "la línea de puntos haz que sea como líneas de vía"): gold
+/// dashes with round ends.
 class _DotsPainter extends CustomPainter {
+  static const double _dash = 9;
+  static const double _gap = 6;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final p = Paint()..color = Colors.white.withValues(alpha: 0.25);
-    for (var y = 0.0; y < size.height; y += 6) {
-      canvas.drawCircle(Offset(size.width / 2, y + 1), 1, p);
+    final p = Paint()
+      ..color = _gold.withValues(alpha: 0.6)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    final x = size.width / 2;
+    for (var y = 1.5; y < size.height - 1.5; y += _dash + _gap) {
+      final end = (y + _dash).clamp(0.0, size.height - 1.5);
+      canvas.drawLine(Offset(x, y), Offset(x, end), p);
     }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// A flat, modern map pin: a clean teardrop with a round hole in its head
+/// (the disc behind shows through). Drawn, so it never depends on a glyph
+/// being in the icon font.
+class _ModernPinPainter extends CustomPainter {
+  const _ModernPinPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final r = w / 2;
+    final cx = w / 2;
+    final cy = r;
+    final tip = size.height;
+    final pin = Path()
+      ..fillType = PathFillType.evenOdd
+      ..moveTo(cx, tip)
+      ..cubicTo(cx - r * 0.35, tip - r * 0.7, cx - r, cy + r * 0.55, cx - r, cy)
+      ..arcToPoint(Offset(cx + r, cy), radius: Radius.circular(r))
+      ..cubicTo(cx + r, cy + r * 0.55, cx + r * 0.35, tip - r * 0.7, cx, tip)
+      ..close()
+      ..addOval(Rect.fromCircle(center: Offset(cx, cy), radius: r * 0.42));
+    canvas.drawPath(pin, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ModernPinPainter old) => old.color != color;
 }
 
 class _TrianglePainter extends CustomPainter {

@@ -1660,6 +1660,9 @@ Future<void> heavyInit() async {
                   message.data['online']?.toString() == '1');
               return;
             }
+            // Dispatch reassigned the trip (owner 2026-11-02): the driver is
+            // not told — the trip screen drops it with the cancel sound.
+            if (type == 'trip_reassigned') return;
             // For driver ride offers: always use clean title/body — never show price or address
             final bool isOffer = type == 'trip_offer' || type == 'new_offer';
             final title = isOffer

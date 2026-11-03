@@ -3352,41 +3352,12 @@ async def admin_reassign_trip(
             data={"type": "ride_reassigned", "trip_id": str(trip_id)},
         ))
 
-    # ── Tell the driver who just lost it ──────────────────────────────
-    # The app's trip screen watches the trip (poll + mirror) and leaves on
-    # its own; the push covers a phone in the pocket.
-    if previous_driver_id is not None:
-        old_driver = (await db.execute(
-            select(User).where(User.id == previous_driver_id)
-        )).scalar_one_or_none()
-        if old_driver is not None:
-            try:
-                db.add(Notification(
-                    user_id=old_driver.id,
-                    title="Viaje reasignado",
-                    body="Este viaje fue asignado a otro conductor. Sigues en línea.",
-                    notif_type="trip_reassigned",
-                    data=json.dumps({"trip_id": trip_id}),
-                ))
-                await db.commit()
-            except Exception as e:
-                logging.warning(
-                    "[Reassign] inbox row for driver %s failed: %s", old_driver.id, e,
-                )
-            if old_driver.fcm_token:
-                _safe_create_task(_send_fcm_push_async(
-                    old_driver.fcm_token,
-                    title="Viaje reasignado",
-                    body="Este viaje fue asignado a otro conductor. Sigues en línea.",
-                    title_en="Trip reassigned",
-                    body_en="This trip was assigned to another driver. You are still online.",
-                    locale=user_lang(old_driver),
-                    data={
-                        "type": "trip_reassigned",
-                        "trip_id": str(trip_id),
-                        "reassigned_by": "dispatch",
-                    },
-                ))
+    # ── The driver who just lost it is NOT told (owner 2026-11-02) ─────
+    # "Esto no debe de aparecer… ya no le saldrá ese viaje pero no le avisa,
+    # solo desaparece y suena el sonido de cancelado": no push, no inbox
+    # row. The app's trip screen sees the release (poll + the mirror's
+    # `releasedAt` above) and drops the trip with the cancel sound — the
+    # same quiet hand-back reservations already get (rule #44).
 
     # ── Offer it again ────────────────────────────────────────────────
     rider_name, rider_phone = _resolve_rider_display(trip, rider)

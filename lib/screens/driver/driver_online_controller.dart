@@ -5468,6 +5468,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// the trip to another driver; this one is still online.
   void _showCancelledNotice({bool reassigned = false, bool taken = false}) {
     if (!mounted) return;
+    // Dispatch reassigned the trip or put it back on the board (owner
+    // 2026-11-02: "esto no debe de aparecer… ya no le saldrá ese viaje pero
+    // no le avisa, solo desaparece y suena el sonido de cancelado"): no
+    // notice, the trip is simply gone, with the queued-ride cancel sound.
+    if (reassigned) {
+      unawaited(QueuedCancelCue.play());
+      return;
+    }
     _cancelledNoticeTimer?.cancel();
     _cancelledNoticeCtrl ??= AnimationController(
       vsync: this,

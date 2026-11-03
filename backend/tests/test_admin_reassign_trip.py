@@ -273,8 +273,11 @@ async def test_refuses_once_the_driver_has_arrived_or_later(
     assert test_trip.driver_id == a.id
 
 
-async def test_the_detached_driver_and_the_rider_are_told(
+async def test_the_rider_is_told_the_detached_driver_is_not(
         client, db, test_trip, test_driver, test_rider, quiet_dispatch):
+    """Owner 2026-11-02: the driver who loses the trip gets no notice at all
+    — no push, no inbox — the trip just leaves their app with the cancel
+    sound. The rider still hears a new driver is on the way."""
     a, _ = test_driver
     rider, _ = test_rider
     rider.fcm_token = "rider-tok"
@@ -289,18 +292,11 @@ async def test_the_detached_driver_and_the_rider_are_told(
     assert resp.status_code == 200, resp.text
 
     inbox = (await db.execute(
-        select(Notification).where(
-            Notification.user_id == a.id,
-            Notification.notif_type == "trip_reassigned",
-        )
+        select(Notification).where(Notification.user_id == a.id)
     )).scalars().all()
-    assert len(inbox) == 1
+    assert inbox == []
 
-    driver_push = [p for p in quiet_dispatch
-                   if p["data"].get("type") == "trip_reassigned"]
-    assert len(driver_push) == 1
-    assert driver_push[0]["token"] == a.fcm_token
-    assert driver_push[0]["data"]["trip_id"] == str(test_trip.id)
+    assert not [p for p in quiet_dispatch if p["token"] == a.fcm_token]
 
     rider_push = [p for p in quiet_dispatch
                   if p["data"].get("type") == "ride_reassigned"]

@@ -212,14 +212,17 @@ class TableResult:
 
 
 async def road_table(many: list, one: tuple, *, many_are_sources: bool,
-                     low_priority: bool = False) -> TableResult | None:
+                     low_priority: bool = False,
+                     use_mapbox: bool = True) -> TableResult | None:
     """Driving time between one point and many, from the first provider that
-    answers inside the budget. None = nobody answered (caller falls back)."""
+    answers inside the budget. None = nobody answered (caller falls back).
+    [use_mapbox] False = OSRM only (free): for minutes that are only shown,
+    never decide who gets a ride."""
     global _mapbox_down_until
     if not many:
         return TableResult("none", [])
     started = time.monotonic()
-    token = _mapbox_token()
+    token = _mapbox_token() if use_mapbox else ""
     if token and time.monotonic() >= _mapbox_down_until and _mapbox_budget_ok(low_priority):
         batches = (len(many) + _MAPBOX_BATCH - 1) // _MAPBOX_BATCH
         for _ in range(batches):
@@ -356,7 +359,13 @@ async def pickup_minutes_for(driver, pickup_lat: float, pickup_lng: float,
 
 async def etas_from_driver(driver, pickups: list, *, low_priority: bool = True) -> dict:
     """{index: PickupEta} from one driver to several pickups (the board).
-    Straight-line estimates when no provider answers."""
+    Straight-line estimates when no provider answers.
+
+    OSRM only (owner 2026-11-02: "minimizar los gastos al máximo"): every
+    online driver polls the board, and Mapbox bills the Matrix per
+    driver-pickup pair — those minutes are only shown. A ride being
+    dispatched (etas_to_pickup) still measures with Mapbox and traffic; an
+    OSRM answer in the cache never mixes into it (one ride, one ruler)."""
     out: dict[int, PickupEta] = {}
     if driver.lat is None or driver.lng is None or not pickups:
         return out
@@ -371,7 +380,7 @@ async def etas_from_driver(driver, pickups: list, *, low_priority: bool = True) 
         return out
     res = await road_table(
         [pickups[i] for i in todo], (driver.lat, driver.lng),
-        many_are_sources=False, low_priority=low_priority,
+        many_are_sources=False, low_priority=low_priority, use_mapbox=False,
     )
     for k, i in enumerate(todo):
         lat, lng = pickups[i]

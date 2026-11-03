@@ -137,7 +137,10 @@ async def test_mapbox_traffic_takes_nine_drivers_per_request(monkeypatch):
     assert sorted(sizes) == [3, 9] and len(etas) == 12
 
 
-async def test_the_board_leaves_mapbox_to_live_dispatch(monkeypatch):
+async def test_the_board_never_bills_mapbox(monkeypatch):
+    """Owner 2026-11-02, "minimizar los gastos al máximo": the board is polled
+    by every online driver and only SHOWS minutes — OSRM (free) only. A ride
+    being dispatched still gets Mapbox's traffic-aware minutes."""
     calls = []
     monkeypatch.setattr(E, "_get_json", _router(
         mapbox=lambda url: _matrix([100.0], False),
@@ -145,10 +148,9 @@ async def test_the_board_leaves_mapbox_to_live_dispatch(monkeypatch):
     driver = _D(1, 25.77, -80.19)
     for i in range(E._MAPBOX_PER_MIN):
         E._eta_cache.clear()
-        await E.etas_from_driver(driver, [(25.70 + i * 0.01, -80.20)])
-    # The board stops using Mapbox at half the share...
-    assert calls.count("mapbox") == E._MAPBOX_PER_MIN // 2
-    # ...so a ride being dispatched still gets traffic-aware minutes.
+        etas = await E.etas_from_driver(driver, [(25.70 + i * 0.01, -80.20)])
+        assert etas[0].provider == "osrm"
+    assert calls.count("mapbox") == 0
     calls.clear()
     etas = await E.etas_to_pickup([driver], 25.60, -80.30)
     assert etas[1].provider == "mapbox"

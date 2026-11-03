@@ -8,7 +8,8 @@ import 'api_service.dart';
 import 'audio_session_config.dart';
 import 'prefs_cache.dart';
 
-/// "Tu pasajero tiene una parada" / "Your rider has a stop" — spoken the
+/// "Tu pasajero tiene una parada en el camino" / "Your rider has a stop
+/// along the way" (voices picked by the owner, 2026-11-03) — spoken the
 /// moment the driver slides to pick up a rider whose trip has a stop (owner
 /// 2026-11-03), in the app's language, which follows the phone's (main.dart).
 ///

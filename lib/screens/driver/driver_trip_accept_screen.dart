@@ -6349,7 +6349,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// The pickup-confirmation flow behind the on-sheet Start Ride button.
   void _startRideConfirmed() {
     // The trip has a stop (owner 2026-11-03): say so as the rider gets in —
-    // "Tu pasajero tiene una parada" / "Your rider has a stop", in the app's
+    // "Tu pasajero tiene una parada en el camino" / "Your rider has a stop
+    // along the way", in the app's
     // language, which is the phone's. Once per trip.
     if (_stopLatLng != null && !_stopDeparted && !_stopVoiceSaid) {
       _stopVoiceSaid = true;

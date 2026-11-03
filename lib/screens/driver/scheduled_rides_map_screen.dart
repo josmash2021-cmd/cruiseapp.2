@@ -33,7 +33,7 @@ import '../../widgets/neu_style.dart';
 import '../../widgets/glass_style.dart';
 import '../../widgets/glass_notification_banner.dart';
 import 'driver_rest_gate_mixin.dart';
-import 'scheduled_rides_screen.dart';
+import 'my_reservations_page.dart';
 import '../../utils/offer_metrics.dart';
 import '../../utils/server_time.dart';
 
@@ -467,7 +467,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   }
 
   /// Only the count is needed (the "Your rides (N)" chip) — the full list
-  /// lives in ScheduledRidesScreen, one tap away.
+  /// lives in MyReservationsPage, one tap away.
   Future<void> _loadMyRidesCount() async {
     try {
       final uid = await ApiService.getCurrentUserId();
@@ -1159,7 +1159,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   /// sits underneath — take it back on return.
   void _openMyRides() {
     Navigator.of(context)
-        .push(slideFromRightRoute(const ScheduledRidesScreen(initialTab: 1)))
+        .push(slideFromRightRoute(const MyReservationsPage()))
         .then((_) {
       if (!mounted) return;
       if (!_mapMounted) _acquireMapSurface();

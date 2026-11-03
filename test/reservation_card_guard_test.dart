@@ -15,7 +15,7 @@ void main() {
   final offline = read('lib/screens/driver/driver_online_offline.dart');
   final ctrl = read('lib/screens/driver/driver_online_controller.dart');
   final mine = read('lib/screens/driver/driver_scheduled_trips_screen.dart');
-  final list = read('lib/screens/driver/scheduled_rides_screen.dart');
+  final list = read('lib/screens/driver/my_reservations_page.dart');
   final l10n = read('lib/l10n/app_localizations.dart');
 
   test('the gold card: title, deadline 1 h before, pickup time', () {
@@ -52,6 +52,6 @@ void main() {
     }
     expect(mine, contains('ScheduledBoardWatcher.acquire();'));
     expect(mine, contains('_leaving.contains(_trips[i][\'id\'])'));
-    expect(list, contains('_leavingMine.contains(trips[i][\'id\'])'));
+    expect(list, contains("opacity: _leaving.contains(t['id']) ? 0 : 1,"));
   });
 }

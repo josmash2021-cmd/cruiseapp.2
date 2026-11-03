@@ -170,7 +170,7 @@ void main() {
       for (final path in [
         'lib/screens/driver/driver_online_screen.dart',
         'lib/screens/driver/scheduled_rides_map_screen.dart',
-        'lib/screens/driver/scheduled_rides_screen.dart',
+        'lib/screens/driver/my_reservations_page.dart',
       ]) {
         final src = File(path).readAsStringSync();
         expect(src, contains('ScheduledBoardWatcher.acquire();'), reason: path);

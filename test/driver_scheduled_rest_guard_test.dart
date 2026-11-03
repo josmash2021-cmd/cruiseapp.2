@@ -6,9 +6,6 @@ void main() {
   final mapScreen = File('lib/screens/driver/scheduled_rides_map_screen.dart')
       .readAsStringSync()
       .replaceAll('\r\n', '\n');
-  final listScreen = File('lib/screens/driver/scheduled_rides_screen.dart')
-      .readAsStringSync()
-      .replaceAll('\r\n', '\n');
   final mixin = File('lib/screens/driver/driver_rest_gate_mixin.dart')
       .readAsStringSync()
       .replaceAll('\r\n', '\n');
@@ -16,7 +13,8 @@ void main() {
       .readAsStringSync()
       .replaceAll('\r\n', '\n');
 
-  for (final entry in {'map': mapScreen, 'list': listScreen}.entries) {
+  // The list page no longer claims (2026-11-03): the gate guards the map.
+  for (final entry in {'map': mapScreen}.entries) {
     group('${entry.key} scheduled rest gate', () {
       final screen = entry.value;
 

@@ -83,6 +83,7 @@ Future<void> showReservationDetail(
   BuildContext context,
   Map<String, dynamic> reservation, {
   VoidCallback? onCancelled,
+  bool faqOnly = false,
 }) {
   final nav = Navigator.maybeOf(context);
   if (nav == null) return Future.value();
@@ -94,6 +95,7 @@ Future<void> showReservationDetail(
     pageBuilder: (_, __, ___) => ReservationDetailPage(
       reservation: reservation,
       onCancelled: onCancelled,
+      faqOnly: faqOnly,
     ),
     transitionsBuilder: (_, anim, __, child) {
       final a = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
@@ -110,15 +112,24 @@ Future<void> showReservationDetail(
   ));
 }
 
+/// The reservations FAQ on its own, in the same glass — "Viste todos tus
+/// viajes reservados. Más sobre las reservas." at the end of the list.
+Future<void> showReservationFaq(BuildContext context) =>
+    showReservationDetail(context, const {}, faqOnly: true);
+
 class ReservationDetailPage extends StatefulWidget {
   const ReservationDetailPage({
     super.key,
     required this.reservation,
     this.onCancelled,
+    this.faqOnly = false,
   });
 
   final Map<String, dynamic> reservation;
   final VoidCallback? onCancelled;
+
+  /// Only the FAQ page; its back arrow closes the whole page.
+  final bool faqOnly;
 
   @override
   State<ReservationDetailPage> createState() => _ReservationDetailPageState();
@@ -146,7 +157,13 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
         _shownSub = sub;
       });
 
-  void _closeSub() => setState(() => _sub = null);
+  void _closeSub() {
+    if (widget.faqOnly) {
+      Navigator.maybeOf(context)?.pop();
+      return;
+    }
+    setState(() => _sub = null);
+  }
 
   /// The card's own values win (its `fare` is the driver's pay, the trip's
   /// may be the rider's price); the trip only adds what the card lacks.
@@ -155,6 +172,10 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
   @override
   void initState() {
     super.initState();
+    if (widget.faqOnly) {
+      _sub = _ResSub.faq;
+      _shownSub = _ResSub.faq;
+    }
     final id = (widget.reservation['id'] as num?)?.toInt();
     if (id != null) {
       ApiService.getTrip(id, riderStats: true).then((t) {
@@ -739,7 +760,7 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
     return PopScope(
       // Back (gesture or Android button) on a "More info" page returns to
       // the reservation; on the reservation it closes the page.
-      canPop: _sub == null,
+      canPop: _sub == null || widget.faqOnly,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && _sub != null) _closeSub();
       },
@@ -760,24 +781,25 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
               child: ClipRect(
                 child: Stack(
                   children: [
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        ignoring: _sub != null,
-                        child: AnimatedSlide(
-                          offset: _sub == null
-                              ? Offset.zero
-                              : const Offset(-0.28, 0),
-                          duration: _kSubSlide,
-                          curve: Curves.easeOutCubic,
-                          child: AnimatedOpacity(
-                            opacity: _sub == null ? 1 : 0,
+                    if (!widget.faqOnly)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          ignoring: _sub != null,
+                          child: AnimatedSlide(
+                            offset: _sub == null
+                                ? Offset.zero
+                                : const Offset(-0.28, 0),
                             duration: _kSubSlide,
                             curve: Curves.easeOutCubic,
-                            child: _buildMain(s, isEs, bottom),
+                            child: AnimatedOpacity(
+                              opacity: _sub == null ? 1 : 0,
+                              duration: _kSubSlide,
+                              curve: Curves.easeOutCubic,
+                              child: _buildMain(s, isEs, bottom),
+                            ),
                           ),
                         ),
                       ),
-                    ),
                     Positioned.fill(
                       child: IgnorePointer(
                         ignoring: _sub == null,

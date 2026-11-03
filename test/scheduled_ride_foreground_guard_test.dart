@@ -80,9 +80,10 @@ void main() {
   test('a scheduled push refreshes either open marketplace screen', () {
     expect(notifService, contains('scheduledRideRefreshNotifier'));
     expect(main, contains('scheduledRideRefreshNotifier.value++'));
+    // The marketplace is the map now; the driver's own reservations page
+    // (my_reservations_page.dart, 2026-11-03) listens too, below.
     for (final path in [
       'lib/screens/driver/scheduled_rides_map_screen.dart',
-      'lib/screens/driver/scheduled_rides_screen.dart',
     ]) {
       final screen = File(path).readAsStringSync().replaceAll('\r\n', '\n');
       expect(screen, contains('.addListener(_onScheduledRidePush)'),
@@ -91,6 +92,12 @@ void main() {
       expect(screen, contains('.removeListener(_onScheduledRidePush)'),
           reason: path);
     }
+    final mine = File('lib/screens/driver/my_reservations_page.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    expect(mine, contains('scheduledRideRefreshNotifier.addListener(_onBoard)'));
+    expect(mine,
+        contains('scheduledRideRefreshNotifier.removeListener(_onBoard)'));
   });
 
   test('the driver home refreshes its scheduled badge on push', () {

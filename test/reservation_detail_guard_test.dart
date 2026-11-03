@@ -54,7 +54,7 @@ void main() {
     expect(page, contains('() => _openSub(_ResSub.faq),'));
     expect(page, isNot(contains('showDriverHelpSheet')),
         reason: 'the FAQ row used to open the general Help sheet');
-    expect(page, contains('canPop: _sub == null,'),
+    expect(page, contains('canPop: _sub == null || widget.faqOnly,'),
         reason: 'system back on a sub page returns to the reservation');
   });
 

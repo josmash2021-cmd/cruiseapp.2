@@ -17,24 +17,13 @@ import 'package:flutter_test/flutter_test.dart';
 ///      out grey.
 void main() {
   final screen =
-      File('lib/screens/driver/scheduled_rides_screen.dart').readAsStringSync();
+      File('lib/screens/driver/my_reservations_page.dart').readAsStringSync();
   final preview =
       File('lib/widgets/static_route_preview.dart').readAsStringSync();
 
-  group('claim auto-move to My Rides', () {
-    final claimStart = screen.indexOf('Future<void> _claimTrip');
-    final claimBlock = screen.substring(claimStart, claimStart + 2200);
-
-    test('animates to the My Rides tab', () {
-      expect(claimBlock, contains('animateTo(1)'));
-    });
-
-    test('refreshes both lists so the card leaves Requests', () {
-      expect(claimBlock, contains('_loadMyRides(force: true)'));
-      expect(claimBlock, contains('_loadAvailable(force: true)'));
-    });
-  });
-
+  // Claiming moved to the reservations MAP (2026-11-03): the list page is
+  // only the driver's own reservations, so there is no Requests tab to
+  // move from.
   group('neu system', () {
     test('the screen is built on neuBase', () {
       expect(screen, contains('neuBase'));
@@ -61,62 +50,8 @@ void main() {
     });
   });
 
-  group('expanded card live map (user spec 2026-09-27)', () {
-    test('the expanded card layers the live map over the still', () {
-      expect(screen, contains('class _CardLiveMap extends StatefulWidget'));
-      expect(screen, contains('if (widget.expanded && !kIsWeb)'),
-          reason: 'the still stays the placeholder AND the whole preview on '
-              'web — mapbox_maps_flutter does not run there');
-    });
-
-    test('the one-surface rule holds: accordion + coordinator', () {
-      expect(screen, contains('int? _expandedTripId'),
-          reason: 'one expanded card at a time — two live native surfaces '
-              'is the iOS crash this redesign had once already');
-      expect(screen, contains("'SchedRideCard-\${widget.tripId}'"));
-      expect(screen, contains('MapSurfaceCoordinator.instance.acquire'));
-      expect(screen, contains('MapSurfaceCoordinator.instance.release(owner)'),
-          reason: 'collapse releases after the teardown window so a sibling '
-              'card never mounts into a half-dead surface');
-    });
-
-    test('the app look: navy theme, circular pins, 50 tilt, gold round route',
-        () {
-      expect(screen, contains('MapTheme.applyNavyGold(m)'),
-          reason: 'the navy/gold every live map wears — its absence is what '
-              'made the still read as a different app');
-      expect(screen, contains('CircularPinIcon.person'));
-      expect(screen, contains('CircularPinIcon.flag'));
-      expect(screen, contains('pitch: 50.0'),
-          reason: 'the tilt animation the user asked for');
-      expect(screen, contains('lineJoin: mapbox.LineJoin.ROUND'));
-    });
-
-    test('the preview stays non-interactive so the card tap still collapses',
-        () {
-      expect(screen, contains('child: IgnorePointer('));
-      expect(screen, contains('scrollEnabled: false'));
-    });
-
-    test('the online map re-claims the surface when the screen pops', () {
-      final offline =
-          File('lib/screens/driver/driver_online_offline.dart')
-              .readAsStringSync();
-      final pushStart = offline.indexOf('void _openScheduledRides(');
-      expect(pushStart, isNonNegative);
-      final block = offline.substring(pushStart, pushStart + 800);
-      expect(block, contains('const ScheduledRidesMapScreen()'),
-          reason: 'the shared entry opens the normal scheduled-rides map');
-      expect(block, contains('_remountMapSurface()'),
-          reason: 'the card map revokes the online map through the '
-              'coordinator — on pop it must come back');
-    });
-
-    test('the 1-hour cancel window matches the server gate exactly', () {
-      expect(screen, contains('> const Duration(hours: 1)'),
-          reason: 'server rejects <= 60 min (scheduled.py '
-              '_require_cancel_notice_window) — the UI must not offer what '
-              'the server will refuse');
-    });
-  });
+  // The expanded card's live map, accordion and in-list cancel went with
+  // the Lyft-style cards (owner-approved drawing 2026-11-03): the card is
+  // shown whole, and cancelling lives on the reservation's own page
+  // (reservation_detail_page.dart, the server's 1-hour gate).
 }

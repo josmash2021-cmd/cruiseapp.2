@@ -5296,6 +5296,28 @@ class S {
           'pickup. At that time, rejecting the confirm offer cancels it too.';
   String get resFaqSupport => _es ? 'Escribir a Soporte' : 'Write to Support';
 
+  // ── The driver's reservations page (owner-approved drawing 2026-11-03) ──
+  String get myResNote => _es
+      ? 'Conéctate 1 hora antes de cada recogida: a esa hora te sale la '
+          'oferta para confirmarla.'
+      : 'Go online 1 hour before each pickup: that is when the offer to '
+          'confirm it comes in.';
+  String get myResCardTitle => _es ? 'Viaje reservado' : 'Reserved ride';
+  String myResIn(String duration) =>
+      _es ? 'en $duration' : 'in $duration';
+  String get myResOnTheWay => _es ? 'EN CAMINO' : 'ON THE WAY';
+  String get myResConfirmed =>
+      _es ? 'Confirmado: ve a la recogida' : 'Confirmed: head to the pickup';
+  String myResStops(int n) => _es
+      ? (n == 1 ? 'El viaje tiene 1 parada' : 'El viaje tiene $n paradas')
+      : (n == 1 ? 'The ride has 1 stop' : 'The ride has $n stops');
+  String get myResDetails => _es ? 'Ver detalles' : 'View details';
+  String get myResNavigate =>
+      _es ? 'Navegar a la recogida' : 'Navigate to pickup';
+  String get myResEnd => _es
+      ? 'Viste todos tus viajes reservados. Más sobre las reservas.'
+      : "You've seen all your reserved rides. More about reservations.";
+
   // ── Vehicle page ──
   String get addVehicleAsk => _es
       ? 'Escríbele a soporte para agregar otro vehículo — hace falta revisar su registro y su seguro.'

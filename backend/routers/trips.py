@@ -2857,7 +2857,26 @@ async def get_driver_scheduled_trips(driver_id: int, user: User = Depends(_get_c
             and_(Trip.driver_id == driver_id, Trip.status.in_(["scheduled", "scheduled_accepted", "scheduled_active", "driver_en_route"]), Trip.scheduled_at.isnot(None))
         ).order_by(Trip.scheduled_at.asc())
     )
-    return [_with_wall_clock_schedule(t, _trip_dict_for_user(t, user)) for t in result.scalars().all()]
+    trips = result.scalars().all()
+    # The driver's reservations page shows who rides (owner 2026-11-03,
+    # Lyft-style cards): name, photo and rating — never the phone.
+    rider_ids = {t.rider_id for t in trips if t.rider_id}
+    riders: dict[int, User] = {}
+    if rider_ids:
+        rows = (await db.execute(select(User).where(User.id.in_(rider_ids)))).scalars().all()
+        riders = {u.id: u for u in rows}
+    out = []
+    for t in trips:
+        d = _with_wall_clock_schedule(t, _trip_dict_for_user(t, user))
+        rider = riders.get(t.rider_id)
+        name, _phone = _resolve_rider_display(t, rider)
+        d["rider_name"] = name
+        d["rider_photo_url"] = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+        d["rider_rating"] = (round(float(rider.average_rating), 1)
+                             if rider is not None and rider.average_rating is not None
+                             else None)
+        out.append(d)
+    return out
 
 @router.post("/trips/{trip_id}/cancel", dependencies=[Depends(_verify_api_key)])
 async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

@@ -3692,25 +3692,9 @@ class DriverNavViewState extends State<DriverNavView>
     // onto Amphitheater Rd" → "exit 157"), in its own gold-bordered chip at
     // the bar's top-right — a ramp is easier to spot by its number than by
     // a sentence.
-    String? exitLabel;
-    if (useInstruction) {
-      // The exact exit number first (user spec 2026-09-30: "Salida 155, el
-      // numero correcto"): Mapbox's structured maneuver.exit, capitalized
-      // and in the app's language. The text regex (both languages: "Take
-      // exit 155" / "Tome la salida 155") stays as the fallback for
-      // providers that carry no exit field.
-      if (_maneuverExit.isNotEmpty) {
-        exitLabel = '${s.navExitNumber} $_maneuverExit';
-      } else {
-        final m = RegExp(r'(?:exit|salida)\s+[0-9][0-9A-Za-z-]*',
-                caseSensitive: false)
-            .firstMatch(_instructionLabel);
-        final raw = m?.group(0) ?? '';
-        if (raw.isNotEmpty) {
-          exitLabel = raw[0].toUpperCase() + raw.substring(1);
-        }
-      }
-    }
+    final exitLabel = useInstruction
+        ? _exitLabelFor(s, _maneuverExit, _instructionLabel)
+        : null;
     // Glass banner, Lyft layout in Cruise gold (owner design 2026-11-02,
     // https://claude.ai/artifact/HJUuivr8N4vih8WmmqGnTX): the turn arrow
     // with its distance under it on the left, the instruction big on the
@@ -3825,23 +3809,9 @@ class DriverNavViewState extends State<DriverNavView>
                   if (exitLabel != null)
                     Align(
                       alignment: Alignment.topCenter,
-                      child: Container(
-                        margin: const EdgeInsets.only(left: 8, right: 4, top: 2),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: _gold.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: _gold.withValues(alpha: 0.55), width: 1.2),
-                        ),
-                        child: Text(
-                          exitLabel,
-                          style: const TextStyle(
-                            color: _gold,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8, right: 4, top: 2),
+                        child: _exitChip(exitLabel),
                       ),
                     ),
                 ],
@@ -3949,6 +3919,8 @@ class DriverNavViewState extends State<DriverNavView>
           : (last
               ? (widget.toPickup ? widget.pickupAddress : widget.dropoffAddress)
               : widget.stopLabel);
+      final exit =
+          isArrive ? null : _exitLabelFor(s, st.exitNumber, st.instruction);
       rows.add(Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
         // Hairlines between turns only — the first sits flush under the box.
@@ -3987,6 +3959,11 @@ class DriverNavViewState extends State<DriverNavView>
                             color: Colors.white.withValues(alpha: 0.7),
                             fontSize: 14,
                             fontWeight: FontWeight.w500)),
+                  if (exit != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: _exitChip(exit),
+                    ),
                 ],
               ),
             ),
@@ -4044,6 +4021,40 @@ class DriverNavViewState extends State<DriverNavView>
       ),
     );
   }
+
+  /// "Salida 245" / "Exit 245" for a freeway exit, or null. The exact exit
+  /// number first (user spec 2026-09-30: "Salida 155, el numero correcto"):
+  /// Mapbox's structured maneuver.exit, in the app's language. The text
+  /// regex (both languages: "Take exit 155" / "Tome la salida 155") stays
+  /// as the fallback for providers that carry no exit field.
+  String? _exitLabelFor(S s, String exitNumber, String instruction) {
+    if (exitNumber.isNotEmpty) return '${s.navExitNumber} $exitNumber';
+    final m = RegExp(r'(?:exit|salida)\s+[0-9][0-9A-Za-z-]*',
+            caseSensitive: false)
+        .firstMatch(instruction);
+    final raw = m?.group(0) ?? '';
+    return raw.isEmpty ? null : raw[0].toUpperCase() + raw.substring(1);
+  }
+
+  /// The exit badge: an outlined box — only its border is gold, no fill
+  /// (owner 2026-11-02: "en un cuadro encerrado que no sea dorado, quiero
+  /// que los bordes solamente sean dorados"), white number.
+  Widget _exitChip(String label) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _gold, width: 1.5),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
 
   /// Small status pill under the maneuver bar (Rerouting… / offline).
   Widget _buildNavPill(String label, {bool spinner = false, IconData? icon}) {

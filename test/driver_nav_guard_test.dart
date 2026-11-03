@@ -617,16 +617,32 @@ void main() {
         'top-right (user spec 2026-09-27, Google-style "exit 157")', () {
       final body = bodyOf(nav, 'Widget _buildManeuverBar(S s, {double tuck = 0, Widget? list}) {', maxLen: 7000);
       expect(body.contains('exitLabel'), isTrue);
-      expect(body.contains('_maneuverExit.isNotEmpty'), isTrue,
+      expect(body.contains('_exitLabelFor(s, _maneuverExit, _instructionLabel)'),
+          isTrue);
+      final helper = bodyOf(
+          nav, 'String? _exitLabelFor(S s, String exitNumber, String instruction) {',
+          maxLen: 600);
+      expect(helper.contains('exitNumber.isNotEmpty'), isTrue,
           reason: 'the EXACT number first: Mapbox structured maneuver.exit '
               '(user spec 2026-09-30: "Salida 155, el numero correcto")');
-      expect(body.contains('s.navExitNumber'), isTrue,
+      expect(helper.contains('s.navExitNumber'), isTrue,
           reason: 'the chip word rides the locale: "Salida 155" / "Exit 155"');
       expect(
-          body.contains(
+          helper.contains(
               "RegExp(r'(?:exit|salida)\\s+[0-9][0-9A-Za-z-]*'"), isTrue,
           reason: 'the text regex stays as the fallback for providers with '
               'no exit field — in BOTH languages');
+      // Owner 2026-11-02: "en un cuadro encerrado que no sea dorado, quiero
+      // que los bordes solamente sean dorados" — and the guide shows it too.
+      final chip = bodyOf(nav, 'Widget _exitChip(String label) => Container(',
+          maxLen: 600);
+      expect(chip.contains('border: Border.all(color: _gold, width: 1.5),'),
+          isTrue);
+      expect(chip.contains('color: Colors.white,'), isTrue);
+      expect(chip, isNot(contains('withValues(alpha: 0.14)')),
+          reason: 'no gold fill — only the border is gold');
+      expect(nav.contains('_exitLabelFor(s, st.exitNumber, st.instruction)'),
+          isTrue, reason: 'an exit step in the guide wears the same chip');
       final dirs = File('lib/services/directions_service.dart')
           .readAsStringSync().replaceAll('\r\n', '\n');
       expect(dirs.contains("exitNumber: (maneuver['exit'] ?? '').toString(),"),

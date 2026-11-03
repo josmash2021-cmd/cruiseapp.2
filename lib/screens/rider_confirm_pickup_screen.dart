@@ -1052,14 +1052,16 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Bigger (owner-approved drawing 2026-11-03): it is read out
+              // loud or shown across the car.
               Text(
                 S.of(context).pickupCodeTitle,
                 style: TextStyle(
                   fontFamily: 'Poppins',
-                  color: Colors.white.withValues(alpha: 0.35),
-                  fontSize: 9.5,
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  letterSpacing: 1.6,
+                  letterSpacing: 1.5,
                 ),
               ),
               const SizedBox(height: 2),
@@ -1067,8 +1069,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                 S.of(context).pickupCodeTellDriver,
                 style: TextStyle(
                   fontFamily: 'Poppins',
-                  color: Colors.white.withValues(alpha: 0.55),
-                  fontSize: 9.5,
+                  color: Colors.white.withValues(alpha: 0.75),
+                  fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -1080,12 +1082,14 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
           children: [
             for (final d in digits)
               Container(
-                width: 31,
-                height: 38,
-                margin: const EdgeInsets.only(left: 7),
-                decoration: neuBox(
-                  radius: 10,
-                  borderColor: _gold.withValues(alpha: 0.30),
+                width: 34,
+                height: 42,
+                margin: const EdgeInsets.only(left: 6),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(9),
+                  color: _gold.withValues(alpha: 0.12),
+                  border: Border.all(
+                      color: _gold.withValues(alpha: 0.6), width: 1.5),
                 ),
                 alignment: Alignment.center,
                 child: Text(
@@ -1093,7 +1097,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                   style: const TextStyle(
                     fontFamily: 'Poppins',
                     color: _gold,
-                    fontSize: 18,
+                    fontSize: 21,
                     fontWeight: FontWeight.w800,
                   ),
                 ),

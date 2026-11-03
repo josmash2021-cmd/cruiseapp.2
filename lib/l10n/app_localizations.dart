@@ -5971,9 +5971,11 @@ class S {
 
   // ── Find-My pickup redesign (2026-09-12) ──
   String get toYourDriver => _es ? 'a tu driver' : 'to your driver';
-  String get pickupCodeTitle => _es ? 'CÓDIGO DE PICKUP' : 'PICKUP CODE';
+  String get pickupCodeTitle => _es ? 'CÓDIGO DE RECOGIDA' : 'PICKUP CODE';
   String get pickupCodeTellDriver =>
-      _es ? 'Díselo a tu driver' : 'Tell it to your driver';
+      _es ? 'Díselo a tu conductor' : 'Tell it to your driver';
+  /// The rider's trip sheet: the code at hand from the start.
+  String get pickupCodeShort => _es ? 'Código' : 'Code';
   String get supportAction => _es ? 'Soporte' : 'Support';
   String get driverConfirmedStarting => _es
       ? 'Driver confirmó · Iniciando tu viaje…'
@@ -5981,7 +5983,13 @@ class S {
 
   // Driver side: the PIN card that unlocks Start Ride (2026-09-12).
   String get pickupCodeAskRider =>
-      _es ? 'Pregúntale al rider' : 'Ask the rider';
+      _es ? 'Pregúntale al pasajero' : 'Ask the rider';
+  /// Nav panel (owner-approved drawing 2026-11-03): the locked slider while
+  /// the code is not in yet, and the row once it is.
+  String get navWaitingCode =>
+      _es ? 'Esperando el código' : 'Waiting for the code';
+  String get pickupCodeConfirmedShort =>
+      _es ? 'Código confirmado' : 'Code confirmed';
   String get pickupCodeInvalid =>
       _es ? 'Código incorrecto — intenta de nuevo' : 'Invalid code — try again';
   String get pickupCodeTooManyAttempts => _es

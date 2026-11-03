@@ -128,6 +128,7 @@ class DriverNavView extends StatefulWidget {
     this.onSlideFromStop,
     required this.waitStartedAt,
     this.pickupBadge,
+    this.pickupCodeEntry,
     required this.onExit,
     required this.onArrived,
     required this.onSlidePickUp,
@@ -197,6 +198,10 @@ class DriverNavView extends StatefulWidget {
   /// A tag over the pickup pin — "Reservado" on a reservation (owner
   /// 2026-11-03, Lyft's "Scheduled"). Null on an on-demand ride.
   final String? pickupBadge;
+
+  /// The pickup code row (the trip screen owns its field and submit),
+  /// shown in the panel above the slider while waiting at the pickup.
+  final Widget? pickupCodeEntry;
 
   final VoidCallback onExit;
   final VoidCallback onArrived;
@@ -3645,6 +3650,7 @@ class DriverNavViewState extends State<DriverNavView>
             moving: _panelMoving,
             stage: _panelStage,
             canPickUp: widget.stage == 'start_ride',
+            codeEntry: widget.toPickup ? widget.pickupCodeEntry : null,
             waitClock: _waitClock,
             waitProgress: (1 - _waitRemainFrac).clamp(0.0, 1.0),
             receivingRides: widget.receivingRides,

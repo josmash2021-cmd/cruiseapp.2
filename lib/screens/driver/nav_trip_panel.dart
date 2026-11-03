@@ -71,6 +71,7 @@ class NavTripPanel extends StatefulWidget {
     this.riderDays,
     this.riderVerified = false,
     this.canPickUp = true,
+    this.codeEntry,
     this.waitClock = '',
     this.waitProgress = 0,
     this.receivingRides = true,
@@ -126,6 +127,11 @@ class NavTripPanel extends StatefulWidget {
   /// waitingPickup: false until the rider confirms the pickup — the slider
   /// stays locked on "Esperando a tu pasajero…".
   final bool canPickUp;
+
+  /// The pickup code row, above the slider in the closed panel while
+  /// waiting at the pickup (owner-approved drawing 2026-11-03). Only the
+  /// closed face carries it: it holds the code's one text field.
+  final Widget? codeEntry;
 
   /// waitingPickup: "4:59" and how much of the free wait has gone (0 → 1).
   final String waitClock;
@@ -816,11 +822,19 @@ class _NavTripPanelState extends State<NavTripPanel>
         ),
         if (stage == NavPanelStage.approaching)
           _goldButton(s.arrived, widget.onArrived),
+        if (stage == NavPanelStage.waitingPickup && widget.codeEntry != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+            child: widget.codeEntry!,
+          ),
         if (stage == NavPanelStage.waitingPickup)
           widget.canPickUp
               ? _SlideBar(
                   label: s.navSlideToPickUp, onDone: widget.onSlidePickUp)
-              : _SlideBar.locked(label: s.waitingForYourRider),
+              : _SlideBar.locked(
+                  label: widget.codeEntry != null
+                      ? s.navWaitingCode
+                      : s.waitingForYourRider),
         if (stage == NavPanelStage.waitingStop)
           _SlideBar(
               label: s.navSlideToDropoff,
@@ -1067,7 +1081,11 @@ class _NavTripPanelState extends State<NavTripPanel>
               label: s.navSlideToPickUp,
               onDone: widget.onSlidePickUp,
               inset: false)
-          : _SlideBar.locked(label: s.waitingForYourRider, inset: false);
+          : _SlideBar.locked(
+              label: widget.codeEntry != null
+                  ? s.navWaitingCode
+                  : s.waitingForYourRider,
+              inset: false);
     } else if (stage == NavPanelStage.waitingStop) {
       slider = _SlideBar(
           label: s.navSlideToDropoff,

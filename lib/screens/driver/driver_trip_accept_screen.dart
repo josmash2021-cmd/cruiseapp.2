@@ -300,7 +300,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// True exactly while [_buildSlideWaitingForRider] is the active phase
   /// widget — never before arriving, never after the ride started.
   bool get _showPickupPinCard =>
-      _arrivedConfirmed && !_rideStarted && !_riderConfirmedPickup;
+      _arrivedConfirmed && !_rideStarted && !_riderConfirmedPickup &&
+      // In navigation the code row lives in the nav panel instead — one
+      // field at a time (they share _pinCtrl / _pinFocusNode).
+      !_navMode;
 
   // Safety-net: backend status poll. The Firestore listener above is the
   // primary signal but can silently miss events (auth expired, doc not
@@ -849,6 +852,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       vsync: this,
       duration: const Duration(milliseconds: 420),
     );
+    // The nav code row's gold "type here" box follows the keyboard.
+    _pinFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
 
     // Listen for rider confirming pickup in Firestore
     _listenForRiderConfirmation();
@@ -2852,6 +2859,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     LengthLimitingTextInputFormatter(4),
                   ],
                   onChanged: _onPinChanged,
+                  onTapOutside: (_) => _pinFocusNode.unfocus(),
                   showCursor: false,
                   style: const TextStyle(fontSize: 1),
                   decoration: const InputDecoration(
@@ -2871,6 +2879,167 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 style: const TextStyle(
                   color: pinRed, fontSize: 11.5, fontWeight: FontWeight.w600,
                 ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The pickup code inside the NAV panel (owner-approved drawing
+  /// 2026-11-03): "CÓDIGO DE RECOGIDA · Pregúntale al pasajero" with 4
+  /// boxes above the slider. Same field rules and submit as the sheet card;
+  /// a tap anywhere else closes the keyboard and keeps the letters. Turns
+  /// green once the code is confirmed.
+  Widget _buildNavPickupCode() {
+    final s = S.of(context);
+    const gold = Color(0xFFE8C547);
+    const red = Color(0xFFEF4444);
+    const green = Color(0xFF4ADE80);
+    final pin = _pinCtrl.text;
+    final ok = _riderConfirmedPickup;
+    final hasError = !ok && _pinError != null;
+    return GestureDetector(
+      key: const ValueKey('nav-pickup-code'),
+      onTap: (ok || _pinLocked || _pinSubmitting)
+          ? null
+          : () => _pinFocusNode.requestFocus(),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          color: Colors.white.withValues(alpha: 0.06),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(s.pickupCodeTitle,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1.5,
+                          )),
+                      const SizedBox(height: 2),
+                      Text(
+                        ok ? s.pickupCodeConfirmedShort : s.pickupCodeAskRider,
+                        style: TextStyle(
+                          color: ok
+                              ? green
+                              : Colors.white.withValues(alpha: 0.8),
+                          fontSize: 14,
+                          fontWeight: ok ? FontWeight.w600 : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                AnimatedBuilder(
+                  animation: _pinShakeCtrl,
+                  builder: (context, child) {
+                    final t = _pinShakeCtrl.value;
+                    final dx = math.sin(t * math.pi * 5) * 8 * (1 - t);
+                    return Transform.translate(
+                        offset: Offset(dx, 0), child: child);
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(4, (i) {
+                      final filled = i < pin.length;
+                      final isCursor = !ok &&
+                          !hasError &&
+                          !_pinLocked &&
+                          _pinFocusNode.hasFocus &&
+                          i == pin.length;
+                      final edge = ok
+                          ? green
+                          : hasError
+                              ? red.withValues(alpha: 0.7)
+                              : isCursor
+                                  ? gold
+                                  : gold.withValues(alpha: 0.45);
+                      return Container(
+                        width: 38,
+                        height: 46,
+                        margin: EdgeInsets.only(left: i == 0 ? 0 : 7),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          color: ok
+                              ? green.withValues(alpha: 0.08)
+                              : Colors.black.withValues(alpha: 0.25),
+                          border: Border.all(color: edge, width: 1.5),
+                        ),
+                        child: Text(
+                          filled ? pin[i] : '',
+                          style: TextStyle(
+                            color: ok
+                                ? green
+                                : hasError
+                                    ? red
+                                    : Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+              ],
+            ),
+            if (!ok)
+              SizedBox(
+                width: 1,
+                height: 1,
+                child: Opacity(
+                  opacity: 0.01,
+                  child: TextField(
+                    controller: _pinCtrl,
+                    focusNode: _pinFocusNode,
+                    enabled: !_pinLocked,
+                    keyboardType: TextInputType.visiblePassword,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    autofillHints: const [AutofillHints.oneTimeCode],
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                      TextInputFormatter.withFunction(
+                        (_, next) =>
+                            next.copyWith(text: next.text.toUpperCase()),
+                      ),
+                      LengthLimitingTextInputFormatter(4),
+                    ],
+                    onChanged: _onPinChanged,
+                    // A tap on the map or the panel closes the keyboard;
+                    // the letters already typed stay (owner 2026-11-03).
+                    onTapOutside: (_) => _pinFocusNode.unfocus(),
+                    showCursor: false,
+                    style: const TextStyle(fontSize: 1),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isCollapsed: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ),
+              ),
+            if (hasError) ...[
+              const SizedBox(height: 8),
+              Text(
+                _pinError == 'locked'
+                    ? s.pickupCodeTooManyAttempts
+                    : s.pickupCodeInvalid,
+                style: const TextStyle(
+                    color: red, fontSize: 12.5, fontWeight: FontWeight.w600),
               ),
             ],
           ],
@@ -5878,6 +6047,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               pickupBadge: _reservationPickupAt == null
                   ? null
                   : S.of(context).pickupBadgeReserved,
+              // At the pickup, after "Llegué": the code row in the panel —
+              // the only unlock for "Desliza para recoger".
+              pickupCodeEntry:
+                  _arrivedConfirmed && !_rideStarted && !_stopLegActive
+                      ? _buildNavPickupCode()
+                      : null,
               prefetchedRoutePoints: _routePoints,
               // The stop follows the leg flips: null on the pickup leg,
               // waypoint + pin once the rider is aboard.

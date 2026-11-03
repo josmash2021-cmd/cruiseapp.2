@@ -384,6 +384,60 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
 
   /// RESTING, semi-open: status · driver with the car · Mensaje · Llamar ·
   /// Compartir · Soporte.
+  /// The pickup code for the sheet: the rider's own trip read carries it
+  /// (the driver's never does).
+  Future<void> _loadSheetPickupPin() async {
+    final id = widget.tripId;
+    if (id == null) return;
+    try {
+      final t = await ApiService.getTrip(id);
+      if (!mounted) return;
+      final pin = (t['pickup_pin'] ?? '').toString().trim().toUpperCase();
+      if (pin.length == 4 && pin != _sheetPickupPin) {
+        setState(() => _sheetPickupPin = pin);
+      }
+    } catch (e) {
+      debugPrint('[RiderTracking] pickup code failed: $e');
+    }
+  }
+
+  /// "Código K M T R" at the right of the sheet's status line.
+  Widget _sheetPinChip(String pin) {
+    final s = S.of(context);
+    return Row(
+      key: const ValueKey('sheet-pickup-code'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(s.pickupCodeShort,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.6),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            )),
+        const SizedBox(width: 6),
+        for (final ch in pin.split(''))
+          Container(
+            width: 22,
+            height: 26,
+            margin: const EdgeInsets.only(left: 3),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              color: AppColors.kGold.withValues(alpha: 0.12),
+              border: Border.all(
+                  color: AppColors.kGold.withValues(alpha: 0.55), width: 1.2),
+            ),
+            child: Text(ch,
+                style: const TextStyle(
+                  color: AppColors.kGold,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                )),
+          ),
+      ],
+    );
+  }
+
   Widget _buildSheetFace() {
     final s = S.of(context);
     return Padding(
@@ -404,7 +458,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                 ),
               ),
               const SizedBox(width: 8),
-              Flexible(
+              Expanded(
                 child: Text(
                   _sheetStatusText,
                   maxLines: 1,
@@ -416,6 +470,10 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                   ),
                 ),
               ),
+              if (_sheetPickupPin != null) ...[
+                const SizedBox(width: 8),
+                _sheetPinChip(_sheetPickupPin!),
+              ],
             ],
           ),
           const SizedBox(height: 14),

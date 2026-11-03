@@ -408,6 +408,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // created in build re-subscribed on every rebuild — an RTDB listener plus
   // a GET each time, ~6 a second while the car moves.
   final ValueNotifier<int> _chatUnread = ValueNotifier<int>(0);
+
+  /// The 4-letter pickup code, on the sheet from the start (owner
+  /// 2026-11-03) — not only on the arrival screen.
+  String? _sheetPickupPin;
   StreamSubscription<int>? _chatUnreadSub;
   // "Seguir": what is left of the leg, rebuilt a few times a second rather
   // than every frame.
@@ -552,6 +556,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     super.initState();
     unawaited(_acquireMapSurface());
     _startChatUnreadWatch();
+    unawaited(_loadSheetPickupPin());
     _stopLL = widget.stopLatLng;
     _driverPhotoUrl = _normalizeRemotePhotoUrl(widget.driverPhotoUrl);
     // If no photo URL from dispatch, proactively fetch from Firestore user doc.

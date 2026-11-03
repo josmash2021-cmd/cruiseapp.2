@@ -93,3 +93,63 @@ async def test_quoted_destination_ignores_client_new_fare(
     assert trip.rider_promo_total_cents == 900
     assert trip.driver_fare_cents == 2250
     assert trip.dropoff_address == "New destination"
+
+
+async def test_route_change_mid_ride_keeps_the_wait_fee(
+    client, db, test_rider, monkeypatch,
+):
+    """The wait fee rolled in at ride start survives a later reprice."""
+    from datetime import datetime, timezone
+
+    trip, token = await _prepare_free_trip(client, db, test_rider, monkeypatch)
+    # What PATCH status -> in_trip leaves: the ride started, a $3.00 wait fee
+    # folded into every total.
+    trip.status = "in_trip"
+    trip.started_at = datetime.now(timezone.utc)
+    trip.wait_time_charge = 3.0
+    trip.wait_time_minutes = 6
+    trip.original_fare_cents = int(trip.original_fare_cents or 0) + 300
+    trip.rider_promo_total_cents = int(trip.rider_promo_total_cents or 0) + 300
+    trip.driver_fare_cents = int(trip.driver_fare_cents or 0) + 300
+    trip.fare = round((trip.fare or 0.0) + 3.0, 2)
+    await db.commit()
+    response = await client.patch(
+        f"/trips/{trip.id}/destination",
+        json={"lat": 34.0, "lng": -87.0, "label": "New destination", "new_fare": 3.0},
+        headers=_headers(token),
+    )
+    assert response.status_code == 200, response.text
+    await db.refresh(trip)
+    # The same reprice as test_quoted_destination_ignores_client_new_fare,
+    # plus the $3.00 wait fee on every total.
+    assert trip.original_fare_cents == 2250 + 300
+    assert trip.rider_promo_total_cents == 900 + 300
+    assert trip.driver_fare_cents == 2250 + 300
+    assert trip.fare == 12.0
+
+
+async def test_legacy_end_wait_reports_and_never_charges(
+    client, db, test_rider, test_driver, monkeypatch,
+):
+    """POST /trips/{id}/wait-time/end is read-only: the wait fee is charged
+    once, at the in_trip fold — never here, however many times it is called."""
+    from datetime import datetime, timedelta, timezone
+
+    trip, _ = await _prepare_free_trip(client, db, test_rider, monkeypatch)
+    driver, driver_token = test_driver
+    trip.driver_id = driver.id
+    trip.status = "arrived"
+    started = datetime.now(timezone.utc) - timedelta(minutes=10)
+    trip.notes = f"Wait started: {started.isoformat()}"
+    await db.commit()
+    before = (trip.fare, trip.original_fare_cents, trip.rider_promo_total_cents,
+              trip.driver_fare_cents, trip.wait_time_charge)
+    for _ in range(3):
+        response = await client.post(
+            f"/trips/{trip.id}/wait-time/end", headers=_headers(driver_token))
+        assert response.status_code == 200, response.text
+        assert response.json()["wait_time_charge"] == 4.0
+    await db.refresh(trip)
+    after = (trip.fare, trip.original_fare_cents, trip.rider_promo_total_cents,
+             trip.driver_fare_cents, trip.wait_time_charge)
+    assert after == before

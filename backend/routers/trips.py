@@ -4287,50 +4287,24 @@ async def start_wait_time(trip_id: int, user: User = Depends(_get_current_user),
 
 @router.post("/trips/{trip_id}/wait-time/end", dependencies=[Depends(_verify_api_key)])
 async def end_wait_time(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """End wait time clock -- first 2 min free, then $0.50/min."""
+    """Report the wait so far (first 2 min free, then $0.50/min) — read-only.
+
+    The wait fee is charged in ONE place: the status -> in_trip fold, from
+    arrived_at to started_at. This legacy endpoint used to add its own fee
+    to the fare on every call, with no status check: called at "arrived" it
+    was charged twice (here and at the fold), called again it stacked, and a
+    later reprice kept only the last one (review 2026-11-03). Current apps do
+    not call it; an old build that still does gets the numbers and no charge.
+    """
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip or trip.driver_id != user.id:
         raise HTTPException(403, "Not authorized")
     if not trip.notes or "Wait started:" not in trip.notes:
-        return {"wait_time_minutes": 0, "wait_time_charge": 0.0}
+        return {"wait_time_minutes": 0, "wait_time_charge": 0.0, "new_total_fare": trip.fare}
     wait_start_str = trip.notes.split("Wait started: ")[1].split("\n")[0]
     wait_start = datetime.fromisoformat(wait_start_str)
     wait_minutes = int((datetime.now(timezone.utc) - wait_start).total_seconds() / 60)
     wait_charge = round(max(0, wait_minutes - 2) * 0.50, 2)
-    trip.wait_time_minutes = wait_minutes
-    trip.wait_time_charge = wait_charge
-    was_zero_fare = not trip.fare
-    if trip.pricing_quote_id and was_zero_fare and wait_charge > 0:
-        trip.payment_status = "unpaid"
-        trip.stripe_payment_intent_id = None
-    if trip.pricing_quote_id and not trip.stripe_payment_intent_id and wait_charge > 0 and _HAS_STRIPE:
-        try:
-            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-            rider_row = rider_result.scalar_one_or_none()
-            from services.trip_route_pricing import _new_route_hold
-            request = {
-                "pickup_lat": trip.pickup_lat, "pickup_lng": trip.pickup_lng,
-                "dropoff_lat": trip.dropoff_lat, "dropoff_lng": trip.dropoff_lng,
-                "stop_lat": None, "stop_lng": None,
-                "is_scheduled": bool(trip.scheduled_at),
-                "is_airport": bool(trip.is_airport),
-                "meet_inside": bool(trip.meet_inside),
-            }
-            intent = await _new_route_hold(
-                db, trip, rider_row,
-                int(round(((trip.fare or 0.0) + wait_charge) * 100)), request,
-            )
-            trip.payment_status = payment_status_for_intent(intent)
-        except Exception as _hold_err:
-            logging.warning("[WaitFee] end-wait hold failed for trip %s: %s", trip.id, _hold_err)
-            trip.payment_status = "unpaid"
-    trip.fare = round((trip.fare or 0) + wait_charge, 2)
-    if trip.pricing_quote_id and wait_charge > 0:
-        wait_cents = int(round(wait_charge * 100))
-        trip.original_fare_cents = int(trip.original_fare_cents or 0) + wait_cents
-        trip.rider_promo_total_cents = int(trip.rider_promo_total_cents or 0) + wait_cents
-        trip.driver_fare_cents = int(trip.driver_fare_cents or 0) + wait_cents
-    await db.commit()
     return {"wait_time_minutes": wait_minutes, "wait_time_charge": wait_charge, "new_total_fare": trip.fare}
 

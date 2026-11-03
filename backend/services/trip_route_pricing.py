@@ -126,9 +126,19 @@ async def reprice_quoted_trip(db, trip, *, stop=None, destination=None) -> dict 
             percent = grant.percent if grant.kind == "percent" else grant.fallback_percent
         promo_total = int(round(route_original_cents * (100 - percent) / 100)) if 0 < percent < 100 else route_original_cents
         driver_fare = promo_total
-    original_cents = route_original_cents + stop_fee_cents
-    promo_total += stop_fee_cents
-    driver_fare += stop_fee_cents
+    # A wait fee already rolled into the totals when the ride started (status
+    # -> in_trip folds it into original/promo/driver/fare) is part of the
+    # price, so a reprice keeps it. Before the ride starts it is not in the
+    # totals yet. A stop or destination change mid-ride used to rebuild the
+    # totals without it: the rider was not charged it and the driver was not
+    # paid it (found 2026-11-03 building the rider Receipt).
+    wait_cents = (
+        int(round(float(trip.wait_time_charge or 0) * 100))
+        if trip.started_at is not None else 0
+    )
+    original_cents = route_original_cents + stop_fee_cents + wait_cents
+    promo_total += stop_fee_cents + wait_cents
+    driver_fare += stop_fee_cents + wait_cents
 
     cruise_cash = min(int(trip.cruise_cash_cents or 0), promo_total)
     refunded = int(trip.cruise_cash_cents or 0) - cruise_cash

@@ -1090,13 +1090,15 @@ class _NavTripPanelState extends State<NavTripPanel>
             physics: const ClampingScrollPhysics(),
           ),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            // Room between everything (owner 2026-11-03: "expándelo para
+            // que esté más espacio y no tan todo junto").
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Center(child: _handle()),
-                const SizedBox(height: 6),
+                const SizedBox(height: 10),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1121,7 +1123,7 @@ class _NavTripPanelState extends State<NavTripPanel>
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 4),
                           Text.rich(
                             TextSpan(children: [
                               TextSpan(
@@ -1155,7 +1157,7 @@ class _NavTripPanelState extends State<NavTripPanel>
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 22),
                 _stepRow(
                   lead: _photo(44, onTap: () => _setMode(_Mode.profile)),
                   done: pickupDone,
@@ -1191,7 +1193,7 @@ class _NavTripPanelState extends State<NavTripPanel>
                     onTap: () =>
                         setState(() => _stopCollapsed = !_stopCollapsed),
                     child: Container(
-                      margin: const EdgeInsets.only(left: 7, bottom: 10),
+                      margin: const EdgeInsets.only(left: 7, bottom: 14),
                       width: 30,
                       height: 30,
                       decoration: BoxDecoration(
@@ -1251,7 +1253,7 @@ class _NavTripPanelState extends State<NavTripPanel>
                   ),
                 ),
                 if (slider != null) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
                   slider,
                 ],
               ],
@@ -1263,7 +1265,7 @@ class _NavTripPanelState extends State<NavTripPanel>
   }
 
   Widget _rowDivider() => Container(
-        margin: const EdgeInsets.symmetric(vertical: 10),
+        margin: const EdgeInsets.symmetric(vertical: 16),
         height: 1,
         color: Colors.white.withValues(alpha: 0.10),
       );
@@ -1300,7 +1302,7 @@ class _NavTripPanelState extends State<NavTripPanel>
           const SizedBox(width: 16),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.only(bottom: 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1339,7 +1341,7 @@ class _NavTripPanelState extends State<NavTripPanel>
   }
 
   Widget _acts(List<Widget> children) => Padding(
-        padding: const EdgeInsets.only(top: 10, bottom: 2),
+        padding: const EdgeInsets.only(top: 14, bottom: 6),
         child: Row(
           children: [
             for (var i = 0; i < children.length; i++) ...[

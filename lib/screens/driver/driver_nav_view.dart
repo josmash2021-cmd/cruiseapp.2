@@ -3750,7 +3750,9 @@ class DriverNavViewState extends State<DriverNavView>
                               key: ValueKey(
                                   '${_endRouteVisible}_${_maneuverType}_$_maneuverModifier'),
                               color: _gold,
-                              size: 48),
+                              // A touch bigger again (owner 2026-11-02:
+                              // "las flechas un poquito más grandecitas").
+                              size: 56),
                         ),
                         if (!_endRouteVisible)
                           Text(
@@ -3773,9 +3775,22 @@ class DriverNavViewState extends State<DriverNavView>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          title,
-                          maxLines: 2,
+                        // The exit badge sits over the sentence (owner
+                        // 2026-11-02: "este texto puede aparecer de una forma
+                        // agradable para que se pueda ver mejor") — beside it,
+                        // it squeezed the sentence into a five-line column.
+                        if (exitLabel != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _exitChip(exitLabel),
+                          ),
+                        Text.rich(
+                          TextSpan(
+                            children: useInstruction
+                                ? _instructionSpans(title)
+                                : [TextSpan(text: _keepRefsWhole(title))],
+                          ),
+                          maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: Colors.white,
@@ -3785,7 +3800,7 @@ class DriverNavViewState extends State<DriverNavView>
                             fontSize: useInstruction ? 20 : 24,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.2,
-                            height: 1.15,
+                            height: 1.2,
                           ),
                         ),
                         if (_endRouteVisible) ...[
@@ -3804,16 +3819,6 @@ class DriverNavViewState extends State<DriverNavView>
                       ],
                     ),
                   ),
-                  // The exit badge, pinned at the bar's top-right inside the guide
-                  // (user spec 2026-09-27).
-                  if (exitLabel != null)
-                    Align(
-                      alignment: Alignment.topCenter,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8, right: 4, top: 2),
-                        child: _exitChip(exitLabel),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -3864,7 +3869,7 @@ class DriverNavViewState extends State<DriverNavView>
                       ),
                       const SizedBox(width: 6),
                       Icon(_maneuverIcon(_thenType, _thenModifier),
-                          color: const Color(0xFF141414), size: 20),
+                          color: const Color(0xFF141414), size: 23),
                       const SizedBox(width: 6),
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 220),
@@ -3938,7 +3943,7 @@ class DriverNavViewState extends State<DriverNavView>
                     ? Icons.location_on_rounded
                     : _maneuverIcon(st.maneuverType, st.modifier),
                 color: Colors.white,
-                size: 30),
+                size: 34),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -4020,6 +4025,39 @@ class DriverNavViewState extends State<DriverNavView>
         ),
       ),
     );
+  }
+
+  /// A highway ref never splits across lines: "I-459", "US-280" keep the
+  /// number on the hyphen's line (a word joiner after it).
+  static String _keepRefsWhole(String text) => text.replaceAllMapped(
+      RegExp(r'([A-Za-z])-(\d)'), (m) => '${m[1]}-\u2060${m[2]}');
+
+  /// The instruction made easy to read at a glance (owner 2026-11-02): the
+  /// names the driver looks for — the road after "onto"/"hacia" and the
+  /// place after "toward"/"en dirección a" — bold and white; the words
+  /// around them softer. A sentence with none of those stays all bold.
+  static final RegExp _namePart = RegExp(
+      r'\b(onto|towards?|hacia|en dirección a|por)\s+(.+?)'
+      r'(?=\s+(?:onto|towards?|hacia|en dirección a)\b|[.;]|$)',
+      caseSensitive: false);
+
+  List<TextSpan> _instructionSpans(String text) {
+    final t = _keepRefsWhole(text);
+    final matches = _namePart.allMatches(t).toList();
+    if (matches.isEmpty) return [TextSpan(text: t)];
+    final soft = TextStyle(
+        color: Colors.white.withValues(alpha: 0.72),
+        fontWeight: FontWeight.w500);
+    final spans = <TextSpan>[];
+    var at = 0;
+    for (final m in matches) {
+      final nameStart = m.start + m[0]!.length - m[2]!.length;
+      spans.add(TextSpan(text: t.substring(at, nameStart), style: soft));
+      spans.add(TextSpan(text: m[2]));
+      at = m.end;
+    }
+    if (at < t.length) spans.add(TextSpan(text: t.substring(at), style: soft));
+    return spans;
   }
 
   /// "Salida 245" / "Exit 245" for a freeway exit, or null. The exact exit

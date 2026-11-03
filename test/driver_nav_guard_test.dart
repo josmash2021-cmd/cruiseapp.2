@@ -615,7 +615,7 @@ void main() {
 
     test('the freeway exit number rides its own gold chip at the bar\'s '
         'top-right (user spec 2026-09-27, Google-style "exit 157")', () {
-      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s, {double tuck = 0, Widget? list}) {', maxLen: 7000);
+      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s, {double tuck = 0, Widget? list}) {', maxLen: 9000);
       expect(body.contains('exitLabel'), isTrue);
       expect(body.contains('_exitLabelFor(s, _maneuverExit, _instructionLabel)'),
           isTrue);
@@ -643,6 +643,14 @@ void main() {
           reason: 'no gold fill — only the border is gold');
       expect(nav.contains('_exitLabelFor(s, st.exitNumber, st.instruction)'),
           isTrue, reason: 'an exit step in the guide wears the same chip');
+      // "Este texto puede aparecer de una forma agradable… y las flechas un
+      // poquito más grandecitas": names bold, filler soft, refs whole, the
+      // badge over the sentence, arrows 56 / 23 / 34.
+      expect(body.contains('? _instructionSpans(title)'), isTrue);
+      expect(body.contains('maxLines: 3,'), isTrue);
+      expect(nav.contains("(m) => '\${m[1]}-\\u2060\${m[2]}'"), isTrue);
+      expect(body.contains('size: 56),'), isTrue);
+      expect(nav.contains('color: const Color(0xFF141414), size: 23),'), isTrue);
       final dirs = File('lib/services/directions_service.dart')
           .readAsStringSync().replaceAll('\r\n', '\n');
       expect(dirs.contains("exitNumber: (maneuver['exit'] ?? '').toString(),"),
@@ -1005,9 +1013,11 @@ void main() {
       expect(nav.contains('_destDistLabel(s)'), isTrue,
           reason: 'the steps-less fallback shows distance-to-destination, '
               'never the title twice');
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s, {double tuck = 0, Widget? list}) {', maxLen: 6400);
-      expect(bar.contains('size: 48'), isTrue,
-          reason: 'the big reference card (user spec 2026-09-19)');
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s, {double tuck = 0, Widget? list}) {', maxLen: 9000);
+      expect(bar.contains('size: 56'), isTrue,
+          reason: 'the big reference card (user spec 2026-09-19), a touch '
+              'bigger again 2026-11-02 ("las flechas un poquito más '
+              'grandecitas")');
       expect(bar.contains('AnimatedSwitcher('), isTrue,
           reason: 'indications crossfade, never snap');
     });

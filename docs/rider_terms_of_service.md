@@ -1,6 +1,6 @@
 # Cruiseinride Rider Terms of Service
 
-**Version 1.1 — Effective Date: August 8, 2026**
+**Version 1.2 — Effective Date: November 3, 2026**
 
 These Rider Terms of Service (the "**Rider Terms**") are entered into by and
 between **Cruise in Ride, Inc.**, a Florida corporation
@@ -82,24 +82,28 @@ available.
 is free while the pickup is more than sixty (60) minutes away or while no
 driver has been assigned. Inside the 60-minute window with a driver
 assigned, a per-tier cancellation fee applies, capped at the trip's upfront
-fare: **$10.00** Compact, **$15.00** Standard, **$25.00** Premium,
-**$35.00** Black.
+fare: **$5.00** Compact, Standard, Electric Pro and Premium; **$10.00** VIP.
+One hour before pickup your driver confirms the ride and heads to you; from
+that moment a cancellation is charged like any other trip, under the rule
+above (**$5.00** once more than two (2) minutes have passed since the driver
+started on the way).
 
 **Cancellation after the trip starts.** Once your trip has started,
 cancelling it will charge the **full estimated fare** quoted before the
 trip, as the driver has already committed the trip to you.
 
-5.5. **Wait time and no-show fees.** A free waiting period applies at pickup,
-after which a per-minute wait fee accrues, as displayed live in the app:
-Standard and Compact — 2 free minutes, then $0.40 per minute; Premium — 3
-free minutes, then $0.60 per minute; Black and SUV XL — 5 free minutes, then
-$1.00 per minute; trips booked through the airport flow (to or from the
-airport) — 10 free minutes, then $0.40 per minute. Partial minutes round up.
+5.5. **Wait time and no-show fees.** Every trip includes 5 free minutes of
+waiting at pickup — airport trips included — after which a per-minute wait
+fee accrues, as displayed live in the app: Standard and Compact — $0.40 per
+minute; Premium — $0.60 per minute; VIP and SUV XL — $1.00 per minute; trips
+booked through the airport flow (to or from the airport) — $0.40 per minute.
+For a scheduled ride, the free minutes start at the scheduled pickup time,
+not when the driver arrives early. Partial minutes round up.
 Accrued wait fees are added to your trip fare. If you do not appear within
 the applicable waiting period, the trip may be canceled as a no-show and the
 no-show fee applies: the greater of the accrued wait fees and a per-tier
 minimum — **$5.00** Standard/Compact, **$8.00** Premium, **$10.00**
-Black/SUV XL and airport trips.
+VIP/SUV XL and airport trips.
 
 5.6. **Cleaning and damage fees.** The Company does not currently charge
 cleaning or damage fees. If such fees are introduced in the future, Riders

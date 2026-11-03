@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'legal_document_screen.dart';
 
 /// Rider Terms of Service. Source of truth: docs/rider_terms_of_service.md
-/// (Cruise in Ride, Inc. / Florida & Alabama, Version 1.1) — keep both in sync.
+/// (Cruise in Ride, Inc. / Florida & Alabama, Version 1.2) — keep both in sync.
 /// Rendered with the shared neumorphic legal-document widget.
 /// English-only legal content; venue is Miami-Dade County, Florida.
 class TermsOfServiceScreen extends StatelessWidget {
@@ -225,7 +225,7 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
   Widget build(BuildContext context) {
     return const LegalDocumentScreen(
       title: 'Terms of Service',
-      effectiveDate: 'Version 1.1 — Effective Date: August 8, 2026',
+      effectiveDate: 'Version 1.2 — Effective Date: November 3, 2026',
       sections: _sections,
     );
   }

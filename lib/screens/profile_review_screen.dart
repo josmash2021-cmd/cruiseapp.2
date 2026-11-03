@@ -307,7 +307,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
         // E-SIGN record (version, UTC timestamp, IP, user agent).
         try {
           await ApiService.recordConsent(
-              consentType: 'terms', action: 'accepted', version: '1.1');
+              consentType: 'terms', action: 'accepted', version: '1.2');
           await ApiService.recordConsent(
               consentType: 'privacy', action: 'accepted', version: '2.1');
         } catch (e) {

@@ -73,12 +73,13 @@ _DEFAULT_COMMISSION = vehicle_tiers.DEFAULT_COMMISSION
 # driver has been found; inside the window with a driver assigned, the
 # tier fee below, capped by the trip's upfront fare.
 SCHEDULED_CANCEL_FREE_WINDOW_MIN = 60
+# Owner 2026-11-03: $5 for every tier, VIP $10.
 SCHEDULED_CANCEL_FEE_BY_TIER = {
-    "compact": 10.0,
-    "standard": 15.0,
-    "electric_pro": 20.0,
-    "premium": 25.0,
-    "vip": 35.0,
+    "compact": 5.0,
+    "standard": 5.0,
+    "electric_pro": 5.0,
+    "premium": 5.0,
+    "vip": 10.0,
 }
 
 

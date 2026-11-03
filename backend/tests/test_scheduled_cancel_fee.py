@@ -88,20 +88,21 @@ def test_free_when_no_driver_found():
 
 
 def test_tier_fees_inside_the_window():
-    assert _fee(vehicle_type="compact") == 10.0
-    assert _fee(vehicle_type="standard") == 15.0
-    assert _fee(vehicle_type="electric_pro") == 20.0
-    assert _fee(vehicle_type="premium") == 25.0
-    assert _fee(vehicle_type="black") == 35.0
+    # Owner 2026-11-03: $5 for every tier, VIP $10.
+    assert _fee(vehicle_type="compact") == 5.0
+    assert _fee(vehicle_type="standard") == 5.0
+    assert _fee(vehicle_type="electric_pro") == 5.0
+    assert _fee(vehicle_type="premium") == 5.0
+    assert _fee(vehicle_type="black") == 10.0
 
 
 def test_legacy_tier_strings_normalise():
     # A stored "sedan"/"comfort" row must price like standard.
-    assert _fee(vehicle_type="comfort") == 15.0
+    assert _fee(vehicle_type="comfort") == 5.0
 
 
 def test_fee_capped_by_upfront_fare():
-    assert _fee(vehicle_type="black", fare=12.0) == 12.0
+    assert _fee(vehicle_type="black", fare=8.0) == 8.0
 
 
 def test_constants_match_the_policy_page():
@@ -109,11 +110,11 @@ def test_constants_match_the_policy_page():
     from routers.trips import SCHEDULED_CANCEL_FEE_BY_TIER
 
     assert SCHEDULED_CANCEL_FEE_BY_TIER == {
-        "compact": 10.0,
-        "standard": 15.0,
-        "electric_pro": 20.0,
-        "premium": 25.0,
-        "vip": 35.0,
+        "compact": 5.0,
+        "standard": 5.0,
+        "electric_pro": 5.0,
+        "premium": 5.0,
+        "vip": 10.0,
     }
 
 
@@ -170,7 +171,7 @@ async def test_rider_cancel_scheduled_tier_fee_inside_window(
             headers=headers,
         )
     assert resp.status_code == 200
-    assert resp.json()["cancellation_fee"] == 25.0
+    assert resp.json()["cancellation_fee"] == 5.0
 
 
 async def test_rider_cancel_in_30_min_lockout_still_pays_tier_fee(
@@ -196,7 +197,7 @@ async def test_rider_cancel_in_30_min_lockout_still_pays_tier_fee(
             headers=headers,
         )
     assert resp.status_code == 200
-    assert resp.json()["cancellation_fee"] == 25.0
+    assert resp.json()["cancellation_fee"] == 5.0
 
 
 async def test_rider_cancel_scheduled_fee_capped_by_fare(
@@ -205,7 +206,7 @@ async def test_rider_cancel_scheduled_fee_capped_by_fare(
     rider, rider_token = test_rider
     driver, _ = test_driver
     trip = await _make_scheduled_trip(
-        db, rider, driver, minutes_out=30, vehicle_type="black", fare=20.0,
+        db, rider, driver, minutes_out=30, vehicle_type="black", fare=8.0,
     )
 
     headers = {**_make_auth_headers(), "Authorization": f"Bearer {rider_token}"}
@@ -215,8 +216,8 @@ async def test_rider_cancel_scheduled_fee_capped_by_fare(
         headers=headers,
     )
     assert resp.status_code == 200
-    # $35 black fee, but the upfront fare is $20 — the lower one wins.
-    assert resp.json()["cancellation_fee"] == 20.0
+    # $10 VIP fee, but the upfront fare is $8 — the lower one wins.
+    assert resp.json()["cancellation_fee"] == 8.0
 
 
 async def test_double_cancel_never_charges_twice(
@@ -237,7 +238,7 @@ async def test_double_cancel_never_charges_twice(
             headers={**_make_auth_headers(), "Authorization": f"Bearer {rider_token}"},
         )
         assert first.status_code == 200
-        assert first.json()["cancellation_fee"] == 15.0
+        assert first.json()["cancellation_fee"] == 5.0
 
         # Second cancel hits the terminal-state guard before any money moves.
         second = await client.post(

@@ -310,14 +310,15 @@ void main() {
     });
   });
 
-  group('the scheduled-cancel fee mirror (\$20)', () {
-    test('both sources carry the tier at the midpoint price', () {
+  group('the scheduled-cancel fee mirror (\$5)', () {
+    test('both sources carry the tier at the common price (owner 2026-11-03)',
+        () {
       final policy =
           File('lib/screens/schedule_cancel_policy_screen.dart')
               .readAsStringSync();
-      expect(policy, contains("'Electric Pro': 20"));
+      expect(policy, contains("'Electric Pro': 5"));
       final tripsPy = File('backend/routers/trips.py').readAsStringSync();
-      expect(tripsPy, contains('"electric_pro": 20.0'));
+      expect(tripsPy, contains('"electric_pro": 5.0'));
     });
 
     test('the hub estimate resolves the Electric Pro label', () {

@@ -106,7 +106,7 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
     final feeLabel = feeTier == kTierElectricPro
         ? 'Electric Pro'
         : feeTier[0].toUpperCase() + feeTier.substring(1);
-    final fee = (kScheduledCancelFeesUsd[feeLabel] ?? 15).toDouble();
+    final fee = (kScheduledCancelFeesUsd[feeLabel] ?? 5).toDouble();
     final fare = (t['fare'] as num?)?.toDouble() ?? 0;
     return fare > 0 && fare < fee ? fare : fee;
   }

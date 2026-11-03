@@ -663,8 +663,10 @@ SCHEDULED RIDES (booked ahead):
   - Cancelling is free more than 60 minutes before pickup, or any time
     while no driver has been assigned yet.
   - Inside 60 minutes with a driver assigned, the fee depends on the tier:
-    Compact $10, Standard $15, Premium $25, VIP $35 — never more than
-    the upfront price shown at booking.
+    $5 for Compact, Standard, Electric Pro and Premium; $10 for VIP —
+    never more than the upfront price shown at booking. Once the driver
+    has confirmed the ride (1 hour before) and is on the way, it is
+    charged like any ride: $5 after 2 minutes.
 
 PAYMENTS AND HOLDS:
   - Booking places a HOLD (pre-authorization) for the full estimate. It is

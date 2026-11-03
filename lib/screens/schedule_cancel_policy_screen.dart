@@ -7,12 +7,13 @@ import '../widgets/neu_style.dart';
 /// `SCHEDULED_CANCEL_FEE_BY_TIER` in backend/routers/trips.py.
 /// test_schedule_hub_guard_test.dart compares the two sources; if you move
 /// one, move the other. (VIP is the 2026-10-15 rename of Black.)
+// Owner 2026-11-03: $5 for every tier, VIP $10.
 const Map<String, int> kScheduledCancelFeesUsd = {
-  'Compact': 10,
-  'Standard': 15,
-  'Electric Pro': 20,
-  'Premium': 25,
-  'VIP': 35,
+  'Compact': 5,
+  'Standard': 5,
+  'Electric Pro': 5,
+  'Premium': 5,
+  'VIP': 10,
 };
 
 /// "Cancellation policy" page for scheduled rides (2026-08-22) — linked from

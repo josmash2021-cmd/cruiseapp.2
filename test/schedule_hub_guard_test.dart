@@ -55,19 +55,20 @@ void main() {
     test('both sources define the same five tiers at the same price', () {
       final dart = parseDartTable();
       final py = parsePyTable();
+      // Owner 2026-11-03: $5 for every tier, VIP $10.
       expect(dart, {
-        'Compact': 10,
-        'Standard': 15,
-        'Electric Pro': 20,
-        'Premium': 25,
-        'VIP': 35,
+        'Compact': 5,
+        'Standard': 5,
+        'Electric Pro': 5,
+        'Premium': 5,
+        'VIP': 10,
       });
       expect(py, {
-        'compact': 10.0,
-        'standard': 15.0,
-        'electric_pro': 20.0,
-        'premium': 25.0,
-        'vip': 35.0,
+        'compact': 5.0,
+        'standard': 5.0,
+        'electric_pro': 5.0,
+        'premium': 5.0,
+        'vip': 10.0,
       });
       for (final e in dart.entries) {
         final key = e.key.toLowerCase().replaceAll(' ', '_');

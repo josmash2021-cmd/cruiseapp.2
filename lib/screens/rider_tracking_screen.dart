@@ -240,6 +240,23 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   mapbox.MapboxMap? _map;
+
+  /// The bottom card height the Mapbox wordmark was last placed above.
+  double? _brandBottom;
+
+  /// Keep the Mapbox wordmark and "i" just above the bottom card, which
+  /// grows and shrinks with the trip phase. Checked after each build; the
+  /// native call goes out only when the card moved a few points.
+  void _syncMapBrand() {
+    final m = _map;
+    if (m == null) return;
+    final h = _bottomCardHeight;
+    final last = _brandBottom;
+    if (last != null && (h - last).abs() < 4) return;
+    _brandBottom = h;
+    unawaited(MapBrand.show(m, bottom: h));
+  }
+
   /// Web (Mapbox GL JS) controller — used instead of [_map] when kIsWeb.
   /// Every map entry point branches to this before touching the native
   /// controller, so `_map` stays null on web and nothing native runs.
@@ -885,6 +902,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
     final bottomPad = MediaQuery.of(context).padding.bottom;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncMapBrand();
+    });
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {

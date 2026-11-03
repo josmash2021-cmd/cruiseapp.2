@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -415,8 +417,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
     await MapTheme.applyNavyGold(ctrl);
     ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+    unawaited(MapBrand.show(ctrl));
 
     // Animate tilt 0° → 20°
     if (_tiltAnim != null && _tiltCtrl != null) {

@@ -1011,15 +1011,10 @@ class _WebMapViewState extends State<WebMapView> {
     options.zoom = widget.initialZoom;
     if (widget.initialPitch != 0) options.pitch = widget.initialPitch;
     if (widget.initialBearing != 0) options.bearing = widget.initialBearing;
-    options.attributionControl = false;
-
-    // Mirror the native maps: lib/config/map_theme.dart sets
-    // AttributionSettings(enabled: false) AND LogoSettings(enabled: false)
-    // on iOS/Android. attributionControl:false above covers the attribution
-    // text, but in GL JS the "mapbox" wordmark is a separate control that
-    // stays visible — hide it the same way native does. Injected once per
-    // page; several WebMapViews share the rule.
-    _hideMapboxLogoOnce();
+    // The Mapbox wordmark and the credits stay on, as on iOS/Android
+    // (MapBrand in lib/config/map_theme.dart). GL JS folds the credits
+    // into an "i" on its own when the map is narrow.
+    options.attributionControl = true;
 
     final map = _JSMap(options);
     final controller = WebMapControllerWeb(map);
@@ -1065,26 +1060,6 @@ class _WebMapViewState extends State<WebMapView> {
   }
 
   _JSResizeObserver? _resizeObserver;
-
-  static bool _logoCssInjected = false;
-
-  /// Hides the GL JS logo control (`.mapboxgl-ctrl-logo`) page-wide, matching
-  /// what the native maps do in `lib/config/map_theme.dart`
-  /// (`LogoSettings(enabled: false)`). The attribution control is already off
-  /// via `attributionControl: false`, same as native's
-  /// `AttributionSettings(enabled: false)` — nothing more is hidden here
-  /// than what iOS hides.
-  static void _hideMapboxLogoOnce() {
-    if (_logoCssInjected) return;
-    _logoCssInjected = true;
-    try {
-      final style = _document.createElement('style');
-      style.textContent = '.mapboxgl-ctrl-logo{display:none!important;}';
-      _document.head?.appendChild(style);
-    } catch (e) {
-      debugPrint('[WebMap] could not inject logo-hiding CSS: $e');
-    }
-  }
 
   @override
   void dispose() {

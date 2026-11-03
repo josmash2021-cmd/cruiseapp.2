@@ -511,15 +511,17 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
     _map = ctrl;
+    // The Mapbox marks ride above the closed sheet; the recenter fab
+    // (right 14, 44 wide) keeps its corner.
+    final brandBottom =
+        (MediaQuery.maybeSizeOf(context)?.height ?? 0) * _sheetMin;
     // Each call stands alone so one refusal does not skip the rest.
     for (final step in <Future<void> Function()>[
       () => ctrl.scaleBar
           .updateSettings(mapbox.ScaleBarSettings(enabled: false)),
       () =>
           ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false)),
-      () => ctrl.attribution
-          .updateSettings(mapbox.AttributionSettings(enabled: false)),
-      () => ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false)),
+      () => MapBrand.show(ctrl, bottom: brandBottom, right: 14 + 44),
     ]) {
       try {
         await step();

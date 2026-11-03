@@ -1934,14 +1934,9 @@ class _CardLiveMapState extends State<_CardLiveMap> {
         simultaneousRotateAndPinchToZoomEnabled: false,
       ));
       ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-      ctrl.attribution.updateSettings(mapbox.AttributionSettings(
-        iconColor: 0x00000000,
-        position: mapbox.OrnamentPosition.BOTTOM_LEFT,
-      ));
-      ctrl.logo.updateSettings(mapbox.LogoSettings(
-        position: mapbox.OrnamentPosition.BOTTOM_LEFT,
-        marginLeft: -100,
-      ));
+      // The Mapbox wordmark and credits stay on (MapBrand) — the
+      // wordmark used to be pushed 100 pt off the map.
+      unawaited(MapBrand.show(ctrl));
     } catch (e) {
       debugPrint('[SchedCardMap] gesture/ornament setup failed: $e');
     }

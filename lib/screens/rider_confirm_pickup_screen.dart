@@ -1346,8 +1346,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       ));
       ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
       ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-      ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-      ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+      unawaited(MapBrand.show(ctrl));
 
       // Every await here is a chance for the surface to be handed back —
       // the `_miniMap != ctrl` guard is how a stale setup stops short of a

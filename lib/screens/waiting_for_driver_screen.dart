@@ -58,6 +58,9 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
   late final AnimationController _shimmerCtrl;
 
   mapbox.MapboxMap? _mapCtrl;
+
+  /// The bottom panel the Mapbox marks sit just above (MapBrand).
+  final GlobalKey _brandPanelKey = GlobalKey();
   mapbox.PolylineAnnotationManager? _polyMgr;
   mapbox.PointAnnotationManager? _pointMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
@@ -171,8 +174,7 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
     await MapTheme.applyNavyGold(ctrl);
     ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+    MapBrand.showAbovePanel(ctrl, _brandPanelKey);
 
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _pointMgr = await ctrl.annotations.createPointAnnotationManager();
@@ -464,6 +466,9 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
   Widget build(BuildContext context) {
     final bottomPad = MediaQuery.of(context).padding.bottom;
     final loc = S.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) MapBrand.showAbovePanel(_mapCtrl, _brandPanelKey);
+    });
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -521,6 +526,7 @@ class _WaitingForDriverScreenState extends State<WaitingForDriverScreen>
             
             // Bottom sheet — web: .vipRide__testConfirm__phase2 + .vipRide__testSheet
             Positioned(
+              key: _brandPanelKey,
               bottom: math.max(bottomPad, 14),
               left: 14,
               right: 14,

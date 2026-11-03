@@ -2398,6 +2398,28 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// explicit go-online.
   bool _wentOffline = false;
 
+  /// The Mapbox wordmark and "i" above the online/offline sheet (or the
+  /// trip panel), beside the button columns on either side (left 16 and
+  /// right 16, 44 wide) — never under them. The sheet opening past its
+  /// resting height covers them like the rest of the map; a running sheet
+  /// animation or drag sends nothing until it settles.
+  void _syncMapBrand() {
+    final m = _map;
+    final mq = MediaQuery.maybeOf(context);
+    if (m == null || mq == null) return;
+    if (_panelAnimCtrl?.isAnimating == true) return;
+    final double bottom;
+    if (_phase == _Phase.searching) {
+      final collapsed = 78.0 + mq.padding.bottom;
+      final f = math.min(_panelFrac.clamp(0.0, 1.0), _kSheetRestFrac);
+      bottom = collapsed + (mq.size.height * 0.82 - collapsed) * f;
+    } else {
+      bottom = _mapBottomPadding;
+    }
+    unawaited(MapBrand.show(m,
+        bottom: bottom.roundToDouble(), left: 16 + 44, right: 16 + 44));
+  }
+
   /// Dynamic bottom padding for the GoogleMap based on active overlays
   double get _mapBottomPadding {
     final screenH = MediaQuery.of(context).size.height;
@@ -2420,6 +2442,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final top = MediaQuery.of(context).padding.top;
     final bot = MediaQuery.of(context).padding.bottom;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncMapBrand();
+    });
 
     // Adapt status bar icons — always light (white) during navigation so they show over dark teal header
     final isNav = _phase == _Phase.enRouteToPickup ||

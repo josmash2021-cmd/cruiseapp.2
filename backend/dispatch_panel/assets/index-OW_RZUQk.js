@@ -1903,7 +1903,7 @@ function FleetMap({ token }) {
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
-      attributionControl: false,
+      attributionControl: true,
     });
     mapRef.current = map;
 

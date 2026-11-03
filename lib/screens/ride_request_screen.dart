@@ -1501,10 +1501,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                             mapbox.ScaleBarSettings(enabled: false));
                         ctrl.compass.updateSettings(
                             mapbox.CompassSettings(enabled: false));
-                        ctrl.attribution.updateSettings(
-                            mapbox.AttributionSettings(enabled: false));
-                        ctrl.logo.updateSettings(
-                            mapbox.LogoSettings(enabled: false));
+                        // Just above the booking sheet.
+                        unawaited(MapBrand.show(ctrl,
+                            bottom: _sheetHeightPx));
                     } catch (_) {}
                     // Polyline below labels, points always on top.
                     //

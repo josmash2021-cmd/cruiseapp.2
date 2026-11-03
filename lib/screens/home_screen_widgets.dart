@@ -1243,8 +1243,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
               await ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
               await ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-              await ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-              await ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+              await MapBrand.show(ctrl);
               // Follow-only: no gestures — the sheet scroll stays intact.
               await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
                 scrollEnabled: false,

@@ -956,9 +956,7 @@ class DriverNavViewState extends State<DriverNavView>
       () =>
           ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false)),
       () => ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false)),
-      () => ctrl.attribution
-          .updateSettings(mapbox.AttributionSettings(enabled: false)),
-      () => ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false)),
+      () => _showMapBrand(ctrl),
     ]) {
       try {
         await step();
@@ -3657,12 +3655,19 @@ class DriverNavViewState extends State<DriverNavView>
             onRestHeightChanged: (h) {
               if (!mounted || (h - _panelRestH).abs() < 0.5) return;
               setState(() => _panelRestH = h);
+              final m = _map;
+              if (m != null) unawaited(_showMapBrand(m));
             },
           ),
         ),
       ],
     );
   }
+
+  /// The Mapbox wordmark and "i" just above the resting panel, beside the
+  /// mph box (left) and the map buttons (right), never under them.
+  Future<void> _showMapBrand(mapbox.MapboxMap m) => MapBrand.show(m,
+      bottom: _panelRestH.roundToDouble(), left: 16 + 64, right: 14 + 46);
 
   /// The mph box and the camera buttons, above the panel's RESTING top:
   /// they stay where they are while the panel opens over them (owner

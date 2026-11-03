@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 /// Shared map theme helper — dark navy background, gold freeways, grey streets.
@@ -56,8 +59,8 @@ class MapTheme {
     // Hide map ornaments
     try { ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false)); } catch (_) {}
     try { ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false)); } catch (_) {}
-    try { ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false)); } catch (_) {}
-    try { ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false)); } catch (_) {}
+    // The Mapbox wordmark and the credits stay on (see [MapBrand]).
+    await MapBrand.refresh(ctrl);
 
     final futures = <Future<void>>[];
 
@@ -282,4 +285,89 @@ class MapTheme {
   }
 
   static Future<void> enablePOILayers(mapbox.MapboxMap map) => applyPoiVisibility(map);
+}
+
+
+/// The Mapbox wordmark (bottom-left) and the "i" for the map credits
+/// (bottom-right) on every map (owner 2026-11-02: "colócalos chiquiticos").
+/// Mapbox's terms require the wordmark visible on the map and do not allow
+/// resizing it — it is already small, ~85 x 21 pt — so the only choice is
+/// where: just above whatever panel covers the map's bottom, clear of the
+/// map's own buttons. They were hidden on every map until now.
+class MapBrand {
+  MapBrand._();
+
+  /// Air between the panel's top and the marks.
+  static const double gap = 6;
+
+  static final Expando<({double bottom, double left, double right})> _last =
+      Expando('mapBrand');
+
+  /// Show both marks [bottom] above the map's bottom edge, the wordmark
+  /// [left] in from the left and the "i" [right] in from the right (on top
+  /// of the 8 pt edge margin). Repeating the same placement is a no-op.
+  static Future<void> show(mapbox.MapboxMap ctrl,
+      {double bottom = 0, double left = 0, double right = 0}) async {
+    final want = (bottom: bottom, left: left, right: right);
+    if (_last[ctrl] == want) return;
+    _last[ctrl] = want;
+    await _apply(ctrl, want);
+  }
+
+  /// [show] just above [panel] — for a full-screen map with a panel welded
+  /// to its bottom. Measures where the panel's top sits on screen; call it
+  /// after a frame (from onMapCreated and a post-frame callback in build).
+  /// A panel not laid out yet leaves the plain corners; one that moved
+  /// less than 4 pt sends nothing.
+  static void showAbovePanel(mapbox.MapboxMap? ctrl, GlobalKey panel,
+      {double left = 0, double right = 0}) {
+    if (ctrl == null) return;
+    final ctx = panel.currentContext;
+    final box = ctx?.findRenderObject();
+    final screenH = ctx == null ? null : MediaQuery.maybeSizeOf(ctx)?.height;
+    if (box is! RenderBox || !box.attached || !box.hasSize || screenH == null) {
+      if (_last[ctrl] == null) {
+        unawaited(show(ctrl, left: left, right: right));
+      }
+      return;
+    }
+    final bottom = (screenH - box.localToGlobal(Offset.zero).dy)
+        .clamp(0.0, screenH)
+        .toDouble();
+    final last = _last[ctrl];
+    if (last != null &&
+        (last.bottom - bottom).abs() < 4 &&
+        last.left == left &&
+        last.right == right) {
+      return;
+    }
+    unawaited(show(ctrl, bottom: bottom, left: left, right: right));
+  }
+
+  /// Re-apply the last placement for [ctrl] (a reloaded style, a theme
+  /// pass), or the plain corners when it has none yet.
+  static Future<void> refresh(mapbox.MapboxMap ctrl) =>
+      _apply(ctrl, _last[ctrl] ?? (bottom: 0, left: 0, right: 0));
+
+  static Future<void> _apply(mapbox.MapboxMap ctrl,
+      ({double bottom, double left, double right}) p) async {
+    try {
+      await ctrl.logo.updateSettings(mapbox.LogoSettings(
+        enabled: true,
+        position: mapbox.OrnamentPosition.BOTTOM_LEFT,
+        marginLeft: 8 + p.left,
+        marginBottom: gap + p.bottom,
+      ));
+    } catch (_) {}
+    try {
+      await ctrl.attribution.updateSettings(mapbox.AttributionSettings(
+        enabled: true,
+        clickable: true,
+        iconColor: 0x99FFFFFF,
+        position: mapbox.OrnamentPosition.BOTTOM_RIGHT,
+        marginRight: 8 + p.right,
+        marginBottom: gap + p.bottom,
+      ));
+    } catch (_) {}
+  }
 }

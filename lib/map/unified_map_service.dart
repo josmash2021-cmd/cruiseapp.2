@@ -79,10 +79,8 @@ class UnifiedMapService extends ChangeNotifier {
           mapbox.ScaleBarSettings(enabled: false))),
       ('compass', () => ctrl.compass.updateSettings(
           mapbox.CompassSettings(enabled: false))),
-      ('attribution', () => ctrl.attribution.updateSettings(
-          mapbox.AttributionSettings(enabled: false))),
-      ('logo', () => ctrl.logo.updateSettings(
-          mapbox.LogoSettings(enabled: false))),
+      // The Mapbox wordmark and credits stay on (MapBrand).
+      ('brand', () => MapBrand.refresh(ctrl)),
       // Native puck off — we draw our own.
       ('location', () => ctrl.location.updateSettings(
           mapbox.LocationComponentSettings(enabled: false))),

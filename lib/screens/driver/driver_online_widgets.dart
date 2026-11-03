@@ -464,6 +464,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   /// MapWidget's onMapCreated.
   void _onOnlineMapReady(mapbox.MapboxMap ctrl, {required bool isDark}) {
     _map = ctrl;
+    _syncMapBrand();
     // textureView en Android: el snapshot estándar puede salir negro por
     // vendor — el legacy mode captura del renderer (2026-10-17, velo del
     // remount con la foto real del mapa).

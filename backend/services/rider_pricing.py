@@ -225,11 +225,16 @@ def _cents(value: Decimal) -> int:
     return int((value * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def _market_multiplier(lat: float, lng: float) -> Decimal:
+    # Miami-market rate cards run ~8% above Birmingham's; everywhere else 1.
+    return Decimal("1.08") if 24.3 <= lat <= 31.1 and -87.7 <= lng <= -79.8 else Decimal("1")
+
+
 def _base_fare_cents(config: dict, tier: str, miles: float, minutes: int, lat: float, lng: float) -> int:
     rate = config["rates"][tier]
     distance = Decimal(str(miles))
     duration = Decimal(str(minutes))
-    mult = Decimal("1.08") if 24.3 <= lat <= 31.1 and -87.7 <= lng <= -79.8 else Decimal("1")
+    mult = _market_multiplier(lat, lng)
     subtotal = (
         Decimal(str(rate["base"]))
         + distance * Decimal(str(rate["per_mile"]))
@@ -239,12 +244,45 @@ def _base_fare_cents(config: dict, tier: str, miles: float, minutes: int, lat: f
     return max(_cents(subtotal), _cents(Decimal(str(rate["min_fare"]))))
 
 
+def base_fare_lines_cents(config: dict, tier: str, miles: float, minutes: int, lat: float, lng: float) -> dict:
+    """The receipt lines of _base_fare_cents, summing to exactly its result.
+
+    Each line is its own exact value (market multiplier folded in) rounded
+    half-up on its own. What per-line rounding leaves over goes to an
+    explicit "rounding" line, never into another line; when the minimum
+    fare wins, "min_fare_adjustment" is whatever lifts the shown lines to it.
+    """
+    rate = config["rates"][tier]
+    mult = _market_multiplier(lat, lng)
+    exact = {
+        "base_fare": Decimal(str(rate["base"])) * mult,
+        "distance": Decimal(str(miles)) * Decimal(str(rate["per_mile"])) * mult,
+        "time": Decimal(str(minutes)) * Decimal(str(rate["per_minute"])) * mult,
+        "booking_fee": Decimal(str(rate["booking_fee"])) * mult,
+    }
+    lines = {key: _cents(value) for key, value in exact.items()}
+    shown = sum(lines.values())
+    total = _base_fare_cents(config, tier, miles, minutes, lat, lng)
+    metered = _cents(sum(exact.values()))
+    if total > metered:
+        lines["rounding"] = 0
+        lines["min_fare_adjustment"] = total - shown
+    else:
+        lines["rounding"] = total - shown
+        lines["min_fare_adjustment"] = 0
+    return {"lines": lines, "total": total, "market_multiplier": mult}
+
+
+def _surge_extra_cents(anchored_cents: int, surge: float) -> int:
+    return _cents(Decimal(anchored_cents) / 100 * (Decimal(str(surge)) - 1)) if surge > 1 else 0
+
+
 def _original_fare_components(config: dict, tier: str, route: dict, surge: float, request: dict) -> dict:
     anchored = _base_fare_cents(
         config, tier, route["distance_miles"], route["duration_minutes"],
         request["pickup_lat"], request["pickup_lng"],
     )
-    surge_extra = _cents(Decimal(anchored) / 100 * (Decimal(str(surge)) - 1)) if surge > 1 else 0
+    surge_extra = _surge_extra_cents(anchored, surge)
     scheduled = 0
     airport = 0
     meet_greet = 0

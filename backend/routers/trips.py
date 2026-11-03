@@ -1629,34 +1629,27 @@ async def change_trip_destination(trip_id: int, body: TripDestinationIn,
 
 @router.get("/trips/{trip_id}/fare-breakdown", dependencies=[Depends(_verify_api_key)])
 async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Get detailed fare breakdown for a trip."""
+    """Fare breakdown / receipt for a trip.
+
+    `items` are the trip's real price split by the engine that priced it
+    (services/fare_receipt.py) and always add up to `total` to the cent:
+    what the rider pays (fare + tip - refunds), or for a cancelled trip the
+    fee charged; before the trip ends, what it is quoted to charge. The flat
+    fields of the old shape stay, filled from the same computation.
+    """
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
     if trip.rider_id != user.id and trip.driver_id != user.id and user.role not in ("admin",):
         raise HTTPException(403, "Not authorized")
-    dist_mi = (trip.distance or 0.0)
-    if dist_mi == 0 and trip.pickup_lat and trip.dropoff_lat:
-        dist_km = _haversine(trip.pickup_lat, trip.pickup_lng, trip.dropoff_lat, trip.dropoff_lng)
-        dist_mi = round(dist_km * 0.621371, 1)
-    dur_min = trip.duration or max(1, int(dist_mi * 2))
-    per_mile = trip.per_mile_rate or 1.50
-    per_min = trip.per_minute_rate or 0.25
-    base = 2.50
-    mileage_charge = round(dist_mi * per_mile, 2)
-    time_charge = round(dur_min * per_min, 2)
     surge_mult = trip.surge_multiplier or 1.0
-    subtotal = round(base + mileage_charge + time_charge, 2)
-    surge_extra = round(subtotal * (surge_mult - 1.0), 2) if surge_mult > 1.0 else 0.0
     wait_charge = trip.wait_time_charge or 0.0
     cancel_fee = trip.cancellation_fee or 0.0
     tip = trip.tip_amount or 0.0
     scheduled_surcharge = trip.scheduled_surcharge or 0.0
     airport_fee_applied = trip.airport_fee_applied or 0.0
     meet_greet_fee = trip.meet_greet_fee or 0.0
-    total = round(subtotal + surge_extra + wait_charge + cancel_fee + tip
-                  + scheduled_surcharge + airport_fee_applied + meet_greet_fee, 2)
     # Get payment method info for receipts
     payment_method_display = None
     if trip.rider_id:
@@ -1687,20 +1680,42 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
         payment_method_display = "Cortesía — sin cargo" if user_lang(user) == "es" else "Courtesy — no charge"
     elif not trip.fare and int(trip.cruise_cash_cents or 0) > 0:
         payment_method_display = "Cruise Cash"
+    # Receipt lines last: every query above is done, so a failure here can't
+    # leave the session unusable — it falls back to one honest fare line.
+    from services.fare_receipt import build_receipt, fallback_receipt, load_receipt_inputs
+    try:
+        pricing_config, quote_request = await load_receipt_inputs(db, trip)
+        built = build_receipt(trip, config=pricing_config, quote_request=quote_request)
+    except Exception as e:
+        logging.error("[FareBreakdown] get_fare_breakdown: receipt lines failed for trip %s (user %s): %s",
+                      trip.id, user.id, e, exc_info=True)
+        built = fallback_receipt(trip)
+    receipt = built["receipt"]
+    legacy = built["legacy"]
     return {
         "trip_id": trip.id,
         "receipt_number": receipt_number,
         "driver_first_name": driver_first_name,
-        "base_fare": base,
-        "distance_miles": dist_mi,
-        "per_mile_rate": per_mile,
-        "mileage_charge": mileage_charge,
-        "duration_minutes": dur_min,
-        "per_minute_rate": per_min,
-        "time_charge": time_charge,
-        "subtotal": subtotal,
+        "items": receipt["items"],
+        "taxes": receipt["taxes"],
+        "currency": receipt["currency"],
+        "issued_at": receipt["issued_at"],
+        "is_final": receipt["is_final"],
+        "subtotal_cents": receipt["subtotal_cents"],
+        "total_cents": receipt["total_cents"],
+        "fare": receipt["fare"],
+        "pricing_inputs": receipt["pricing_inputs"],
+        "trip_duration_minutes": trip.duration,
+        "base_fare": legacy["base_fare"],
+        "distance_miles": legacy["distance_miles"],
+        "per_mile_rate": legacy["per_mile_rate"],
+        "mileage_charge": legacy["mileage_charge"],
+        "duration_minutes": legacy["duration_minutes"],
+        "per_minute_rate": legacy["per_minute_rate"],
+        "time_charge": legacy["time_charge"],
+        "subtotal": receipt["subtotal"],
         "surge_multiplier": surge_mult,
-        "surge_extra": surge_extra,
+        "surge_extra": legacy["surge_extra"],
         "wait_time_minutes": trip.wait_time_minutes or 0,
         "wait_time_charge": wait_charge,
         "cancellation_fee": cancel_fee,
@@ -1708,7 +1723,7 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
         "airport_fee": airport_fee_applied,
         "meet_greet_fee": meet_greet_fee,
         "tip_amount": tip,
-        "total": trip.fare if trip.fare is not None else total,
+        "total": receipt["total"],
         "original_fare": original_fare,
         "promo_total": promo_total,
         "promotion_discount": round(original_fare - promo_total, 2) if original_fare is not None and promo_total is not None else None,

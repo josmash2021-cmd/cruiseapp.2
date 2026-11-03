@@ -13,7 +13,6 @@ import '../../utils/server_time.dart';
 import '../../utils/trip_stops.dart';
 import '../../widgets/verified_avatar.dart';
 import '../help_screen.dart' show CruiseSupportChatScreen;
-import '../schedule_cancel_policy_screen.dart' show kScheduledCancelFeesUsd;
 
 /// The "More info" pages, inside the same glass (owner-approved drawing
 /// 2026-11-03): they slide in from the right over the reservation, the back
@@ -499,23 +498,19 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
             body: s.resHowStep1Body(
                 t(goBy?.subtract(const Duration(minutes: 15)))),
           ),
+          // At the deadline the reservation comes in as an offer to confirm
+          // (owner 2026-11-03): accept starts it, reject or silence frees it.
           _howStep(
-            icon: Icons.do_not_disturb_on_rounded,
-            label: '${t(goBy)} – ${t(at)}',
+            icon: Icons.event_available_rounded,
+            label: t(goBy),
             title: s.resHowStep2Title,
-            body: s.resHowStep2Body,
-          ),
-          _howStep(
-            icon: Icons.navigation_rounded,
-            label: t(at?.subtract(const Duration(minutes: 30))),
-            title: s.resHowStep3Title,
-            body: s.resHowStep3Body,
+            body: s.resHowStep2Body(t(goBy)),
           ),
           _howStep(
             icon: Icons.hail,
             label: t(at),
-            title: s.resHowStep4Title,
-            body: s.resHowStep4Body,
+            title: s.resHowStep3Title,
+            body: s.resHowStep3Body,
             last: true,
           ),
         ];
@@ -538,27 +533,6 @@ class _ReservationDetailPageState extends State<ReservationDetailPage> {
             icon: Icons.person_remove_rounded,
             title: s.resPolRiderTitle,
             body: s.resPolRiderBody,
-            // The same table the rider's own policy page shows.
-            extra: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final e in kScheduledCancelFeesUsd.entries)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      color: _gold.withValues(alpha: 0.12),
-                    ),
-                    child: Text('${e.key} \$${e.value}',
-                        style: const TextStyle(
-                            color: Color(0xFFF2D46A),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600)),
-                  ),
-              ],
-            ),
           ),
           _policyCard(
             icon: Icons.timer_off_rounded,

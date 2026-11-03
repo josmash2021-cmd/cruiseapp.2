@@ -2105,6 +2105,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         : null;
     final bool isScheduled = scheduledAt != null &&
         scheduledAt.difference(DateTime.now()).inMinutes >= 3;
+    // The driver's own reservation, offered 1 hour before pickup to confirm
+    // it (owner 2026-11-03): accepting starts it now, so the server sends no
+    // `scheduled_at` — the pickup time comes apart for the card.
+    final bool isReservationConfirm = offer['reservation_confirm'] == true;
+    final DateTime? confirmPickupAt = isReservationConfirm
+        ? parseServerTime(offer['reservation_pickup_at'])
+        : null;
     final bool isAirportTrip = offer['is_airport'] == true;
     // Cash ride detection — backend sends `payment_method: 'cash'` when the
     // rider chose to pay in cash at the end of the trip. Accept a few
@@ -2130,7 +2137,20 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // Spanish on Spanish phones and English on English phones.
     final s = S.of(context);
     final List<_OfferBadgeData> badges = [];
-    if (isScheduled) {
+    if (isReservationConfirm) {
+      badges.add(_OfferBadgeData(
+        label: s.badgeConfirmReservation,
+        icon: Icons.task_alt_rounded,
+        color: goldAccent,
+      ));
+      if (isCashRide) {
+        badges.add(_OfferBadgeData(
+          label: s.badgeCash,
+          icon: Icons.payments_rounded,
+          color: const Color(0xFF10B981), // green
+        ));
+      }
+    } else if (isScheduled) {
       // Future-scheduled trip — RESERVED is the anchor badge, plus
       // optional AIRPORT and CASH modifiers stacked next to it.
       badges.add(_OfferBadgeData(
@@ -2187,6 +2207,24 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             ],
           ),
           const SizedBox(height: 4),
+          if (confirmPickupAt != null) ...[
+            Row(
+              children: [
+                const Icon(Icons.access_time_rounded,
+                    size: 14, color: Color(0xFFE8C547)),
+                const SizedBox(width: 4),
+                Text(
+                  s.resDetailPickupAt(_format12Hour(confirmPickupAt)),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFE8C547),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+          ],
           if (isScheduled) ...[
             Row(
               children: [
@@ -2686,9 +2724,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       // Only scheduled trips OR immediate cash trips get a badge row.
       // Immediate card-paid trips (the most common case) use the
       // shortest layout with no extra height.
-      final bool hasBadgeRow = isScheduled || isCash;
+      // The reservation's confirm offer: its badge + the pickup-time line.
+      final isConfirm = offer['reservation_confirm'] == true;
+      final bool hasBadgeRow = isScheduled || isCash || isConfirm;
       if (hasBadgeRow) extra += 32;
-      if (isScheduled) extra += 24; // scheduled time sublabel
+      if (isScheduled || isConfirm) extra += 24; // time sublabel
     }
     // Every term of the card's height, so this stops drifting away from
     // the layout every time a gap changes. Text rows use Roboto's own

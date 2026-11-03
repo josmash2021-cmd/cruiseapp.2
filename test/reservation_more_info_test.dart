@@ -64,27 +64,34 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('How to complete: four timed steps, then back', (tester) async {
+  testWidgets('How to complete: three timed steps, then back', (tester) async {
     await pumpPage(tester);
     await openRow(tester, 'res-how-to');
-    expect(find.text('El viaje empieza solo').hitTestable(), findsOneWidget);
-    expect(find.text('La última hora es para esta reserva').hitTestable(),
-        findsOneWidget);
-    await goBack(tester, 'res-how-to');
+    // At the deadline the reservation comes in as an offer to confirm.
+    expect(find.text('Confirma tu viaje').hitTestable(), findsOneWidget);
+    final last = find.text('Recoge al pasajero y termina el viaje');
+    await tester.scrollUntilVisible(last, 200,
+        scrollable: find.descendant(
+            of: find.byKey(const ValueKey('res-sub-how')),
+            matching: find.byType(Scrollable)));
+    expect(last, findsOneWidget);
+    expect(find.text('El viaje empieza solo'), findsNothing);
+    await goBack(tester, 'res-how-to', system: true);
   });
 
-  testWidgets('Cancel policy: the four cases and the fee table',
+  testWidgets('Cancel policy: the four cases',
       (tester) async {
     await pumpPage(tester);
     await openRow(tester, 'res-cancel-policy');
     expect(find.text('Si tú cancelas').hitTestable(), findsOneWidget);
-    expect(find.text('Standard \$15'), findsOneWidget);
     final noShow = find.textContaining('"Pasajero no llegó"');
     await tester.scrollUntilVisible(noShow, 200,
         scrollable: find.descendant(
             of: find.byKey(const ValueKey('res-sub-policy')),
             matching: find.byType(Scrollable)));
     expect(noShow, findsOneWidget, reason: 'names the real no-show slider');
+    // Owner 2026-11-03: once confirmed, a rider cancel is like any ride.
+    expect(find.textContaining('paga \$5'), findsOneWidget);
     await goBack(tester, 'res-cancel-policy', system: true);
   });
 

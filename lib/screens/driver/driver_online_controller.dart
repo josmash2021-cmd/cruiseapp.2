@@ -5085,9 +5085,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _syncOfferLiveActivity();
       // Owner spec 2026-11-01: the card leaves and the glass note comes in
       // from the top, 5 s.
+      // Rejecting the reservation's confirm offer IS cancelling it (owner
+      // 2026-11-03) — the note says so.
+      final isConfirm = r['reservation_confirm'] == true;
       if (byDriver && mounted) {
         GlassNotificationBanner.show(
-          title: S.of(context).offerDeclinedBanner,
+          title: isConfirm
+              ? S.of(context).resConfirmCancelledBanner
+              : S.of(context).offerDeclinedBanner,
           icon: Icons.block_rounded,
           duration: kDeclinedOfferBannerDuration,
         );
@@ -5131,7 +5136,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         ApiService.rejectRideOffer(
           offerId: offerId,
           driverId: _driverId!,
-        ).catchError((_) => <String, dynamic>{});
+        ).catchError((_) => <String, dynamic>{}).then((_) {
+          // The reservation went back to the board: its gold card leaves
+          // now instead of on the next poll.
+          if (isConfirm && mounted) unawaited(_fetchScheduledCount());
+        });
       }
       if (offerId != null) _routeCache.remove(offerId.toString());
     } catch (e, stack) {

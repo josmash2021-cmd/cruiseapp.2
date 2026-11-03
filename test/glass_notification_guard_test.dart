@@ -170,7 +170,11 @@ void main() {
     final ctrl = read('lib/screens/driver/driver_online_controller.dart');
     final fn = ctrl.indexOf('Future<void> _rejectOffer(Map<String, dynamic> r,');
     expect(fn, isNonNegative);
-    final show = ctrl.indexOf('title: S.of(context).offerDeclinedBanner,', fn);
+    // The reservation's confirm offer says "cancelled" instead (owner
+    // 2026-11-03); every other offer keeps the declined note.
+    final show = ctrl.indexOf(': S.of(context).offerDeclinedBanner,', fn);
+    expect(ctrl.indexOf('? S.of(context).resConfirmCancelledBanner', fn),
+        greaterThan(fn));
     expect(show, greaterThan(fn));
     expect(ctrl.lastIndexOf('if (byDriver && mounted) {', show), greaterThan(fn));
     expect(ctrl.indexOf('duration: kDeclinedOfferBannerDuration,', show),

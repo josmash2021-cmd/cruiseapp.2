@@ -173,6 +173,32 @@ async def test_rider_cancel_scheduled_tier_fee_inside_window(
     assert resp.json()["cancellation_fee"] == 25.0
 
 
+async def test_rider_cancel_in_30_min_lockout_still_pays_tier_fee(
+    client: AsyncClient, db, test_rider, test_driver
+):
+    """scheduled_active (the 30-min lockout) is still an undispatched
+    reservation: the tier fee the rider's hub warns about is charged, so the
+    driver who kept the hour gets their share. It used to cancel free."""
+    rider, rider_token = test_rider
+    driver, _ = test_driver
+    trip = await _make_scheduled_trip(
+        db, rider, driver, minutes_out=28, vehicle_type="premium",
+    )
+    trip.status = "scheduled_active"
+    await db.commit()
+
+    headers = {**_make_auth_headers(), "Authorization": f"Bearer {rider_token}"}
+    mock_retrieve, mock_capture = _patch_hold_capture()
+    with mock_retrieve, mock_capture:
+        resp = await client.post(
+            f"/trips/{trip.id}/cancel",
+            json={"cancel_reason": "running late"},
+            headers=headers,
+        )
+    assert resp.status_code == 200
+    assert resp.json()["cancellation_fee"] == 25.0
+
+
 async def test_rider_cancel_scheduled_fee_capped_by_fare(
     client: AsyncClient, db, test_rider, test_driver
 ):

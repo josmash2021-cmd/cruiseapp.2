@@ -2923,7 +2923,11 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         # price and releases any surcharge headroom — and the driver split
         # below pays out the same 60% a normal completion would.
         cancellation_fee = round(float(trip.fare or 0.0), 2)
-    elif trip.status in ("scheduled", "scheduled_accepted"):
+    elif trip.status in ("scheduled", "scheduled_accepted", "scheduled_active"):
+        # scheduled_active = the 30-min lockout (main.py), still not
+        # dispatched: the rider's hub already warns the tier fee for it, and
+        # leaving it out cancelled those reservations for free — the driver,
+        # who had kept that whole hour for the ride, got nothing.
         cancellation_fee = _scheduled_cancel_fee(trip)
     elif trip.status in ("driver_en_route", "driver_arriving", "driver_arrived", "arrived"):
         reference_time = trip.driver_assigned_at or trip.updated_at

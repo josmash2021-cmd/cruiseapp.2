@@ -168,10 +168,11 @@ class WaitTimeoutAgent:
                     if time.time() - _cancelled_trips_cache[trip.id] < 300:  # 5 min dedup window
                         continue
 
-                # Make arrived_at timezone-aware if naive
-                arrived_at = trip.arrived_at
-                if arrived_at.tzinfo is None:
-                    arrived_at = arrived_at.replace(tzinfo=timezone.utc)
+                # The wait clock: arrival, or a reservation's pickup time
+                # when the driver got there early (2026-11-03) — never an
+                # auto-cancel before the rider's own time.
+                from utils.helpers import wait_clock_start
+                arrived_at = wait_clock_start(trip)
 
                 # Get auto-cancel threshold for this trip
                 auto_cancel_minutes = self._get_auto_cancel_minutes(trip)

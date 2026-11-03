@@ -711,3 +711,23 @@ def user_lang(user) -> str:
     """"es" | "en" — the phone language the app reported (users.locale).
     Spanish default = the historical behaviour for users on old builds."""
     return "es" if (getattr(user, "locale", None) or "es").lower().startswith("es") else "en"
+
+
+def wait_clock_start(trip):
+    """When the pickup wait starts counting: the driver's arrival — never
+    before a reservation's own pickup time (2026-11-03). A driver who
+    confirmed an hour ahead and got there early is not waiting on the rider
+    yet: no wait fee, no no-show slider, no auto-cancel until that time.
+    None while the driver has not arrived."""
+    from datetime import timezone as _tz
+
+    def _aw(dt):
+        if dt is not None and dt.tzinfo is None:
+            return dt.replace(tzinfo=_tz.utc)
+        return dt
+
+    arrived = _aw(getattr(trip, "arrived_at", None))
+    if arrived is None:
+        return None
+    sched = _aw(getattr(trip, "scheduled_at", None))
+    return sched if sched is not None and sched > arrived else arrived

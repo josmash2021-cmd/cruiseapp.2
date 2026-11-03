@@ -2118,7 +2118,10 @@ async def driver_reports_no_show(
     if status == "arrived":
         _at_point_or_409(user, trip.pickup_lat, trip.pickup_lng, now)
         kind = "pickup"
-        arrived = _aware(trip.arrived_at)
+        # A reservation's wait counts from its pickup time, not an early
+        # arrival (wait_clock_start).
+        from utils.helpers import wait_clock_start
+        arrived = wait_clock_start(trip)
         if arrived is None or now - arrived < min_wait:
             raise HTTPException(409, "The free wait is not over yet")
         from wait_timeout_agent import wait_timeout_agent as _wta
@@ -2400,9 +2403,12 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
         # the rider-side _buildWaitTimerBadge UI in
         # rider_confirm_pickup_screen.dart.
         if trip.arrived_at:
-            arrived_at = trip.arrived_at if trip.arrived_at.tzinfo else trip.arrived_at.replace(tzinfo=timezone.utc)
+            # From the reservation's pickup time when the driver got there
+            # early (wait_clock_start) — that early wait is not the rider's.
+            from utils.helpers import wait_clock_start
+            arrived_at = wait_clock_start(trip)
             started_at = trip.started_at if trip.started_at.tzinfo else trip.started_at.replace(tzinfo=timezone.utc)
-            wait_seconds = (started_at - arrived_at).total_seconds()
+            wait_seconds = max(0.0, (started_at - arrived_at).total_seconds())
             free_wait_min, per_min_rate = _wait_policy(
                 trip.vehicle_type, bool(trip.is_airport)
             )
@@ -4285,7 +4291,14 @@ async def start_wait_time(trip_id: int, user: User = Depends(_get_current_user),
         raise HTTPException(403, "Not authorized")
     if trip.status != "arrived":
         raise HTTPException(400, "Can only start wait time when arrived at pickup")
-    trip.notes = (trip.notes or "") + f"\nWait started: {datetime.now(timezone.utc).isoformat()}"
+    # A reservation's wait starts at its pickup time when the driver got
+    # there early: the driver app drains its wait bar from this stamp, so it
+    # stays full (and the no-show slider away) until then.
+    wait_start = datetime.now(timezone.utc)
+    sched = _aware(trip.scheduled_at)
+    if sched is not None and sched > wait_start:
+        wait_start = sched
+    trip.notes = (trip.notes or "") + f"\nWait started: {wait_start.isoformat()}"
     await db.commit()
     return {"status": "wait_time_started"}
 

@@ -598,8 +598,8 @@ async def test_the_confirm_waits_while_he_is_driving_another_ride(
 ):
     """He can take a ride at 61 min and still be on it at 60; accepting the
     confirm then put a second trip in driver_en_route. It waits for that
-    ride to end — through the 30-min mark too — and is never released for
-    it."""
+    ride to end — through the 30-min mark too — and is not released for it
+    before the pickup time (next test)."""
     rider, _ = test_rider
     driver, _ = test_driver
     trip = await _held(db, rider, driver)
@@ -634,6 +634,44 @@ async def test_the_confirm_waits_while_he_is_driving_another_ride(
     await _run_pass(db)
     offer = await _confirm_offer(db, trip, driver)
     assert no_expiry_timer == [(trip.id, offer.id)]
+
+
+async def test_still_on_another_ride_at_pickup_time_it_goes_to_another_driver(
+    db, test_rider, test_driver, no_expiry_timer
+):
+    """Owner 2026-11-03: "a la hora de recogida pase a otro conductor". The
+    rider is not left waiting until the T+5 no-show cancel on a driver who
+    is still driving someone else: at the pickup time the ride goes back to
+    the board, silently for him, and is never handed back to him."""
+    rider, _ = test_rider
+    driver, _ = test_driver
+    trip = await _held(db, rider, driver, minutes_out=1)
+    other = _trip(rider.id, driver.id, 0)
+    other.status, other.scheduled_at = "in_trip", None
+    db.add(other)
+    await db.commit()
+
+    # A minute before pickup he still keeps it.
+    await _run_pass(db)
+    await db.refresh(trip)
+    assert trip.status == "scheduled_accepted" and trip.driver_id == driver.id
+
+    # Pickup time, still on the other ride: released to the board.
+    trip.scheduled_at = datetime.now(timezone.utc) - timedelta(seconds=30)
+    await db.commit()
+    await _run_pass(db)
+    await db.refresh(trip)
+    assert trip.status == "scheduled" and trip.driver_id is None
+    assert no_expiry_timer == []
+    marks = (await db.execute(
+        select(DispatchOffer.status).where(
+            DispatchOffer.trip_id == trip.id,
+            DispatchOffer.driver_id == driver.id,
+        )
+    )).scalars().all()
+    assert main.RELEASED_OFFLINE in marks, (
+        "the board pass excludes released_offline — he is not offered it again")
+    assert "accepted" not in marks
 
 
 async def test_a_failed_send_leaves_no_live_row_behind(

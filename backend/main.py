@@ -2323,9 +2323,11 @@ async def _reservation_confirm_step(db, trip, driver, now, minutes_until) -> boo
         # put a second trip in driver_en_route. It waits for that ride to
         # end and goes out on the first tick after. Returning True also
         # keeps the 30-minute direct assignment off him meanwhile — that
-        # would start this ride under him just the same — and nothing here
-        # releases it: a driver who is working does not lose his
-        # reservation for it.
+        # would start this ride under him just the same. A driver who is
+        # working does not lose his reservation for it — until the pickup
+        # time: still on that ride then, the rider is not left waiting on
+        # him and it goes to another driver (owner 2026-11-03, "a la hora
+        # de recogida pase a otro conductor").
         busy_with = (await db.execute(
             select(Trip.id).where(
                 Trip.driver_id == driver.id,
@@ -2333,6 +2335,11 @@ async def _reservation_confirm_step(db, trip, driver, now, minutes_until) -> boo
                 Trip.status.in_(_ACTIVE_TRIP_STATUSES),
             ).limit(1)
         )).scalar_one_or_none()
+        if busy_with is not None and minutes_until <= 0:
+            await _release_reservation(
+                db, trip, now, minutes_until,
+                f"driver still on trip {busy_with} at pickup time")
+            return True
         if busy_with is not None:
             await db.commit()  # drops the lock while he drives
             logging.info(

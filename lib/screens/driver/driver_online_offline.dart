@@ -52,6 +52,21 @@ part of 'driver_online_screen.dart';
 /// double-l (see CLAUDE.md), but rows written before that was settled still
 /// carry the single-l form and a resume loop is not the place to be strict
 /// about it.
+/// A trip the driver is on (resume it), in every spelling the server and the
+/// older builds use.
+const Set<String> _kLiveTripStatuses = {
+  'accepted',
+  'driver_en_route',
+  'driver_arriving',
+  'en_route_to_pickup',
+  'arrived',
+  'driver_arrived',
+  'in_trip',
+  'in_progress',
+  'rider_onboard',
+  'on_trip',
+};
+
 const Set<String> _kFinishedTripStatuses = {
   'completed',
   'cancelled',
@@ -580,85 +595,37 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     final driverId = _driverId;
     if (driverId == null) return;
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('trips')
-          .where('status', whereIn: const [
-            'accepted',
-            'driver_arriving',
-            'driver_en_route',
-            'en_route_to_pickup',
-            'arrived',
-            'driver_arrived',
-            'in_trip',
-            'in_progress',
-            'rider_onboard',
-            'on_trip',
-          ])
-          .limit(25)
-          .get();
-
-      Map<String, dynamic>? active;
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        final rawDriverId = data['driverId'] ?? data['driver_id'];
-        final rawDriverStr = (rawDriverId ?? '').toString().trim();
-        final driverIdStr = driverId.toString();
-        final matches = rawDriverStr == driverIdStr ||
-            rawDriverStr == 'sql_$driverIdStr' ||
-            rawDriverStr.replaceFirst(_sqlPrefixRe, '') == driverIdStr;
-        if (matches) {
-          active = {'_docId': doc.id, ...data};
-          break;
-        }
-      }
-
+      // The server's answer, not the Firestore mirror. This used to query
+      // EVERY driver's active trips in `trips` and pick ours out here —
+      // firestore.rules closes that query (2026-11-03: it handed any driver
+      // every rider's name, phone and addresses), and the mirror was never
+      // trusted anyway: a doc left at `arrived` by a dropped write sent the
+      // driver back into a finished trip on every launch.
+      final trip = await ApiService.getActiveTrip();
       if (!mounted) return;
-
-      // Firestore is a mirror of the trips table, not the table. Confirm
-      // with the server before acting on it.
-      //
-      // The mirror goes stale in one direction only — it keeps trips open
-      // that the backend has already closed — because the app's own
-      // `completed` write is the last step of the finish path and is the one
-      // most likely to be dropped: rejected while the Firebase session is
-      // invalid, or lost when the driver closes the app during the 1.5 s
-      // hand-off to the rating screen. Two of driver 44's rides have sat at
-      // `arrived` since 29 and 30 July for exactly that reason.
-      //
-      // Left untrusted-but-unchecked, a stale doc is permanent. It sends the
-      // driver back into the trip screen on every launch, and the only way
-      // out of that screen is to finish the trip again — which writes the
-      // same doc that is already failing to be written. This check is what
-      // breaks the loop.
-      bool confirmedOver = false;
-      if (active != null && await _serverSaysTripIsOver(_tripSqlId(active))) {
-        debugPrint(
-            '[DriverOnline] ignoring stale Firestore trip ${active['_docId']}');
-        active = null;
-        confirmedOver = true;
-      }
-      if (!mounted) return;
-
-      if (active != null) {
+      final status = (trip?['status'] ?? '').toString().trim().toLowerCase();
+      if (trip != null && _kLiveTripStatuses.contains(status)) {
         // Home also flipped `_isStillOnline` here; that bit died with the
         // two-screen split — the mode is `_driverOnline` and only
         // `_enterOnlineMode` flips it. What the offline chrome needs from an
         // active trip is the RESUME affordance, and that reads this field.
-        _setState(() => _activeTripData = active);
+        _setState(() => _activeTripData = trip);
         return;
       }
 
       // Only a confirmed ending clears what we are holding.
       //
-      // Firestore finding nothing is not proof — an empty local cache and a
-      // rules rejection both look exactly like this, and clearing on either
-      // would erase a trip _checkBackendActiveTrip had just fetched from the
-      // server. But this method is also what _resumeActiveTripBody calls to
-      // decide whether the ride is over and polling should start again, and
-      // before this it had no path that could ever set _activeTripData back
-      // to null. So it always decided the ride was still on.
-      if (confirmedOver && _activeTripData != null) {
-        _setState(() => _activeTripData = null);
+      // No live trip in the answer is not proof — getActiveTrip reads a
+      // 502 during a redeploy the same as "none", and clearing on it would
+      // erase a trip _checkBackendActiveTrip had just fetched. But this
+      // method is also what _resumeActiveTripBody calls to decide whether
+      // the ride is over and polling should start again, so the trip we
+      // hold is asked about by id: a terminal status or a 404 ends it.
+      final held = _activeTripData;
+      if (held != null && await _serverSaysTripIsOver(_tripSqlId(held))) {
+        if (mounted && identical(_activeTripData, held)) {
+          _setState(() => _activeTripData = null);
+        }
       }
     } catch (_) {
       // Keep current UI state if this lookup fails.
@@ -702,19 +669,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       if (status == 'completed' ||
           status == 'canceled' ||
           status == 'cancelled') return;
-      final activeStatuses = {
-        'accepted',
-        'driver_en_route',
-        'driver_arriving',
-        'en_route_to_pickup',
-        'arrived',
-        'driver_arrived',
-        'in_trip',
-        'in_progress',
-        'rider_onboard',
-        'on_trip'
-      };
-      if (!activeStatuses.contains(status)) return;
+      if (!_kLiveTripStatuses.contains(status)) return;
 
       if (!mounted) return;
       _setState(() => _activeTripData = trip);

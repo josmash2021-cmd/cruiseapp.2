@@ -459,6 +459,9 @@ async def claim_scheduled_trip(
     db.add(offer)
     await db.commit()
     await db.refresh(trip)
+    # His access to the trip doc (firestore.rules) before the answer.
+    if _HAS_FIRESTORE:
+        await firestore_sync.grant_trip_access_now(trip.id, user.id)
 
     logging.info(
         "[Scheduled] Driver %d claimed trip %d (scheduled %s, %.0f min away)",

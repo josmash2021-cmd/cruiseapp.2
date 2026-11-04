@@ -2244,6 +2244,11 @@ async def _announce_driver_assignment(
     guest SMS/email, and the rider's FCM + SMS. Fail-soft throughout — a
     notification channel must never turn a won assignment into a 500.
     """
+    # His access to the trip doc BEFORE the answer (firestore.rules): the app
+    # arms its trip listener the moment this returns, and the mirror below
+    # lands after it.
+    if _HAS_FIRESTORE and trip:
+        await firestore_sync.grant_trip_access_now(trip.id, driver_id)
     # Sync to Firestore so rider sees driver assigned in real time (non-blocking)
     if _HAS_FIRESTORE and trip:
         async def _sync_firestore_accept():

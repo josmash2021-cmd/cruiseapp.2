@@ -859,6 +859,9 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
     trip.status = "driver_en_route"
     await db.commit()
     await db.refresh(trip)
+    # His access to the trip doc (firestore.rules) before the answer.
+    if _HAS_FIRESTORE and firestore_sync:
+        await firestore_sync.grant_trip_access_now(trip.id, body.driver_id)
 
     # Load driver + first vehicle once — reused for Firestore sync AND guest SMS
     _accept_driver = None

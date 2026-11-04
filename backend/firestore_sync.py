@@ -1382,6 +1382,40 @@ def sync_pickup_pin(trip_id: int, pin: str) -> bool:
         return False
 
 
+def grant_trip_access(trip_id: int, driver_id: int) -> bool:
+    """Add the driver's Firebase uid to trips/sql_<id>.accessUids
+    (2026-11-03). firestore.rules lets a driver read and write a trip doc
+    only through this list or the doc's driverId; the accept mirror that
+    writes driverId runs AFTER the HTTP answer, and the app arms its trip
+    listener the moment the answer lands — a listener denied once never
+    comes back. Never removed: after a reassign the old driver's app still
+    has to read releasedAt to leave the trip."""
+    _ensure_init()
+    if _db is None or not trip_id or not driver_id:
+        return False
+    try:
+        _retry_sync(lambda: _db.collection("trips").document(f"sql_{trip_id}").set(
+            {"accessUids": firestore.ArrayUnion([f"user_{driver_id}"])},
+            merge=True, timeout=_FS_TIMEOUT))
+        return True
+    except Exception as e:
+        log.error("❌ trip access grant failed for %d (driver %d): %s", trip_id, driver_id, e)
+        return False
+
+
+async def grant_trip_access_now(trip_id: int, driver_id: int, timeout: float = 3.0) -> bool:
+    """grant_trip_access, awaited before the endpoint answers (bounded: a
+    slow Firestore must not hold the accept — the driver then falls back to
+    the REST polls until the background mirror writes driverId)."""
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(grant_trip_access, trip_id, driver_id), timeout)
+    except Exception as e:
+        log.warning("⚠️ trip access grant not confirmed for %d (driver %d): %s",
+                    trip_id, driver_id, e)
+        return False
+
+
 def sync_trip_released(trip_id: int):
     """Put a trip back in the dispatch queue and strip its driver.
 

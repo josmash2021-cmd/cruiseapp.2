@@ -87,7 +87,10 @@ async def test_firestore_waitlist_never_lands_in_the_account_column(
     assert user.status == "active"
 
 
-async def test_firestore_block_still_lands(client, db, test_driver, monkeypatch):
+async def test_a_firestore_block_never_lands(client, db, test_driver, monkeypatch):
+    """Reversed 2026-11-03: any signed-in account can write drivers/sql_N, so
+    a Firestore "blocked" landing here let anyone block anyone. The panel
+    blocks through /admin/users/{id}/status (above)."""
     user, token = test_driver
     user.status = "active"
     await db.commit()
@@ -99,7 +102,7 @@ async def test_firestore_block_still_lands(client, db, test_driver, monkeypatch)
         headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"})
     assert res.status_code == 200, res.text
     await db.refresh(user)
-    assert user.status == "blocked"
+    assert user.status == "active"
 
 
 def _bearer(token):

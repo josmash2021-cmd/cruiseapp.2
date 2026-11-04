@@ -27,7 +27,7 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _abs_photo_url, _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE, user_lang, ACTIVE_ACCOUNT_STATUSES, synced_account_status, STRANDED_REVIEW_STATUSES
+from utils.helpers import _abs_photo_url, _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE, user_lang, ACTIVE_ACCOUNT_STATUSES, STRANDED_REVIEW_STATUSES
 from utils.image_validation import validate_image_bytes, shrink_image_bytes
 from services import vehicle_tiers
 from services.fcm_service import _send_fcm_push_async
@@ -959,24 +959,10 @@ async def complete_login(body: CompleteLoginIn, request: Request, db: AsyncSessi
     if not user:
         raise HTTPException(404, "User not found")
 
-    # Recover photo_url from Firestore if missing or ephemeral (Railway local file)
-    _needs_photo_recovery = (
-        not user.photo_url
-        or ("/photos/" in (user.photo_url or "") and "firebasestorage" not in (user.photo_url or ""))
-    )
-    if _needs_photo_recovery and _HAS_FIRESTORE:
-        try:
-            collection = "drivers" if user.role == "driver" else "clients"
-            doc = firestore_sync.db.collection(collection).document(f"sql_{user.id}").get()
-            if doc.exists:
-                fs_photo = doc.to_dict().get("photoUrl") or doc.to_dict().get("photo_url")
-                if fs_photo and isinstance(fs_photo, str) and fs_photo.startswith("http"):
-                    user.photo_url = fs_photo
-                    await db.commit()
-                    await db.refresh(user)
-                    logging.info("Recovered photo_url from Firestore for user %s", user.id)
-        except Exception as e:
-            logging.warning("Firestore photo recovery failed for user %s: %s", user.id, e)
+    # No photo_url is recovered from Firestore (2026-11-03): any signed-in
+    # account can write drivers/clients docs (firestore.rules: `||
+    # isAuthenticated()`), so it would set anyone's photo. (The recovery
+    # never ran anyway: it called firestore_sync.db, which does not exist.)
 
     # Eager-read all ORM attributes into primitives BEFORE any await boundary.
     # In async tests the session may close and accessing user.role after an
@@ -1551,25 +1537,10 @@ async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Dep
         except Exception:
             pass
 
-    # Recover photo_url from Firestore if missing or ephemeral (Railway local file)
-    _needs_photo = (
-        not user.photo_url
-        or ("/photos/" in (user.photo_url or "") and "firebasestorage" not in (user.photo_url or ""))
-    )
-    if _needs_photo and _HAS_FIRESTORE:
-        try:
-            collection = "drivers" if user.role == "driver" else "clients"
-            doc = firestore_sync.db.collection(collection).document(f"sql_{user.id}").get()
-            if doc.exists:
-                fs_photo = doc.to_dict().get("photoUrl") or doc.to_dict().get("photo_url")
-                if fs_photo and isinstance(fs_photo, str) and fs_photo.startswith("http"):
-                    user.photo_url = fs_photo
-                    await db.execute(
-                        User.__table__.update().where(User.__table__.c.id == user.id).values(photo_url=fs_photo)
-                    )
-                    await db.commit()
-        except Exception:
-            pass
+    # No photo_url is recovered from Firestore (2026-11-03): any signed-in
+    # account can write drivers/clients docs (firestore.rules: `||
+    # isAuthenticated()`), so it would set anyone's photo. (The recovery
+    # never ran anyway: it called firestore_sync.db, which does not exist.)
 
     data = _user_dict(user)
     try:
@@ -1611,25 +1582,10 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
         except Exception:
             pass
 
-    # Recover photo_url from Firestore if missing
-    _needs_photo = (
-        not user.photo_url
-        or ("/photos/" in (user.photo_url or "") and "firebasestorage" not in (user.photo_url or ""))
-    )
-    if _needs_photo and _HAS_FIRESTORE:
-        try:
-            collection = "drivers" if user.role == "driver" else "clients"
-            doc = firestore_sync.db.collection(collection).document(f"sql_{user.id}").get()
-            if doc.exists:
-                fs_photo = doc.to_dict().get("photoUrl") or doc.to_dict().get("photo_url")
-                if fs_photo and isinstance(fs_photo, str) and fs_photo.startswith("http"):
-                    user.photo_url = fs_photo
-                    await db.execute(
-                        User.__table__.update().where(User.__table__.c.id == user.id).values(photo_url=fs_photo)
-                    )
-                    await db.commit()
-        except Exception:
-            pass
+    # No photo_url is recovered from Firestore (2026-11-03): any signed-in
+    # account can write drivers/clients docs (firestore.rules: `||
+    # isAuthenticated()`), so it would set anyone's photo. (The recovery
+    # never ran anyway: it called firestore_sync.db, which does not exist.)
 
     profile = _user_dict(user)
 
@@ -1645,40 +1601,19 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
     # ── 2. Verification status (always fresh — critical) ───────────────
     ver_status = user.verification_status or "none"
     ver_reason = user.verification_reason
-    if _HAS_FIRESTORE and ver_status not in ("approved",):
-        try:
-            fs_status = await asyncio.to_thread(
-                firestore_sync.get_verification_status, user.id)
-            if fs_status and fs_status.get("status") in ("approved", "rejected"):
-                ver_status = fs_status["status"]
-                ver_reason = fs_status.get("reason")
-                user.verification_status = ver_status
-                user.verification_reason = ver_reason
-                if ver_status == "approved":
-                    user.is_verified = True
-                    if not user.verified_at:
-                        user.verified_at = datetime.now(timezone.utc)
-                await db.commit()
-                await db.refresh(user)
-        except Exception as e:
-            logging.warning("[/auth/dashboard] Firestore verification sync failed: %s", e)
+    # The Firestore verification decision is NOT copied into the account
+    # (2026-11-03): any signed-in account can create verifications/sql_N with
+    # any status (firestore.rules: `allow create: if isAuthenticated()`).
+    # Approvals go through /auth/dispatch-approve and /admin/verifications,
+    # which write the account; Firestore is only their mirror.
 
     # ── 3. Account status (always fresh — critical) ────────────────────
     account_status = user.status or "active"
-    if _HAS_FIRESTORE:
-        try:
-            collection = "drivers" if user.role == "driver" else "clients"
-            fs_status = synced_account_status(await asyncio.to_thread(
-                firestore_sync.get_account_status, user.id, collection))
-            if fs_status and fs_status != account_status:
-                await db.execute(
-                    User.__table__.update().where(User.__table__.c.id == user.id).values(status=fs_status)
-                )
-                await db.commit()
-                account_status = fs_status
-                invalidate_user_cache(user.id)
-        except Exception as e:
-            logging.error("[/auth/dashboard] Firestore account status check failed: %s", e)
+    # The Firestore status is NOT copied into the account (2026-11-03): any
+    # signed-in account can write drivers/clients docs (firestore.rules:
+    # `|| isAuthenticated()`) — anyone could block or deactivate anyone on
+    # their next app open. The panel and the agents write the account
+    # directly; Firestore is only their mirror.
 
     # ── 4. Active trip (if any) ────────────────────────────────────────
     active_trip = None
@@ -1973,7 +1908,8 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     if "platform" in updates and _HAS_FIRESTORE:
         try:
             _collection = "drivers" if (db_user.role or "") == "driver" else "clients"
-            firestore_sync.db.collection(_collection).document(
+            firestore_sync._ensure_init()
+            firestore_sync._db.collection(_collection).document(
                 f"sql_{db_user.id}").set({
                     "platform": db_user.platform,
                     "osVersion": db_user.os_version,
@@ -3363,28 +3299,16 @@ async def _auto_verify_rider(user_id: int):
 
 @router.get("/auth/verification-status", dependencies=[Depends(_verify_api_key)])
 async def verification_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Check current verification status. Always syncs from Firestore in case dispatch updated it."""
+    """Check current verification status."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    # Always check Firestore for dispatch updates (dispatch writes directly to Firestore)
-    if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
-        try:
-            fs_status = await asyncio.to_thread(
-                firestore_sync.get_verification_status, db_user.id)
-            logging.info("Firestore verification check for user %d: %s (db=%s)", db_user.id, fs_status, db_user.verification_status)
-            if fs_status and fs_status.get("status") in ("approved", "rejected"):
-                db_user.verification_status = fs_status["status"]
-                db_user.verification_reason = fs_status.get("reason")
-                if fs_status["status"] == "approved":
-                    db_user.is_verified = True
-                    if not db_user.verified_at:
-                        db_user.verified_at = datetime.now(timezone.utc)
-                await db.commit()
-                await db.refresh(db_user)
-        except Exception as e:
-            logging.error("Firestore verification check failed: %s", e)
+    # The Firestore verification decision is NOT copied into the account
+    # (2026-11-03): any signed-in account can create verifications/sql_N with
+    # any status (firestore.rules: `allow create: if isAuthenticated()`).
+    # Approvals go through /auth/dispatch-approve and /admin/verifications,
+    # which write the account; Firestore is only their mirror.
     return {
         "verification_status": db_user.verification_status or "none",
         "verification_reason": db_user.verification_reason,
@@ -3395,28 +3319,17 @@ async def verification_status(user: User = Depends(_get_current_user), db: Async
 
 @router.get("/auth/driver-approval-status", dependencies=[Depends(_verify_api_key)])
 async def driver_approval_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Return driver's approval/pending/rejected status.  Always syncs from Firestore."""
+    """Return driver's approval/pending/rejected status."""
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
 
-    # Always check Firestore - dispatch writes directly there even if backend call fails
-    if _HAS_FIRESTORE and db_user.verification_status not in ("approved",):
-        try:
-            fs_status = await asyncio.to_thread(
-                firestore_sync.get_verification_status, db_user.id)
-            logging.info("Firestore driver approval check for user %d: %s (db=%s)", db_user.id, fs_status, db_user.verification_status)
-            if fs_status and fs_status.get("status") in ("approved", "rejected"):
-                db_user.verification_status = fs_status["status"]
-                db_user.verification_reason = fs_status.get("reason")
-                if fs_status["status"] == "approved":
-                    db_user.is_verified = True
-                    if not db_user.verified_at:
-                        db_user.verified_at = datetime.now(timezone.utc)
-                await db.commit()
-        except Exception as e:
-            logging.warning("Firestore driver approval sync failed: %s", e)
+    # The Firestore verification decision is NOT copied into the account
+    # (2026-11-03): any signed-in account can create verifications/sql_N with
+    # any status (firestore.rules: `allow create: if isAuthenticated()`).
+    # Approvals go through /auth/dispatch-approve and /admin/verifications,
+    # which write the account; Firestore is only their mirror.
 
     logging.info("Returning approval status for user %d: %s", db_user.id, db_user.verification_status)
     return {
@@ -3447,7 +3360,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     db_user.is_verified = True
     db_user.verified_at = datetime.now(timezone.utc)
     # A waitlist that came before this approval left its word in the
-    # ACCOUNT column (synced_account_status) — approved must mean GO.
+    # ACCOUNT column (the old Firestore sync) — approved must mean GO.
     if (db_user.status or "").lower() in STRANDED_REVIEW_STATUSES:
         db_user.status = "active"
     await db.commit()
@@ -3764,23 +3677,13 @@ async def dispatch_unwaitlist_driver(user_id: int, db: AsyncSession = Depends(ge
 
 @router.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
 async def account_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Check if account is active, blocked, or deleted (dispatch can change this via Firestore)."""
+    """Check if account is active, blocked, or deleted."""
     current_status = user.status or "active"
-    # Sync status from Firestore (dispatch may have blocked/deleted)
-    if _HAS_FIRESTORE:
-        try:
-            collection = "drivers" if user.role == "driver" else "clients"
-            fs_status = synced_account_status(await asyncio.to_thread(
-                firestore_sync.get_account_status, user.id, collection))
-            if fs_status and fs_status != current_status:
-                await db.execute(
-                    User.__table__.update().where(User.__table__.c.id == user.id).values(status=fs_status)
-                )
-                await db.commit()
-                current_status = fs_status
-                invalidate_user_cache(user.id)
-        except Exception as e:
-            logging.error("Firestore account status check failed: %s", e)
+    # The Firestore status is NOT copied into the account (2026-11-03): any
+    # signed-in account can write drivers/clients docs (firestore.rules:
+    # `|| isAuthenticated()`) — anyone could block or deactivate anyone on
+    # their next app open. The panel and the agents write the account
+    # directly; Firestore is only their mirror.
 
     return {"status": current_status}
 

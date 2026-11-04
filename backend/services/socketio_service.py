@@ -174,33 +174,59 @@ async def _is_staff(user_id: int) -> bool:
     return role in ("admin", "dispatch")
 
 
+# A "yes" is remembered this long, then asked again (2026-11-03 review):
+# remembered for the socket's life, a driver taken off the trip by a
+# reassign kept moving the car on the rider's map and kept hearing the
+# rider's room. Positions come several times a second; one lookup every
+# 30 s per socket and trip is nothing.
+_PUBLISH_OK_TTL_S = 30.0
+_clock = time.monotonic  # module-level so a test can move time
+
+
 async def _may_publish(sid: str, trip_id: int, side: int) -> bool:
     """May this socket publish a position into the trip's room — as its
-    rider (side 0) or its driver (side 1)? Checked once per socket and
-    trip, then remembered: positions come several times a second."""
+    rider (side 0) or its driver (side 1)? A yes is remembered for
+    _PUBLISH_OK_TTL_S. A socket that is no longer one of the trip's parties
+    at all also leaves the room, so it stops hearing it too."""
     meta = _connection_meta.get(sid)
     if meta is None:
         return False
-    ok = meta.setdefault("publish_ok", set())
+    ok = meta.setdefault("publish_ok", {})
     key = (trip_id, side)
-    if key in ok:
+    if ok.get(key, 0.0) > _clock():
         return True
+    ok.pop(key, None)
     try:
         parties = await _trip_parties(trip_id)
     except Exception as e:
         logger.warning("[Socket.io] trip %s lookup failed: %s", trip_id, e)
         return False
-    if parties is None or parties[side] != meta.get("user_id"):
+    uid = meta.get("user_id")
+    if parties is None or parties[side] != uid:
         denied = meta.setdefault("publish_denied", set())
         if key not in denied:
             denied.add(key)
             logger.warning(
                 "[Socket.io] %s (user=%s) is not trip %s's %s — position dropped",
-                sid, meta.get("user_id"), trip_id,
-                "driver" if side == 1 else "rider",
+                sid, uid, trip_id, "driver" if side == 1 else "rider",
             )
+        # Out of the room only when no longer a party in any role: the
+        # rider posing as the driver keeps hearing their own trip.
+        room = f"trip:{trip_id}"
+        if (room in meta.get("rooms", set())
+                and (parties is None or uid not in parties)):
+            try:
+                staff = await _is_staff(uid)
+            except Exception as e:
+                logger.warning("[Socket.io] staff lookup failed for %s: %s", uid, e)
+                staff = True  # unknown: leave it be, the next check retries
+            if not staff:
+                await sio.leave_room(sid, room)
+                meta["rooms"].discard(room)
+                logger.warning("[Socket.io] %s (user=%s) removed from %s — "
+                               "no longer on that trip", sid, uid, room)
         return False
-    ok.add(key)
+    ok[key] = _clock() + _PUBLISH_OK_TTL_S
     return True
 
 # Quick lookups
@@ -388,8 +414,13 @@ async def leave_trip(sid: str, data: dict):
     trip_id = data.get("trip_id") if isinstance(data, dict) else data
     if trip_id is None:
         return
+    # Same id as join_trip used ("sql_42" and 42 are one room), or the
+    # socket stays in the room it asked to leave.
+    tid = _as_trip_id(trip_id)
+    if tid is None:
+        return
 
-    room = f"trip:{trip_id}"
+    room = f"trip:{tid}"
     await sio.leave_room(sid, room)
 
     meta = _connection_meta.get(sid)

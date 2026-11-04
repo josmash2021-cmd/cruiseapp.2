@@ -2258,12 +2258,30 @@ def _aware(dt):
     return dt
 
 
+async def _relock_reservation(db, trip, driver_id) -> bool:
+    """Re-read the reservation under its row lock: True while `driver_id`
+    still holds it. The dispatcher works from a snapshot read at the top of
+    its tick (expire_on_commit is off), and a plain FOR UPDATE leaves an
+    object already in the session as it was — populate_existing makes the
+    locked row win. Without it a rider's cancel, or the driver's accept,
+    that landed in between was overwritten with status="scheduled"
+    (2026-11-03 review). Trips first: the canonical lock order."""
+    fresh = (await db.execute(
+        select(Trip).where(Trip.id == trip.id).with_for_update()
+        .execution_options(populate_existing=True)
+    )).scalar_one_or_none()
+    return (fresh is not None
+            and fresh.status in ("scheduled_accepted", "scheduled_active")
+            and fresh.driver_id == driver_id)
+
+
 async def _reservation_confirm_step(db, trip, driver, now, minutes_until) -> bool:
     """The 1-hour confirm offer (owner 2026-11-03), for an ONLINE driver at
     the go-online deadline. True when this tick is handled:
 
       * no confirm offer yet  -> send it (the normal offer card) and arm its
         expiry, so silence releases the ride the moment the countdown ends;
+        held while he is still driving another ride;
       * still pending         -> wait, or release once the countdown (plus
         grace) is over — the backstop for a restart that lost the timer;
       * rejected / expired    -> release (reject_offer normally already did).
@@ -2272,10 +2290,19 @@ async def _reservation_confirm_step(db, trip, driver, now, minutes_until) -> boo
     reservation never reaches this loop again. False only when the offer
     could not be sent: the old 30-minute direct assignment stays the
     fallback rather than punishing the driver for a server failure."""
-    from routers.dispatch import send_reservation_confirm_offer  # lazy: cycle
+    from routers.dispatch import (  # lazy: import cycle
+        send_reservation_confirm_offer, RESERVATION_CONFIRM_LEAD_MIN,
+        _ACTIVE_TRIP_STATUSES,
+    )
     from config import OFFER_TIMEOUT_SECONDS
 
-    window_start = _aware(trip.scheduled_at) - timedelta(minutes=61)
+    # Judge the row as it is now, under its lock, not this tick's snapshot.
+    if not await _relock_reservation(db, trip, driver.id):
+        await db.commit()  # drops the lock; the ride moved on without us
+        return True
+
+    window_start = (_aware(trip.scheduled_at)
+                    - timedelta(minutes=RESERVATION_CONFIRM_LEAD_MIN))
     rows = (await db.execute(
         select(DispatchOffer).where(
             DispatchOffer.trip_id == trip.id,
@@ -2284,12 +2311,35 @@ async def _reservation_confirm_step(db, trip, driver, now, minutes_until) -> boo
     )).scalars().all()
     confirm = next(
         (o for o in rows
-         if o.status not in ("accepted", RELEASED_OFFLINE)
+         # "canceled" = an attempt that failed to go out (below)
+         if o.status not in ("accepted", RELEASED_OFFLINE, "canceled")
          and o.created_at is not None
          and _aware(o.created_at) >= window_start),
         None,
     )
     if confirm is None:
+        # Still driving another ride (2026-11-03 review): he can take a trip
+        # at 61 min and be on it at 60, and accepting the confirm then would
+        # put a second trip in driver_en_route. It waits for that ride to
+        # end and goes out on the first tick after. Returning True also
+        # keeps the 30-minute direct assignment off him meanwhile — that
+        # would start this ride under him just the same — and nothing here
+        # releases it: a driver who is working does not lose his
+        # reservation for it.
+        busy_with = (await db.execute(
+            select(Trip.id).where(
+                Trip.driver_id == driver.id,
+                Trip.id != trip.id,
+                Trip.status.in_(_ACTIVE_TRIP_STATUSES),
+            ).limit(1)
+        )).scalar_one_or_none()
+        if busy_with is not None:
+            await db.commit()  # drops the lock while he drives
+            logging.info(
+                "[Reserved] trip=%d: confirm offer held — driver %d is on trip %d",
+                trip.id, driver.id, busy_with,
+            )
+            return True
         # Border guard (2026-10-02), now BEFORE the ride is offered: a driver
         # who crossed a state line since the claim must not be able to
         # accept it. same_state fails open (a dead geocoder never excludes).
@@ -2299,10 +2349,31 @@ async def _reservation_confirm_step(db, trip, driver, now, minutes_until) -> boo
             await _release_reservation(db, trip, now, minutes_until,
                                        "driver no longer in the pickup's state")
             return True
+        trip_id, driver_id = trip.id, driver.id
         try:
             offer = await send_reservation_confirm_offer(db, trip, driver)
         except Exception as e:
-            logging.warning("[Reserved] trip=%d: confirm offer failed: %s", trip.id, e)
+            logging.warning("[Reserved] trip=%d: confirm offer failed: %s", trip_id, e)
+            # The row may already be committed (_send_offer_to_driver saves
+            # it before the push work that raised). Left pending with no
+            # timer, the next tick would read it as an unanswered confirm
+            # and release the ride — the opposite of "a server failure falls
+            # back". Cancelled, the lookup above skips it and tries again.
+            try:
+                for o in (await db.execute(
+                    select(DispatchOffer).where(
+                        DispatchOffer.trip_id == trip_id,
+                        DispatchOffer.driver_id == driver_id,
+                        DispatchOffer.status == "pending",
+                    )
+                )).scalars().all():
+                    o.status = "canceled"
+                await db.commit()
+            except Exception as mark_err:
+                logging.warning(
+                    "[Reserved] trip=%d: could not retire the failed confirm row: %s",
+                    trip_id, mark_err,
+                )
             return False
         _safe_create_task(_expire_reservation_confirm(trip.id, offer.id))
         return True
@@ -2313,6 +2384,8 @@ async def _reservation_confirm_step(db, trip, driver, now, minutes_until) -> boo
             await db.flush()  # autoflush is off; release re-reads the offers
             await _release_reservation(db, trip, now, minutes_until,
                                        "confirm offer unanswered")
+        else:
+            await db.commit()  # drops the lock until the next tick
         return True
     await _release_reservation(db, trip, now, minutes_until,
                                f"confirm offer {confirm.status}")
@@ -2347,12 +2420,24 @@ async def _expire_reservation_confirm(trip_id: int, offer_id: int) -> None:
         logging.warning("[Reserved] trip=%d: confirm expiry failed: %s", trip_id, e)
 
 
-async def _release_reservation(db, trip, now, minutes_until, why: str) -> None:
+async def _release_reservation(db, trip, now, minutes_until, why: str) -> bool:
     """Hand a reservation back to the board. SILENT for the driver who held
     it — no push, no inbox, no "cancelled": their card just fades away
     (owner spec 2026-10-31). The rider hears the existing "finding another
-    driver" update."""
+    driver" update.
+
+    False, touching nothing, when the row under the lock is no longer this
+    driver's held reservation (the rider cancelled, it started, or it was
+    already released): the caller decided on a stale snapshot."""
     released_driver_id = trip.driver_id
+    if not await _relock_reservation(db, trip, released_driver_id):
+        await db.commit()  # drops the lock
+        logging.info(
+            "[Reserved] trip=%d not released (%s): it is now status=%s "
+            "driver=%s, not driver %s's held reservation",
+            trip.id, why, trip.status, trip.driver_id, released_driver_id,
+        )
+        return False
     trip.driver_id = None
     trip.rider_approach_notified_at = None
     trip.scheduled_target_driver_id = None
@@ -2411,6 +2496,7 @@ async def _release_reservation(db, trip, now, minutes_until, why: str) -> None:
                 "[Reserved] Firestore release mirror failed for trip %d: %s",
                 trip.id, _fs_err,
             )
+    return True
 
 
 async def _dispatch_reserved_scheduled_rides(db, now):
@@ -2561,6 +2647,12 @@ async def _dispatch_reserved_scheduled_rides(db, now):
                 driver_online = False
 
         if driver_online:
+            # Under the row lock, against the row as it is now — the same
+            # stale-snapshot guard as the release (_relock_reservation): a
+            # rider's cancel must not turn into "accepted".
+            if not await _relock_reservation(db, trip, driver.id):
+                await db.commit()  # drops the lock
+                continue
             # DIRECT ASSIGNMENT — the reserving driver is on shift, so the
             # trip becomes theirs without an offer to accept.
             trip.status = "accepted"
@@ -2650,7 +2742,7 @@ async def _scheduled_ride_dispatcher():
                 trips = result.scalars().all()
 
                 for trip in trips:
-                    minutes_until = (trip.scheduled_at - now).total_seconds() / 60
+                    minutes_until = (_aware(trip.scheduled_at) - now).total_seconds() / 60
 
                     # --------------------------------------------------
                     # Expired: ride is more than 5 min past scheduled time
@@ -2916,6 +3008,20 @@ async def _scheduled_ride_dispatcher():
                         )
                     )
                     drivers = drivers_r.scalars().all()
+
+                    # Never a driver this ride already left (2026-11-03
+                    # review): one who lost it at the 1-hour deadline or let
+                    # its confirm offer lapse (released_offline — owner spec
+                    # "ya para él no"), or who turned it down (rejected).
+                    # Without this a confirm offer rejected at 60 min handed
+                    # the same ride straight back to him on the next tick.
+                    done_with = set((await db.execute(
+                        select(DispatchOffer.driver_id).where(
+                            DispatchOffer.trip_id == trip.id,
+                            DispatchOffer.status.in_((RELEASED_OFFLINE, "rejected")),
+                        )
+                    )).scalars().all())
+                    drivers = [d for d in drivers if d.id not in done_with]
                     if not drivers:
                         continue
 
@@ -2937,17 +3043,26 @@ async def _scheduled_ride_dispatcher():
                         )
                         continue
 
+                    # Nearest first, and only a driver standing in the
+                    # pickup's state — the border rule every other path to a
+                    # reservation applies (board, claim, reserved pass); this
+                    # one skipped it (2026-11-03 review). same_state fails
+                    # open: a dead geocoder never excludes anyone.
+                    from routers.dispatch import same_state  # lazy: import cycle
+                    ranked = sorted(
+                        ((_haversine(trip.pickup_lat, trip.pickup_lng, d.lat, d.lng), d)
+                         for d in drivers if d.lat and d.lng),
+                        key=lambda pair: pair[0],
+                    )
                     best = None
                     best_dist = float("inf")
-                    for d in drivers:
-                        if d.lat and d.lng:
-                            dist = _haversine(
-                                trip.pickup_lat, trip.pickup_lng,
-                                d.lat, d.lng,
-                            )
-                            if dist < best_dist:
-                                best_dist = dist
-                                best = d
+                    for dist, d in ranked:
+                        if dist >= 50:
+                            break
+                        if await same_state(
+                                d.lat, d.lng, trip.pickup_lat, trip.pickup_lng):
+                            best, best_dist = d, dist
+                            break
 
                     if best and best_dist < 50:  # Within 50 km
                         # Create dispatch offer

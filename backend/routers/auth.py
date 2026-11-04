@@ -1695,6 +1695,10 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
         trip = trip_result.scalar_one_or_none()
         if trip:
             active_trip = _trip_dict(trip)
+            # The pickup code is the rider's to read out; the driver types
+            # it, so his copy goes without it (2026-11-03 review).
+            if user.id != trip.rider_id:
+                active_trip.pop("pickup_pin", None)
             # Add counterparty info
             if user.role == "rider" and trip.driver_id:
                 drv_r = await db.execute(select(User).where(User.id == trip.driver_id))

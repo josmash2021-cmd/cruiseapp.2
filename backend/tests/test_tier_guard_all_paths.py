@@ -128,3 +128,38 @@ async def test_marketplace_browse_hides_the_wrong_tier(
     tiers = [c["vehicle_type"] for c in resp.json()]
     assert "black" not in tiers, "a Standard driver saw Black work in the marketplace"
     assert "standard" in tiers
+
+
+@pytest.mark.asyncio
+async def test_marketplace_browse_shows_electric_pro_to_electric_pro(
+    client, db, test_driver, test_rider
+):
+    # The board's tier list was written out by hand as four tiers and
+    # left Electric Pro off: every Electric Pro reservation was invisible
+    # to every driver, the Electric Pro ones included (2026-11-03).
+    driver, d_token = test_driver
+    driver.status = "approved"
+    driver.is_verified = True
+    driver.lat, driver.lng = 25.76, -80.19
+    await _set_vehicle(db, driver.id, "electric_pro")
+
+    rider, _ = test_rider
+    for vtype in ("electric_pro", "standard"):
+        db.add(Trip(
+            rider_id=rider.id,
+            pickup_address="1 Test St", dropoff_address="2 Dest Ave",
+            pickup_lat=25.76, pickup_lng=-80.19,
+            dropoff_lat=25.77, dropoff_lng=-80.20,
+            fare=40.0, vehicle_type=vtype, status="scheduled",
+            scheduled_at=datetime.now(timezone.utc) + timedelta(hours=5),
+        ))
+    await db.commit()
+
+    resp = await client.get(
+        "/scheduled-trips/available?lat=25.76&lng=-80.19",
+        headers=_hdrs(d_token),
+    )
+    assert resp.status_code == 200, resp.text
+    tiers = [c["vehicle_type"] for c in resp.json()]
+    assert "electric_pro" in tiers, "an Electric Pro driver never saw Electric Pro work"
+    assert "standard" not in tiers, "Electric Pro is closed both ways"

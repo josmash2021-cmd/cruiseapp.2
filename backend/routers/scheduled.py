@@ -30,6 +30,9 @@ DRIVER_SHARE_RATE = vehicle_tiers.DRIVER_SHARE_RATE
 LOCKOUT_MINUTES = 60
 # Minimum advance for marketplace (rides closer than this go through auto-dispatch)
 MIN_ADVANCE_MINUTES = 30
+# A holder must be online by this many minutes before pickup or the ride
+# goes back to the board — mirror of main.RESERVATION_GO_ONLINE_LEAD_MIN.
+GO_ONLINE_LEAD_MINUTES = 60
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -253,7 +256,7 @@ async def get_available_scheduled_trips(
     # Tier guard (same rule as dispatch): a driver only sees cards their
     # car can actually serve — showing a VIP reservation to a Standard
     # driver ends in a 403 on tap, which reads as a bug, not a rule.
-    from services.vehicle_tiers import eligible_tiers, normalize_tier
+    from services.vehicle_tiers import TIERS, eligible_tiers, normalize_tier
     from models.database import Vehicle
     veh = await db.execute(
         select(Vehicle.vehicle_type).where(
@@ -264,7 +267,9 @@ async def get_available_scheduled_trips(
     )
     driver_vtype = (veh.scalar_one_or_none() or "standard")
     eligible_request_tiers = {
-        req for req in ("standard", "compact", "premium", "vip")
+        # Every tier, Electric Pro included (a hand-written list of four left
+        # every Electric Pro reservation off every board).
+        req for req in TIERS
         if driver_vtype.strip().lower() in eligible_tiers(req)
     }
 
@@ -419,6 +424,13 @@ async def claim_scheduled_trip(
     minutes_until = (sched_at - now).total_seconds() / 60 if sched_at else 0
     if minutes_until < MIN_ADVANCE_MINUTES:
         raise HTTPException(400, "This ride is too close to pickup time — it will be dispatched automatically")
+    # Inside the last hour a reservation is only kept by a driver who is
+    # online: the dispatcher hands an offline holder's ride back on its next
+    # tick, silently (main._dispatch_reserved_scheduled_rides, owner spec
+    # 2026-10-31). An offline claim there was gone within a minute
+    # (2026-11-03 review). A code, not a sentence: the app words it.
+    if minutes_until <= GO_ONLINE_LEAD_MINUTES and not user.is_online:
+        raise HTTPException(409, "go_online_first")
 
     # Check for overlapping scheduled trip (within 2 hours)
     overlap_check = await db.execute(

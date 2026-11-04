@@ -258,6 +258,9 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
         "cruise_cash_cents", "funding_source",
     ):
         data.pop(key, None)
+    # The pickup code is the rider's to read out; the driver types it and
+    # never reads it off his own trip list (2026-11-03 review).
+    data.pop("pickup_pin", None)
     # Guest-booking override for driver-facing rider name/phone. Fires
     # whenever guest fields are set — not only when rider_id is NULL —
     # because web/Shopify bookings point rider_id at the shared

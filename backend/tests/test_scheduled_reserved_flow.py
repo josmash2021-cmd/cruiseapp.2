@@ -395,3 +395,43 @@ async def test_a_lost_reservation_never_comes_back_to_that_driver(
     headers = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
     res = await client.post(f"/scheduled-trips/{trip.id}/claim", headers=headers)
     assert res.status_code == 409, res.text
+
+
+async def test_an_offline_claim_inside_the_last_hour_is_refused(
+    client, db, test_rider, test_driver, monkeypatch
+):
+    """2026-11-03 review: claims open 30 min before pickup, but inside the
+    last hour an offline holder is released on the next tick — silently. So
+    an offline claim there is refused with a code the app words itself."""
+    from tests.conftest import _make_auth_headers
+    from main import Vehicle
+    from routers import dispatch as D
+
+    monkeypatch.setattr(D, "GOOGLE_MAPS_API_KEY", "")  # state fails open
+    rider, _ = test_rider
+    driver, token = test_driver
+    driver.is_verified = True
+    driver.verification_status = "approved"
+    driver.is_online = False
+    db.add(Vehicle(user_id=driver.id, make="Toyota", model="Camry", year=2022,
+                   plate="LATE1", vehicle_type="standard", is_active=True,
+                   approval_status="approved"))
+    trip = _reserved_trip(rider.id, None, minutes_out=45, status="scheduled")
+    db.add(trip)
+    await db.commit()
+    await db.refresh(trip)
+
+    def _headers():
+        return {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+
+    res = await client.post(f"/scheduled-trips/{trip.id}/claim", headers=_headers())
+    assert res.status_code == 409, res.text
+    assert res.json()["detail"] == "go_online_first"
+    await db.refresh(trip)
+    assert trip.driver_id is None and trip.status == "scheduled"
+
+    # Online, the same claim goes through.
+    driver.is_online = True
+    await db.commit()
+    res = await client.post(f"/scheduled-trips/{trip.id}/claim", headers=_headers())
+    assert res.status_code == 200, res.text

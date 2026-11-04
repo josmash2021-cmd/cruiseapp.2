@@ -256,7 +256,13 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
 def _trip_dict_for_user(trip: Trip, user: User) -> dict:
     if user.role == "driver" and user.id == trip.driver_id:
         return _driver_visible_trip_dict(trip)
-    return _trip_dict(trip)
+    data = _trip_dict(trip)
+    # Any other driver who can read the trip — one it was only OFFERED to
+    # (GET /trips/{id}), or the open list — never gets the pickup code
+    # either (2026-11-03 review). Only the trip's own rider reads it out.
+    if user.role == "driver" and user.id != trip.rider_id:
+        data.pop("pickup_pin", None)
+    return data
 
 
 async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]:

@@ -75,23 +75,53 @@ _ACTIVE_TRIP_STATUSES = [
 # A reservation its driver holds, not started yet.
 _RESERVATION_HELD = ("scheduled_accepted", "scheduled_active")
 
+# The confirm offer goes out at the go-online deadline, 1 hour before pickup
+# (main._reservation_confirm_step), plus a minute for the dispatcher's
+# once-a-minute tick.
+RESERVATION_CONFIRM_LEAD_MIN = 61
 
-def is_reservation_confirm(trip, driver_id: int) -> bool:
+
+def _as_utc(dt):
+    """SQLite hands back naive datetimes, Postgres aware ones."""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def is_reservation_confirm(trip, driver_id: int, offer) -> bool:
     """The 1-hour confirm offer (owner 2026-11-03): at the go-online
     deadline the reservation's own driver is offered the ride he already
     holds. Accept starts it right away; reject — or no answer before the
-    countdown ends — hands it back to the board (main.py)."""
-    return trip.status in _RESERVATION_HELD and trip.driver_id == driver_id
+    countdown ends — hands it back to the board (main.py).
+
+    Judged by the offer as well as the trip (2026-11-03 review): any other
+    offer to the holding driver — a priority offer from the panel on a ride
+    days away — is not a confirm, so accepting it must not start the ride
+    early and rejecting it must not hand the reservation back."""
+    if trip.status not in _RESERVATION_HELD or trip.driver_id != driver_id:
+        return False
+    created, sched = _as_utc(offer.created_at), _as_utc(trip.scheduled_at)
+    if created is None or sched is None:
+        return False
+    return created >= sched - timedelta(minutes=RESERVATION_CONFIRM_LEAD_MIN)
 
 
-def _offer_trip_fields(trip, driver_id: int) -> dict:
+def _trip_dict_for_driver(trip) -> dict:
+    """_trip_dict without the pickup code. The rider reads it out and the
+    driver types it, so it never rides in a driver's payload (2026-11-03)."""
+    data = _trip_dict(trip)
+    data.pop("pickup_pin", None)
+    return data
+
+
+def _offer_trip_fields(trip, driver_id: int, offer) -> dict:
     """The trip half of an offer payload. A confirm offer drops
     `scheduled_at`: accepting it starts the ride NOW, and every app build
     routes an offer with a pickup >= 3 min out to the "reserved for later"
     path, which never opens the trip screen. `reservation_confirm` lets the
     app label the card."""
     data = driver_offer_dict(trip)
-    if is_reservation_confirm(trip, driver_id):
+    if is_reservation_confirm(trip, driver_id, offer):
         # The card still shows when the pickup is, from its own key.
         data["reservation_pickup_at"] = data.pop("scheduled_at", None)
         data["reservation_confirm"] = True
@@ -881,7 +911,7 @@ async def _send_offer_to_driver(
         "created_at": offer.created_at.isoformat() if offer.created_at else None,
         "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
         "chained": chained,
-        **_offer_trip_fields(trip, driver.id),
+        **_offer_trip_fields(trip, driver.id, offer),
         "fare": estimated_driver_fare,
         "driver_earnings": estimated_driver_fare,
     }]))
@@ -921,7 +951,7 @@ async def _send_offer_to_driver(
     push_data = {"type": "new_offer", "trip_id": str(trip.id),
                  "offer_id": str(offer.id),
                  "chained": "1" if chained else "0", "fare": fare_str}
-    confirm = is_reservation_confirm(trip, driver.id)
+    confirm = is_reservation_confirm(trip, driver.id, offer)
     if confirm:
         push_data["reservation_confirm"] = "1"
     if per_hour_str:
@@ -1009,6 +1039,20 @@ async def send_reservation_confirm_offer(
 ) -> DispatchOffer:
     """Ring the reservation's own driver with the confirm offer — the same
     offer card, sound and countdown as any ride (owner 2026-11-03)."""
+    # A pending row of his from before the window (a panel offer he never
+    # answered) would be reused by _send_offer_to_driver and then not read
+    # as the confirm, since is_reservation_confirm judges the offer's age.
+    # Retire it so the confirm is always a fresh row. Housekeeping, so it
+    # does not count against his acceptance rate.
+    for old in (await db.execute(
+        select(DispatchOffer).where(
+            DispatchOffer.trip_id == trip.id,
+            DispatchOffer.driver_id == driver.id,
+            DispatchOffer.status == "pending",
+        )
+    )).scalars().all():
+        old.status = "expired"
+    await db.flush()  # autoflush is off; the reuse lookup reads the table
     rider = None
     if trip.rider_id:
         rider = (await db.execute(
@@ -2010,9 +2054,12 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
             ),
         ))
     )
-    rows = result.all()
-    if _locked:
-        rows = [row for row in rows if is_reservation_confirm(row[1], driver_id)]
+    # A held reservation shows up only through its confirm offer; any other
+    # offer to its driver (a panel offer on a ride days away) stays off the
+    # list, as before the confirm existed.
+    rows = [row for row in result.all()
+            if is_reservation_confirm(row[1], driver_id, row[0])
+            or (not _locked and row[1].status == "requested")]
 
     # Chaining: when this driver is still on another trip, any pending
     # offer is a chained one — the app shows it over the trip screen.
@@ -2084,7 +2131,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
             "created_at": offer.created_at.isoformat() if offer.created_at else None,
             "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
             "chained": _chained,
-            **_offer_trip_fields(trip, driver_id),
+            **_offer_trip_fields(trip, driver_id, offer),
             "fare": estimated_driver_fare,
             "driver_earnings": estimated_driver_fare,
         })
@@ -2410,7 +2457,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     # his own claim row (accepted) is not "another driver".
     _own_claim = (
         [DispatchOffer.driver_id != driver_id]
-        if is_reservation_confirm(trip, driver_id) else []
+        if is_reservation_confirm(trip, driver_id, offer) else []
     )
     existing_accepted = await db.execute(
         select(DispatchOffer).where(
@@ -2466,7 +2513,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
 
     await _announce_driver_assignment(db, trip, driver_id, accepted_status)
 
-    return {"status": "accepted", "trip": _trip_dict(trip) if trip else None}
+    return {"status": "accepted", "trip": _trip_dict_for_driver(trip) if trip else None}
 
 
 # ── Marketplace of unclaimed trips (user spec 2026-10-02) ────────────────
@@ -2681,7 +2728,7 @@ async def claim_available_trip(trip_id: int = Query(...), driver_id: int = Query
 
     logging.info("[Dispatch] trip %s CLAIMED from the board by driver %s", trip.id, driver_id)
     await _announce_driver_assignment(db, trip, driver_id, accepted_status)
-    return {"status": "accepted", "trip": _trip_dict(trip)}
+    return {"status": "accepted", "trip": _trip_dict_for_driver(trip)}
 
 
 async def _requeue_trip_to_next_driver(db: AsyncSession, trip: Trip):
@@ -3545,6 +3592,11 @@ async def reject_offer(
     offer = result.scalar_one_or_none()
     if not offer:
         raise HTTPException(404, "Offer not found")
+    # Only his own offer, as accept_offer (2026-11-03 review): any driver
+    # could mark anyone's offer rejected by its id, and rejecting a confirm
+    # offer releases the reservation.
+    if offer.driver_id != driver_id:
+        raise HTTPException(403, "This offer is not assigned to you")
     offer.status = "rejected"
     await _bump_offer_counter(db, driver_id, "rejected")
     _safe_create_task(_clear_live_activity_offer(driver_id))
@@ -3576,10 +3628,15 @@ async def reject_offer(
     # rider hears "finding another driver". No cascade from here — the
     # board's own dispatcher takes the ride on its next tick.
     if trip is not None and offer.driver_id == driver_id:
+        # populate_existing: the plain select above already put this trip in
+        # the session, and without it the lock's fresh row is dropped for
+        # those stale attributes — a rider's cancel that landed in between
+        # was then overwritten with status="scheduled" (2026-11-03 review).
         locked = (await db.execute(
             select(Trip).where(Trip.id == trip.id).with_for_update()
+            .execution_options(populate_existing=True)
         )).scalar_one_or_none()
-        if locked is not None and is_reservation_confirm(locked, driver_id):
+        if locked is not None and is_reservation_confirm(locked, driver_id, offer):
             from main import _release_reservation  # lazy: main imports this router
             now = utc_now()
             sched_at = locked.scheduled_at
@@ -3629,13 +3686,52 @@ async def reject_offer(
 _dispatch_status_cache: dict = {}  # trip_id -> (data, timestamp)
 _DISPATCH_STATUS_CACHE_TTL = 1.0  # seconds -- fast response to driver accepting
 
+
+def _status_for_caller(response: dict, role: str) -> dict:
+    """The driver app reads this endpoint too (rider photo fallback): its
+    copy goes without the pickup code (2026-11-03). A copy, because the
+    cached response is shared with the rider, who does need the code."""
+    trip = response.get("trip")
+    if role != "driver" or not isinstance(trip, dict) or "pickup_pin" not in trip:
+        return response
+    return {**response, "trip": {k: v for k, v in trip.items() if k != "pickup_pin"}}
+
+
+async def _may_read_status(db: AsyncSession, user_id: int, role: str,
+                           trip_id: int, rider_id, driver_id) -> bool:
+    """Who may read a trip's status (2026-11-03 review): it carries both
+    phones, the plate and the rider's pickup code, and any logged-in account
+    could read any trip by number. The trip's rider, its driver, a driver it
+    was offered to (the trip screen can open before an accept is confirmed —
+    the same rule as GET /trips/{id}), and staff."""
+    if role in ("admin", "dispatch"):
+        return True
+    if user_id in (rider_id, driver_id):
+        return True
+    if role != "driver":
+        return False
+    return (await db.execute(
+        select(DispatchOffer.id).where(
+            DispatchOffer.trip_id == trip_id,
+            DispatchOffer.driver_id == user_id,
+        ).limit(1)
+    )).scalar_one_or_none() is not None
+
+
 @router.get("/dispatch/trip/status", dependencies=[Depends(_verify_api_key)])
 async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    # Fast path: serve from cache (riders poll every 3s)
+    uid, role = user.id, user.role
+    # Fast path: serve from cache (riders poll every 3s). Still only to the
+    # trip's own people — judged against the cached trip's parties, so the
+    # rider and driver cost no query.
     _now = time.monotonic()
     _cached = _dispatch_status_cache.get(trip_id)
     if _cached and (_now - _cached[1]) < _DISPATCH_STATUS_CACHE_TTL:
-        return _cached[0]
+        _ct = _cached[0].get("trip") or {}
+        if not await _may_read_status(db, uid, role, trip_id,
+                                      _ct.get("rider_id"), _ct.get("driver_id")):
+            raise HTTPException(404, "Trip not found")
+        return _status_for_caller(_cached[0], role)
 
     # Query with retry — uses a lightweight Trip-only query as fallback if
     # the full ORM join fails (e.g. missing average_rating column on User).
@@ -3659,7 +3755,7 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
             )
             result = row.first()
             if not result:
-                return {"status": "not_found"}
+                break  # trip stays None: the 404 below
             trip, accepted, driver, veh = result
             break
         except Exception as e:
@@ -3684,8 +3780,13 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
                 logging.error("[dispatch/status] Trip-only fallback also failed: %s", e2)
                 raise HTTPException(503, "Database temporarily unavailable")
 
-    if trip is None:
-        return {"status": "not_found"}
+    # A trip that does not exist and one the caller may not read answer the
+    # same 404, so the answer never tells a stranger the trip is there. (A
+    # missing trip used to be a 200 {"status": "not_found"}; the app treats
+    # both answers the same — it acts only on real statuses.)
+    if trip is None or not await _may_read_status(
+            db, uid, role, trip.id, trip.rider_id, trip.driver_id):
+        raise HTTPException(404, "Trip not found")
 
     # Fetch rider info so driver screens can display the rider's photo.
     # For guest bookings (trip.rider_id is NULL), fall back to trip.guest_*.
@@ -3787,7 +3888,7 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
         response = {"status": trip.status, **fallback_driver_info, "driver": None, **rider_info, "trip": _trip_dict(trip)}
 
     _dispatch_status_cache[trip_id] = (response, _now)
-    return response
+    return _status_for_caller(response, role)
 
 
 # == Public photo lookup (for displaying other user's photo in trip UI) ==

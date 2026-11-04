@@ -137,9 +137,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   bool _driverStarted = false; // driver slid Start Trip — green overlay + exit
   StreamSubscription? _tripSub;
 
-  /// 4-digit pickup code the backend mirrors onto the trip doc when the trip
-  /// reaches "arrived". Null until it lands — the PIN block stays hidden.
+  /// 4-digit pickup code, from the rider's own trip read ([_loadPickupPin]);
+  /// older servers also mirror it onto the trip doc. Null until it lands —
+  /// the PIN block stays hidden.
   String? _pickupPin;
+  Timer? _pinRetryTimer;
+  int _pinReads = 0;
 
   // ── Proximity FOUND latch + compass arrow ──
   // The phone watches its own GPS against the driver's live position, points
@@ -385,6 +388,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       setState(() => _waitElapsedSec++);
     });
     unawaited(_loadReservationTime());
+    unawaited(_loadPickupPin());
 
     // Content fade-in
     _fadeInCtrl = AnimationController(
@@ -600,8 +604,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       final data = snap.data();
       if (data == null) return;
 
-      // The backend mirrors the 4-digit pickup code onto the trip doc when
-      // the trip reaches "arrived". Absent → the PIN block stays hidden.
+      // Older servers mirror the pickup code onto the trip doc at
+      // "arrived"; the current one leaves it off for this build (it reads
+      // it in _loadPickupPin). Absent → the PIN block stays hidden.
       final pin = (data['pickup_pin'] ?? '').toString().trim();
       if (pin.isNotEmpty && pin != _pickupPin) {
         setState(() => _pickupPin = pin);
@@ -1985,6 +1990,31 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     }
   }
 
+  /// The pickup code from the rider's own trip read — the server never
+  /// sends it to a driver. It used to come only from the Firestore trip doc,
+  /// which any signed-in account can read, so a driver could lift the code
+  /// there and start the ride without the rider (2026-11-03). Without it
+  /// the driver cannot start at all, so a miss asks again every 5 s.
+  Future<void> _loadPickupPin() async {
+    final id = widget.tripId;
+    if (id == null || _pickupPin != null || _driverStarted) return;
+    _pinReads++;
+    try {
+      final t = await ApiService.getTrip(id);
+      if (!mounted) return;
+      final pin = (t['pickup_pin'] ?? '').toString().trim();
+      if (pin.isNotEmpty && _pickupPin == null) {
+        setState(() => _pickupPin = pin);
+        return;
+      }
+    } catch (e) {
+      debugPrint('[RiderConfirmPickup] pickup code failed: $e');
+    }
+    if (!mounted || _pickupPin != null || _pinReads >= 24) return;
+    _pinRetryTimer?.cancel();
+    _pinRetryTimer = Timer(const Duration(seconds: 5), _loadPickupPin);
+  }
+
   @override
   void dispose() {
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
@@ -1993,6 +2023,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _waitTimer?.cancel();
     _miniMapRetryTimer?.cancel();
     _miniMapSlowTimer?.cancel();
+    _pinRetryTimer?.cancel();
     _tripSub?.cancel();
     _riderGpsSub?.cancel();
     _compassSub?.cancel();

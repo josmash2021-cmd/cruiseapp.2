@@ -1592,14 +1592,23 @@ Future<void> heavyInit() async {
     // Reported on every cold start; the backend keeps the last one seen.
     // Platform + OS version ride along (2026-10-14, dispatch install split:
     // "quiero saber todos los que tienen android y todos los que tienen ios").
+    // And the build (2026-11-03): the server keeps the pickup code off the
+    // Firestore trip doc for a build that reads it from the API — nothing
+    // reported it before, so users.app_version was always empty.
     () async {
       try {
         if (!kIsWeb && await ApiService.getToken() != null) {
           final lc = PlatformDispatcher.instance.locale.languageCode;
+          String? build;
+          try {
+            final info = await PackageInfo.fromPlatform();
+            build = '${info.version}+${info.buildNumber}';
+          } catch (_) {}
           await ApiService.updateMe({
             'locale': lc.startsWith('es') ? 'es' : 'en',
             'platform': Platform.operatingSystem, // 'android' | 'ios'
             'os_version': Platform.operatingSystemVersion,
+            if (build != null) 'app_version': build,
           });
         }
       } catch (e) {

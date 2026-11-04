@@ -57,6 +57,24 @@ void main() {
           reason: 'the PIN comes from the pickup_pin field of trips/sql_<id>');
       expect(body.contains('_pickupPin = pin'), isTrue);
     });
+    test('the code also comes from the rider\'s own trip read (2026-11-03)',
+        () {
+      // From build 757 the server leaves the code off the Firestore trip
+      // doc (any signed-in account can read it): without this read the
+      // Find-My screen shows no code and the driver cannot start the ride.
+      final body = bodyOf('Future<void> _loadPickupPin() async {');
+      expect(body, contains('ApiService.getTrip(id)'));
+      expect(body, contains("t['pickup_pin']"));
+      expect(body, contains('Timer(const Duration(seconds: 5), _loadPickupPin)'),
+          reason: 'a miss asks again — no code means no ride');
+      expect(src, contains('unawaited(_loadPickupPin());'));
+      expect(src, contains('_pinRetryTimer?.cancel();'));
+      // ...and the server only knows the build because the app says it, in
+      // the cold-start device report.
+      final boot = File('lib/main.dart').readAsStringSync();
+      expect(boot, contains("build = '\${info.version}+\${info.buildNumber}';"));
+      expect(boot, contains("if (build != null) 'app_version': build,"));
+    });
     test('the PIN block only renders when the field is present', () {
       expect(src.contains('if (_pickupPin != null) ...['), isTrue,
           reason: 'no pickup_pin on the doc → the whole PIN block hides');

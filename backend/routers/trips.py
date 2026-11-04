@@ -1787,6 +1787,39 @@ _PIN_MAX_ATTEMPTS = 5
 _PIN_WINDOW_SECONDS = 600
 _pin_attempts: dict[int, tuple[int, float]] = {}  # trip_id -> (wrong, window_start)
 
+# First build whose Find-My screen reads the code from GET /trips/{id}
+# (2026-11-03). Its riders never get the code mirrored onto the Firestore
+# trip doc: every signed-in account can read that doc (firestore.rules,
+# trips: `|| isAuthenticated()`), so a driver could lift the code there and
+# start the ride without the rider. Older builds — and riders whose app
+# reported no build — still get it: their Find-My screen reads only that
+# doc, and with no code shown the ride cannot start at all.
+PICKUP_PIN_API_FIRST_BUILD = 757
+
+
+def _app_build(app_version) -> int | None:
+    """757 from "1.1.8+757"; None when there is no build to read."""
+    try:
+        return int(str(app_version or "").rsplit("+", 1)[1])
+    except (IndexError, ValueError):
+        return None
+
+
+async def _mirror_pickup_pin(db, trip) -> None:
+    """The code onto trips/sql_<id>, only for a rider whose app needs it."""
+    if not (_HAS_FIRESTORE and firestore_sync and trip.pickup_pin):
+        return
+    rider_version = (await db.execute(
+        select(User.app_version).where(User.id == trip.rider_id)
+    )).scalar_one_or_none()
+    build = _app_build(rider_version)
+    if build is not None and build >= PICKUP_PIN_API_FIRST_BUILD:
+        return
+    try:
+        firestore_sync.sync_pickup_pin(trip.id, trip.pickup_pin)
+    except Exception as e:
+        logging.warning("[PickupPin] mirror failed for trip %s: %s", trip.id, e)
+
 
 @router.post("/trips/{trip_id}/pickup-pin/confirm", dependencies=[Depends(_verify_api_key)])
 async def confirm_pickup_pin(trip_id: int, body: PickupPinIn,
@@ -1811,11 +1844,7 @@ async def confirm_pickup_pin(trip_id: int, body: PickupPinIn,
         # rider sees it on the next trip-doc mirror / payload refresh.
         trip.pickup_pin = _gen_pickup_pin()
         await db.commit()
-        if _HAS_FIRESTORE and firestore_sync:
-            try:
-                firestore_sync.sync_pickup_pin(trip.id, trip.pickup_pin)
-            except Exception as e:
-                logging.warning("[PickupPin] lazy mirror failed for trip %s: %s", trip.id, e)
+        await _mirror_pickup_pin(db, trip)
 
     now = time.time()
     wrong, window_start = _pin_attempts.get(trip_id, (0, now))
@@ -2399,11 +2428,7 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
         # covers trips created before the column existed.
         if not trip.pickup_pin:
             trip.pickup_pin = _gen_pickup_pin()
-        if _HAS_FIRESTORE and firestore_sync:
-            try:
-                firestore_sync.sync_pickup_pin(trip.id, trip.pickup_pin)
-            except Exception as e:
-                logging.warning("[PickupPin] mirror failed for trip %s: %s", trip.id, e)
+        await _mirror_pickup_pin(db, trip)
     # Record ride start/end timestamps for duration calculation
     if canonical_new == "in_trip" and not trip.started_at:
         trip.started_at = datetime.now(timezone.utc)

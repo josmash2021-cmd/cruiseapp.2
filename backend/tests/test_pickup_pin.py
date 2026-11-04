@@ -285,3 +285,72 @@ async def test_confirm_bad_format_422(client, db, test_rider, test_driver, fs_fa
         headers=_driver_headers(dtoken),
     )
     assert resp.status_code == 422
+
+
+# ── The code off Firestore for builds that read it from the API ──────────
+# (2026-11-03) Every signed-in account can read trips/sql_<id>
+# (firestore.rules: `|| isAuthenticated()`), so the code mirrored there could
+# be lifted by a driver to start the ride without the rider. From build 757
+# the rider's Find-My screen reads it from GET /trips/{id}; older builds read
+# only the doc and must keep getting it, or their ride cannot start.
+
+@pytest.mark.parametrize("version,mirrored", [
+    (None, True),            # app never reported: keep the old behaviour
+    ("", True),
+    ("1.0.0", True),         # no build number to read
+    ("1.1.6+742", True),
+    ("1.1.8+756", True),
+    ("1.1.8+757", False),
+    ("1.2.0+801", False),
+])
+@pytest.mark.asyncio
+async def test_arrival_mirrors_the_code_only_for_builds_that_need_it(
+        client, db, test_rider, test_driver, fs_fake, version, mirrored):
+    rider, _ = test_rider
+    driver, dtoken = test_driver
+    rider.app_version = version
+    await db.commit()
+    trip = await _make_trip(db, rider, driver, status="driver_en_route")
+    # Each case gets trip id 1 on a fresh DB: the 10 s duplicate-PATCH
+    # cache would swallow every arrival after the first.
+    trips_router._recent_status_patches.clear()
+
+    resp = await client.patch(
+        f"/trips/{trip.id}/status?status=arrived",
+        headers=_driver_headers(dtoken))
+    assert resp.status_code == 200, resp.text
+    assert bool(fs_fake.pins) is mirrored, (version, fs_fake.pins)
+
+
+@pytest.mark.asyncio
+async def test_the_lazy_seed_follows_the_same_rule(
+        client, db, test_rider, test_driver, fs_fake):
+    rider, _ = test_rider
+    driver, dtoken = test_driver
+    rider.app_version = "1.1.8+757"
+    await db.commit()
+    trip = await _make_trip(db, rider, driver, status="arrived", pin=None)
+
+    resp = await client.post(
+        f"/trips/{trip.id}/pickup-pin/confirm",
+        json={"pin": "ZZZZ"},
+        headers=_driver_headers(dtoken))
+    assert resp.status_code in (403, 200), resp.text
+    await db.refresh(trip)
+    assert trip.pickup_pin, "the code is still seeded"
+    assert fs_fake.pins == [], "but never mirrored for a build that reads the API"
+
+
+def test_only_the_gate_writes_the_code_to_firestore():
+    import inspect
+    src = inspect.getsource(trips_router)
+    assert src.count("firestore_sync.sync_pickup_pin(") == 1
+    gate = inspect.getsource(trips_router._mirror_pickup_pin)
+    assert "firestore_sync.sync_pickup_pin(" in gate
+
+
+def test_app_build_parsing():
+    assert trips_router._app_build("1.1.8+757") == 757
+    assert trips_router._app_build("1.1.8") is None
+    assert trips_router._app_build(None) is None
+    assert trips_router._app_build("1.1.8+abc") is None

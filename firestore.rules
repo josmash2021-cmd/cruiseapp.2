@@ -3,7 +3,23 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ═══════════════════════════════════════════════════════════════════
-    // HELPERS
+    // WHO IS WHO (2026-11-03 hardening, CLAUDE.md #28/#61)
+    //
+    //   * App users sign in with a backend custom token: uid = 'user_{id}'
+    //     (routers/auth.py /auth/firebase-token). Their docs are keyed
+    //     'sql_{id}' and trips name them as passengerId 'sql_{id}' and
+    //     driverId '{id}' (string or int), so ownership is derived here.
+    //   * Panel operators sign in with email/password and each has an
+    //     admins/{uid} doc (the panel's login gate refuses anyone without).
+    //   * The backend writes with the Admin SDK: rules never apply to it.
+    //
+    // Before this, almost every rule ended in `|| isAuthenticated()`: any
+    // account could read every trip (names, phones, addresses) and write any
+    // trip or profile. Party checks come BEFORE isOwnerOrAdmin(): its
+    // exists() is a billed read on every request (a driver's location write
+    // runs twice a second).
+    //
+    // Guard: tool/firestore_rules (emulator tests, one per client access).
     // ═══════════════════════════════════════════════════════════════════
 
     function isOwner() {
@@ -25,12 +41,43 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwnDoc(docId) {
-      return request.auth != null && request.auth.uid == docId;
+    // An app account: uid 'user_{digits}'.
+    function isAppUser() {
+      return request.auth != null && request.auth.uid.matches('user_[0-9]+');
     }
 
-    function isNonEmptyString(field) {
-      return field is string && field.size() > 0;
+    // '{id}' of an app account, as a string.
+    function myNum() {
+      return request.auth.uid.replace('user_', '');
+    }
+
+    // Its docs: 'sql_{id}'.
+    function mySqlId() {
+      return 'sql_' + myNum();
+    }
+
+    function myInt() {
+      return int(myNum());
+    }
+
+    // A doc id that is this app account in any of the shapes the app uses
+    // (sql_{id} normally; photo_recovery_service also tries user_{id}/{id}).
+    function isMyDocId(docId) {
+      return isAppUser()
+        && (docId == mySqlId() || docId == request.auth.uid || docId == myNum());
+    }
+
+    // A profile doc of this account: keyed sql_{id}, or created by the panel
+    // under an auto id with sqliteId = {id}.
+    function isMyProfile(docId, data) {
+      return isMyDocId(docId)
+        || (isAppUser() && data.get('sqliteId', -1) == myInt());
+    }
+
+    // The write touches only these fields.
+    function onlyChanges(keys) {
+      return request.resource.data.diff(
+          resource == null ? {} : resource.data).affectedKeys().hasOnly(keys);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -43,18 +90,22 @@ service cloud.firestore {
 
     // ═══════════════════════════════════════════════════════════════════
     // VERIFICATIONS — identity verification documents
+    // Only the backend and the panel write them: an app-created
+    // "approved" verification is what the server used to copy into the
+    // account (#61).
     // ═══════════════════════════════════════════════════════════════════
     match /verifications/{docId} {
-      // userId is the backend's INT id; the app signs in with a custom
-      // token whose uid is the string 'user_{id}' — both shapes accepted.
-      allow read: if isOwnerOrAdmin()
-        || (isAuthenticated()
-            && (resource.data.userId == request.auth.uid
-                || request.auth.uid == 'user_' + string(resource.data.userId)));
-      allow create: if isAuthenticated();
-      allow update: if isOwnerOrAdmin()
-        || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow delete: if isOwnerOrAdmin();
+      // userId is the backend's INT id (some old docs carry the 'user_{id}'
+      // string); a missing doc reveals nothing.
+      allow get: if resource == null
+        || isMyDocId(docId)
+        || (isAppUser() && (resource.data.get('userId', null) == myInt()
+                            || resource.data.get('userId', null) == request.auth.uid))
+        || isOwnerOrAdmin();
+      // The app's query is where('userId', isEqualTo: <int>).
+      allow list: if (isAppUser() && resource.data.userId == myInt())
+        || isOwnerOrAdmin();
+      allow create, update, delete: if isOwnerOrAdmin();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -68,268 +119,224 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // TRIPS
+    // TRIPS — trips/sql_{id}, mirrored by the backend
     // ═══════════════════════════════════════════════════════════════════
+
+    function isTripRider(d) {
+      return isAppUser() && d.get('passengerId', '') == mySqlId();
+    }
+
+    // The driver the backend assigned (driverId / driver_id), or one it
+    // granted (accessUids — written before the accept answer, so his
+    // listener is never denied while the mirror catches up, and kept after
+    // a reassign so his app can read releasedAt and leave).
+    function isTripDriver(d) {
+      return isAppUser()
+        && (request.auth.uid in d.get('accessUids', [])
+            || string(d.get('driverId', '')) == myNum()
+            || string(d.get('driver_id', '')) == myNum());
+    }
+
+    // An approved driver account (server-written; the app cannot write it).
+    function isApprovedDriver() {
+      return isAppUser()
+        && exists(/databases/$(database)/documents/drivers/$(mySqlId()))
+        && (get(/databases/$(database)/documents/drivers/$(mySqlId())).data.get('isApproved', false) == true
+            || get(/databases/$(database)/documents/drivers/$(mySqlId())).data.get('approvalStatus', '') == 'approved');
+    }
+
     match /trips/{tripId} {
-      allow read: if isOwnerOrAdmin()
-        || (isAuthenticated() && resource.data.passengerId == request.auth.uid)
-        || (isAuthenticated() && resource.data.driverId == request.auth.uid)
-        || isAuthenticated(); // dispatch & driver need to read all active trips
-      allow create: if isOwnerOrAdmin()
-        || (isAuthenticated()
-            && isNonEmptyString(request.resource.data.passengerName)
-            && isNonEmptyString(request.resource.data.pickupAddress)
-            && isNonEmptyString(request.resource.data.dropoffAddress));
-      allow update: if isOwnerOrAdmin()
-        || (isAuthenticated() && resource.data.driverId == request.auth.uid)
-        || (isAuthenticated() && resource.data.passengerId == request.auth.uid)
-        || isAuthenticated(); // drivers need to update trip status
+      // A doc that does not exist yet reveals nothing — the rider's
+      // listener is armed right after the request, before the mirror.
+      allow get: if resource == null
+        || isTripRider(resource.data)
+        || isTripDriver(resource.data)
+        || isOwnerOrAdmin();
+      // TEMPORARY (phase 1): driver builds before 757 look for their active
+      // trip with a query across ALL active trips
+      // (driver_online_offline._refreshActiveTripStatus); denied, a resumed
+      // trip never restarts the offer polling. 757 asks the server instead.
+      // Drop isApprovedDriver() here once no driver runs a build < 757.
+      allow list: if isOwnerOrAdmin() || isApprovedDriver();
+      // Client creates are dead code; the backend creates every trip doc.
+      allow create: if isOwnerOrAdmin();
+      // The driver writes status, his position, his card, the rider's
+      // rating and route proposals — never who the trip belongs to, who may
+      // read it, the price or the pickup code.
+      allow update: if (isTripDriver(resource.data)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                 'passengerId', 'passengerName', 'passengerPhone', 'accessUids',
+                 'sqliteId', 'fare', 'pickup_pin', 'paymentMethod',
+                 'pickupAddress', 'pickupLat', 'pickupLng',
+                 'dropoffAddress', 'dropoffLat', 'dropoffLng',
+                 'vehicleType', 'isScheduled', 'scheduledAt', 'createdAt', 'source']))
+        // The rider only answers a route proposal.
+        || (isTripRider(resource.data) && onlyChanges(['pending_route_change']))
+        || isOwnerOrAdmin();
       allow delete: if isOwnerOrAdmin();
 
-      // Rider/driver misconduct reports filed from the Cruise driver app
-      // (driver_trip_accept_screen._submitReport writes trips/{id}/reports).
-      // Subcollection rules are NOT inherited from the parent document, so
-      // without this block the deny-all catch-all rejects every report.
+      // Rider/driver misconduct reports filed from the driver app
+      // (driver_trip_accept_screen._submitReport). Subcollection rules are
+      // NOT inherited from the parent document.
       match /reports/{reportId} {
         allow read: if isOwnerOrAdmin();
-        allow create: if isAuthenticated();
+        allow create: if isTripDriver(get(/databases/$(database)/documents/trips/$(tripId)).data)
+          || isOwnerOrAdmin();
         allow update, delete: if isOwnerOrAdmin();
       }
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // USERS — includes sql_{id} documents for Cruise app photo sync
-    // Any authenticated user can read/write (data is non-sensitive: photos, profile)
+    // USERS — users/sql_{id}: photo, notification prefs, approval mirror
     // ═══════════════════════════════════════════════════════════════════
     match /users/{userId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isOwnerOrAdmin() || isAuthenticated();
-      allow update: if isOwnerOrAdmin() || isAuthenticated();
+      // TEMPORARY (phase 1): either party of a trip reads the other's
+      // photoUrl here (photo_recovery_service), and the rules cannot see
+      // who rode with whom. Single docs only; listing is the panel's.
+      allow get: if isAuthenticated();
+      allow list: if isOwnerOrAdmin();
+      // The app writes its own photo and notification prefs, nothing else
+      // (the approval fields here are the backend's).
+      allow create, update: if (isMyDocId(userId)
+            && onlyChanges(['photoUrl', 'photoUpdatedAt', 'notificationPrefs',
+                            'lastUpdated', 'updatedAt']))
+        || isOwnerOrAdmin();
       allow delete: if isOwnerOrAdmin();
 
       match /payment_methods/{methodId} {
-        allow read: if isOwner() || isOwnDoc(userId) || isOwnerOrAdmin();
-        allow create, update: if isOwnDoc(userId) || isOwnerOrAdmin();
-        allow delete: if isOwner() || isOwnDoc(userId) || isOwnerOrAdmin();
+        allow read, write: if isMyDocId(userId) || isOwnerOrAdmin();
       }
 
       match /notifications/{notificationId} {
-        allow read, write: if isOwnerOrAdmin() || isAuthenticated();
+        allow read: if isMyDocId(userId) || isOwnerOrAdmin();
+        allow write: if isOwnerOrAdmin();
       }
 
-      // Archived trip chats shown in the Cruise rider inbox
+      // Archived trip chats shown in the rider inbox
       // (rider_tracking_controller writes users/sql_{id}/inbox_chats/{tripId}).
-      // The parent doc id is the SQL user id, not the Firebase uid, so
-      // isOwnDoc() cannot be used here — this mirrors the parent users rule.
       match /inbox_chats/{chatId} {
-        allow read, write: if isOwnerOrAdmin() || isAuthenticated();
+        allow read, write: if isMyDocId(userId) || isOwnerOrAdmin();
       }
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // CLIENTS — dispatch-managed rider profiles
+    // CLIENTS / DRIVERS — profiles (panel + backend). The app reads its own
+    // and sets its own photo; status and approval are the backend's.
     // ═══════════════════════════════════════════════════════════════════
     match /clients/{clientId} {
-      allow read: if isOwnerOrAdmin() || isOwnDoc(clientId) || isAuthenticated();
-      allow create: if isOwnerOrAdmin() || isAuthenticated();
-      allow update: if isOwnerOrAdmin() || isOwnDoc(clientId) || isAuthenticated();
-      allow delete: if isOwnerOrAdmin();
+      allow get: if isMyProfile(clientId, resource.data) || isOwnerOrAdmin();
+      // firebase_storage_service: where('sqliteId', isEqualTo: <my id>).
+      allow list: if (isAppUser() && resource.data.sqliteId == myInt())
+        || isOwnerOrAdmin();
+      allow update: if (isMyProfile(clientId, resource.data)
+            && onlyChanges(['photoUrl', 'photoUpdatedAt', 'lastUpdated', 'updatedAt']))
+        || isOwnerOrAdmin();
+      allow create, delete: if isOwnerOrAdmin();
 
       match /payment_methods/{methodId} {
-        allow read: if isOwner() || isOwnDoc(clientId) || isOwnerOrAdmin();
-        allow create, update: if isOwnDoc(clientId) || isOwnerOrAdmin();
-        allow delete: if isOwner() || isOwnDoc(clientId) || isOwnerOrAdmin();
+        allow read, write: if isMyDocId(clientId) || isOwnerOrAdmin();
       }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // DRIVERS — driver profiles, location, status
-    // ═══════════════════════════════════════════════════════════════════
-    match /drivers/{driverId} {
-      allow read: if isOwnerOrAdmin() || isOwnDoc(driverId) || isAuthenticated();
-      allow create: if isOwnerOrAdmin() || isAuthenticated();
-      allow update: if isOwnerOrAdmin() || isOwnDoc(driverId) || isAuthenticated();
-      allow delete: if isOwnerOrAdmin();
-
-      match /payment_methods/{methodId} {
-        allow read: if isOwner() || isOwnDoc(driverId) || isOwnerOrAdmin();
-        allow create, update: if isOwnDoc(driverId) || isOwnerOrAdmin();
-        allow delete: if isOwner() || isOwnDoc(driverId) || isOwnerOrAdmin();
-      }
-
       match /notifications/{notificationId} {
-        allow read, write: if isOwnerOrAdmin() || isAuthenticated();
+        allow read: if isMyDocId(clientId) || isOwnerOrAdmin();
+        allow write: if isOwnerOrAdmin();
+      }
+    }
+
+    match /drivers/{driverId} {
+      allow get: if isMyProfile(driverId, resource.data) || isOwnerOrAdmin();
+      allow list: if (isAppUser() && resource.data.sqliteId == myInt())
+        || isOwnerOrAdmin();
+      allow update: if (isMyProfile(driverId, resource.data)
+            && onlyChanges(['photoUrl', 'photoUpdatedAt', 'lastUpdated', 'updatedAt']))
+        || isOwnerOrAdmin();
+      allow create, delete: if isOwnerOrAdmin();
+
+      match /payment_methods/{methodId} {
+        allow read, write: if isMyDocId(driverId) || isOwnerOrAdmin();
+      }
+      match /notifications/{notificationId} {
+        allow read: if isMyDocId(driverId) || isOwnerOrAdmin();
+        allow write: if isOwnerOrAdmin();
       }
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // AUDIT LOG — append-only, admins read
+    // PANEL-ONLY — no app build reads or writes these (inventory
+    // 2026-11-03); the backend writes them with the Admin SDK.
     // ═══════════════════════════════════════════════════════════════════
+
+    // Append-only.
     match /audit_log/{logId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isAuthenticated();
+      allow read, create: if isOwnerOrAdmin();
       allow update, delete: if false;
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // SCHEDULED RIDES
-    // ═══════════════════════════════════════════════════════════════════
     match /scheduled_rides/{rideId} {
-      allow read: if isOwnerOrAdmin()
-        || (isAuthenticated() && resource.data.passengerId == request.auth.uid);
-      allow create: if isAuthenticated();
-      allow update: if isOwnerOrAdmin()
-        || (isAuthenticated() && resource.data.passengerId == request.auth.uid);
-      allow delete: if isOwnerOrAdmin();
+      allow read, write: if isOwnerOrAdmin();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // DISPATCH-DRIVER CHATS — direct messages between dispatch and drivers
-    // Dispatch admins + the specific driver can read/write
-    // ═══════════════════════════════════════════════════════════════════
     match /dispatch_driver_chats/{driverId} {
-      allow read, write: if isOwnerOrAdmin() || isAuthenticated();
-
+      allow read, write: if isOwnerOrAdmin();
       match /messages/{messageId} {
-        allow read, write: if isOwnerOrAdmin() || isAuthenticated();
+        allow read, write: if isOwnerOrAdmin();
       }
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // DISPATCH NOTIFICATIONS — in-app notifications for dispatch panel
-    // ═══════════════════════════════════════════════════════════════════
     match /dispatch_notifications/{notifId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isOwnerOrAdmin() || isAuthenticated();
-      allow delete: if isOwnerOrAdmin();
+      allow read, write: if isOwnerOrAdmin();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // DRIVER REPORTS — bug/issue reports submitted by drivers
-    // ═══════════════════════════════════════════════════════════════════
     match /driver_reports/{reportId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isOwnerOrAdmin();
-      allow delete: if isOwnerOrAdmin();
+      allow read, write: if isOwnerOrAdmin();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // SUPPORT CHATS — rider/driver support conversations
-    // ═══════════════════════════════════════════════════════════════════
     match /support_chats/{chatId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isOwnerOrAdmin() || isAuthenticated();
-      allow delete: if isOwnerOrAdmin();
-
+      allow read, write: if isOwnerOrAdmin();
       match /messages/{messageId} {
-        allow read, write: if isOwnerOrAdmin() || isAuthenticated();
+        allow read, write: if isOwnerOrAdmin();
       }
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // ACCOUNT APPEALS — blocked/deactivated user appeals
-    // ═══════════════════════════════════════════════════════════════════
     match /account_appeals/{appealId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isOwnerOrAdmin();
-      allow delete: if isOwnerOrAdmin();
+      allow read, write: if isOwnerOrAdmin();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // ADMIN ALERTS — server/payment/security alerts from backend
-    // ═══════════════════════════════════════════════════════════════════
     match /admin_alerts/{alertId} {
-      allow read: if isOwnerOrAdmin();
-      allow update: if isOwnerOrAdmin(); // mark as read
-      allow create: if isAuthenticated(); // backend writes via service account
-      allow delete: if isOwnerOrAdmin();
+      allow read, write: if isOwnerOrAdmin();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // TRIP CHATS — conversations between driver and rider during a trip
-    // Dispatch can monitor and participate; driver/rider involved can read/write
-    // ═══════════════════════════════════════════════════════════════════
     match /trip_chats/{tripId} {
-      allow read, write: if isOwnerOrAdmin() || isAuthenticated();
-
+      allow read, write: if isOwnerOrAdmin();
       match /messages/{messageId} {
-        allow read, write: if isOwnerOrAdmin() || isAuthenticated();
+        allow read, write: if isOwnerOrAdmin();
       }
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // DISPATCH CHAT ROOMS — direct messages between dispatch and riders
-    // ═══════════════════════════════════════════════════════════════════
     match /dispatch_chat_rooms/{roomId} {
-      allow read, write: if isOwnerOrAdmin() || isAuthenticated();
-
+      allow read, write: if isOwnerOrAdmin();
       match /messages/{messageId} {
-        allow read, write: if isOwnerOrAdmin() || isAuthenticated();
+        allow read, write: if isOwnerOrAdmin();
       }
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // PAYOUTS — driver payout records and history
-    // ═══════════════════════════════════════════════════════════════════
     match /payouts/{payoutId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isOwnerOrAdmin() || isAuthenticated();
-      allow update: if isOwnerOrAdmin() || isAuthenticated();
-      allow delete: if isOwnerOrAdmin();
+      allow read, write: if isOwnerOrAdmin();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // PROMO CODES — discount/promotion codes
-    // ═══════════════════════════════════════════════════════════════════
     match /promo_codes/{promoId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isOwnerOrAdmin();
-      allow update: if isOwnerOrAdmin();
-      allow delete: if isOwnerOrAdmin();
+      allow read, write: if isOwnerOrAdmin();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // NOTIFICATION HISTORY — log of sent push notifications
-    // ═══════════════════════════════════════════════════════════════════
     match /notification_history/{notifId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isOwnerOrAdmin();
-      allow delete: if isOwnerOrAdmin();
+      allow read, write: if isOwnerOrAdmin();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // TRIP OFFERS — driver trip offer records
-    // ═══════════════════════════════════════════════════════════════════
     match /trip_offers/{offerId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isOwnerOrAdmin() || isAuthenticated();
-      allow delete: if isOwnerOrAdmin();
+      allow read, write: if isOwnerOrAdmin();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // DRIVER SESSIONS — driver online/session tracking
-    // ═══════════════════════════════════════════════════════════════════
     match /driver_sessions/{sessionId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isOwnerOrAdmin() || isAuthenticated();
-      allow delete: if isOwnerOrAdmin();
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // DISPATCH NOTIFICATIONS — in-app notifications for dispatch panel
-    // ═══════════════════════════════════════════════════════════════════
-    match /dispatch_notifications/{notifId} {
-      allow read: if isOwnerOrAdmin() || isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isOwnerOrAdmin() || isAuthenticated();
-      allow delete: if isOwnerOrAdmin();
+      allow read, write: if isOwnerOrAdmin();
     }
 
     // ═══════════════════════════════════════════════════════════════════

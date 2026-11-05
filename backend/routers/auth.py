@@ -36,6 +36,7 @@ from services.guest_link_service import link_guest_trips_to_user
 from services.socketio_service import notify_user
 from services.event_bus import event_bus
 from services import rider_presence_registry
+from services import rider_heat
 # n8n welcome/driver onboarding email triggers removed from register
 # (2026-08-25) — no emails at signup.
 from config import (
@@ -206,6 +207,7 @@ async def logout(
         pass  # never block a logout on token cleanup
     if user.role == "rider":
         await rider_presence_registry.remove_rider(user.id)
+        await rider_heat.clear(user.id)
     if rider_went_offline:
         await event_bus.push_dispatch_rider_presence(user.id, active=False)
     if not authorization or not authorization.startswith("Bearer "):
@@ -1782,12 +1784,14 @@ async def update_rider_presence(
         user.is_online = False
         await db.commit()
         await rider_presence_registry.remove_rider(user.id)
+        await rider_heat.clear(user.id)
         await event_bus.push_dispatch_rider_presence(user.id, active=False)
         return {"ok": True}
     if not user.privacy_location:
         user.is_online = False
         await db.commit()
         await rider_presence_registry.remove_rider(user.id)
+        await rider_heat.clear(user.id)
         await event_bus.push_dispatch_rider_presence(user.id, active=False)
         raise HTTPException(403, "Location privacy is disabled")
 
@@ -1798,6 +1802,10 @@ async def update_rider_presence(
     user.is_online = True
     await db.commit()
     registered = await rider_presence_registry.mark_rider_active(user.id, now.timestamp())
+    # Heat zones (2026-11-05): the raw point — the 400 m grid is the fuzz.
+    # record() never raises, so heat can never fail presence.
+    await rider_heat.record(user.id, body.lat, body.lng,
+                            rider_heat.STEP_LOCATION, now.timestamp())
     if registered:
         await event_bus.push_dispatch_rider_presence(
             user.id,
@@ -1839,6 +1847,7 @@ async def go_offline(user: User = Depends(_get_current_user), db: AsyncSession =
                 pass
     if db_user and db_user.role == "rider":
         await rider_presence_registry.remove_rider(db_user.id)
+        await rider_heat.clear(db_user.id)
         if rider_went_offline:
             await event_bus.push_dispatch_rider_presence(db_user.id, active=False)
     return {"status": "ok"}
@@ -1972,6 +1981,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     await db.refresh(db_user)
     if privacy_disabled:
         await rider_presence_registry.remove_rider(db_user.id)
+        await rider_heat.clear(db_user.id)
         await event_bus.push_dispatch_rider_presence(db_user.id, active=False)
 
     # Sync updated profile to Firestore
@@ -2878,6 +2888,7 @@ async def record_consent(
     await db.commit()
     if privacy_disabled:
         await rider_presence_registry.remove_rider(db_user.id)
+        await rider_heat.clear(db_user.id)
         await event_bus.push_dispatch_rider_presence(db_user.id, active=False)
     return {"detail": f"Consent '{consent_type}' {action}", "logged_at": datetime.now(timezone.utc).isoformat()}
 

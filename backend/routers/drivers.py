@@ -4503,20 +4503,34 @@ async def get_driver_demand_heatmap(
     lat: float = Query(...),
     lng: float = Query(...),
     radius_km: float = Query(10.0),
+    user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get demand heatmap for drivers showing high-demand pickup areas nearby."""
+    """Get demand heatmap for drivers showing high-demand pickup areas nearby.
+
+    A rider's exact pickup never leaves the server (2026-11-05): it used to
+    go out to anyone holding the app's API key. Signed-in drivers only, and
+    each point is the centre of its ~400 m heat cell (services/rider_heat).
+    """
+    from services.rider_heat import cell_of
+    if user.role not in ("driver", "admin"):
+        raise HTTPException(403, "Driver access required")
     since = datetime.now(timezone.utc) - timedelta(minutes=30)
     result = await db.execute(
         select(Trip.pickup_lat, Trip.pickup_lng, func.count(Trip.id).label("cnt"))
         .where(Trip.status.in_(["requested", "driver_en_route"]), Trip.created_at >= since)
         .group_by(Trip.pickup_lat, Trip.pickup_lng)
     )
-    points = []
+    cells: dict = {}
     for row in result.all():
         p_lat, p_lng, cnt = row
         if p_lat and p_lng and _haversine(lat, lng, p_lat, p_lng) <= radius_km:
-            points.append({"lat": p_lat, "lng": p_lng, "weight": cnt})
+            i, j, c_lat, c_lng = cell_of(p_lat, p_lng)
+            cell = cells.setdefault((i, j), {"lat": round(c_lat, 5),
+                                             "lng": round(c_lng, 5),
+                                             "weight": 0})
+            cell["weight"] += cnt
+    points = list(cells.values())
 
     # Also include active surge zones
     surge_r = await db.execute(select(SurgeZone).where(SurgeZone.is_active == True, SurgeZone.surge_multiplier > 1.0))

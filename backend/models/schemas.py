@@ -190,6 +190,16 @@ class RiderPresenceIn(BaseModel):
         return self
 
 
+class DemandIntentIn(BaseModel):
+    """A rider typed a pickup or a dropoff (heat zones, 2026-11-05).
+    lat/lng is always the PICKUP point — that is where the driver goes."""
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    step: Literal["pickup", "dropoff"]
+
+
 # ═══════════════════════════════════════════════════════
 #  Trip Schemas
 # ═══════════════════════════════════════════════════════

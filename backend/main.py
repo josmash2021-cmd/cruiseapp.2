@@ -982,6 +982,11 @@ async def _start_scheduler_agents() -> None:
     from services.scheduled_board import scheduled_board_loop
     _safe_create_task(scheduled_board_loop(lambda: _is_scheduler_leader))
 
+    # Heat zones (owner 2026-11-05): the leader folds live rider demand into
+    # 400 m cells and writes config/rider_heat when they change (~1.5 s).
+    from services.rider_heat import rider_heat_loop
+    _safe_create_task(rider_heat_loop(lambda: _is_scheduler_leader))
+
     # Driving-time dispatch learns from real pickups (owner 2026-11-01): every
     # worker reloads its own correction factors; the leader prunes old rows.
     from services.pickup_eta import calibration_loop
@@ -1498,6 +1503,7 @@ from routers.worker import router as worker_router
 from routers.legal import router as legal_router
 from routers.store import router as store_router
 from routers.zero_tolerance import router as zero_tolerance_router
+from routers.heat_zones import router as heat_zones_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -1523,6 +1529,7 @@ app.include_router(worker_router)
 app.include_router(legal_router)
 app.include_router(store_router)
 app.include_router(zero_tolerance_router)
+app.include_router(heat_zones_router)
 
 # Load-test auth exists only on staging: mounted AND self-gated by
 # LOAD_TEST=1 — production never includes it (the 404 double-check inside

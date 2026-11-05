@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -16,6 +14,8 @@ import '../../config/map_theme.dart';
 import '../../config/mapbox_config.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
+import '../../map/flat_map_projection.dart';
+import '../../map/map_callout.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
@@ -29,6 +29,7 @@ import '../../utils/fix_kinematics.dart';
 import '../../utils/friendly_load_error.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../widgets/gold_location_dot.dart';
+import '../../widgets/map/map_callout_bubble.dart';
 import '../../widgets/neu_style.dart';
 import '../../widgets/glass_style.dart';
 import '../../widgets/glass_notification_banner.dart';
@@ -118,24 +119,20 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   double? _lastQLng;
   mapbox.CoordinateBounds? _lastQBbox;
   String? _lastAvailJson;
-  mapbox.PointAnnotationManager? _bubbleMgr;
   mapbox.PointAnnotationManager? _dotMgr;
   mapbox.PointAnnotation? _dotAnnot;
   mapbox.PolylineAnnotationManager? _routeMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
-  // Bubble pop-up entrance: trips already seen render silently; new ones
-  // scale in with a shared ticker.
-  Ticker? _bubblePopTicker;
-  final Set<Object?> _seenBubbleTripIds = {};
   mapbox.CircleAnnotationManager? _dotsEndMgr;
   final List<mapbox.CircleAnnotation> _endDots = [];
-  mapbox.Cancelable? _bubbleTap;
 
-  /// annotation.id → trip, so a bubble tap resolves to its ride.
-  final Map<String, Map<String, dynamic>> _bubbleTrips = {};
+  // The rides' callouts (owner 2026-11-04, "como cuando un viaje todos han
+  // rechazado"): a Flutter overlay like the online map's — the camera of
+  // every frame, and the zoom hysteresis of rule #49b.
+  mapbox.CameraState? _camState;
+  final ValueNotifier<int> _camFrame = ValueNotifier<int>(0);
+  bool _calloutsExpanded = false;
 
-  /// label → rendered pill bytes; "$12" only gets rasterised once.
-  final Map<String, Uint8List> _bubbleByteCache = {};
 
   /// The driver's own marker — the same gold badge every other driver
   /// screen paints. Static here: this screen browses, it does not navigate.
@@ -225,8 +222,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _countdownTimer?.cancel();
     _availPollTimer?.cancel();
-    _bubbleTap?.cancel();
-    _bubblePopTicker?.dispose();
+    _camFrame.dispose();
     unawaited(_gps?.stop());
     _gps = null;
     _driverDot.dispose();
@@ -251,7 +247,6 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         // destroyed — null them here so nothing writes to a dead native
         // channel, and onMapCreated re-seeds them on remount.
         _map = null;
-        _bubbleMgr = null;
         _dotMgr = null;
         _dotAnnot = null;
         _dotAlignmentSet = false;
@@ -259,8 +254,6 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         _routeAnnot = null;
         _dotsEndMgr = null;
         _endDots.clear();
-        _bubbleTap = null;
-        _bubbleTrips.clear();
         setState(() => _mapMounted = false);
         await surfaceRemoved();
       },
@@ -622,13 +615,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         await step();
       } catch (_) {}
     }
-    _bubbleMgr = await ctrl.annotations.createPointAnnotationManager();
     _dotMgr = await ctrl.annotations.createPointAnnotationManager();
     _routeMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _dotsEndMgr = await ctrl.annotations.createCircleAnnotationManager();
-    // Bubbles must stack freely — two pickups on the same block would
-    // otherwise hide each other at low zoom.
-    for (final mgr in [_bubbleMgr, _dotMgr]) {
+    for (final mgr in [_dotMgr]) {
       if (mgr == null) continue;
       try {
         final lid = mgr.id;
@@ -637,8 +627,12 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
             .setStyleLayerProperty(lid, 'icon-ignore-placement', true);
       } catch (_) {}
     }
-    _bubbleTap?.cancel();
-    _bubbleTap = _bubbleMgr?.tapEvents(onTap: _onBubbleTap);
+    // The callouts draw from the camera: seed it (no change event until
+    // the camera first moves).
+    try {
+      _camState = await ctrl.getCameraState();
+      _camFrame.value++;
+    } catch (_) {}
     // Image-bearing annotations (the price bubbles) must NOT attach before
     // the style is up: pre-style they render as the default blue marker
     // (the 2026-08-08 bug this gate exists for). Geometry-only content —
@@ -655,6 +649,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   void _onCameraChanged(mapbox.CameraChangedEventData event) {
     final coords = event.cameraState.center.coordinates;
     _lastCamCenter = LatLng(coords.lat.toDouble(), coords.lng.toDouble());
+    _camState = event.cameraState;
+    _camFrame.value++;
   }
 
   void _onMapIdle(mapbox.MapIdleEventData _) {
@@ -663,11 +659,6 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     if (_selected == null && mounted) {
       setState(() => _showSearchArea = true);
     }
-  }
-
-  void _onBubbleTap(mapbox.PointAnnotation annot) {
-    final trip = _bubbleTrips[annot.id];
-    if (trip != null) _selectTrip(trip);
   }
 
   // ─────────────────────────────────────────────
@@ -727,218 +718,76 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   //  Price bubbles
   // ─────────────────────────────────────────────
 
-  /// Renders the marker as ONE bitmap: a "$N" text-message cube (rounded
-  /// square with the little tail at the bottom — user spec 2026-08-25, no
-  /// more pill) floating above a 3D gold pin with the rider inside (owner-
-  /// approved redesign 2026-10-31: "más moderno y con sombra para que se
-  /// vea 3D", and a slightly bigger price cube). A bare textField cannot
-  /// draw the bubble background, and a PointAnnotation takes a single
-  /// image — so cube + pin are rasterised together here. The pin's contact
-  /// shadow sits at the bottom edge so IconAnchor.BOTTOM plants it on the
-  /// pickup.
-  Future<Uint8List?> _bubbleBytes(String label, {bool selected = false}) async {
-    final key = '$label|${selected ? 's' : 'n'}';
-    final cached = _bubbleByteCache[key];
-    if (cached != null) return cached;
-    const scale = 3.0; // raster density — stays crisp on retina
-    const hPad = 14.0, vPad = 8.0; // was 12 / 6 — the cube grew (2026-10-31)
-    const borderW = 1.0;
-    const radius = 8.0; // chat-bubble corners, not a stadium
-    const tailH = 5.5, tailW = 11.0; // the tail pointing at the pin
-    const shadowPad = 8.0; // room for the blurred shadows to bleed into
-    const gap = 2.0; // air between the tail tip and the pin
-    const discD = 34.0; // the pin: a gold disc with the rider inside
-    const groundH = 7.0; // its contact shadow on the street
-    final tp = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: TextStyle(
-          color: selected ? Colors.black : _gold,
-          fontSize: 18, // was 15
-          fontWeight: FontWeight.w800,
-          height: 1.0,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final w = tp.width + hPad * 2 + borderW * 2;
-    final h = tp.height + vPad * 2 + borderW * 2;
-    final totalW = max(w, discD + 8);
-    final totalH = h + tailH + gap + discD + groundH;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    canvas.scale(scale);
-    canvas.translate(shadowPad, shadowPad);
-    final left = (totalW - w) / 2;
-    final bubbleRect = Rect.fromLTWH(left, 0, w, h);
-    // The text-message cube: rounded square + a small triangle tail at the
-    // bottom centre, drawn as one filled path (border goes on the rect
-    // only, so the tail's join is not outlined twice).
-    final bubblePath = Path()
-      ..addRRect(RRect.fromRectAndRadius(
-          bubbleRect, const Radius.circular(radius)))
-      ..moveTo(totalW / 2 - tailW / 2, h - 1)
-      ..lineTo(totalW / 2, h + tailH)
-      ..lineTo(totalW / 2 + tailW / 2, h - 1)
-      ..close();
-    // Soft shadow first, then the cube on top of it — lit from above.
-    canvas.drawPath(
-      bubblePath.shift(const Offset(0, 2)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.5)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.5),
-    );
-    final cubeFill = Paint();
-    if (selected) {
-      cubeFill.color = _gold;
-    } else {
-      cubeFill.shader = ui.Gradient.linear(
-        bubbleRect.topCenter,
-        bubbleRect.bottomCenter,
-        const [Color(0xFF2B2B34), Color(0xFF1C1C24)],
-      );
-    }
-    canvas.drawPath(bubblePath, cubeFill);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(bubbleRect, const Radius.circular(radius)),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = borderW
-        ..color = Colors.white.withValues(alpha: selected ? 0.25 : 0.12),
-    );
-    tp.paint(canvas, Offset(left + hPad + borderW, vPad + borderW));
-
-    // ── The pin: a gold disc lit from the top-left, white rim, a specular
-    // highlight, a drop shadow under it and a contact shadow on the street
-    // — the rider's bust inside in the app's dark ink.
-    const r = discD / 2;
-    final c = Offset(totalW / 2, h + tailH + gap + r);
-    canvas.drawOval(
-      Rect.fromCenter(
-          center: Offset(c.dx, c.dy + r + groundH / 2),
-          width: discD * 0.7,
-          height: groundH * 0.9),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.45)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
-    );
-    canvas.drawCircle(
-      c.translate(0, 2.5),
-      r,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.55)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-    );
-    canvas.drawCircle(
-      c,
-      r,
-      Paint()
-        ..shader = ui.Gradient.radial(
-          c.translate(-r * 0.3, -r * 0.4),
-          r * 1.5,
-          const [Color(0xFFFFE9A3), Color(0xFFE8C547), Color(0xFFA9861F)],
-          const [0.0, 0.55, 1.0],
-        ),
-    );
-    canvas.drawCircle(
-      c,
-      r - 1,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = selected ? 3 : 2
-        ..color = Colors.white,
-    );
-    canvas.drawOval(
-      Rect.fromCenter(
-          center: c.translate(-r * 0.32, -r * 0.48),
-          width: r * 0.95,
-          height: r * 0.48),
-      Paint()..color = Colors.white.withValues(alpha: 0.35),
-    );
-    final ink = Paint()..color = const Color(0xFF14141A);
-    canvas.drawCircle(c.translate(0, -r * 0.28), r * 0.29, ink);
-    canvas.drawPath(
-      Path()
-        ..moveTo(c.dx - r * 0.56, c.dy + r * 0.6)
-        ..cubicTo(c.dx - r * 0.53, c.dy + r * 0.18, c.dx - r * 0.28,
-            c.dy + r * 0.08, c.dx, c.dy + r * 0.08)
-        ..cubicTo(c.dx + r * 0.28, c.dy + r * 0.08, c.dx + r * 0.53,
-            c.dy + r * 0.18, c.dx + r * 0.56, c.dy + r * 0.6)
-        ..close(),
-      ink,
-    );
-
-    final side = shadowPad * 2;
-    final img = await recorder.endRecording().toImage(
-        ((totalW + side) * scale).ceil(), ((totalH + side) * scale).ceil());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    final raw = bytes?.buffer.asUint8List();
-    if (raw != null) _bubbleByteCache[key] = raw;
-    return raw;
-  }
-
+  /// The rides on the board are a Flutter overlay ([_rideCalloutOverlay])
+  /// built from [_filtered] and [_selected]; this only asks for a rebuild.
+  /// Kept as the one call every list, filter and selection change makes.
   Future<void> _syncBubbles() async {
-    final mgr = _bubbleMgr;
-    if (mgr == null || !mounted) return;
-    try {
-      await mgr.deleteAll();
-    } catch (_) {}
-    _bubbleTrips.clear();
-    // Freshly-appeared trips get the pop-up entrance; trips already on the
-    // map (selection restyle, filter round-trips) re-render silently.
-    final pops = <(mapbox.PointAnnotation, double)>[];
-    for (final trip in _filtered) {
-      final lat = (trip['pickup_lat'] as num?)?.toDouble();
-      final lng = (trip['pickup_lng'] as num?)?.toDouble();
-      if (!isValidLatLng(lat, lng)) continue;
-      final point = safePoint(lng!, lat!);
-      if (point == null) continue;
-      final fare = (trip['fare'] as num?)?.toDouble() ?? 0;
-      final isSelected = _selected != null && _selected!['id'] == trip['id'];
-      final bytes = await _bubbleBytes('\$${fare.round()}', selected: isSelected);
-      if (!mounted) return;
-      if (bytes == null) continue;
-      // The bitmap is rendered at 3× density — ~1.75× logical size so the
-      // cube + figure read clearly at city zoom (user spec 2026-08-25:
-      // bigger). The selected marker stands larger on top.
-      final target = (isSelected ? 1.95 : 1.75) / 3.0;
-      final isNew = _seenBubbleTripIds.add(trip['id']);
-      try {
-        final annot = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: point,
-          image: bytes,
-          iconSize: isNew ? target * 0.2 : target,
-          // The figure's feet are the bottom edge — they plant on the
-          // pickup point while the cube floats above.
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
-        ));
-        _bubbleTrips[annot.id] = trip;
-        if (isNew) pops.add((annot, target));
-      } catch (_) {}
-      if (!mounted) return;
-    }
-    if (pops.isNotEmpty) _popBubbles(pops);
+    if (mounted) setState(() {});
   }
 
-  /// Pop-up entrance for freshly-appeared bubbles (user spec 2026-08-25):
-  /// one shared ticker scales each new marker 0.2→1.0 with easeOutBack.
-  void _popBubbles(List<(mapbox.PointAnnotation, double)> items) {
-    _bubblePopTicker?.stop();
-    _bubblePopTicker = createTicker((elapsed) {
-      final mgr = _bubbleMgr;
-      if (mgr == null || !mounted) {
-        _bubblePopTicker?.stop();
-        return;
-      }
-      final t = (elapsed.inMilliseconds / 350).clamp(0.0, 1.0);
-      final k = 0.2 + 0.8 * Curves.easeOutBack.transform(t);
-      for (final (annot, target) in items) {
-        annot.iconSize = target * k;
-        unawaited(mgr.update(annot).catchError((Object _) {}));
-      }
-      if (t >= 1) _bubblePopTicker?.stop();
-    })
-      ..start();
+  /// The rides on the board as the online map's trip callouts (owner
+  /// 2026-11-04: "hazlo como cuando un viaje todos han rechazado"): the
+  /// same MapCalloutBubble — the gold tile, "$20 CRUISE", the pickup's day
+  /// and time under it — glued to its pickup every camera frame with
+  /// FlatMapProjection, open from zoom 11 and down to the price below 10.6
+  /// (rule #49b). A tap opens the ride; while one is open its route and
+  /// card own the map, so the callouts step aside.
+  Widget _rideCalloutOverlay() {
+    if (kIsWeb) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: _camFrame,
+      builder: (context, _) {
+        final cam = _camState;
+        if (cam == null || _selected != null || !_mapMounted) {
+          return const SizedBox.shrink();
+        }
+        final s = S.of(context);
+        final isEs = Localizations.localeOf(context).languageCode == 'es';
+        final size = MediaQuery.sizeOf(context);
+        _calloutsExpanded =
+            calloutExpandedForZoom(cam.zoom, wasExpanded: _calloutsExpanded);
+        final c = cam.center.coordinates;
+        final center = LatLng(c.lat.toDouble(), c.lng.toDouble());
+        final pad = cam.padding;
+        final shift = Offset(
+            (pad.left - pad.right) / 2, (pad.top - pad.bottom) / 2);
+        final children = <Widget>[];
+        for (final trip in _filtered) {
+          final lat = (trip['pickup_lat'] as num?)?.toDouble();
+          final lng = (trip['pickup_lng'] as num?)?.toDouble();
+          if (!isValidLatLng(lat, lng)) continue;
+          final off = FlatMapProjection.screenOffsetHeading(
+            target: LatLng(lat!, lng!),
+            cameraCenter: center,
+            zoom: cam.zoom,
+            bearingDeg: cam.bearing,
+            pitchDeg: cam.pitch,
+            viewport: size,
+          );
+          if (off == null) continue;
+          final p = off + shift;
+          if (!FlatMapProjection.isOnScreen(p, size, margin: 160)) continue;
+          final price = tripCalloutPrice(trip['fare']);
+          final product = tripCalloutProduct(trip['vehicle_type']);
+          final at = _parseScheduledAt(trip);
+          children.add(Positioned(
+            key: ValueKey('resv-callout-${trip['id']}'),
+            left: p.dx,
+            top: p.dy,
+            child: MapCalloutBubble(
+              variant: CalloutVariant.trip,
+              title: price ?? product,
+              titleFade: price == null ? null : ' $product',
+              subtitle: at == null ? null : _whenShort(s, at, isEs),
+              expanded: _calloutsExpanded,
+              onTap: () => _selectTrip(trip),
+            ),
+          ));
+        }
+        if (children.isEmpty) return const SizedBox.shrink();
+        return Stack(clipBehavior: Clip.none, children: children);
+      },
+    );
   }
 
   // ─────────────────────────────────────────────
@@ -1263,6 +1112,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
                   )
                 : const NeuDotsBackdrop(),
           ),
+          // ── The rides, as the online map's callouts ──
+          Positioned.fill(child: _rideCalloutOverlay()),
 
           // ── Top bar: X + title + filter pills inside ONE solid container
           // (2026-08-25, Lyft reference): they no longer float over the map.

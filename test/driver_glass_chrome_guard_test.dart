@@ -224,15 +224,22 @@ void main() {
       expect(fab, contains('MapChipSurface('));
     });
 
-    test('the ride marker: bigger cube and the 3D gold pin', () {
-      final m = sched.substring(sched.indexOf('Future<Uint8List?> _bubbleBytes'),
-          sched.indexOf('final side = shadowPad * 2;'));
-      expect(m, contains('fontSize: 18, // was 15'));
-      expect(m, contains('const discD = 34.0;'));
-      expect(m, contains('ui.Gradient.radial('));
-      expect(m, contains('const groundH = 7.0;'));
-      expect(m, isNot(contains('emoji_people_rounded')),
-          reason: 'the flat hailing glyph is gone');
+    // Owner 2026-11-04 ("hazlo como cuando un viaje todos han rechazado"):
+    // the rides are the online map's trip callouts, not the cube + 3D pin.
+    test("the rides wear the online map's trip callouts", () {
+      final i = sched.indexOf('Widget _rideCalloutOverlay() {');
+      expect(i, greaterThan(-1));
+      final m = sched.substring(i, i + 3200);
+      expect(m, contains('MapCalloutBubble('));
+      expect(m, contains('variant: CalloutVariant.trip,'));
+      expect(m, contains('FlatMapProjection.screenOffsetHeading('));
+      expect(m, contains('calloutExpandedForZoom(cam.zoom'));
+      expect(m, contains('onTap: () => _selectTrip(trip),'));
+      expect(m, contains('_selected != null'),
+          reason: 'an open ride owns the map: the callouts step aside');
+      expect(sched, isNot(contains('_bubbleBytes')),
+          reason: 'the bitmap cube + 3D pin are gone');
+      expect(sched, contains('Positioned.fill(child: _rideCalloutOverlay()),'));
     });
   });
 }

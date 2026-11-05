@@ -10,14 +10,18 @@ import '../services/haptic_service.dart';
 /// How long "Llegaste temprano" stays up on its own.
 const kEarlyArrivalAutoClose = Duration(seconds: 10);
 
-/// "Llegaste temprano" (owner 2026-11-03, Lyft's "You're here early"): the
+/// "Llegaste temprano" (owner 2026-11-03, Lyft's "You're here early"; laid
+/// out as Lyft's, owner 2026-11-04 "idéntica, mismo diseño tal cual"): the
 /// driver swiped "Llegué" before a reservation's pickup time. The rider is
 /// told the driver is there (the usual arrival push); the wait only starts
-/// counting at [waitStartsAt] (server: wait_clock_start). Closes with
-/// Entendido, the X, or by itself — the X's ring empties as it runs out.
+/// counting at [waitStartsAt] (server: wait_clock_start) — Cruise does not
+/// pay the early wait, so the copy says when it starts, not "paid to wait".
+/// A panel with its handle holds the card (white clock, title, the X whose
+/// ring empties as the auto-close runs) and a narrower Okay under it; the
+/// map stays in sight. Closes with Okay, the X, or by itself.
 ///
-/// A solid card, no blur: on iOS a blur over the native map is rectangular
-/// and shows square corners around a floating rounded card (rule 43).
+/// Solid, no blur: on iOS a blur over the native map is rectangular and
+/// shows square corners around a floating rounded card (rule 43).
 Future<void> showEarlyArrivalSheet(
   BuildContext context, {
   required String riderFirstName,
@@ -27,7 +31,7 @@ Future<void> showEarlyArrivalSheet(
     context: context,
     barrierDismissible: true,
     barrierLabel: 'early-arrival',
-    barrierColor: Colors.black.withValues(alpha: 0.35),
+    barrierColor: Colors.transparent,
     transitionDuration: const Duration(milliseconds: 320),
     pageBuilder: (ctx, _, __) => EarlyArrivalCard(
       riderFirstName: riderFirstName,
@@ -38,8 +42,9 @@ Future<void> showEarlyArrivalSheet(
       return FadeTransition(
         opacity: a,
         child: SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
-              .animate(a),
+          position:
+              Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
+                  .animate(a),
           child: child,
         ),
       );
@@ -119,91 +124,128 @@ class _EarlyArrivalCardState extends State<EarlyArrivalCard>
     return Align(
       alignment: Alignment.bottomCenter,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(10, 0, 10, bottom + 16),
-        child: Material(
-          key: const ValueKey('early-arrival-card'),
-          color: const Color(0xF51E1E26),
-          shape: RoundedRectangleBorder(
+        // Where the nav panel floats: 8 at the sides, half the home bar.
+        padding: EdgeInsets.fromLTRB(8, 0, 8, 8 + bottom * 0.5),
+        child: DecoratedBox(
+          // A soft lift off the map; a Material elevation of 12 read as a
+          // hard black band round the panel.
+          decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(30),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 24,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
-          elevation: 12,
-          shadowColor: Colors.black,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 22, 14, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.schedule_rounded, color: _gold, size: 30),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(s.earlyArrivalTitle,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 10),
-                          Text(
-                            s.earlyArrivalBody(widget.riderFirstName, time),
-                            style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.85),
-                                fontSize: 15.5,
-                                height: 1.45),
-                          ),
-                        ],
-                      ),
+          child: Material(
+            key: const ValueKey('early-arrival-card'),
+            color: const Color(0xF71A1A21),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // The panel's handle.
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    const SizedBox(width: 6),
-                    GestureDetector(
-                      key: const ValueKey('early-arrival-close'),
-                      onTap: _close,
-                      child: SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: AnimatedBuilder(
-                          animation: _clock,
-                          builder: (_, child) => CustomPaint(
-                            painter: _CloseRing(1 - _clock.value),
-                            child: child,
-                          ),
-                          child: const Center(
-                            child: Icon(Icons.close_rounded,
-                                color: Colors.white, size: 22),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(18, 18, 12, 20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A2A32),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Icon(Icons.schedule_rounded,
+                              color: Colors.white, size: 30),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(s.earlyArrivalTitle,
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 8),
+                              Text(
+                                s.earlyArrivalBody(widget.riderFirstName, time),
+                                style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                    fontSize: 15,
+                                    height: 1.45),
+                              ),
+                            ],
                           ),
                         ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          key: const ValueKey('early-arrival-close'),
+                          onTap: _close,
+                          child: SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: AnimatedBuilder(
+                              animation: _clock,
+                              builder: (_, child) => CustomPaint(
+                                painter: _CloseRing(1 - _clock.value),
+                                child: child,
+                              ),
+                              child: const Center(
+                                child: Icon(Icons.close_rounded,
+                                    color: Colors.white, size: 22),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  // Narrower than the card, centred, as in the reference.
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 48),
+                    child: GestureDetector(
+                      key: const ValueKey('early-arrival-ok'),
+                      onTap: () {
+                        HapticService.selectionClick();
+                        _close();
+                      },
+                      child: Container(
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: _gold,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(s.earlyArrivalOk,
+                            style: const TextStyle(
+                                color: Colors.black,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800)),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                GestureDetector(
-                  key: const ValueKey('early-arrival-ok'),
-                  onTap: () {
-                    HapticService.selectionClick();
-                    _close();
-                  },
-                  child: Container(
-                    height: 56,
-                    margin: const EdgeInsets.only(right: 6),
-                    decoration: BoxDecoration(
-                      color: _gold,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(s.gotIt,
-                        style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800)),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -222,7 +264,8 @@ class _CloseRing extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final r = math.min(size.width, size.height) / 2 - 2;
     final c = size.center(Offset.zero);
-    canvas.drawCircle(c, r, Paint()..color = Colors.white.withValues(alpha: 0.10));
+    canvas.drawCircle(
+        c, r, Paint()..color = Colors.white.withValues(alpha: 0.10));
     if (left <= 0) return;
     canvas.drawArc(
       Rect.fromCircle(center: c, radius: r),

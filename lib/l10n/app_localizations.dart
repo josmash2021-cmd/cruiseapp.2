@@ -6072,6 +6072,7 @@ class S {
   /// "You're here early" / "Scheduled").
   String get earlyArrivalTitle =>
       _es ? 'Llegaste temprano' : "You're here early";
+  String get earlyArrivalOk => _es ? 'Ok' : 'Okay';
   String earlyArrivalBody(String name, String time) => _es
       ? 'Le avisamos a $name que llegaste, por si ya está listo. Tu espera '
           'empieza a contar a las $time.'

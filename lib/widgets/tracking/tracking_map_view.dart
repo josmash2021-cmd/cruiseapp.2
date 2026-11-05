@@ -1177,6 +1177,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
     // A rebuilt route invalidates the projection window's anchor.
     _projHintIdx = 0;
+    _roadM = null;
   }
 
   /// Returns (position, bearing) at a given distance along the route (meters).

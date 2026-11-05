@@ -2277,15 +2277,35 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // freeze the extrapolation when the feed goes quiet.
     _carMotion.tick(dt);
     if (_carMotion.hasPosition) {
-      _animPos = LatLng(_carMotion.lat!, _carMotion.lng!);
-      _driverPos = _animPos;
+      final glide = LatLng(_carMotion.lat!, _carMotion.lng!);
+      _animPos = glide;
       _animBearing = _carMotion.bearing;
-      _driverBearing = _animBearing;
       // Route progress is derived from the smoothed position, never driven:
       // ETA, remaining distance and the route erase all read this.
       if (_segDist.isNotEmpty) {
-        _traveledM = _projectOntoRoute(_driverPos).clamp(0.0, _segDist.last);
+        _traveledM = _projectOntoRoute(glide).clamp(0.0, _segDist.last);
+        // On the route the car is drawn ON the street (owner 2026-11-05,
+        // "ver moverse el carrito fluido"): the glide alone runs straight
+        // between fixes — the real engine fed 1 Hz fixes cut a corner by
+        // 11 m and, with phone GPS noise, sat 6 m+ off the line one frame in
+        // five. Its progress along the route is drawn at the route's own
+        // point instead, and never creeps back (a glide that overshot a
+        // corner holds there until the street catches up).
+        final onRoute = _carSnapActive &&
+            _hav(glide, _posAtDistUltraSmooth(_traveledM).$1) * 1609.34 < 35;
+        if (onRoute) {
+          final prev = _roadM;
+          if (prev != null && _traveledM < prev && prev - _traveledM < 25) {
+            _traveledM = prev;
+          }
+          _roadM = _traveledM;
+          _animPos = _posAtDistUltraSmooth(_traveledM).$1;
+        } else {
+          _roadM = null;
+        }
       }
+      _driverPos = _animPos;
+      _driverBearing = _animBearing;
     }
 
     // Update map annotations directly — no setState needed (avoids 60fps widget rebuilds)

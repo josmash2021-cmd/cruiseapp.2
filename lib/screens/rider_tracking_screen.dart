@@ -443,6 +443,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// route (and with it `_segDist`) is rebuilt.
   int _projHintIdx = 0;
 
+  /// How far along the route the car is DRAWN (owner 2026-11-05): the glide
+  /// projected onto the street, never creeping back. Null = not on the
+  /// route (or a new route).
+  double? _roadM;
+
   /// Pin-raster retry bookkeeping for `_schedulePinLoadRetry` (a GPU-busy
   /// mount used to mean no pins for the whole session).
   int _pinLoadRetries = 0;

@@ -105,8 +105,8 @@ class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
   /// The map behind: blurred and dimmed (owner 2026-11-05: "todo ese
   /// contenido debe salir en el centro nublando el contenido detrás de
   /// él") — soft, the whole trip still shows through.
-  static const double _kBlur = 10;
-  static const double _kDim = 0.45;
+  static const double _kBlur = 8;
+  static const double _kDim = 0.40;
 
   @override
   Widget build(BuildContext context) {

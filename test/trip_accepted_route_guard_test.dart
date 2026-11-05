@@ -15,7 +15,7 @@ void main() {
     final overlay = read('lib/screens/driver/trip_accepted_overlay.dart');
     expect(overlay, isNot(contains('// ── Pickup address pill ──')));
     expect(overlay, contains('BackdropFilter('));
-    expect(overlay, contains('static const double _kBlur = 10;'));
+    expect(overlay, contains('static const double _kBlur = 8;'));
     expect(overlay, contains('Center('));
     expect(overlay, isNot(contains('stops: const [0.48, 0.64, 1.0],')),
         reason: 'no more darkening only the bottom half');

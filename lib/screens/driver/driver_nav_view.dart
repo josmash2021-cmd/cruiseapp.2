@@ -14,6 +14,7 @@ import '../../config/map_theme.dart';
 import '../../config/mapbox_config.dart';
 import '../../l10n/app_localizations.dart';
 import '../../map/camera_action_gate.dart';
+import '../../map/dest_building.dart';
 import '../../map/driver_road_lock.dart';
 import '../../map/nav_dest_markers.dart';
 import '../../map/map_surface_coordinator.dart';
@@ -697,6 +698,16 @@ class DriverNavViewState extends State<DriverNavView>
   // The turn box and whatever hangs from it ("Luego", an open guide, the
   // status pills): the route overview frames the line below its bottom.
   final GlobalKey _topBarKey = GlobalKey();
+  // The building at the address, outlined in gold under the route (owner
+  // 2026-11-04, Lyft). Looked up once per destination from the map's own
+  // building layer; redrawn on a new surface.
+  mapbox.PolygonAnnotationManager? _bldgFillMgr;
+  mapbox.PolylineAnnotationManager? _bldgLineMgr;
+  LatLng? _bldgFor;
+  bool _bldgDone = false;
+  bool _bldgBusy = false;
+  DateTime _bldgLastTry = DateTime.fromMillisecondsSinceEpoch(0);
+  List<String>? _buildingLayerIds;
   bool _panelMoving = false;
   DateTime? _stillSince;
   late final Stream<int> _chatUnread = ChatService().unreadCountStream(
@@ -900,6 +911,9 @@ class DriverNavViewState extends State<DriverNavView>
         // Every annotation handle belongs to the PlatformView being
         // destroyed — drop them so nothing writes to a dead channel.
         _map = null;
+        _bldgFillMgr = null;
+        _bldgLineMgr = null;
+        _bldgDone = false;
         _polyMgr = null;
         _pointMgr = null;
         _signMgr = null;
@@ -984,6 +998,10 @@ class DriverNavViewState extends State<DriverNavView>
         await step();
       } catch (_) {}
     }
+    // First, so the route line and every pin draw over it.
+    _bldgFillMgr = await ctrl.annotations.createPolygonAnnotationManager();
+    _bldgLineMgr = await ctrl.annotations.createPolylineAnnotationManager();
+    _bldgDone = false;
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _pointMgr = await ctrl.annotations.createPointAnnotationManager();
     // Under the car, over the line.
@@ -1088,6 +1106,7 @@ class DriverNavViewState extends State<DriverNavView>
 
   void _tunnelTick() {
     if (!mounted) return;
+    unawaited(_findDestBuilding());
     // A speed nobody re-measured for 3 s is not a speed (owner 2026-11-02):
     // with no fixes the box froze on the last number — 45 mph through a
     // tunnel or after the signal died. It reads "–" until a fix measures
@@ -2415,6 +2434,87 @@ class DriverNavViewState extends State<DriverNavView>
         } catch (_) {}
       }
     } catch (_) {}
+  }
+
+  /// Looks for the building at [_dest] while it is on screen (every 2 s
+  /// until found; the map only draws footprints from zoom 15, and only for
+  /// tiles it has) and outlines it in gold. A new destination clears it.
+  Future<void> _findDestBuilding() async {
+    final map = _map;
+    final fill = _bldgFillMgr;
+    final line = _bldgLineMgr;
+    if (kIsWeb || map == null || fill == null || line == null) return;
+    if (!_mapMounted || _bldgBusy) return;
+    final dest = _dest;
+    if (_bldgFor != dest) {
+      _bldgFor = dest;
+      _bldgDone = false;
+      unawaited(fill.deleteAll().catchError((Object _) {}));
+      unawaited(line.deleteAll().catchError((Object _) {}));
+    }
+    if (_bldgDone) return;
+    final now = DateTime.now();
+    if (now.difference(_bldgLastTry) < const Duration(seconds: 2)) return;
+    if (!_overview && RouteSplice.haversineM(_driverLatLng(), dest) > 1500) {
+      return;
+    }
+    final size = MediaQuery.maybeSizeOf(context);
+    if (size == null) return;
+    _bldgBusy = true;
+    _bldgLastTry = now;
+    try {
+      final layers = _buildingLayerIds ??= [
+        for (final l in await map.style.getStyleLayers())
+          if (l != null && l.type == 'fill' && l.id.startsWith('building'))
+            l.id,
+      ];
+      if (layers.isEmpty) return;
+      final px = await map.pixelForCoordinate(mapbox.Point(
+          coordinates: mapbox.Position(dest.longitude, dest.latitude)));
+      if (!(px.x >= 0 && px.y >= 0 && px.x <= size.width && px.y <= size.height)) {
+        return;
+      }
+      const r = 40.0;
+      final feats = await map.queryRenderedFeatures(
+        mapbox.RenderedQueryGeometry.fromScreenBox(mapbox.ScreenBox(
+          min: mapbox.ScreenCoordinate(x: px.x - r, y: px.y - r),
+          max: mapbox.ScreenCoordinate(x: px.x + r, y: px.y + r),
+        )),
+        mapbox.RenderedQueryOptions(layerIds: layers, filter: null),
+      );
+      if (!mounted || _bldgFor != dest || !identical(fill, _bldgFillMgr)) {
+        return;
+      }
+      final rings = DestBuilding.pick(
+          feats.map((f) => f?.queriedFeature.feature), dest);
+      if (rings == null) return; // its tiles may still be on the way
+      // A retry after a failed create starts clean.
+      await fill.deleteAll();
+      await line.deleteAll();
+      for (final ring in rings) {
+        final pos = [
+          for (final p in ring) mapbox.Position(p.longitude, p.latitude),
+        ];
+        await fill.create(mapbox.PolygonAnnotationOptions(
+          geometry: mapbox.Polygon(coordinates: [pos]),
+          fillColor: _gold.toARGB32(),
+          fillOpacity: 0.24,
+        ));
+        await line.create(mapbox.PolylineAnnotationOptions(
+          geometry: mapbox.LineString(coordinates: pos),
+          lineColor: _gold.toARGB32(),
+          lineWidth: 2.0,
+          lineJoin: mapbox.LineJoin.ROUND,
+        ));
+      }
+      _bldgDone = true;
+    } catch (e) {
+      // A reloaded style may have renamed its layers: list them again.
+      _buildingLayerIds = null;
+      debugPrint('[Nav] destination building failed: $e');
+    } finally {
+      _bldgBusy = false;
+    }
   }
 
   Future<void> _drawDestPin() async {

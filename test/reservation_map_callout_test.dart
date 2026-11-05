@@ -164,11 +164,12 @@ void main() {
     expect(callouts, contains('onClose: _closeReservationCard,'));
     expect(screen, contains('_reservationCardLayer(),'));
     // The card takes the sheet's place: sheet, GO and side buttons step away.
-    expect(screen,
-        contains('_pendingOffers.isNotEmpty || _resvCardShown || _acceptedOverlay != null;'));
+    // (a heat zone's card steps the sheet away too — owner 2026-11-05)
+    expect(_flat(screen),
+        contains('_pendingOffers.isNotEmpty || _resvCardShown || _heatCardShown || _acceptedOverlay != null;'));
     expect(screen, contains('offset: _sheetStepsAway ? const Offset(0, 1) : Offset.zero,'));
     expect(screen, contains('hidden: _driverOnline || _resvCardShown'));
-    expect(widgets, contains('_panelFrac > 0.04 || _resvCardShown'));
+    expect(_flat(widgets), contains('_panelFrac > 0.04 || _resvCardShown'));
     // Another reservation (or none) never inherits an open card; a trip
     // callout's offer closes it.
     expect(
@@ -179,3 +180,7 @@ void main() {
         contains('_resvCardOpen = false;\n      _pendingOffers = [offer];'));
   });
 }
+
+/// Source with every run of whitespace as one space: a guard survives the
+/// formatter wrapping a long condition.
+String _flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ');

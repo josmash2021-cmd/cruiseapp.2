@@ -5147,6 +5147,15 @@ class S {
       _es ? 'Cruise reservado' : 'Reserved Cruise';
   String get resMapCardTitle => _es ? 'Viaje reservado' : 'Scheduled Ride';
 
+  // ── Heat zones: riders building a trip (owner 2026-11-05) ──
+  String get heatZoneTitle => _es ? 'Zona con pasajeros' : 'Riders nearby';
+  String get heatZoneNavigate =>
+      _es ? 'Navegar a la zona' : 'Navigate to zone';
+  String get heatZoneArrived =>
+      _es ? 'Llegaste a la zona' : "You're in the zone";
+  String get heatZoneEnd => _es ? 'Terminar' : 'End';
+  String get heatZoneNearby => _es ? 'Zona cercana' : 'Nearby zone';
+
   // ── The driver's reservation, tapped (owner 2026-11-03) ──
   String resDetailWith(String name) => _es ? 'con $name' : 'with $name';
   String get resDetailToday => _es ? 'Hoy' : 'Today';

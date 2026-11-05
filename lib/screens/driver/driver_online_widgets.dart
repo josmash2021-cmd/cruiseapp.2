@@ -199,6 +199,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // Lyft-style callouts on the unclaimed trips' pickups (owner
               // spec 2026-11-01) — under the driver's marker, tappable.
               Positioned.fill(child: _tripCalloutOverlay()),
+              // The heat zones' flames (owner 2026-11-05), on their clouds.
+              Positioned.fill(child: _heatFlameOverlay()),
               // The marker, painted by Flutter: centred while the camera
               // follows, at its own projected pixel once the driver has
               // panned or zoomed away. The Mapbox annotation takes back over
@@ -366,6 +368,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           // The zone layers wait for the map to be rendering (see
           // _syncZoneLayers) — every idle beat is their cue to (re)try.
           _syncZoneLayers();
+          _heatSync();
         },
         styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(
@@ -595,6 +598,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     _carAnnot = null;
     _carAnnotGen = 0;
     _acceptedRouteLine.forget();
+    _heat.forgetSurface();
     _goldDotAnnot = null;
     _goldDotAnnotGen = 0;
     _pickupAnnot = null;
@@ -4922,8 +4926,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   Widget _hideUnderOpenSheet(Widget child) {
     // The reservation's card or "Viaje aceptado" takes the sheet's place:
     // they step away too.
-    final hidden =
-        _panelFrac > 0.04 || _resvCardShown || _acceptedOverlay != null;
+    final hidden = _panelFrac > 0.04 ||
+        _resvCardShown ||
+        _heatCardShown ||
+        _acceptedOverlay != null;
     return IgnorePointer(
       ignoring: hidden,
       child: AnimatedOpacity(

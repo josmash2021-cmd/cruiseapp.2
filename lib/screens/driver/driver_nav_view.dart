@@ -39,6 +39,7 @@ import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/neu_style.dart';
 import '../../utils/fix_kinematics.dart';
 import 'nav_trip_panel.dart';
+import 'zone_nav_panel.dart';
 
 /// Who owns the navigation camera.
 ///
@@ -155,7 +156,70 @@ class DriverNavView extends StatefulWidget {
     this.onToggleLastTrip,
     this.onNoShow,
     this.onSafety,
-  });
+  }) : zoneName = null;
+
+  /// Destination-only navigation (heat zones, owner 2026-11-05): drive to
+  /// [destination] with the same route, turn box, chase camera, reroute and
+  /// arrival latch as a trip — and nothing of a trip: no rider pin, no chat
+  /// stream, no socket listeners, no pickup code, no wait, no sliders. The
+  /// panel is [ZoneNavPanel] (the zone, its live ETA and miles, Terminar =
+  /// [onExit]); the destination is the gold stop ring.
+  const DriverNavView.zone({
+    super.key,
+    required LatLng destination,
+    required String this.zoneName,
+    required this.initialDriverPos,
+    required this.onExit,
+    this.onMapReady,
+  })  : tripId = 0,
+        riderName = '',
+        riderPhotoUrl = '',
+        riderId = null,
+        pickupLatLng = destination,
+        dropoffLatLng = destination,
+        pickupAddress = '',
+        dropoffAddress = zoneName,
+        fare = 0,
+        toPickup = false,
+        stopLatLng = null,
+        stopLabel = '',
+        stopDone = false,
+        onArrivedStop = null,
+        onSlideFromStop = null,
+        stage = '',
+        passengerInstructions = '',
+        dropoffInstructions = '',
+        waitStartedAt = null,
+        pickupBadge = null,
+        pickupCodeEntry = null,
+        onArrived = _noop,
+        onSlidePickUp = _noop,
+        onSlideFinish = _noop,
+        onOpenChat = _noop,
+        onCall = _noop,
+        onSupport = _noop,
+        prefetchedRoutePoints = null,
+        prefetchedSteps = const [],
+        riderRating = null,
+        riderTrips = null,
+        riderDays = null,
+        riderVerified = false,
+        receivingRides = true,
+        lastTrip = false,
+        supportUnread = 0,
+        queuedCanceled = false,
+        nextRide = null,
+        onCancelTrip = null,
+        onToggleReceiving = null,
+        onToggleLastTrip = null,
+        onNoShow = null,
+        onSafety = null;
+
+  static void _noop() {}
+
+  /// The heat zone being driven to — set by [DriverNavView.zone] only; the
+  /// trip constructor cannot set it, so every trip stays trip mode.
+  final String? zoneName;
 
   final int tripId;
   final String riderName;
@@ -800,6 +864,9 @@ class DriverNavViewState extends State<DriverNavView>
     readerRole: 'driver',
   );
 
+  /// Driving to a heat zone ([DriverNavView.zone]): no rider, no trip.
+  bool get _zone => widget.zoneName != null;
+
   /// The rider is aboard and the stop is still ahead: this leg ends there.
   bool get _stopLeg =>
       !widget.toPickup && widget.stopLatLng != null && !widget.stopDone;
@@ -855,8 +922,11 @@ class DriverNavViewState extends State<DriverNavView>
     // grow-back could stall mid-way and the nav arrow opened small. The
     // navigation always shows it full size.
     GoldLocationDot.animateOfferMarkerScale(this, 1.0, durationMs: 0);
-    _riderTicker = createTicker(_onRiderTick)..start();
-    _listenRiderLocation();
+    // A heat zone has no rider: no live pin, no socket listener.
+    if (!_zone) {
+      _riderTicker = createTicker(_onRiderTick)..start();
+      _listenRiderLocation();
+    }
     // Localizations and the first stage sync need a built context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -2490,6 +2560,8 @@ class DriverNavViewState extends State<DriverNavView>
   /// until found; the map only draws footprints from zoom 15, and only for
   /// tiles it has) and outlines it in gold. A new destination clears it.
   Future<void> _findDestBuilding() async {
+    // A heat zone is a stretch of street, not an address: no building.
+    if (_zone) return;
     final map = _map;
     final fill = _bldgFillMgr;
     final line = _bldgLineMgr;
@@ -2683,7 +2755,8 @@ class DriverNavViewState extends State<DriverNavView>
       );
       final badge = widget.pickupBadge;
       final Uint8List bytes;
-      if (widget.toPickup) {
+      // A heat zone: the stop ring alone, like the pickup — nobody to flag.
+      if (widget.toPickup || _zone) {
         final unit = (await (await ui.instantiateImageCodec(pin))
                 .getNextFrame())
             .image
@@ -3884,69 +3957,73 @@ class DriverNavViewState extends State<DriverNavView>
             ),
           ),
 
-        // ── The trip panel (owner design 2026-11-02) ──
-        Positioned.fill(
-          child: NavTripPanel(
-            hintTripId: widget.tripId,
-            mapControls: _panelControls(s),
-            etaLabel: _panelEtaLabel(s),
-            riderName: widget.riderName,
-            riderPhotoUrl: widget.riderPhotoUrl,
-            riderId: widget.riderId,
-            riderRating: widget.riderRating,
-            riderTrips: widget.riderTrips,
-            riderDays: widget.riderDays,
-            riderVerified: widget.riderVerified,
-            toPickup: widget.toPickup,
-            pickupAddress: widget.pickupAddress,
-            dropoffAddress: widget.dropoffAddress,
-            stopLabel: widget.stopLabel,
-            hasStop: widget.stopLatLng != null,
-            stopLeg: _stopLeg,
-            stopDone: widget.stopDone,
-            pickupNote: widget.passengerInstructions,
-            dropoffNote: widget.dropoffInstructions,
-            onSlideFromStop: widget.onSlideFromStop,
-            fare: widget.fare,
-            moving: _panelMoving,
-            stage: _panelStage,
-            canPickUp: widget.stage == 'start_ride',
-            codeEntry: widget.toPickup ? widget.pickupCodeEntry : null,
-            waitClock: _waitClock,
-            waitProgress: (1 - _waitRemainFrac).clamp(0.0, 1.0),
-            // A reservation reached early: its time, until the wait starts.
-            waitStartsAt: widget.waitStartedAt,
-            receivingRides: widget.receivingRides,
-            lastTrip: widget.lastTrip,
-            chatUnread: _chatUnread,
-            supportUnread: widget.supportUnread,
-            queuedCanceled: widget.queuedCanceled,
-            nextRide: widget.nextRide,
-            onOpenChat: widget.onOpenChat,
-            onSupport: widget.onSupport,
-            onCancelTrip: widget.onCancelTrip ?? widget.onExit,
-            onArrived: _stopLeg
-                ? (widget.onArrivedStop ?? widget.onArrived)
-                : widget.onArrived,
-            onSlidePickUp: widget.onSlidePickUp,
-            onSlideFinish: widget.onSlideFinish,
-            onToggleReceiving: widget.onToggleReceiving,
-            onToggleLastTrip: widget.onToggleLastTrip,
-            onNoShow: widget.onNoShow,
-            // Every frame of a moving panel: only the arrow overlay
-            // listens (_camLift), not the whole navigation (owner
-            // 2026-11-05: "al deslizarse hacia arriba a veces cuesta").
-            onHeightChanged: (h) {
-              if (!mounted || (h - _panelH).abs() < 0.5) return;
-              _panelH = h;
-              _onLiftChanged();
-            },
-            onRestHeightChanged: (h) {
-              if (!mounted || (h - _panelRestH).abs() < 0.5) return;
-              setState(() => _panelRestH = h);
-            },
+        // ── The trip panel (owner design 2026-11-02) — or, driving to a
+        //    heat zone (owner 2026-11-05), the zone's own small panel ──
+        if (_zone)
+          Positioned.fill(child: _buildZonePanel(s))
+        else
+          Positioned.fill(
+            child: NavTripPanel(
+              hintTripId: widget.tripId,
+              mapControls: _panelControls(s),
+              etaLabel: _panelEtaLabel(s),
+              riderName: widget.riderName,
+              riderPhotoUrl: widget.riderPhotoUrl,
+              riderId: widget.riderId,
+              riderRating: widget.riderRating,
+              riderTrips: widget.riderTrips,
+              riderDays: widget.riderDays,
+              riderVerified: widget.riderVerified,
+              toPickup: widget.toPickup,
+              pickupAddress: widget.pickupAddress,
+              dropoffAddress: widget.dropoffAddress,
+              stopLabel: widget.stopLabel,
+              hasStop: widget.stopLatLng != null,
+              stopLeg: _stopLeg,
+              stopDone: widget.stopDone,
+              pickupNote: widget.passengerInstructions,
+              dropoffNote: widget.dropoffInstructions,
+              onSlideFromStop: widget.onSlideFromStop,
+              fare: widget.fare,
+              moving: _panelMoving,
+              stage: _panelStage,
+              canPickUp: widget.stage == 'start_ride',
+              codeEntry: widget.toPickup ? widget.pickupCodeEntry : null,
+              waitClock: _waitClock,
+              waitProgress: (1 - _waitRemainFrac).clamp(0.0, 1.0),
+              // A reservation reached early: its time, until the wait starts.
+              waitStartsAt: widget.waitStartedAt,
+              receivingRides: widget.receivingRides,
+              lastTrip: widget.lastTrip,
+              chatUnread: _chatUnread,
+              supportUnread: widget.supportUnread,
+              queuedCanceled: widget.queuedCanceled,
+              nextRide: widget.nextRide,
+              onOpenChat: widget.onOpenChat,
+              onSupport: widget.onSupport,
+              onCancelTrip: widget.onCancelTrip ?? widget.onExit,
+              onArrived: _stopLeg
+                  ? (widget.onArrivedStop ?? widget.onArrived)
+                  : widget.onArrived,
+              onSlidePickUp: widget.onSlidePickUp,
+              onSlideFinish: widget.onSlideFinish,
+              onToggleReceiving: widget.onToggleReceiving,
+              onToggleLastTrip: widget.onToggleLastTrip,
+              onNoShow: widget.onNoShow,
+              // Every frame of a moving panel: only the arrow overlay
+              // listens (_camLift), not the whole navigation (owner
+              // 2026-11-05: "al deslizarse hacia arriba a veces cuesta").
+              onHeightChanged: (h) {
+                if (!mounted || (h - _panelH).abs() < 0.5) return;
+                _panelH = h;
+                _onLiftChanged();
+              },
+              onRestHeightChanged: (h) {
+                if (!mounted || (h - _panelRestH).abs() < 0.5) return;
+                setState(() => _panelRestH = h);
+              },
+            ),
           ),
-        ),
       ],
     );
   }
@@ -4015,6 +4092,34 @@ class DriverNavViewState extends State<DriverNavView>
           ),
         ),
       ],
+    );
+  }
+
+  /// A heat zone's panel (owner 2026-11-05) in place of NavTripPanel: the
+  /// flame, "Zona con pasajeros" → "Llegaste a la zona" on this view's own
+  /// arrival latch, "zone · ETA · miles" from the same live numbers
+  /// as the trip panel's face, and Terminar ([DriverNavView.onExit]). Its
+  /// height feeds the camera lift and the map buttons the same way.
+  Widget _buildZonePanel(S s) {
+    final arrived = _endRouteVisible;
+    final eta = arrived ? '' : _panelEtaLabel(s);
+    final zone = widget.zoneName ?? '';
+    return ZoneNavPanel(
+      title: arrived ? s.heatZoneArrived : s.heatZoneTitle,
+      zoneName: zone,
+      eta: eta,
+      endLabel: s.heatZoneEnd,
+      onEnd: widget.onExit,
+      mapControls: _panelControls(s),
+      onHeightChanged: (h) {
+        if (!mounted || (h - _panelH).abs() < 0.5) return;
+        _panelH = h;
+        _onLiftChanged();
+      },
+      onRestHeightChanged: (h) {
+        if (!mounted || (h - _panelRestH).abs() < 0.5) return;
+        setState(() => _panelRestH = h);
+      },
     );
   }
 
@@ -4099,7 +4204,9 @@ class DriverNavViewState extends State<DriverNavView>
     final subtitle = _endRouteVisible
         ? (widget.toPickup
             ? s.navArrivedPickup
-            : (_stopLeg ? s.navArrivedStop : s.navArrivedDropoff))
+            : (_zone
+                ? s.heatZoneArrived
+                : (_stopLeg ? s.navArrivedStop : s.navArrivedDropoff)))
         : (_maneuverDistLabel.isNotEmpty
             ? _maneuverDistLabel
             : _destDistLabel(s));
@@ -4333,11 +4440,13 @@ class DriverNavViewState extends State<DriverNavView>
       final title = !isArrive
           ? (st.name.isNotEmpty ? st.name : st.instruction)
           : (last
-              ? (widget.toPickup
-                  ? s.navPickUpName(first)
-                  : s.navDropOffName(first))
+              ? (_zone
+                  ? widget.dropoffAddress // the zone's name
+                  : (widget.toPickup
+                      ? s.navPickUpName(first)
+                      : s.navDropOffName(first)))
               : s.navStopOf(first));
-      final sub = !isArrive
+      final sub = !isArrive || _zone
           ? ''
           : (last
               ? (widget.toPickup ? widget.pickupAddress : widget.dropoffAddress)

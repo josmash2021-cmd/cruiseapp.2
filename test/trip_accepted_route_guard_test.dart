@@ -48,11 +48,15 @@ void main() {
     final screen = read('lib/screens/driver/driver_online_screen.dart');
     final widgets = read('lib/screens/driver/driver_online_widgets.dart');
     final map = read('lib/screens/driver/driver_online_map.dart');
-    expect(screen,
-        contains('_pendingOffers.isNotEmpty || _resvCardShown || _acceptedOverlay != null;'));
+    expect(_flat(screen),
+        contains('_pendingOffers.isNotEmpty || _resvCardShown || _heatCardShown || _acceptedOverlay != null;'));
     expect(screen, contains('offset: _sheetStepsAway ? const Offset(0, 1) : Offset.zero,'));
-    expect(widgets, contains('_panelFrac > 0.04 || _resvCardShown || _acceptedOverlay != null;'));
+    expect(_flat(widgets), contains('_panelFrac > 0.04 || _resvCardShown || _heatCardShown || _acceptedOverlay != null;'));
     expect(map, contains('_previewingOffer != null || _acceptedOverlay != null;'));
     expect(map, contains('if (_cameraFollowing && !_cameraFramesRoute) {'));
   });
 }
+
+/// Source with every run of whitespace as one space: a guard survives the
+/// formatter wrapping a long condition.
+String _flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ');

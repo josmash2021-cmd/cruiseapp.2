@@ -282,6 +282,7 @@ extension _DriverOnlineCallouts on _DriverOnlineScreenState {
 
   void _toggleReservationCard() {
     if (!mounted || !_reservationCalloutWanted) return;
+    if (_heat.open != null) _closeHeatZone(recenter: false);
     HapticService.selectionClick();
     _setState(() => _resvCardOpen = !_resvCardOpen);
   }
@@ -336,7 +337,8 @@ extension _DriverOnlineCallouts on _DriverOnlineScreenState {
     final fresh = ids.difference(_revealedBoardTripIds);
     _revealedBoardTripIds.addAll(fresh);
     if (trips.isEmpty) {
-      if (_searchFollowZoom < kSearchFollowZoom) {
+      // A heat cloud may be what the camera eased out for — it stays.
+      if (_searchFollowZoom < kSearchFollowZoom && _heat.zones.isEmpty) {
         _easeSearchFollowZoom(kSearchFollowZoom, ms: 900);
       }
       return;

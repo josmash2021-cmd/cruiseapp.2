@@ -4850,6 +4850,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // handles as dead instead of poking a destroyed native object.
     _mapGeneration++;
     _acceptedRouteLine.forget();
+    _heat.forgetSurface();
     _polylineAnnotMgr = null;
     _pointAnnotMgr = null;
     _pinAnnotMgr = null;

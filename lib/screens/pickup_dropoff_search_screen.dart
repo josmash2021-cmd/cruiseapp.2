@@ -12,6 +12,7 @@ import '../models/lat_lng.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/places_service.dart';
+import '../services/rider_heat_reporter.dart';
 import '../widgets/neu_style.dart';
 import 'map_picker_screen.dart';
 import 'ride_request_screen.dart';
@@ -300,6 +301,13 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       });
       if (_dropoffDetails == null) _dropoffFocus.requestFocus();
     } else if (_editingDropoff) {
+      // Heat on the drivers' map (owner 2026-11-05): the dropoff raises the
+      // rider's step at the pickup — or where they are, if none is typed.
+      final pLat = _pickupDetails?.lat ?? widget.initialPickupLat;
+      final pLng = _pickupDetails?.lng ?? widget.initialPickupLng;
+      if (pLat != null && pLng != null) {
+        RiderHeatReporter.instance.dropoff(pLat, pLng);
+      }
       setState(() {
         _dropoffDetails = details;
         _dropoffLabel = suggestion.description;
@@ -328,6 +336,11 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         _pickupFocus.requestFocus();
       }
     } else {
+      if (_dropoffDetails != null) {
+        RiderHeatReporter.instance.dropoff(details.lat, details.lng);
+      } else {
+        RiderHeatReporter.instance.pickup(details.lat, details.lng);
+      }
       setState(() {
         _pickupDetails = details;
         _pickupLabel = suggestion.description;

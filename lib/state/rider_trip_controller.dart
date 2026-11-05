@@ -6,6 +6,7 @@ import '../models/lat_lng.dart';
 import '../models/ride_quote.dart';
 
 import '../services/api_service.dart';
+import '../services/rider_heat_reporter.dart';
 import '../services/directions_service.dart';
 import '../services/places_service.dart';
 import '../services/cache_service.dart';
@@ -446,6 +447,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final unchanged = previous?.lat == place.lat && previous?.lng == place.lng;
     _state = _state.copyWith(pickup: place, pickupLabel: label);
     notifyListeners();
+    _reportHeat();
     if (!unchanged || _state.route == null) _tryFetchRoute();
   }
 
@@ -454,7 +456,20 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final unchanged = previous?.lat == place.lat && previous?.lng == place.lng;
     _state = _state.copyWith(dropoff: place, dropoffLabel: label);
     notifyListeners();
+    _reportHeat();
     if (!unchanged || _state.route == null) _tryFetchRoute();
+  }
+
+  /// The drivers' heat map (owner 2026-11-05): a typed pickup is step 2, a
+  /// dropoff on top of it step 3 — always at the pickup point.
+  void _reportHeat() {
+    final p = _state.pickup;
+    if (p == null) return;
+    if (_state.dropoff != null) {
+      RiderHeatReporter.instance.dropoff(p.lat, p.lng);
+    } else {
+      RiderHeatReporter.instance.pickup(p.lat, p.lng);
+    }
   }
 
   /// The driver's note from the pickup-confirm page. Empty clears — the
@@ -509,6 +524,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       phase: RiderPhase.previewRoute,
       routeFetchFailed: false,
     );
+    _reportHeat();
     _restartQuoteForInputs();
   }
 

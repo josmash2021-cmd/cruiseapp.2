@@ -1762,6 +1762,51 @@ class ApiService {
     }
   }
 
+  /// The rider typed a pickup (`step: 'pickup'`) or a dropoff
+  /// (`step: 'dropoff'`): their heat moves to [lat]/[lng] — the pickup — on
+  /// the drivers' map (owner 2026-11-05, heat zones). Best-effort.
+  static Future<bool> reportTripIntent({
+    required String step,
+    required double lat,
+    required double lng,
+  }) async {
+    final headers = await _authHeaders();
+    if (!headers.containsKey('Authorization')) return false;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/demand/intent'),
+            headers: headers,
+            body: jsonEncode({'step': step, 'lat': lat, 'lng': lng}),
+          )
+          .timeout(const Duration(seconds: 5));
+      return res.statusCode >= 200 && res.statusCode < 300;
+    } catch (error) {
+      debugPrint('[ApiService] trip intent failed: ${error.runtimeType}');
+      return false;
+    }
+  }
+
+  /// The heat cells, when the driver's Firestore listen is down — the raw
+  /// `cells` list (`[{lat, lng, w}]`), or null on any failure.
+  static Future<List<dynamic>?> getRiderHeat() async {
+    final headers = await _authHeaders();
+    if (!headers.containsKey('Authorization')) return null;
+    try {
+      final res = await _client
+          .get(Uri.parse('$_baseUrl/zones/heat'), headers: headers)
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode < 200 || res.statusCode >= 300) return null;
+      final body = jsonDecode(res.body);
+      return body is Map && body['cells'] is List
+          ? body['cells'] as List
+          : null;
+    } catch (error) {
+      debugPrint('[ApiService] rider heat failed: ${error.runtimeType}');
+      return null;
+    }
+  }
+
   /// Mark user as offline (called when app goes to background).
   static Future<void> goOffline() async {
     final token = await getToken();

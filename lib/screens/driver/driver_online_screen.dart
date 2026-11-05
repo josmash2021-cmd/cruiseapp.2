@@ -35,6 +35,7 @@ import '../../widgets/glass_style.dart';
 import '../../widgets/glass_notification_banner.dart';
 import '../../widgets/animated_count_badge.dart';
 import '../../services/scheduled_board_watcher.dart';
+import '../../services/rider_heat_watcher.dart';
 import '../../widgets/offer_countdown_ring.dart';
 import '../../widgets/route_connector_line.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
@@ -71,6 +72,11 @@ import '../../map/road_network.dart';
 import '../../map/map_gesture_guard.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../map/map_callout.dart';
+import '../../map/rider_heat.dart';
+import '../../map/rider_heat_layer.dart';
+import '../../widgets/map/heat_flame.dart';
+import 'heat_zone_card.dart';
+import 'zone_nav_screen.dart';
 import '../../widgets/map/map_callout_bubble.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../services/driver_rest_service.dart';
@@ -132,6 +138,7 @@ part 'driver_online_map.dart';
 part 'driver_online_widgets.dart';
 part 'driver_online_offline.dart';
 part 'driver_online_callouts.dart';
+part 'driver_online_heat.dart';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  CRUISE DRIVER — ONLINE SCREEN
@@ -581,7 +588,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// The online/offline sheet slides away: under an offer, the
   /// reservation's card, or the "Viaje aceptado" celebration.
   bool get _sheetStepsAway =>
-      _pendingOffers.isNotEmpty || _resvCardShown || _acceptedOverlay != null;
+      _pendingOffers.isNotEmpty ||
+      _resvCardShown ||
+      _heatCardShown ||
+      _acceptedOverlay != null;
 
   // ── Marketplace de viajes sin agarrar (user spec 2026-10-02) ──
   // Viajes que ya sonaron a los candidatos y nadie tomó: la píldora arriba
@@ -597,6 +607,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // Lyft-style callouts on those trips' pickups and on the airports —
   // Flutter overlays, no native handles (driver_online_callouts.dart).
   final _MapCalloutState _mapCallouts = _MapCalloutState();
+  // Heat zones: riders building a trip (owner 2026-11-05).
+  final _HeatState _heat = _HeatState();
 
   /// Notifications the driver has not opened. This is what the bell's
   /// badge counts — it used to show _scheduledAvailCount, so the number on
@@ -1206,6 +1218,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         .addListener(_onScheduledRidePush);
     // Live board: a booking anywhere refreshes this screen at once.
     ScheduledBoardWatcher.acquire();
+    // Live heat: riders building a trip, on this map.
+    _heatAttach();
     _startScheduledPoll();
     _startMotionDiag();
     // The trip screen handed us a cancelled trip: show the notice as soon
@@ -2034,6 +2048,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     NotificationService.scheduledRideRefreshNotifier
         .removeListener(_onScheduledRidePush);
     ScheduledBoardWatcher.release();
+    _heatDetach();
     DriverOnlineScreen.shiftEndedNotifier.removeListener(_onShiftEndedPush);
     DriverOnlineScreen.faceReviewNotifier.removeListener(_onFaceReviewPush);
     _faceReviewTimer?.cancel();
@@ -2939,7 +2954,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 _previewingOffer == null &&
                 _acceptedOverlay == null)
               _buildMorphingGoButton(MediaQuery.of(context).padding,
-                  hidden: _driverOnline || _resvCardShown),
+                  hidden: _driverOnline || _resvCardShown || _heatCardShown),
 
             // Recentre FAB while OFFLINE (user spec 2026-10-10) — shared
             // _RecenterFab (dark disc + white arrow) with blur-in/pop-out.
@@ -2973,6 +2988,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             // The reservation's "Scheduled Ride" card, in the sheet's
             // place while its callout is selected (owner 2026-11-05).
             _reservationCardLayer(),
+
+            // A heat zone's card, in the sheet's place while its flame is
+            // tapped (owner 2026-11-05).
+            _heatCardLayer(),
 
             // ── "Viaje cancelado" notice ──
             // Centred on a semi-dark wash, ~5 s, fluid fade both ways. It

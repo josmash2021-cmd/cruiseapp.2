@@ -25,6 +25,7 @@ import '../config/app_theme.dart';
 import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/rider_heat_reporter.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/analytics_service.dart';
@@ -560,6 +561,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   @override
   void initState() {
     super.initState();
+    // A driver has the ride: the rider is no longer planning one.
+    RiderHeatReporter.instance.reset();
     unawaited(_acquireMapSurface());
     _startChatUnreadWatch();
     unawaited(_loadSheetPickupPin());

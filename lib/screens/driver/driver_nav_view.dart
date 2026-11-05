@@ -16,6 +16,7 @@ import '../../l10n/app_localizations.dart';
 import '../../map/camera_action_gate.dart';
 import '../../map/dest_building.dart';
 import '../../map/driver_road_lock.dart';
+import '../../map/gradient_route_line.dart';
 import '../../map/nav_dest_markers.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../map/web_map_view.dart';
@@ -301,7 +302,15 @@ class DriverNavViewState extends State<DriverNavView>
   LatLng? _renderPos;
   final DriverRoadLock _roadLock = DriverRoadLock();
   double? _roadLockBearing;
-  mapbox.PolylineAnnotation? _routeAnnot;
+  // The route: the card rail's gold→white line, a style layer (owner
+  // 2026-11-04, "la línea de la página de navegación hazla igual").
+  final GradientRouteLine _routeLine = GradientRouteLine(
+    sourceId: 'nav-route-src',
+    layerId: 'nav-route-line',
+    // 8.0 → 6.5 (owner request 2026-11-02, "un poquito finita pero no
+    // tanto"); round caps and joins: corners eased, never pointed.
+    width: 6.5,
+  );
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
   // Bumped by every _drawDestPin: the "Reservado" redraw can start while
@@ -966,7 +975,7 @@ class DriverNavViewState extends State<DriverNavView>
         _signsShown = null;
         _carMgr = null;
         _riderMgr = null;
-        _routeAnnot = null;
+        _routeLine.forget();
         _nextLegAnnot = null;
         _drawOnTimer?.cancel();
         _drawOnUntil = null;
@@ -1955,7 +1964,7 @@ class DriverNavViewState extends State<DriverNavView>
   void _trimRouteTo(LatLng pos) {
     final pts = _routePts;
     if (pts.length < 2 || _overview) return;
-    if (!kIsWeb && _routeAnnot == null) return;
+    if (!kIsWeb && !_routeLine.isShown) return;
     final now = DateTime.now();
     if (now.difference(_lastTrimAt).inMilliseconds < 400) return;
     final drawOn = _drawOnUntil;
@@ -2009,19 +2018,13 @@ class DriverNavViewState extends State<DriverNavView>
       );
       return;
     }
-    final mgr = _polyMgr;
-    final annot = _routeAnnot;
-    if (mgr == null || annot == null) return;
+    final m = _map;
+    if (m == null || !_routeLine.isShown) return;
     if (pts.length < 2) {
       await _clearRouteAnnotation();
       return;
     }
-    final geom = safeLineString(pts);
-    if (geom == null) return;
-    annot.geometry = geom;
-    try {
-      await mgr.update(annot);
-    } catch (_) {}
+    await _routeLine.set(m, pts);
   }
 
   /// Swap the traffic-light / stop-sign set for the current route: each
@@ -2288,14 +2291,12 @@ class DriverNavViewState extends State<DriverNavView>
   }
 
   Future<void> _clearRouteAnnotation() async {
-    final annot = _routeAnnot;
-    _routeAnnot = null;
-    final mgr = _polyMgr;
-    if (annot != null && mgr != null) {
-      try {
-        await mgr.delete(annot);
-      } catch (_) {}
+    final m = _map;
+    if (m == null) {
+      _routeLine.forget();
+      return;
     }
+    await _routeLine.hide(m);
   }
 
   Future<void> _drawRoute() async {
@@ -2312,40 +2313,19 @@ class DriverNavViewState extends State<DriverNavView>
       }
       return;
     }
-    final mgr = _polyMgr;
-    if (mgr == null) return;
-    if (_routeAnnot == null && _drawOnNext && _routePts.length >= 2) {
+    final m = _map;
+    if (m == null || _polyMgr == null) return;
+    if (!_routeLine.isShown && _drawOnNext && _routePts.length >= 2) {
       _drawOnNext = false;
-      await _drawOnRoute(mgr);
+      await _drawOnRoute(m);
       return;
     }
     final end = _drawEndS;
-    final geom = safeLineString(
-        end == null ? _routePts : DestBuilding.slice(_routePts, 0, end));
-    if (geom == null) return;
-    if (_routeAnnot != null) {
-      _routeAnnot!.geometry = geom;
-      try {
-        await mgr.update(_routeAnnot!);
-      } catch (_) {}
-    } else {
-      try {
-        _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-          geometry: geom,
-          lineColor: _gold.toARGB32(),
-          // 8.0 → 6.5 (owner request 2026-11-02, "un poquito finita pero no
-          // tanto"): with the lighter 45° tilt the line no longer needs the
-          // extra width 8 gave it under 55°.
-          // ROUND join + ROUND cap: the curve corners are eased, never
-          // pointed ("las esquinas de curva no punteagudas").
-          lineWidth: 6.5,
-          lineJoin: mapbox.LineJoin.ROUND,
-        ));
-        // line-cap va por capa (no es parámetro del annotation en este
-        // SDK): extremos redondeados también en el corte del trim.
-        await _map?.style.setStyleLayerProperty(mgr.id, 'line-cap', 'round');
-      } catch (_) {}
-    }
+    final pts =
+        end == null ? _routePts : DestBuilding.slice(_routePts, 0, end);
+    if (pts.length < 2) return;
+    // False before the style has loaded: onStyleLoaded draws it again.
+    await _routeLine.set(m, pts);
   }
 
   /// The first [meters] of [pts], the last point interpolated.
@@ -2371,31 +2351,21 @@ class DriverNavViewState extends State<DriverNavView>
   /// The new leg's line grows out from the car along the road (ease in-out,
   /// 1.4 s), then the full line is written once more so the last frame —
   /// the one most likely to be dropped — always lands.
-  Future<void> _drawOnRoute(mapbox.PolylineAnnotationManager mgr) async {
+  Future<void> _drawOnRoute(mapbox.MapboxMap m) async {
     final end = _drawEndS;
     final pts = end == null
         ? List.of(_routePts)
         : DestBuilding.slice(_routePts, 0, end);
     final total = _polylineLenM(pts);
-    final first = safeLineString(_prefixOf(pts, math.min(2.0, total)));
-    if (first == null || total <= 0) return;
-    try {
-      _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: first,
-        lineColor: _gold.toARGB32(),
-        lineWidth: 6.5,
-        lineJoin: mapbox.LineJoin.ROUND,
-      ));
-      await _map?.style.setStyleLayerProperty(mgr.id, 'line-cap', 'round');
-    } catch (_) {
+    if (pts.length < 2 || total <= 0) return;
+    if (!await _routeLine.set(m, _prefixOf(pts, math.min(2.0, total)))) {
       return;
     }
     final start = DateTime.now();
     _drawOnUntil = start.add(const Duration(milliseconds: _drawOnMs + 200));
     _drawOnTimer?.cancel();
     _drawOnTimer = Timer.periodic(const Duration(milliseconds: 40), (t) {
-      final annot = _routeAnnot;
-      if (!mounted || annot == null) {
+      if (!mounted || !_routeLine.isShown || !identical(m, _map)) {
         t.cancel();
         return;
       }
@@ -2407,11 +2377,9 @@ class DriverNavViewState extends State<DriverNavView>
         unawaited(_drawRoute());
         return;
       }
-      final geom = safeLineString(
-          _prefixOf(pts, math.max(2.0, total * Curves.easeInOut.transform(f))));
-      if (geom == null) return;
-      annot.geometry = geom;
-      unawaited(mgr.update(annot).catchError((Object _) {}));
+      // Coalesced inside: a slow write never queues frames.
+      unawaited(_routeLine.set(m,
+          _prefixOf(pts, math.max(2.0, total * Curves.easeInOut.transform(f)))));
     });
   }
 
@@ -2638,7 +2606,7 @@ class DriverNavViewState extends State<DriverNavView>
           tailM: _kTailCutM);
       _tailCutFor = pts;
       final end = _tailCutS;
-      if (end != null && _routeAnnot != null && _drawOnUntil == null) {
+      if (end != null && _routeLine.isShown && _drawOnUntil == null) {
         await _replaceRouteGeometry(DestBuilding.slice(pts, _trimS, end));
       }
       // The stop ring moves to where the line now ends.
@@ -3759,6 +3727,9 @@ class DriverNavViewState extends State<DriverNavView>
                         if (m != null) await MapTheme.applyNavyGold(m);
                         if (m != null && mounted && _map == m) {
                           await _applyNavRoadFurniture(m);
+                          // The route is a style layer: a draw that ran
+                          // before the style loaded did not take.
+                          if (!_routeLine.isShown) await _drawRoute();
                         }
                       },
                       // Gesture callbacks, not onCameraChangeListener: that

@@ -238,10 +238,8 @@ void main() {
       expect(m, contains('for (final trip in open == null ? _filtered : [open])'),
           reason: 'an open ride keeps only its own callout, over its pickup');
       // Its route: the card rail's gold→white line (owner 2026-11-04).
-      expect(sched, contains("['line-progress'],"));
-      expect(sched, contains('lineMetrics: true,'));
-      expect(sched, contains("'rgba(232, 197, 71, 1)',"));
-      expect(sched, contains("'rgba(255, 255, 255, 1)',"));
+      expect(sched, contains('final GradientRouteLine _routeLine = GradientRouteLine('));
+      expect(sched, contains('await _routeLine.set(m, pts);'));
       expect(sched, isNot(contains('_bubbleBytes')),
           reason: 'the bitmap cube + 3D pin are gone');
       expect(sched, contains('Positioned.fill(child: _rideCalloutOverlay()),'));

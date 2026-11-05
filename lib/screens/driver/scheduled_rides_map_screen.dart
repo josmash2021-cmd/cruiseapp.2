@@ -15,6 +15,7 @@ import '../../config/mapbox_config.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../map/flat_map_projection.dart';
+import '../../map/gradient_route_line.dart';
 import '../../map/map_callout.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../models/lat_lng.dart';
@@ -124,8 +125,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   // The selected ride's line: a style layer (not an annotation) so it can
   // carry a gradient — gold at the pickup to white at the drop-off, the
   // card rail's line (owner 2026-11-04, "mismo diseño para la línea").
-  static const _routeSourceId = 'resv-route-src';
-  static const _routeLayerId = 'resv-route-line';
+  final GradientRouteLine _routeLine = GradientRouteLine(
+    sourceId: 'resv-route-src',
+    layerId: 'resv-route-line',
+    width: 4.0,
+  );
   mapbox.CircleAnnotationManager? _dotsEndMgr;
   final List<mapbox.CircleAnnotation> _endDots = [];
 
@@ -250,6 +254,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         // destroyed — null them here so nothing writes to a dead native
         // channel, and onMapCreated re-seeds them on remount.
         _map = null;
+        _routeLine.forget();
         _dotMgr = null;
         _dotAnnot = null;
         _dotAlignmentSet = false;
@@ -903,66 +908,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   Future<void> _setRouteAnnotation(List<LatLng> pts) async {
     final m = _map;
-    if (m == null || pts.length < 2) return;
-    final coords = [
-      for (final p in pts)
-        if (isValidLatLng(p.latitude, p.longitude))
-          [p.longitude, p.latitude],
-    ];
-    if (coords.length < 2) return;
-    final data = jsonEncode({
-      'type': 'Feature',
-      'properties': <String, Object>{},
-      'geometry': {'type': 'LineString', 'coordinates': coords},
-    });
-    final style = m.style;
-    try {
-      if (await style.styleSourceExists(_routeSourceId)) {
-        await style.setStyleSourceProperty(_routeSourceId, 'data', data);
-      } else {
-        await style.addSource(mapbox.GeoJsonSource(
-          id: _routeSourceId,
-          data: data,
-          // What makes `line-progress` — and so the gradient — exist.
-          lineMetrics: true,
-        ));
-      }
-      if (!await style.styleLayerExists(_routeLayerId)) {
-        final layer = mapbox.LineLayer(
-          id: _routeLayerId,
-          sourceId: _routeSourceId,
-          lineCap: mapbox.LineCap.ROUND,
-          lineJoin: mapbox.LineJoin.ROUND,
-          lineWidth: 4.0,
-          lineGradientExpression: [
-            'interpolate',
-            ['linear'],
-            ['line-progress'],
-            0,
-            'rgba(232, 197, 71, 1)',
-            1,
-            'rgba(255, 255, 255, 1)',
-          ],
-        );
-        // Under the street names (dark-v11 calls them road-label-simple),
-        // over everything else; on top of the style if neither exists.
-        var placed = false;
-        for (final below in const ['road-label-simple', 'road-label']) {
-          if (!await style.styleLayerExists(below)) continue;
-          try {
-            await style.addLayerAt(layer, mapbox.LayerPosition(below: below));
-            placed = true;
-            break;
-          } catch (_) {}
-        }
-        if (!placed) await style.addLayer(layer);
-      } else {
-        await style.setStyleLayerProperty(
-            _routeLayerId, 'visibility', 'visible');
-      }
-    } catch (e) {
-      debugPrint('[SchedMap] route line failed: $e');
-    }
+    if (m == null) return;
+    await _routeLine.set(m, pts);
   }
 
   /// Ring markers at both ends of the drawn route — the card rail's own
@@ -1018,13 +965,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   Future<void> _clearRouteAnnotation() async {
     await _clearEndpointDots();
     final m = _map;
-    if (m == null) return;
-    try {
-      if (await m.style.styleLayerExists(_routeLayerId)) {
-        await m.style
-            .setStyleLayerProperty(_routeLayerId, 'visibility', 'none');
-      }
-    } catch (_) {}
+    if (m == null) {
+      _routeLine.forget();
+      return;
+    }
+    await _routeLine.hide(m);
   }
 
   Future<void> _fitRouteOnce(List<LatLng> pts) async {

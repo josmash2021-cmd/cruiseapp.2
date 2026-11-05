@@ -161,7 +161,7 @@ void main() {
     expect(nav, contains('unawaited(_cutRouteTail());'));
     expect(nav, contains(': DestBuilding.slice(pts, s, end)));'));
     expect(nav, contains(
-        'end == null ? _routePts : DestBuilding.slice(_routePts, 0, end));'));
+        'end == null ? _routePts : DestBuilding.slice(_routePts, 0, end);'));
     expect(nav, contains('identical(_tailCutFor, _routePts) ? _tailCutS : null;'),
         reason: 'a cut measured on an old line never trims a new one');
   });

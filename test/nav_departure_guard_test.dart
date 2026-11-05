@@ -23,7 +23,7 @@ void main() {
   test('the new leg is seeded from the fetched next leg and draws itself on',
       () {
     expect(nav.contains('_routePts = List.of(next);'), isTrue);
-    expect(nav.contains('await _drawOnRoute(mgr);'), isTrue);
+    expect(nav.contains('await _drawOnRoute(m);'), isTrue);
     expect(nav.contains('if (drawOn != null && now.isBefore(drawOn)) return;'),
         isTrue,
         reason: 'the erase waits for the line to finish drawing');

@@ -2275,6 +2275,61 @@ async def _relock_reservation(db, trip, driver_id) -> bool:
             and fresh.driver_id == driver_id)
 
 
+async def _cancel_missed_reservation(db, trip, minutes_until) -> bool:
+    """The reminder loop's no-show cancel: > 5 min past pickup, never picked
+    up. The loop also works from the snapshot read at the top of its tick, so
+    the row is re-read under its lock first (see _relock_reservation): a ride
+    the driver started in between, or a rider's cancel whose fee was already
+    settled, must not be cancelled (and charged) again. False when the trip
+    moved on."""
+    fresh = (await db.execute(
+        select(Trip).where(Trip.id == trip.id).with_for_update()
+        .execution_options(populate_existing=True)
+    )).scalar_one_or_none()
+    if (fresh is None or fresh.driver_id is None
+            or fresh.status not in ("scheduled", "scheduled_accepted", "scheduled_active")):
+        await db.commit()  # drops the lock
+        return False
+    _prev = trip.status
+    had_driver = bool(trip.driver_id or trip.driver_assigned_at)
+    trip.status = "cancelled"
+    trip.cancel_reason = "auto:reminder_past_scheduled_no_pickup"
+    trip.updated_at = datetime.now(timezone.utc)
+    # Same instant hold release as the scheduler path.
+    try:
+        from routers.trips import _release_or_capture_fee_on_cancel
+        trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
+    except Exception as _hold_err:
+        logging.warning("[AutoCancel/Reminder] hold settle failed trip=%d: %s", trip.id, _hold_err)
+    from services.promotion_redemptions import settle_promotion_on_cancel
+    await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
+    await db.commit()
+    logging.warning(
+        "[AutoCancel/Reminder] trip=%d prev_status=%r driver_id=%s "
+        "scheduled_at=%s (%.0f min past) — driver assigned but never picked up",
+        trip.id, _prev, trip.driver_id,
+        trip.scheduled_at.isoformat() if trip.scheduled_at else None,
+        abs(minutes_until),
+    )
+    return True
+
+
+async def _lock_out_reserved_driver(db, trip, driver_id) -> bool:
+    """30 minutes out a reservation turns scheduled_active (its driver gets
+    no new offers). Same stale-snapshot guard: flipping the tick's snapshot
+    brought back a ride the rider had just cancelled, or sent a ride the
+    driver had just started back to scheduled_active. False when the trip
+    moved on (no 30-minute reminder then either)."""
+    if not await _relock_reservation(db, trip, driver_id):
+        await db.commit()  # drops the lock
+        return False
+    if trip.status == "scheduled_accepted":
+        trip.status = "scheduled_active"
+    await db.commit()
+    logging.info("[Reminder] Trip %d locked: driver %d locked out of new offers", trip.id, driver_id)
+    return True
+
+
 async def _reservation_confirm_step(db, trip, driver, now, minutes_until) -> bool:
     """The 1-hour confirm offer (owner 2026-11-03), for an ONLINE driver at
     the go-online deadline. True when this tick is handled:
@@ -3265,27 +3320,8 @@ async def _scheduled_ride_reminder_loop():
                     # No-show / expired: >5 min past with no pickup
                     # --------------------------------------------------
                     if minutes_until < -5 and "no_driver_cancel" not in trip_reminders:
-                        _prev = trip.status
-                        had_driver = bool(trip.driver_id or trip.driver_assigned_at)
-                        trip.status = "cancelled"
-                        trip.cancel_reason = "auto:reminder_past_scheduled_no_pickup"
-                        trip.updated_at = datetime.now(timezone.utc)
-                        # Same instant hold release as the scheduler path.
-                        try:
-                            from routers.trips import _release_or_capture_fee_on_cancel
-                            trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
-                        except Exception as _hold_err:
-                            logging.warning("[AutoCancel/Reminder] hold settle failed trip=%d: %s", trip.id, _hold_err)
-                        from services.promotion_redemptions import settle_promotion_on_cancel
-                        await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
-                        await db.commit()
-                        logging.warning(
-                            "[AutoCancel/Reminder] trip=%d prev_status=%r driver_id=%s "
-                            "scheduled_at=%s (%.0f min past) — driver assigned but never picked up",
-                            trip.id, _prev, trip.driver_id,
-                            trip.scheduled_at.isoformat() if trip.scheduled_at else None,
-                            abs(minutes_until),
-                        )
+                        if not await _cancel_missed_reservation(db, trip, minutes_until):
+                            continue
                         # Notify rider
                         try:
                             rider_r = await db.execute(
@@ -3351,10 +3387,9 @@ async def _scheduled_ride_reminder_loop():
                     # --------------------------------------------------
                     if 25 <= minutes_until <= 35 and "30m" not in trip_reminders:
                         # Transition to scheduled_active (lockout: no more offers)
-                        if trip.status == "scheduled_accepted":
-                            trip.status = "scheduled_active"
-                            await db.commit()
-                            logging.info("[Reminder] Trip %d locked: driver %d locked out of new offers", trip.id, driver.id)
+                        if (trip.status == "scheduled_accepted"
+                                and not await _lock_out_reserved_driver(db, trip, driver.id)):
+                            continue
                         _send_fcm_push(
                             token=driver.fcm_token,
                             title="Tu viaje comienza en 30 minutos",

@@ -6,8 +6,6 @@ import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../utils/name_helper.dart' as nh;
 import '../../utils/offer_metrics.dart';
-import '../../widgets/neu_style.dart';
-import '../../widgets/offer_countdown_ring.dart';
 import '../../widgets/route_connector_line.dart';
 
 const _gold = Color(0xFFE8C547);
@@ -17,15 +15,16 @@ const _gold = Color(0xFFE8C547);
 /// map's old floating card, #0B0B0F at 95 %.
 const Color kOfferCardBg = Color(0xF20B0B0F);
 
-/// A reservation on the reservations map, drawn as the trip offer card
-/// (owner 2026-11-04: "la tarjeta tal cual como la tarjeta de oferta"):
-/// the same raised surface, the RESERVADO badge row with the pickup time,
-/// the fare with the hourly rate and the two metric pills, the Cruise disc,
-/// the gold rail with "away" and "trip" over the two addresses, and the
-/// rider row — with the rider's Verificado in gold. Mirrors `_offerCard` /
-/// `_buildNormalCardContent` in driver_online_widgets.dart (a part of the
-/// online screen's state, so it cannot be reused from here); a change to
-/// the offer card's look belongs in both.
+/// A reservation on the reservations map (owner 2026-11-04, final: "la
+/// tarjeta debe verse así" — Lyft's scheduled-ride card — "pero sin la
+/// imagen del rider, con el est rate for this ride, y el reserved del lado
+/// derecho donde está el precio más tips, y el tomorrow y hora en dorado";
+/// the rail keeps the offer card's markers and colours): the fare with
+/// "+ Propinas", the hourly rate under it and RESERVADO on the right; the
+/// pickup's day and time in gold over its address and the ride's minutes
+/// and miles over the drop-off, on the offer card's rail (gold ring with a
+/// dot, the gold-to-white line, the white ring); the rider ("Nombre I.")
+/// with Verificado in gold and ★. Ground: the offer cards' #0B0B0F.
 class ReservationOfferCard extends StatelessWidget {
   const ReservationOfferCard({
     super.key,
@@ -40,7 +39,8 @@ class ReservationOfferCard extends StatelessWidget {
   /// "Mañana · 7:00 PM".
   final String whenLabel;
 
-  /// Where the driver is now — the "away" figure, as on an offer.
+  /// Where the driver is now: the hourly rate counts the drive to the
+  /// pickup, as on an offer.
   final LatLng? driverPos;
 
   static double _num(Object? v) {
@@ -79,16 +79,16 @@ class ReservationOfferCard extends StatelessWidget {
     final tripMi =
         (trip['distance_miles'] as num?)?.toDouble() ?? tripKm * 0.621371;
     final here = driverPos;
-    final awayKm = here == null ? 0.0 : _havKm(here, pickup);
-    final awayMin = offerLegMinutes(km: awayKm);
-    final awayMi = awayKm * 0.621371;
-    final totalMin = offerTotalMinutes(awayMin, tripMin);
-    final hourly = offerPayPerHour(fare, totalMin);
+    final awayMin =
+        here == null ? 0 : offerLegMinutes(km: _havKm(here, pickup));
+    final hourly = offerPayPerHour(fare, offerTotalMinutes(awayMin, tripMin));
 
     final short = nh.shortName((trip['rider_name'] ?? '').toString());
     final riderName = short.isNotEmpty ? short : s.riderFallback;
     final rating = _num(trip['rider_rating']);
     final verified = trip['rider_verified'] == true;
+    final hairline =
+        Container(height: 1, color: Colors.white.withValues(alpha: 0.08));
 
     return Container(
       clipBehavior: Clip.antiAlias,
@@ -109,219 +109,150 @@ class ReservationOfferCard extends StatelessWidget {
             blurRadius: 10,
             spreadRadius: -3,
           ),
-          BoxShadow(
-            color: Colors.white.withValues(alpha: 0.06),
-            offset: const Offset(0, -1),
-            blurRadius: 2,
-          ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Badges (centred, owner 2026-11-04) and the pickup time ──
-            SizedBox(
-              width: double.infinity,
-              child: Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  // Gold, never the purple (owner 2026-11-04).
-                  _badge(s.badgeReserved, Icons.schedule_rounded, _gold),
-                  if (isAirport)
-                    _badge(s.badgeAirport, Icons.flight_takeoff_rounded,
-                        const Color(0xFF3B82F6)),
-                  if (isCash)
-                    _badge(s.badgeCash, Icons.payments_rounded,
-                        const Color(0xFF10B981)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.access_time_rounded, size: 14, color: _gold),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    whenLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: _gold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            // ── Fare, hourly rate, metrics, and the disc ──
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── The pay, the hourly rate, and RESERVADO on the right ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+            child: Row(
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          Text(
-                            '\$${fare.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 30,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.5,
+                      // Shrinks rather than overflows beside a wide badge.
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text(
+                              '\$${fare.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 30,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
+                            const SizedBox(width: 10),
+                            Text(
                               s.plusTips,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: _gold,
-                                fontSize: 13,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(
                         s.offerHourlyRate(hourly.toStringAsFixed(2)),
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
                           fontSize: 12.5,
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          _metric(Icons.access_time_rounded,
-                              s.offerDuration(totalMin)),
-                          _metric(Icons.route_rounded,
-                              '${(awayMi + tripMi).toStringAsFixed(1)} mi'),
-                        ],
-                      ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 10),
-                // The Cruise disc, still — a reservation has no clock.
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: neuSurface,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        offset: const Offset(0, 5),
-                        blurRadius: 12,
-                        spreadRadius: -3,
-                      ),
-                      BoxShadow(
-                        color: Colors.white.withValues(alpha: 0.07),
-                        offset: const Offset(0, -1),
-                        blurRadius: 2,
-                      ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _badge(s.badgeReserved, Icons.schedule_rounded, _gold),
+                    if (isAirport) ...[
+                      const SizedBox(height: 6),
+                      _badge(s.badgeAirport, Icons.flight_takeoff_rounded,
+                          const Color(0xFF3B82F6)),
                     ],
-                  ),
-                  child: OfferCountdownRing(
-                    active: false,
-                    onExpired: () {},
-                    child: Image.asset(
-                      'assets/images/cruise_logo.png',
-                      fit: BoxFit.contain,
-                    ),
-                  ),
+                    if (isCash) ...[
+                      const SizedBox(height: 6),
+                      _badge(s.badgeCash, Icons.payments_rounded,
+                          const Color(0xFF10B981)),
+                    ],
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 18),
-            // ── Pickup over dropoff on the gold rail ──
-            _route(
-              s,
-              pickupMeta: here == null
-                  ? whenLabel
-                  : s.offerAway(awayMin, awayMi.toStringAsFixed(1)),
+          ),
+          hairline,
+          // ── Pickup (its day and time in gold) over the drop-off ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+            child: _rail(
+              pickupTitle: whenLabel,
               pickupAddr: (trip['pickup_address'] ?? '').toString(),
-              dropoffMeta: s.offerTrip(tripMin, tripMi.toStringAsFixed(1)),
-              dropoffAddr: (trip['dropoff_address'] ?? '').toString(),
+              dropTitle: '$tripMin min · ${tripMi.toStringAsFixed(1)} mi',
+              dropAddr: (trip['dropoff_address'] ?? '').toString(),
             ),
-            const SizedBox(height: 16),
-            Container(height: 1, color: Colors.white.withValues(alpha: 0.05)),
-            const SizedBox(height: 16),
-            // ── Who is riding ──
-            Row(
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: hairline,
+          ),
+          // ── Who is riding: no photo ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _avatar(riderName),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    riderName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
+                Text(
+                  riderName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-                if (verified) ...[
-                  const SizedBox(width: 8),
-                  // Verified in gold (owner 2026-11-04), never the blue.
-                  const Icon(Icons.verified_rounded, color: _gold, size: 15),
-                  const SizedBox(width: 3),
-                  Text(
-                    s.faceVerified,
-                    style: const TextStyle(
-                      color: _gold,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-                const SizedBox(width: 10),
-                if (rating <= 0)
-                  Text(
-                    s.newRiderLabel,
-                    style: const TextStyle(
-                      color: _gold,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  )
-                else ...[
-                  const Icon(Icons.star_rounded, color: _gold, size: 15),
-                  const SizedBox(width: 3),
-                  Text(
-                    rating.toStringAsFixed(1),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
+                if (verified || rating > 0) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      if (verified) ...[
+                        // Gold, never the blue (owner 2026-11-04).
+                        const Icon(Icons.verified_rounded,
+                            color: _gold, size: 17),
+                        const SizedBox(width: 4),
+                        Text(
+                          s.faceVerified,
+                          style: const TextStyle(color: _gold, fontSize: 14.5),
+                        ),
+                        const SizedBox(width: 12),
+                      ],
+                      if (rating > 0) ...[
+                        Icon(Icons.stars_rounded,
+                            color: Colors.white.withValues(alpha: 0.85),
+                            size: 17),
+                        const SizedBox(width: 4),
+                        Text(
+                          rating.toStringAsFixed(1),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            fontSize: 15,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -351,141 +282,102 @@ class ReservationOfferCard extends StatelessWidget {
         ),
       );
 
-  static Widget _metric(IconData icon, String value) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: _gold, size: 12),
-            const SizedBox(width: 5),
-            Text(
-              value,
-              style: const TextStyle(
-                color: _gold,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      );
-
-  static Widget _avatar(String riderName) {
-    final initial =
-        riderName.trim().isNotEmpty ? riderName.trim()[0].toUpperCase() : '?';
-    return Container(
-      width: 30,
-      height: 30,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initial,
-        style: const TextStyle(
-          color: _gold,
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  static Widget _route(
-    S s, {
-    required String pickupMeta,
+  /// The offer card's rail at the Lyft card's size (owner 2026-11-04,
+  /// "esto mantienes el mismo diseño y color"): a gold ring with a dot at
+  /// the pickup, the gold-to-white line, a white ring at the drop-off; each
+  /// marker level with its title.
+  static Widget _rail({
+    required String pickupTitle,
     required String pickupAddr,
-    required String dropoffMeta,
-    required String dropoffAddr,
+    required String dropTitle,
+    required String dropAddr,
   }) {
-    const stopH = 34.0;
-    const halfPad = (stopH - 11) / 2;
-    const goldRingDot = BoxDecoration(
-      shape: BoxShape.circle,
-      border: Border.fromBorderSide(BorderSide(color: _gold, width: 1.5)),
-    );
-    const whiteRing = BoxDecoration(
-      shape: BoxShape.circle,
-      border:
-          Border.fromBorderSide(BorderSide(color: Colors.white, width: 1.5)),
-    );
-    Widget stopText(String meta, String address) => Column(
+    const marker = 13.0;
+    const top = 5.0;
+    Widget text(String title, String sub, {Color titleColor = Colors.white}) =>
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(meta,
-                style: const TextStyle(color: Colors.white, fontSize: 11)),
-            const SizedBox(height: 2),
-            Text(
-              address,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            if (title.isNotEmpty)
+              Text(title,
+                  style: TextStyle(
+                      color: titleColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500)),
+            Text(sub,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6), fontSize: 15)),
           ],
         );
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        // The card's own ground with a hairline (owner 2026-11-04: the neu
-        // grey read as a different colour from the card).
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+    final pickupRing = Container(
+      width: marker,
+      height: marker,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.fromBorderSide(BorderSide(color: _gold, width: 1.8)),
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      alignment: Alignment.center,
+      child: Container(
+        width: 5,
+        height: 5,
+        decoration: const BoxDecoration(color: _gold, shape: BoxShape.circle),
+      ),
+    );
+    final dropRing = Container(
+      width: marker,
+      height: marker,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        border:
+            Border.fromBorderSide(BorderSide(color: Colors.white, width: 1.8)),
+      ),
+    );
+    return Column(
+      children: [
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: 20,
+                child: Column(
+                  children: [
+                    const SizedBox(height: top),
+                    pickupRing,
+                    const Expanded(child: RouteConnectorLine()),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: text(pickupTitle, pickupAddr, titleColor: _gold),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              width: 16,
+              width: 20,
               child: Column(
                 children: [
-                  const SizedBox(height: halfPad),
-                  Container(
-                    width: 11,
-                    height: 11,
-                    decoration: goldRingDot,
-                    child: Center(
-                      child: Container(
-                        width: 4,
-                        height: 4,
-                        decoration: const BoxDecoration(
-                          color: _gold,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const Expanded(child: RouteConnectorLine()),
-                  Container(width: 11, height: 11, decoration: whiteRing),
-                  const SizedBox(height: halfPad),
+                  // The line runs on to the white ring.
+                  Container(width: 2, height: top, color: Colors.white),
+                  dropRing,
                 ],
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  stopText(pickupMeta, pickupAddr),
-                  const SizedBox(height: 22),
-                  stopText(dropoffMeta, dropoffAddr),
-                ],
-              ),
-            ),
+            const SizedBox(width: 14),
+            Expanded(child: text(dropTitle, dropAddr)),
           ],
         ),
-      ),
+      ],
     );
   }
 }

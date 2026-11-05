@@ -69,6 +69,16 @@ void main() {
     expect(find.text('Mañana · 7:00 PM'), findsOneWidget);
     expect(find.text('\$19.67'), findsOneWidget);
     expect(find.text('Apple C.'), findsOneWidget);
+    // Owner 2026-11-04 (final): RESERVADO on the price's right, the day and
+    // time in gold, the hourly rate, and no rider photo.
+    final price = t.getCenter(find.text('\$19.67'));
+    final badge = t.getCenter(find.text('RESERVADO'));
+    expect(badge.dx, greaterThan(price.dx + 100));
+    expect((badge.dy - price.dy).abs(), lessThan(30));
+    expect(t.widget<Text>(find.text('Mañana · 7:00 PM')).style?.color,
+        const Color(0xFFE8C547));
+    expect(find.textContaining('/h estimado por este viaje'), findsOneWidget);
+    expect(find.text('A'), findsNothing, reason: 'no avatar initial');
     final verified = t.widget<Text>(find.text('Verificado'));
     expect(verified.style?.color, const Color(0xFFE8C547));
     final icon = t.widget<Icon>(find.byIcon(Icons.verified_rounded));

@@ -207,9 +207,10 @@ final SpringDescription _sheetSpring =
 
 /// The map behind the whole trip / the rider's info: blurred and dimmed in
 /// step with the sheet (owner 2026-11-02: "el contenido del mapa no se pone
-/// borroso").
-const double _kScrimBlur = 14;
-const double _kScrimDim = 0.34;
+/// borroso"). 14 / 0.34 left the turn box readable through it (owner
+/// 2026-11-04: "está borroso pero se puede leer o ver aún").
+const double _kScrimBlur = 32;
+const double _kScrimDim = 0.55;
 
 /// A drag farther than this (or a flick) commits; less springs back.
 const double _kCommitDrag = 48;
@@ -545,9 +546,13 @@ class _NavTripPanelState extends State<NavTripPanel>
           child: Padding(
             padding:
                 EdgeInsets.fromLTRB(8 * k, 0, 8 * k, (8 + bottomPad * 0.5) * k),
+            // Closed: see-through frost with real round corners (owner
+            // 2026-11-04, "semi transparente borroso pero sin esquinas");
+            // it darkens to the open tint as it grows.
             child: GlassSurface(
               blur: kGlassSheetBlurOpen,
-              tint: glassSheetOpenTint,
+              tint: Color.lerp(glassNavRestTint, glassSheetOpenTint, t)!,
+              roundFrostOnIOS: true,
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(30),
                 topRight: const Radius.circular(30),

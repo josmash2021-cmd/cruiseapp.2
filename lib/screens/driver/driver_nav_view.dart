@@ -3918,6 +3918,8 @@ class DriverNavViewState extends State<DriverNavView>
       builder: (context, corner, child) => GlassSurface(
         blur: kGlassSheetBlurOpen,
         tint: glassSheetOpenTint,
+        // No blurred square around its corners on iOS either.
+        roundFrostOnIOS: true,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(14),
           topRight: const Radius.circular(14),

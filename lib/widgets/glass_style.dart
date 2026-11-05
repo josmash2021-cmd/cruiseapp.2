@@ -1,5 +1,7 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Frosted grey glass for the driver's map chrome (owner spec 2026-10-30:
@@ -39,6 +41,11 @@ const glassTintLight = Color(0xB3FFFFFF);
 // The OPEN sheet (owner 2026-10-31: "estilo vidrio borroso, pero que no se
 // vea los botones del mapa ni la flecha detrás") a step denser still.
 const glassSheetOpenTint = Color(0xF01A1A21); // ~94 %
+// The nav panel CLOSED (owner 2026-11-04: "semi transparente borroso pero
+// sin esquinas"): nothing the app draws sits under it, only the map — so
+// it may let the frosted map through. It deepens to the open tint as it
+// opens.
+const glassNavRestTint = Color(0xA61A1A21); // ~65 %
 const kGlassSheetBlurOpen = 44.0;
 // Map controls: translucent grey with depth instead of blur.
 const mapChipTint = Color(0xB81E1E26); // ~72 %
@@ -84,12 +91,17 @@ class GlassSurface extends StatelessWidget {
     this.width,
     this.height,
     this.padding,
+    this.roundFrostOnIOS = false,
   });
 
   final Widget child;
   final bool circle;
   final BorderRadius borderRadius;
   final double blur;
+
+  /// On iOS, frost the map inside the rounded shape only ([frostStairRects])
+  /// instead of across its bounding rectangle — no blurred square corners.
+  final bool roundFrostOnIOS;
   final Color? tint;
   final Color? borderColor;
   final double borderWidth;
@@ -116,6 +128,38 @@ class GlassSurface extends StatelessWidget {
     if (width != null || height != null) {
       body = SizedBox(width: width, height: height, child: body);
     }
+    if (roundFrostOnIOS &&
+        !circle &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      final filter = ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur);
+      return ClipRRect(
+        borderRadius: borderRadius,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, c) => Stack(
+                  children: [
+                    for (final r in frostStairRects(c.biggest, borderRadius))
+                      Positioned.fromRect(
+                        rect: r,
+                        child: ClipRect(
+                          child: BackdropFilter(
+                            filter: filter,
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            body,
+          ],
+        ),
+      );
+    }
     final frosted = BackdropFilter(
       filter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
       child: body,
@@ -124,6 +168,53 @@ class GlassSurface extends StatelessWidget {
         ? ClipOval(child: frosted)
         : ClipRRect(borderRadius: borderRadius, child: frosted);
   }
+}
+
+/// The rounded frost over the iOS map, from rectangles (see the caveat at
+/// the top: Flutter 3.38 frames every blur over a platform view to its
+/// rectangle — the rounded clip only arrives in a later engine). [steps]
+/// rectangles nested inside the rounded shape, each with its corners ON a
+/// corner's arc, so nothing outside the corners is frosted; the slivers
+/// they miss along each arc are ≤ 4 pt deep at 30 pt (7 steps), under the
+/// tint. A square corner beside a rounded one gets its own quadrant (the
+/// shared sides took the rounded corner's inset). They overlap: the middle
+/// is frosted once per rectangle, which only deepens an already deep blur.
+List<Rect> frostStairRects(Size size, BorderRadius radius, {int steps = 7}) {
+  final w = size.width;
+  final h = size.height;
+  if (!(w > 0 && h > 0)) return const [];
+  final half = math.min(w, h) / 2;
+  double r(Radius c) => math.min(math.min(c.x, c.y), half);
+  final tl = r(radius.topLeft);
+  final tr = r(radius.topRight);
+  final bl = r(radius.bottomLeft);
+  final br = r(radius.bottomRight);
+  const square = 0.5;
+  if (math.max(math.max(tl, tr), math.max(bl, br)) < square) {
+    return [Offset.zero & size];
+  }
+  final rects = <Rect>[];
+  for (var i = 0; i < steps; i++) {
+    final a = (math.pi / 2) * i / (steps - 1);
+    final dx = 1 - math.cos(a);
+    final dy = 1 - math.sin(a);
+    rects.add(Rect.fromLTRB(
+      math.max(tl, bl) * dx,
+      math.max(tl, tr) * dy,
+      w - math.max(tr, br) * dx,
+      h - math.max(bl, br) * dy,
+    ));
+  }
+  void quadrant(double cornerR, Offset corner, Rect q) {
+    if (cornerR >= square || rects.any((x) => x.contains(corner))) return;
+    rects.add(q);
+  }
+
+  quadrant(tl, const Offset(0.25, 0.25), Rect.fromLTRB(0, 0, w / 2, h / 2));
+  quadrant(tr, Offset(w - 0.25, 0.25), Rect.fromLTRB(w / 2, 0, w, h / 2));
+  quadrant(bl, Offset(0.25, h - 0.25), Rect.fromLTRB(0, h / 2, w / 2, h));
+  quadrant(br, Offset(w - 0.25, h - 0.25), Rect.fromLTRB(w / 2, h / 2, w, h));
+  return rects;
 }
 
 

@@ -121,8 +121,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   String? _lastAvailJson;
   mapbox.PointAnnotationManager? _dotMgr;
   mapbox.PointAnnotation? _dotAnnot;
-  mapbox.PolylineAnnotationManager? _routeMgr;
-  mapbox.PolylineAnnotation? _routeAnnot;
+  // The selected ride's line: a style layer (not an annotation) so it can
+  // carry a gradient — gold at the pickup to white at the drop-off, the
+  // card rail's line (owner 2026-11-04, "mismo diseño para la línea").
+  static const _routeSourceId = 'resv-route-src';
+  static const _routeLayerId = 'resv-route-line';
   mapbox.CircleAnnotationManager? _dotsEndMgr;
   final List<mapbox.CircleAnnotation> _endDots = [];
 
@@ -250,8 +253,6 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         _dotMgr = null;
         _dotAnnot = null;
         _dotAlignmentSet = false;
-        _routeMgr = null;
-        _routeAnnot = null;
         _dotsEndMgr = null;
         _endDots.clear();
         setState(() => _mapMounted = false);
@@ -616,7 +617,6 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       } catch (_) {}
     }
     _dotMgr = await ctrl.annotations.createPointAnnotationManager();
-    _routeMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _dotsEndMgr = await ctrl.annotations.createCircleAnnotationManager();
     for (final mgr in [_dotMgr]) {
       if (mgr == null) continue;
@@ -730,17 +730,18 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   /// same MapCalloutBubble — the gold tile, "$20 CRUISE", the pickup's day
   /// and time under it — glued to its pickup every camera frame with
   /// FlatMapProjection, open from zoom 11 and down to the price below 10.6
-  /// (rule #49b). A tap opens the ride; while one is open its route and
-  /// card own the map, so the callouts step aside.
+  /// (rule #49b). A tap opens the ride; an open ride keeps only its own
+  /// callout, over the pickup ring of its route.
   Widget _rideCalloutOverlay() {
     if (kIsWeb) return const SizedBox.shrink();
     return ListenableBuilder(
       listenable: _camFrame,
       builder: (context, _) {
         final cam = _camState;
-        if (cam == null || _selected != null || !_mapMounted) {
-          return const SizedBox.shrink();
-        }
+        if (cam == null || !_mapMounted) return const SizedBox.shrink();
+        // An open ride keeps only ITS callout, sitting on its pickup ring
+        // (owner 2026-11-04, "colócalo aquí").
+        final open = _selected;
         final s = S.of(context);
         final isEs = Localizations.localeOf(context).languageCode == 'es';
         final size = MediaQuery.sizeOf(context);
@@ -752,7 +753,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         final shift = Offset(
             (pad.left - pad.right) / 2, (pad.top - pad.bottom) / 2);
         final children = <Widget>[];
-        for (final trip in _filtered) {
+        for (final trip in open == null ? _filtered : [open]) {
           final lat = (trip['pickup_lat'] as num?)?.toDouble();
           final lng = (trip['pickup_lng'] as num?)?.toDouble();
           if (!isValidLatLng(lat, lng)) continue;
@@ -770,18 +771,20 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
           final price = tripCalloutPrice(trip['fare']);
           final product = tripCalloutProduct(trip['vehicle_type']);
           final at = _parseScheduledAt(trip);
+          final bubble = MapCalloutBubble(
+            variant: CalloutVariant.trip,
+            title: price ?? product,
+            titleFade: price == null ? null : ' $product',
+            subtitle: at == null ? null : _whenShort(s, at, isEs),
+            expanded: _calloutsExpanded,
+            onTap: open == null ? () => _selectTrip(trip) : null,
+          );
           children.add(Positioned(
             key: ValueKey('resv-callout-${trip['id']}'),
             left: p.dx,
-            top: p.dy,
-            child: MapCalloutBubble(
-              variant: CalloutVariant.trip,
-              title: price ?? product,
-              titleFade: price == null ? null : ' $product',
-              subtitle: at == null ? null : _whenShort(s, at, isEs),
-              expanded: _calloutsExpanded,
-              onTap: () => _selectTrip(trip),
-            ),
+            // Open: the tail tip rests on top of the pickup ring.
+            top: open == null ? p.dy : p.dy - 9,
+            child: open == null ? bubble : IgnorePointer(child: bubble),
           ));
         }
         if (children.isEmpty) return const SizedBox.shrink();
@@ -899,30 +902,74 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   }
 
   Future<void> _setRouteAnnotation(List<LatLng> pts) async {
-    final mgr = _routeMgr;
-    if (mgr == null) return;
-    final geom = safeLineString(pts);
-    if (geom == null) return;
-    if (_routeAnnot != null) {
-      _routeAnnot!.geometry = geom;
-      try {
-        await mgr.update(_routeAnnot!);
-      } catch (_) {}
-    } else {
-      try {
-        _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-          geometry: geom,
-          lineColor: _gold.toARGB32(),
-          lineWidth: 3.5,
-          lineJoin: mapbox.LineJoin.ROUND,
+    final m = _map;
+    if (m == null || pts.length < 2) return;
+    final coords = [
+      for (final p in pts)
+        if (isValidLatLng(p.latitude, p.longitude))
+          [p.longitude, p.latitude],
+    ];
+    if (coords.length < 2) return;
+    final data = jsonEncode({
+      'type': 'Feature',
+      'properties': <String, Object>{},
+      'geometry': {'type': 'LineString', 'coordinates': coords},
+    });
+    final style = m.style;
+    try {
+      if (await style.styleSourceExists(_routeSourceId)) {
+        await style.setStyleSourceProperty(_routeSourceId, 'data', data);
+      } else {
+        await style.addSource(mapbox.GeoJsonSource(
+          id: _routeSourceId,
+          data: data,
+          // What makes `line-progress` — and so the gradient — exist.
+          lineMetrics: true,
         ));
-      } catch (_) {}
+      }
+      if (!await style.styleLayerExists(_routeLayerId)) {
+        final layer = mapbox.LineLayer(
+          id: _routeLayerId,
+          sourceId: _routeSourceId,
+          lineCap: mapbox.LineCap.ROUND,
+          lineJoin: mapbox.LineJoin.ROUND,
+          lineWidth: 4.0,
+          lineGradientExpression: [
+            'interpolate',
+            ['linear'],
+            ['line-progress'],
+            0,
+            'rgba(232, 197, 71, 1)',
+            1,
+            'rgba(255, 255, 255, 1)',
+          ],
+        );
+        // Under the street names (dark-v11 calls them road-label-simple),
+        // over everything else; on top of the style if neither exists.
+        var placed = false;
+        for (final below in const ['road-label-simple', 'road-label']) {
+          if (!await style.styleLayerExists(below)) continue;
+          try {
+            await style.addLayerAt(layer, mapbox.LayerPosition(below: below));
+            placed = true;
+            break;
+          } catch (_) {}
+        }
+        if (!placed) await style.addLayer(layer);
+      } else {
+        await style.setStyleLayerProperty(
+            _routeLayerId, 'visibility', 'visible');
+      }
+    } catch (e) {
+      debugPrint('[SchedMap] route line failed: $e');
     }
   }
 
-  /// Ring markers at both ends of the drawn route — the exact style of the
-  /// card's address rail (user spec 2026-08-28): pickup is a gold ring with
-  /// a solid gold dot inside, dropoff a hollow white ring.
+  /// Ring markers at both ends of the drawn route — the card rail's own
+  /// (user spec 2026-08-28; owner 2026-11-04, "los círculos deben ser igual
+  /// que estos"): a gold ring with a gold dot at the pickup, a hollow white
+  /// ring at the drop-off, at the rail's 13 pt, filled with the map's navy
+  /// so the line ends at the ring instead of running through it.
   Future<void> _setEndpointDots(LatLng pickup, LatLng dropoff) async {
     final mgr = _dotsEndMgr;
     if (mgr == null) return;
@@ -935,15 +982,15 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         final ringAnnot = await mgr.create(mapbox.CircleAnnotationOptions(
           geometry: point,
           circleRadius: 5.5,
-          circleColor: Colors.transparent.toARGB32(),
-          circleStrokeWidth: 1.5,
+          circleColor: const Color(0xFF0A1128).toARGB32(),
+          circleStrokeWidth: 1.8,
           circleStrokeColor: color.toARGB32(),
         ));
         _endDots.add(ringAnnot);
         if (filled) {
           final dotAnnot = await mgr.create(mapbox.CircleAnnotationOptions(
             geometry: point,
-            circleRadius: 2.2,
+            circleRadius: 2.5,
             circleColor: color.toARGB32(),
           ));
           _endDots.add(dotAnnot);
@@ -969,13 +1016,14 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   }
 
   Future<void> _clearRouteAnnotation() async {
-    final mgr = _routeMgr;
-    final annot = _routeAnnot;
-    _routeAnnot = null;
     await _clearEndpointDots();
-    if (mgr == null || annot == null) return;
+    final m = _map;
+    if (m == null) return;
     try {
-      await mgr.delete(annot);
+      if (await m.style.styleLayerExists(_routeLayerId)) {
+        await m.style
+            .setStyleLayerProperty(_routeLayerId, 'visibility', 'none');
+      }
     } catch (_) {}
   }
 
@@ -992,8 +1040,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     if (coords.isEmpty) return;
     // The floating ride card + Reservar cover the bottom; the route frames
     // in the strip above them (the top bar is gone in this mode, only X).
+    // The top leaves room for the ride's callout, which stands ~80 above
+    // its pickup (2026-11-04).
     final bottom = media.padding.bottom + _kDetailCardSpace;
-    final top = media.padding.top + 80;
+    final top = media.padding.top + 140;
     try {
       final cam = await m.cameraForCoordinatesPadding(
         coords,

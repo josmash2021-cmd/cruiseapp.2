@@ -229,14 +229,19 @@ void main() {
     test("the rides wear the online map's trip callouts", () {
       final i = sched.indexOf('Widget _rideCalloutOverlay() {');
       expect(i, greaterThan(-1));
-      final m = sched.substring(i, i + 3200);
+      final m = sched.substring(i, i + 3800);
       expect(m, contains('MapCalloutBubble('));
       expect(m, contains('variant: CalloutVariant.trip,'));
       expect(m, contains('FlatMapProjection.screenOffsetHeading('));
       expect(m, contains('calloutExpandedForZoom(cam.zoom'));
-      expect(m, contains('onTap: () => _selectTrip(trip),'));
-      expect(m, contains('_selected != null'),
-          reason: 'an open ride owns the map: the callouts step aside');
+      expect(m, contains('onTap: open == null ? () => _selectTrip(trip) : null,'));
+      expect(m, contains('for (final trip in open == null ? _filtered : [open])'),
+          reason: 'an open ride keeps only its own callout, over its pickup');
+      // Its route: the card rail's gold→white line (owner 2026-11-04).
+      expect(sched, contains("['line-progress'],"));
+      expect(sched, contains('lineMetrics: true,'));
+      expect(sched, contains("'rgba(232, 197, 71, 1)',"));
+      expect(sched, contains("'rgba(255, 255, 255, 1)',"));
       expect(sched, isNot(contains('_bubbleBytes')),
           reason: 'the bitmap cube + 3D pin are gone');
       expect(sched, contains('Positioned.fill(child: _rideCalloutOverlay()),'));

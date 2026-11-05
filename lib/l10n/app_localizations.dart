@@ -4751,6 +4751,9 @@ class S {
       ? 'Reportar comportamiento inseguro'
       : 'Flag unsafe behavior for review';
   String get currentTrip => _es ? 'Viaje actual' : 'Current Trip';
+  // The ride chained behind it, in the open navigation panel (owner
+  // 2026-11-05, Lyft's "Next ride").
+  String get navNextTrip => _es ? 'Próximo viaje' : 'Next Trip';
   String get emergency => _es ? 'Emergencia' : 'Emergency';
   String get call911Help =>
       _es ? 'Llama al 911 para ayuda inmediata' : 'Call 911 for immediate help';

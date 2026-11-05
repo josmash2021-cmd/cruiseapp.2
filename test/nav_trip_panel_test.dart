@@ -25,6 +25,7 @@ void main() {
     ValueChanged<double>? onRest,
     int? hintTripId,
     DateTime? waitStartsAt,
+    NavNextRide? nextRide,
   }) {
     return MaterialApp(
       locale: const Locale('es'),
@@ -78,6 +79,7 @@ void main() {
                   lastTrip: lastTrip,
                   supportUnread: 2,
                   queuedCanceled: queuedCanceled,
+                  nextRide: nextRide,
                   onOpenChat: () => calls.add('chat'),
                   onSupport: () => calls.add('support'),
                   onCancelTrip: () => calls.add('cancel'),
@@ -164,6 +166,66 @@ void main() {
     expect(find.text('Último viaje'), findsNothing,
         reason: 'owner 2026-11-02: only in the trip options');
     expect(t.takeException(), isNull);
+  });
+
+  // Lyft's "Next ride" (owner 2026-11-05): the chained ride under the
+  // current trip, same header, its rider's pickup and drop-off.
+  testWidgets('parked: the queued ride shows as "Próximo viaje"', (t) async {
+    phone(t);
+    await t.pumpWidget(host(
+      moving: false,
+      nextRide: NavNextRide.fromOffer({
+        'rider_name': 'Infiniti Jones',
+        'fare': '24.12',
+        'pickup_address': '416 Riverchase Pkwy E',
+        'dropoff_address': 'Birmingham Airport (BHM)',
+        'rider_photo_url': '',
+        'rider_verified': true,
+      }),
+    ));
+    await settle(t);
+    await t.drag(find.text('7 min · 2.9 mi'), const Offset(0, -120));
+    await settle(t);
+    expect(find.byKey(const ValueKey('nav-next-ride')), findsOneWidget);
+    expect(find.text('Próximo viaje'), findsOneWidget);
+    expect(find.text('CRUISE IN RIDE'), findsNWidgets(2));
+    expect(find.textContaining(r'$24.12', findRichText: true), findsOneWidget);
+    expect(find.text('Recoger a Infiniti'), findsOneWidget);
+    expect(find.text('416 Riverchase Pkwy E'), findsOneWidget);
+    expect(find.text('Dejar a Infiniti'), findsOneWidget);
+    expect(find.text('Birmingham Airport (BHM)'), findsOneWidget);
+    // Verificado in gold, never the blue: the queued rider's row (the
+    // current pickup is done, so dimmed).
+    final badges = find.byKey(const ValueKey('nav-step-verified'));
+    expect(badges, findsNWidgets(2));
+    final nextBadge = find.descendant(
+        of: find.byKey(const ValueKey('nav-next-ride')),
+        matching: find.byKey(const ValueKey('nav-step-verified')));
+    expect(
+        t
+            .widget<Text>(
+                find.descendant(of: nextBadge, matching: find.byType(Text)))
+            .style
+            ?.color,
+        const Color(0xFFE8C547));
+    expect(
+        t
+            .widget<Icon>(find.descendant(
+                of: nextBadge, matching: find.byIcon(Icons.verified_rounded)))
+            .color,
+        const Color(0xFFE8C547));
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('no queued ride, no "Próximo viaje"', (t) async {
+    phone(t);
+    await t.pumpWidget(host(moving: false));
+    await settle(t);
+    await t.drag(find.text('7 min · 2.9 mi'), const Offset(0, -120));
+    await settle(t);
+    expect(find.text('Viaje actual'), findsOneWidget);
+    expect(find.text('Próximo viaje'), findsNothing);
+    expect(NavNextRide.fromOffer(null), isNull);
   });
 
   testWidgets('parked: "Te has desconectado" when rides are off', (t) async {

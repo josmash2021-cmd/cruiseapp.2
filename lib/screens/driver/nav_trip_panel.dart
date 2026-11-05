@@ -36,6 +36,48 @@ enum NavPanelStage {
 /// What the title at the point says (see [_NavTripPanelState._waitRow]).
 enum _WaitTitle { notified, scheduled, counting, over }
 
+/// The ride chained behind this one (owner 2026-11-05, Lyft's "Next ride"):
+/// the open panel lists it under the current trip — price, rider, pickup
+/// and drop-off. Built from the accepted offer (ChainedRideStore).
+@immutable
+class NavNextRide {
+  const NavNextRide({
+    required this.riderName,
+    required this.fare,
+    required this.pickupAddress,
+    required this.dropoffAddress,
+    this.riderPhotoUrl = '',
+    this.riderId,
+    this.verified = false,
+  });
+
+  final String riderName;
+  final double fare;
+  final String pickupAddress;
+  final String dropoffAddress;
+  final String riderPhotoUrl;
+  final String? riderId;
+  final bool verified;
+
+  /// The offer payload (FCM data is all strings, SSE carries numbers), or
+  /// null when there is no queued ride.
+  static NavNextRide? fromOffer(Map<String, dynamic>? o) {
+    if (o == null) return null;
+    String str(Object? v) => (v ?? '').toString().trim();
+    final fare = double.tryParse(str(o['fare'])) ?? 0;
+    final verified = o['rider_verified'];
+    return NavNextRide(
+      riderName: str(o['rider_name']),
+      fare: fare.isFinite ? fare : 0,
+      pickupAddress: str(o['pickup_address']),
+      dropoffAddress: str(o['dropoff_address']),
+      riderPhotoUrl: str(o['rider_photo_url']),
+      riderId: str(o['rider_id']).isEmpty ? null : str(o['rider_id']),
+      verified: verified == true || verified == 'true' || verified == '1',
+    );
+  }
+}
+
 /// The navigation's bottom panel (owner design 2026-11-02, approved "tal
 /// cual": https://claude.ai/artifact/HJUuivr8N4vih8WmmqGnTX).
 ///
@@ -92,6 +134,7 @@ class NavTripPanel extends StatefulWidget {
     this.onOpenChanged,
     this.mapControls,
     this.hintTripId,
+    this.nextRide,
   });
 
   final String etaLabel;
@@ -155,6 +198,10 @@ class NavTripPanel extends StatefulWidget {
   /// at the top of the panel while this is true (owner design 2026-11-02,
   /// drawing 15).
   final bool queuedCanceled;
+
+  /// The ride queued behind this one, listed under it when the panel is
+  /// open (owner 2026-11-05). Null = none.
+  final NavNextRide? nextRide;
 
   final VoidCallback onOpenChat;
   final VoidCallback onSupport;
@@ -1269,6 +1316,8 @@ class _NavTripPanelState extends State<NavTripPanel>
                       ),
                     ),
                   ),
+                if (widget.nextRide != null)
+                  _nextRideBlock(s, widget.nextRide!),
                 _rowDivider(),
                 // "Recibiendo viajes" ⇄ "Te has desconectado" (owner 2026-11-02).
                 _toggleRow(
@@ -1322,6 +1371,67 @@ class _NavTripPanelState extends State<NavTripPanel>
     );
   }
 
+  /// "Próximo viaje": the current trip's header again for the queued ride
+  /// — gold CRUISE IN RIDE, the title, its price + Tips — then its rider's
+  /// pickup and drop-off (owner 2026-11-05, Lyft's "Next ride").
+  Widget _nextRideBlock(S s, NavNextRide next) {
+    final first = next.riderName.split(' ').first;
+    Widget photo() => VerifiedAvatar(
+          photoUrl: next.riderPhotoUrl,
+          radius: 22,
+          fallbackName: next.riderName,
+          uid: next.riderId,
+          role: 'rider',
+          isVerified: false,
+        );
+    return Column(
+      key: const ValueKey('nav-next-ride'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _rowDivider(),
+        const Text(
+          'CRUISE IN RIDE',
+          style: TextStyle(color: _gold, fontSize: 15, letterSpacing: 0.9),
+        ),
+        Text(
+          s.navNextTrip,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 23,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text.rich(
+          TextSpan(children: [
+            TextSpan(
+              text: '\$${next.fare.toStringAsFixed(2)} ',
+              style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+            ),
+            TextSpan(text: s.navPlusTips, style: const TextStyle(color: _gold)),
+          ]),
+          style: const TextStyle(color: Colors.white, fontSize: 19),
+        ),
+        const SizedBox(height: 22),
+        _stepRow(
+          lead: photo(),
+          done: false,
+          verified: next.verified,
+          title: s.navPickUpName(first),
+          lines: [next.pickupAddress],
+          line: true,
+        ),
+        _stepRow(
+          lead: photo(),
+          done: false,
+          title: s.navDropOffName(first),
+          lines: [next.dropoffAddress],
+          line: false,
+        ),
+      ],
+    );
+  }
+
   Widget _rowDivider() => Container(
         margin: const EdgeInsets.symmetric(vertical: 16),
         height: 1,
@@ -1364,12 +1474,23 @@ class _NavTripPanelState extends State<NavTripPanel>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Gold, never the blue (owner 2026-11-04: "el verificado
+                  // debe estar en dorado") — the badge, not a "✓" glyph a
+                  // font may not carry.
                   if (verified)
-                    Text(
-                      '✓ ${S.of(context).faceVerified}',
-                      style: TextStyle(
-                          color: done ? dim : const Color(0xFF7FA8FF),
-                          fontSize: 15),
+                    Row(
+                      key: const ValueKey('nav-step-verified'),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.verified_rounded,
+                            size: 16, color: done ? dim : _gold),
+                        const SizedBox(width: 4),
+                        Text(
+                          S.of(context).faceVerified,
+                          style: TextStyle(
+                              color: done ? dim : _gold, fontSize: 15),
+                        ),
+                      ],
                     ),
                   Text(
                     title,

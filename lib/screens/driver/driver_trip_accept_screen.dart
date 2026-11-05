@@ -49,6 +49,7 @@ import '../../services/chat_service.dart';
 import '../../services/socket_service.dart';
 import 'driver_online_screen.dart';
 import 'driver_nav_view.dart';
+import 'nav_trip_panel.dart' show NavNextRide;
 import 'driver_online_screen.dart';
 import '../../services/user_session.dart';
 import '../welcome_screen.dart';
@@ -6093,6 +6094,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               lastTrip: _lastTrip,
               supportUnread: _supportUnread,
               queuedCanceled: _queuedCanceledShown,
+              // The accepted chained ride, "Próximo viaje" in the open panel
+              // (owner 2026-11-05). Every change to the store comes with a
+              // setState here (accept / gone), so reading it in build is live.
+              nextRide: NavNextRide.fromOffer(ChainedRideStore.offer),
               onToggleReceiving: _toggleReceiving,
               onToggleLastTrip: _toggleLastTrip,
             ),

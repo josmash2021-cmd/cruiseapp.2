@@ -149,6 +149,7 @@ class DriverNavView extends StatefulWidget {
     this.lastTrip = false,
     this.supportUnread = 0,
     this.queuedCanceled = false,
+    this.nextRide,
     this.onCancelTrip,
     this.onToggleReceiving,
     this.onToggleLastTrip,
@@ -244,6 +245,9 @@ class DriverNavView extends StatefulWidget {
 
   /// "Viaje en cola cancelado" is up (the parent holds it for 7 s).
   final bool queuedCanceled;
+
+  /// The ride queued behind this one — "Próximo viaje" in the open panel.
+  final NavNextRide? nextRide;
 
   final VoidCallback? onCancelTrip;
   final VoidCallback? onToggleReceiving;
@@ -3970,6 +3974,7 @@ class DriverNavViewState extends State<DriverNavView>
             chatUnread: _chatUnread,
             supportUnread: widget.supportUnread,
             queuedCanceled: widget.queuedCanceled,
+            nextRide: widget.nextRide,
             onOpenChat: widget.onOpenChat,
             onSupport: widget.onSupport,
             onCancelTrip: widget.onCancelTrip ?? widget.onExit,

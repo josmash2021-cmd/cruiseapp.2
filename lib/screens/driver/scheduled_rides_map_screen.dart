@@ -985,21 +985,57 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     if (coords.isEmpty) return;
     // The floating ride card + Reservar cover the bottom; the route frames
     // in the strip above them (the top bar is gone in this mode, only X).
-    // The top leaves room for the ride's callout, which stands ~80 above
-    // its pickup (2026-11-04).
+    // Owner 2026-11-04 ("se ve super lejos"): the room for the ride's
+    // callout (67 above its pickup, shadow included) is added only when the
+    // pickup lands near the top, and the sides keep 32 — the old fixed
+    // +140 / 48 left a 10-mile route a thin strip. Our own Mercator
+    // (fitFlat), flown with no map padding, so the second pass knows where
+    // the pickup will be.
+    final size = media.size;
     final bottom = media.padding.bottom + _kDetailCardSpace;
-    final top = media.padding.top + 140;
-    try {
-      final cam = await m.cameraForCoordinatesPadding(
-        coords,
-        mapbox.CameraOptions(pitch: 0, bearing: 0),
-        mapbox.MbxEdgeInsets(top: top, left: 48, bottom: bottom, right: 48),
-        null,
-        null,
+    final ceiling = media.padding.top + 12; // the callout's top may reach
+    const side = 32.0;
+    const calloutH = 70.0;
+    var top = media.padding.top + 24;
+    ({LatLng center, double zoom})? to;
+    for (var pass = 0; pass < 2; pass++) {
+      to = FlatMapProjection.fitFlat(
+        points: pts,
+        viewport: size,
+        top: top,
+        left: side,
+        bottom: bottom,
+        right: side,
+        maxZoom: 15.5,
       );
-      if (mounted) {
-        await m.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
-      }
+      if (to == null) return;
+      final pickupAt = FlatMapProjection.screenOffsetHeading(
+        target: pts.first,
+        cameraCenter: to.center,
+        zoom: to.zoom,
+        bearingDeg: 0,
+        pitchDeg: 0,
+        viewport: size,
+      );
+      final over = pickupAt == null ? 0.0 : ceiling - (pickupAt.dy - calloutH);
+      if (over <= 0) break;
+      top += over;
+    }
+    final cam = to;
+    if (cam == null) return;
+    try {
+      await m.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+              coordinates: mapbox.Position(
+                  cam.center.longitude, cam.center.latitude)),
+          zoom: cam.zoom,
+          bearing: 0,
+          pitch: 0,
+          padding: mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
+        ),
+        mapbox.MapAnimationOptions(duration: 700),
+      );
     } catch (e) {
       debugPrint('[SchedRidesMap] fit route failed: $e');
     }

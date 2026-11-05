@@ -105,5 +105,14 @@ void main() {
     expect(map.substring(i, i + 220), contains('right: 20,'));
     expect(map, isNot(contains('Color(0xFF60A5FA)')),
         reason: 'Verificado is gold everywhere on this screen');
+    // The open ride's route fills the strip above the card (owner
+    // 2026-11-04, "se ve super lejos"): room for the callout only when the
+    // pickup lands near the top.
+    final f = map.indexOf('Future<void> _fitRouteOnce(');
+    final fit = map.substring(f, f + 2600);
+    expect(fit, contains('FlatMapProjection.fitFlat('));
+    expect(fit, contains('const side = 32.0;'));
+    expect(fit, contains('if (over <= 0) break;'));
+    expect(fit, isNot(contains('padding.top + 140')));
   });
 }

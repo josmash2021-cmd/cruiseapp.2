@@ -24,6 +24,7 @@ void main() {
     Widget? mapControls,
     ValueChanged<double>? onRest,
     int? hintTripId,
+    DateTime? waitStartsAt,
   }) {
     return MaterialApp(
       locale: const Locale('es'),
@@ -72,6 +73,7 @@ void main() {
                   canPickUp: canPickUp,
                   waitClock: '2:27',
                   waitProgress: waitProgress,
+                  waitStartsAt: waitStartsAt,
                   receivingRides: receiving,
                   lastTrip: lastTrip,
                   supportUnread: 2,
@@ -211,6 +213,42 @@ void main() {
     await settle(t);
     expect(find.text('Pasajero no llegó'), findsOneWidget);
     expect(find.text('Desliza para cancelar el viaje'), findsOneWidget);
+    expect(t.takeException(), isNull);
+  });
+
+  // Owner 2026-11-04 (Lyft): the title at the point is centred over a thin
+  // line and changes in steps — "Pasajero notificado" as the driver
+  // arrives, then the wait.
+  testWidgets('arriving: "Pasajero notificado", then the wait', (t) async {
+    phone(t);
+    await t.pumpWidget(host(stage: NavPanelStage.approaching, moving: false));
+    await settle(t);
+    await t.pumpWidget(host(
+        stage: NavPanelStage.waitingPickup, moving: false, waitProgress: 0.1));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 600));
+    expect(find.text('Pasajero notificado'), findsOneWidget);
+    expect(find.text('Espera 2:27'), findsNothing);
+    await t.pump(const Duration(seconds: 4));
+    await t.pump(const Duration(milliseconds: 600));
+    expect(find.text('Pasajero notificado'), findsNothing);
+    expect(find.text('Espera 2:27'), findsOneWidget);
+    final title = t.widget<Text>(find.text('Espera 2:27'));
+    expect(title.textAlign, TextAlign.center);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('a reservation reached early: its time, before the wait',
+      (t) async {
+    phone(t);
+    final at = DateTime.now().add(const Duration(minutes: 20));
+    await t.pumpWidget(host(
+        stage: NavPanelStage.waitingPickup,
+        moving: false,
+        waitStartsAt: at));
+    await settle(t);
+    expect(find.textContaining('Recogida reservada a las'), findsOneWidget);
+    expect(find.text('Espera 2:27'), findsNothing);
     expect(t.takeException(), isNull);
   });
 

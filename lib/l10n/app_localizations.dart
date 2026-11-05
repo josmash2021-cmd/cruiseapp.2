@@ -5586,6 +5586,12 @@ class S {
   String get navSlideToFinish =>
       _es ? 'Desliza para terminar' : 'Slide to finish ride';
   String navWaitFor(String time) => _es ? 'Espera $time' : 'Wait for $time';
+  // The nav panel's title at the point (owner 2026-11-04, Lyft): first
+  // "notified", then the reservation's time or the wait.
+  String get navPassengerNotified =>
+      _es ? 'Pasajero notificado' : 'Passenger notified';
+  String navPickupScheduledFor(String time) =>
+      _es ? 'Recogida reservada a las $time' : 'Pickup scheduled for $time';
   String get navOverview => _es ? 'Vista general' : 'Overview';
   String get navRecenter => _es ? 'Recentrar' : 'Recenter';
   String get navReportProblem =>

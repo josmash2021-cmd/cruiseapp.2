@@ -3957,6 +3957,8 @@ class DriverNavViewState extends State<DriverNavView>
             codeEntry: widget.toPickup ? widget.pickupCodeEntry : null,
             waitClock: _waitClock,
             waitProgress: (1 - _waitRemainFrac).clamp(0.0, 1.0),
+            // A reservation reached early: its time, until the wait starts.
+            waitStartsAt: widget.waitStartedAt,
             receivingRides: widget.receivingRides,
             lastTrip: widget.lastTrip,
             chatUnread: _chatUnread,

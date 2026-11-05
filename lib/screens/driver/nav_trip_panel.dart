@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
+import 'package:intl/intl.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/haptic_service.dart';
@@ -31,6 +32,9 @@ enum NavPanelStage {
   /// At the destination: the slider finishes the ride.
   arrivedDropoff,
 }
+
+/// What the title at the point says (see [_NavTripPanelState._waitRow]).
+enum _WaitTitle { notified, scheduled, counting, over }
 
 /// The navigation's bottom panel (owner design 2026-11-02, approved "tal
 /// cual": https://claude.ai/artifact/HJUuivr8N4vih8WmmqGnTX).
@@ -74,6 +78,7 @@ class NavTripPanel extends StatefulWidget {
     this.codeEntry,
     this.waitClock = '',
     this.waitProgress = 0,
+    this.waitStartsAt,
     this.receivingRides = true,
     this.lastTrip = false,
     this.chatUnread,
@@ -136,6 +141,10 @@ class NavTripPanel extends StatefulWidget {
   /// waitingPickup: "4:59" and how much of the free wait has gone (0 → 1).
   final String waitClock;
   final double waitProgress;
+
+  /// When the free wait starts counting, if that is still ahead: a
+  /// reservation the driver reached early (its pickup time, rule #57).
+  final DateTime? waitStartsAt;
 
   final bool receivingRides;
   final bool lastTrip;
@@ -209,6 +218,9 @@ final SpringDescription _sheetSpring =
 /// step with the sheet (owner 2026-11-02: "el contenido del mapa no se pone
 /// borroso"). 14 / 0.34 left the turn box readable through it (owner
 /// 2026-11-04: "está borroso pero se puede leer o ver aún").
+/// How long "Pasajero notificado" stays up after "Llegué".
+const Duration _kNotifiedFor = Duration(seconds: 4);
+
 const double _kScrimBlur = 32;
 const double _kScrimDim = 0.55;
 
@@ -284,6 +296,18 @@ class _NavTripPanelState extends State<NavTripPanel>
       _setMode(_Mode.closed);
     }
     if (widget.stage != old.stage) _noShowShown = false;
+    // Just arrived ("Llegué"): "Pasajero notificado" first, 4 s, then the
+    // wait (owner 2026-11-04, Lyft). Only on the way in — a reopened
+    // screen already mid-wait goes straight to the clock.
+    final wasWaiting = old.stage == NavPanelStage.waitingPickup ||
+        old.stage == NavPanelStage.waitingStop;
+    if (_waiting && !wasWaiting) {
+      _notifiedTimer?.cancel();
+      _notifying = true;
+      _notifiedTimer = Timer(_kNotifiedFor, () {
+        if (mounted) setState(() => _notifying = false);
+      });
+    }
   }
 
   /// The panel opened: the hint is done for this trip — out of the layout
@@ -296,6 +320,7 @@ class _NavTripPanelState extends State<NavTripPanel>
 
   @override
   void dispose() {
+    _notifiedTimer?.cancel();
     _hintTimer?.cancel();
     _sheet.dispose();
     super.dispose();
@@ -347,6 +372,16 @@ class _NavTripPanelState extends State<NavTripPanel>
       widget.stage == NavPanelStage.waitingStop;
 
   bool get _waitOver => _waiting && widget.waitProgress >= 1;
+
+  bool _notifying = false;
+  Timer? _notifiedTimer;
+
+  _WaitTitle get _waitTitle {
+    if (_notifying) return _WaitTitle.notified;
+    final at = widget.waitStartsAt;
+    if (at != null && DateTime.now().isBefore(at)) return _WaitTitle.scheduled;
+    return _waitOver ? _WaitTitle.over : _WaitTitle.counting;
+  }
 
   /// What a swipe up on the floating panel raises — null when it reveals
   /// the no-show slider instead (at the pickup with the wait over, owner
@@ -872,87 +907,87 @@ class _NavTripPanelState extends State<NavTripPanel>
     );
   }
 
-  // The free wait: "Espera 4:59" over a gold line that FILLS, the Cruise
-  // logo riding its tip; once over, the text eases into "Puedes cancelar
-  // el viaje o seguir esperando" (owner 2026-11-02).
+  // The title at the point, centred over a thin gold line (owner
+  // 2026-11-04, Lyft's "Pickup scheduled for 9:55 PM" → "Passenger
+  // notified"): "Pasajero notificado" as the driver arrives, then the
+  // reservation's time while it is ahead, then "Espera 4:59" with the line
+  // filling, then "Puedes cancelar el viaje o seguir esperando". Each title
+  // slides in from below and leaves the way it came; the clock ticks
+  // inside its title without a transition.
   Widget _waitRow(S s) {
     final p = widget.waitProgress.clamp(0.0, 1.0);
-    final over = p >= 1;
+    final title = _waitTitle;
+    final text = switch (title) {
+      _WaitTitle.notified => s.navPassengerNotified,
+      _WaitTitle.scheduled => s.navPickupScheduledFor(
+          DateFormat('h:mm a', 'en_US').format(widget.waitStartsAt!)),
+      _WaitTitle.counting => s.navWaitFor(widget.waitClock),
+      _WaitTitle.over => s.navWaitOver,
+    };
     return Padding(
-      padding: const EdgeInsets.fromLTRB(32, 12, 32, 4),
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 4),
       child: Column(
         children: [
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 600),
-            switchInCurve: _glide,
-            transitionBuilder: (child, anim) => FadeTransition(
-              opacity: anim,
-              child: SizeTransition(sizeFactor: anim, child: child),
-            ),
-            child: Text(
-              over ? s.navWaitOver : s.navWaitFor(widget.waitClock),
-              key: ValueKey(over),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: over ? 16 : 18,
-                fontWeight: FontWeight.w600,
-                height: 1.3,
-                fontFeatures: const [FontFeature.tabularFigures()],
+          AnimatedSize(
+            duration: const Duration(milliseconds: 450),
+            curve: _glide,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 450),
+              switchInCurve: _glide,
+              switchOutCurve: _glide,
+              transitionBuilder: (child, anim) => FadeTransition(
+                opacity: anim,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.45),
+                    end: Offset.zero,
+                  ).animate(anim),
+                  child: child,
+                ),
+              ),
+              child: SizedBox(
+                key: ValueKey(title),
+                width: double.infinity,
+                child: Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: title == _WaitTitle.over ? 16 : 18,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           SizedBox(
-            height: 30,
+            height: 3,
             child: LayoutBuilder(
-              builder: (context, c) {
-                final w = c.maxWidth;
-                return Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.centerLeft,
-                  children: [
-                    Container(
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
+              builder: (context, c) => Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(1.5),
                     ),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 900),
-                      width: w * p,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: _gold,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
+                  ),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 900),
+                    curve: _glide,
+                    width: c.maxWidth * p,
+                    decoration: BoxDecoration(
+                      color: _gold,
+                      borderRadius: BorderRadius.circular(1.5),
                     ),
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 900),
-                      left: w * p - 15,
-                      child: Container(
-                        width: 30,
-                        height: 30,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF22262E),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                                color: Color(0x66000000),
-                                blurRadius: 8,
-                                offset: Offset(0, 2)),
-                          ],
-                        ),
-                        child: Image.asset('assets/images/cruise_logo.png'),
-                      ),
-                    ),
-                  ],
-                );
-              },
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
         ],
       ),
     );

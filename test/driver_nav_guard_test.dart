@@ -1008,6 +1008,8 @@ void main() {
       expect(tunnel.contains('_speedStale = true'), isTrue);
       final box = bodyOf(nav, 'Widget _buildSpeedBox() {', maxLen: 900);
       expect(box.contains("_speedStale ? '–' : '\$mph'"), isTrue);
+      expect(box, contains('color: kNavGold,'),
+          reason: 'owner 2026-11-04: the speed number is gold');
     });
 
     test('the arrow lives in its own manager so pins never lie down', () {

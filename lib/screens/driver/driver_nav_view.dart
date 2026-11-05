@@ -4741,8 +4741,9 @@ class DriverNavViewState extends State<DriverNavView>
         children: [
           Text(
             _speedStale ? '–' : '$mph',
+            // The number in the nav gold (owner 2026-11-04).
             style: const TextStyle(
-              color: Colors.white,
+              color: kNavGold,
               fontSize: 22,
               fontWeight: FontWeight.w800,
               height: 1,

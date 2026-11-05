@@ -387,7 +387,12 @@ async def admin_update_trip(trip_id: int, body: AdminUpdateTripIn, db: AsyncSess
             logging.warning("Firestore trip sync failed: %s", e)
 
     # ── Real-time sync for status changes ──
-    if "status" in body:
+    # `"status" in body` was ALWAYS False — a Pydantic model is not a dict,
+    # `in` compares against its (name, value) pairs — so a status set from
+    # the panel never reached Socket.io, the SSE bus or the rider's phone:
+    # the apps only learned it from the Firestore mirror or their polls
+    # (owner 2026-11-05: "funciona lento, no responde a veces").
+    if "status" in update_data:
         try:
             _safe_create_task(emit_trip_status(
                 trip_id=trip.id,
@@ -415,19 +420,40 @@ async def admin_update_trip(trip_id: int, body: AdminUpdateTripIn, db: AsyncSess
         try:
             rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
             rider = rider_res.scalar_one_or_none()
-            if rider and rider.fcm_token and trip.status in ("cancelled", "completed", "driver_en_route", "arrived", "in_trip"):
-                _status_title = {
-                    "cancelled": ("Trip Canceled", "Your trip has been canceled."),
-                    "completed": ("Trip Completed", "Your trip is complete."),
-                    "driver_en_route": ("Driver On The Way", "Your driver is heading to your pickup location."),
-                    "arrived": ("Driver Arrived", "Your driver has arrived at the pickup point!"),
-                    "in_trip": ("Trip Started", "Your trip has started. Enjoy your ride!"),
-                }.get(trip.status, ("Trip Update", f"Trip status changed to {trip.status}"))
+            # The rider's language and the same types as the driver's own
+            # status path (routers/trips.py), never a word about dispatch.
+            _copy = {
+                "cancelled": ("Viaje cancelado", "Tu viaje fue cancelado.",
+                              "Trip Canceled", "Your trip has been canceled.",
+                              "trip_canceled"),
+                "completed": ("Viaje completado", "Tu viaje ha terminado.",
+                              "Trip Completed", "Your trip is complete.",
+                              "trip_completed"),
+                "driver_en_route": ("Conductor en camino",
+                                    "Tu conductor se dirige a tu punto de recogida.",
+                                    "Driver On The Way",
+                                    "Your driver is heading to your pickup location.",
+                                    "driver_en_route"),
+                "arrived": ("El conductor llegó",
+                            "¡Tu conductor llegó al punto de recogida!",
+                            "Driver Arrived",
+                            "Your driver has arrived at the pickup point!",
+                            "driver_arrived"),
+                "in_trip": ("Viaje iniciado",
+                            "Tu viaje ha comenzado. ¡Disfruta el recorrido!",
+                            "Trip Started",
+                            "Your trip has started. Enjoy your ride!",
+                            "trip_started"),
+            }.get(trip.status)
+            if rider and rider.fcm_token and _copy:
                 _safe_create_task(_send_fcm_push_async(
                     rider.fcm_token,
-                    _status_title[0],
-                    _status_title[1],
-                    data={"type": trip.status, "trip_id": str(trip.id)},
+                    title=_copy[0],
+                    body=_copy[1],
+                    title_en=_copy[2],
+                    body_en=_copy[3],
+                    locale=user_lang(rider),
+                    data={"type": _copy[4], "trip_id": str(trip.id)},
                 ))
         except Exception as _fcm_err:
             logging.warning("[FCM] push failed on admin update: %s", _fcm_err)

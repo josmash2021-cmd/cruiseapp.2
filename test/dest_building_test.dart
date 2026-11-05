@@ -78,6 +78,56 @@ void main() {
     expect(rings.single.first, rings.single.last, reason: 'closed for drawing');
   });
 
+  group('the drawn line stays off buildings (owner 2026-11-04)', () {
+    // A street going north, then the last 30 m turn east into a lot.
+    const route = [
+      LatLng(33.4480, -86.8000),
+      LatLng(33.4500, -86.8000), // ~222 m north
+      LatLng(33.4500, -86.79968), // ~30 m east
+    ];
+    List<LatLng> box(double s, double w, double n, double e) => [
+          LatLng(s, w),
+          LatLng(s, e),
+          LatLng(n, e),
+          LatLng(n, w),
+          LatLng(s, w),
+        ];
+
+    test('the line ends where the route enters a building near its end', () {
+      // Building over the last ~15 m of the lane.
+      final cut = DestBuilding.tailCutS(
+          route, [box(33.44995, -86.79984, 33.45005, -86.79960)])!;
+      final total = DestBuilding.lengthM(route);
+      expect(total - cut, closeTo(18, 2), reason: "3 m short of touching it");
+      final drawn = DestBuilding.slice(route, 0, cut);
+      expect(drawn.last.longitude, closeTo(-86.79987, 5e-6));
+      expect(drawn.first, route.first);
+    });
+
+    test('a building it never touches, or one far back, cuts nothing', () {
+      expect(
+          DestBuilding.tailCutS(
+              route, [box(33.4502, -86.79990, 33.4504, -86.79970)]),
+          isNull);
+      // Over the street 200+ m before the end: outside the tail window.
+      expect(
+          DestBuilding.tailCutS(
+              route, [box(33.44802, -86.80005, 33.44806, -86.79995)]),
+          isNull);
+    });
+
+    test('slice keeps the trimmed start and the cut end', () {
+      final total = DestBuilding.lengthM(route);
+      final part = DestBuilding.slice(route, 100, total - 10);
+      expect(DestBuilding.lengthM(part), closeTo(total - 110, 0.5));
+      expect(DestBuilding.slice(route, 50, 40), isEmpty,
+          reason: 'the car passed the cut: no line');
+      expect(DestBuilding.slice(route, 0, null), route);
+      expect(DestBuilding.pointAt(route, 0), route.first);
+      expect(DestBuilding.pointAt(route, 1e6), route.last);
+    });
+  });
+
   test('the nav draws it under the route, from the map\'s own buildings', () {
     final nav = File('lib/screens/driver/driver_nav_view.dart')
         .readAsStringSync()
@@ -92,5 +142,12 @@ void main() {
     expect(nav, contains('unawaited(_findDestBuilding());'));
     expect(nav, contains('_bldgFillMgr = null;'),
         reason: 'a dead surface drops its handles (rule: stale handles)');
+    // Every drawing of the line honours the cut; the route itself does not.
+    expect(nav, contains('unawaited(_cutRouteTail());'));
+    expect(nav, contains(': DestBuilding.slice(pts, s, end)));'));
+    expect(nav, contains(
+        'end == null ? _routePts : DestBuilding.slice(_routePts, 0, end));'));
+    expect(nav, contains('identical(_tailCutFor, _routePts) ? _tailCutS : null;'),
+        reason: 'a cut measured on an old line never trims a new one');
   });
 }

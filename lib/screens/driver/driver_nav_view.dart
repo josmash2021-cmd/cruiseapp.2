@@ -338,13 +338,15 @@ class DriverNavViewState extends State<DriverNavView>
   final SmoothMotion _riderMotion = SmoothMotion();
   Ticker? _riderTicker;
   Duration _riderLastTick = Duration.zero;
-  // The blue location puck (user spec 2026-09-17 — the same blue dot the
-  // rider side draws), never an icon: halo circle + blue dot with a white
-  // ring, native CircleAnnotations so they scale with the map zoom.
-  mapbox.CircleAnnotationManager? _circleMgr;
-  mapbox.CircleAnnotation? _riderHaloAnnot;
-  mapbox.CircleAnnotation? _riderDotAnnot;
-  static const _riderBlue = Color(0xFF3B82F6);
+  // The gold pin IS the rider, live (owner 2026-11-04: "el pin es la
+  // representación del rider donde está en tiempo real moviéndose") —
+  // replaces the blue puck of 2026-09-17. With no live fix yet it stands at
+  // the pickup address. Its own manager, over the stop ring.
+  mapbox.PointAnnotationManager? _riderMgr;
+  mapbox.PointAnnotation? _riderPinAnnot;
+  Uint8List? _riderPinBytes;
+  bool _riderPinBusy = false;
+  bool _riderPinDirty = false;
   DateTime? _riderFixAt;
   Timer? _riderStaleTimer;
   Offset? _riderLabelPos;
@@ -708,6 +710,18 @@ class DriverNavViewState extends State<DriverNavView>
   bool _bldgBusy = false;
   DateTime _bldgLastTry = DateTime.fromMillisecondsSinceEpoch(0);
   List<String>? _buildingLayerIds;
+  // Where the DRAWN line ends: the first building the route runs into in
+  // its last 200 m (owner 2026-11-04, "la línea no debe salirse de las
+  // calles… ni estar encima de la estructura marcada ni otra estructura").
+  // Measured once per geometry ([_tailCutFor]); the route itself, the
+  // progress and the arrival keep the whole line.
+  double? _tailCutS;
+  List<LatLng>? _tailCutFor;
+  bool _tailBusy = false;
+  DateTime _tailLastTry = DateTime.fromMillisecondsSinceEpoch(0);
+  static const double _kTailCutM = 200;
+  double? get _drawEndS =>
+      identical(_tailCutFor, _routePts) ? _tailCutS : null;
   bool _panelMoving = false;
   DateTime? _stillSince;
   late final Stream<int> _chatUnread = ChatService().unreadCountStream(
@@ -799,14 +813,11 @@ class DriverNavViewState extends State<DriverNavView>
       // dot — after the slide to pick up there is nobody left to show.
       _riderFixAt = null;
       if (_riderLabelPos != null) setState(() => _riderLabelPos = null);
-      final halo = _riderHaloAnnot;
-      final dot = _riderDotAnnot;
-      _riderHaloAnnot = null;
-      _riderDotAnnot = null;
-      final mgr = _circleMgr;
-      if (mgr != null) {
-        if (halo != null) mgr.delete(halo).catchError((Object _) {});
-        if (dot != null) mgr.delete(dot).catchError((Object _) {});
+      final pin = _riderPinAnnot;
+      _riderPinAnnot = null;
+      final mgr = _riderMgr;
+      if (mgr != null && pin != null) {
+        mgr.delete(pin).catchError((Object _) {});
       }
       _onDestinationChanged();
     } else if (!widget.toPickup &&
@@ -919,7 +930,7 @@ class DriverNavViewState extends State<DriverNavView>
         _signMgr = null;
         _signsShown = null;
         _carMgr = null;
-        _circleMgr = null;
+        _riderMgr = null;
         _routeAnnot = null;
         _nextLegAnnot = null;
         _drawOnTimer?.cancel();
@@ -928,8 +939,8 @@ class DriverNavViewState extends State<DriverNavView>
         _destAnnot = null;
         _destPinSeq++;
         _stopAnnot = null;
-        _riderHaloAnnot = null;
-        _riderDotAnnot = null;
+        _riderPinAnnot = null;
+        _riderPinBusy = false;
         // The signs' handles died with the surface too — null them so the
         // redraw in _onMapCreated recreates them instead of skipping the
         // lot as "already drawn" (user report 2026-09-23, "no aparecen").
@@ -1007,7 +1018,7 @@ class DriverNavViewState extends State<DriverNavView>
     // Under the car, over the line.
     _signMgr = await ctrl.annotations.createPointAnnotationManager();
     _carMgr = await ctrl.annotations.createPointAnnotationManager();
-    _circleMgr = await ctrl.annotations.createCircleAnnotationManager();
+    _riderMgr = await ctrl.annotations.createPointAnnotationManager();
     try {
       final lid = _pointMgr!.id;
       await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
@@ -1107,6 +1118,7 @@ class DriverNavViewState extends State<DriverNavView>
   void _tunnelTick() {
     if (!mounted) return;
     unawaited(_findDestBuilding());
+    unawaited(_cutRouteTail());
     // A speed nobody re-measured for 3 s is not a speed (owner 2026-11-02):
     // with no fixes the box froze on the last number — 45 mph through a
     // tunnel or after the signal died. It reads "–" until a fix measures
@@ -1928,7 +1940,10 @@ class DriverNavViewState extends State<DriverNavView>
     if (s - _trimS < 1.0) return; // sub-metre forward: not worth a write
     _trimS = s;
     _lastTrimAt = now;
-    unawaited(_replaceRouteGeometry([proj, ...pts.sublist(seg + 1)]));
+    final end = _drawEndS;
+    unawaited(_replaceRouteGeometry(end == null
+        ? [proj, ...pts.sublist(seg + 1)]
+        : DestBuilding.slice(pts, s, end)));
     // The signs are eaten with the line: what the driver already passed
     // disappears with the stretch of road behind him.
     final passed = _furniture.where((e) => e.s < _trimS - 5).toList();
@@ -2269,7 +2284,9 @@ class DriverNavViewState extends State<DriverNavView>
       await _drawOnRoute(mgr);
       return;
     }
-    final geom = safeLineString(_routePts);
+    final end = _drawEndS;
+    final geom = safeLineString(
+        end == null ? _routePts : DestBuilding.slice(_routePts, 0, end));
     if (geom == null) return;
     if (_routeAnnot != null) {
       _routeAnnot!.geometry = geom;
@@ -2320,7 +2337,10 @@ class DriverNavViewState extends State<DriverNavView>
   /// 1.4 s), then the full line is written once more so the last frame —
   /// the one most likely to be dropped — always lands.
   Future<void> _drawOnRoute(mapbox.PolylineAnnotationManager mgr) async {
-    final pts = List.of(_routePts);
+    final end = _drawEndS;
+    final pts = end == null
+        ? List.of(_routePts)
+        : DestBuilding.slice(_routePts, 0, end);
     final total = _polylineLenM(pts);
     final first = safeLineString(_prefixOf(pts, math.min(2.0, total)));
     if (first == null || total <= 0) return;
@@ -2517,9 +2537,101 @@ class DriverNavViewState extends State<DriverNavView>
     }
   }
 
+  /// Measures [_tailCutS] for the line on the map, once the route's last
+  /// [_kTailCutM] is on screen at a zoom where the map draws buildings
+  /// (15+), and redraws the line ending there.
+  Future<void> _cutRouteTail() async {
+    final map = _map;
+    final pts = _routePts;
+    if (kIsWeb || map == null || !_mapMounted || _tailBusy) return;
+    if (pts.length < 2 || identical(_tailCutFor, pts)) return;
+    final now = DateTime.now();
+    if (now.difference(_tailLastTry) < const Duration(seconds: 2)) return;
+    if (!_overview && RouteSplice.haversineM(_driverLatLng(), _dest) > 1500) {
+      return;
+    }
+    final size = MediaQuery.maybeSizeOf(context);
+    if (size == null) return;
+    _tailBusy = true;
+    _tailLastTry = now;
+    try {
+      final layers = _buildingLayerIds ??= [
+        for (final l in await map.style.getStyleLayers())
+          if (l != null && l.type == 'fill' && l.id.startsWith('building'))
+            l.id,
+      ];
+      if (layers.isEmpty) {
+        _tailCutFor = pts; // no buildings drawn: nothing to stay off
+        return;
+      }
+      final cam = await map.getCameraState();
+      if (cam.zoom < 15) return;
+      final total = DestBuilding.lengthM(pts);
+      final tail = <LatLng>[
+        for (var m = math.max(0.0, total - _kTailCutM); m < total; m += 15)
+          DestBuilding.pointAt(pts, m)!,
+        pts.last,
+      ];
+      final px = await map.pixelsForCoordinates([
+        for (final p in tail)
+          mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)),
+      ]);
+      bool onScreen(mapbox.ScreenCoordinate? c) =>
+          c != null &&
+          c.x >= 0 &&
+          c.y >= 0 &&
+          c.x <= size.width &&
+          c.y <= size.height;
+      if (px.length != tail.length || !px.every(onScreen)) return;
+      final xs = [for (final c in px) c!.x];
+      final ys = [for (final c in px) c!.y];
+      const pad = 24.0;
+      final feats = await map.queryRenderedFeatures(
+        mapbox.RenderedQueryGeometry.fromScreenBox(mapbox.ScreenBox(
+          min: mapbox.ScreenCoordinate(
+              x: xs.reduce(math.min) - pad, y: ys.reduce(math.min) - pad),
+          max: mapbox.ScreenCoordinate(
+              x: xs.reduce(math.max) + pad, y: ys.reduce(math.max) + pad),
+        )),
+        mapbox.RenderedQueryOptions(layerIds: layers, filter: null),
+      );
+      if (!mounted || !identical(pts, _routePts)) return;
+      _tailCutS = DestBuilding.tailCutS(
+          pts,
+          DestBuilding.footprints(
+              feats.map((f) => f?.queriedFeature.feature)),
+          tailM: _kTailCutM);
+      _tailCutFor = pts;
+      final end = _tailCutS;
+      if (end != null && _routeAnnot != null && _drawOnUntil == null) {
+        await _replaceRouteGeometry(DestBuilding.slice(pts, _trimS, end));
+      }
+      // The stop ring moves to where the line now ends.
+      if (end != null) unawaited(_drawDestPin());
+    } catch (e) {
+      _buildingLayerIds = null;
+      debugPrint('[Nav] route tail cut failed: $e');
+    } finally {
+      _tailBusy = false;
+    }
+  }
+
+  /// Where the driver stops: the end of the DRAWN line — on the street,
+  /// short of the building (owner 2026-11-04: "la línea no debe tocar la
+  /// estructura sino donde se debe parar para recoger o dejar al rider").
+  /// The address itself until a line exists.
+  LatLng get _stopPoint {
+    if (_routePts.length < 2) return _dest;
+    final end = _drawEndS;
+    return end == null
+        ? _routePts.last
+        : DestBuilding.pointAt(_routePts, end) ?? _routePts.last;
+  }
+
   Future<void> _drawDestPin() async {
     final mgr = _pointMgr;
-    final point = safePoint(_dest.longitude, _dest.latitude);
+    final stop = _stopPoint;
+    final point = safePoint(stop.longitude, stop.latitude);
     if (mgr == null || point == null) return;
     final seq = ++_destPinSeq;
     final old = _destAnnot;
@@ -2530,10 +2642,10 @@ class DriverNavViewState extends State<DriverNavView>
       } catch (_) {}
     }
     try {
-      // The same golden teardrop every other map draws (person at the
-      // pickup, flag at the dropoff), standing on a ring at the exact
-      // spot, the pickup inside a gold halo; a reservation's pickup is the
-      // ring under a "Reservado" pill, no pin (owner 2026-11-04, Lyft).
+      // The ring marks where the driver stops (owner 2026-11-04, Lyft):
+      // at the pickup the ring alone — the gold pin is the rider, live
+      // (_updateRiderAnnotation) — under a "Reservado" pill for a
+      // reservation; at the dropoff the flag pin stands on it.
       final pin = await renderCircularPinBytes(
         icon: widget.toPickup ? CircularPinIcon.person : CircularPinIcon.flag,
         isPickup: widget.toPickup,
@@ -2541,15 +2653,17 @@ class DriverNavViewState extends State<DriverNavView>
       );
       final badge = widget.pickupBadge;
       final Uint8List bytes;
-      if (widget.toPickup && badge != null) {
+      if (widget.toPickup) {
         final unit = (await (await ui.instantiateImageCodec(pin))
                 .getNextFrame())
             .image
             .width
             .toDouble();
-        bytes = await scheduledPickupMarker(badge, unit, pin);
+        bytes = badge != null
+            ? await scheduledPickupMarker(badge, unit, pin)
+            : await stopRingMarker(unit, pin);
       } else {
-        bytes = await pinOnGround(pin, halo: widget.toPickup);
+        bytes = await pinOnGround(pin);
       }
       if (!mounted || seq != _destPinSeq) return;
       final annot = await mgr.create(mapbox.PointAnnotationOptions(
@@ -2565,6 +2679,8 @@ class DriverNavViewState extends State<DriverNavView>
       }
       _destAnnot = annot;
     } catch (_) {}
+    // The rider's pin waits at the address until a live fix moves it.
+    unawaited(_updateRiderAnnotation());
     unawaited(_drawStopPin());
   }
 
@@ -3102,47 +3218,61 @@ class DriverNavViewState extends State<DriverNavView>
     _updateRiderAnnotation();
   }
 
+  /// The rider's gold pin: at the live position once one arrives, at the
+  /// pickup address until then. Pickup leg only. Writes are coalesced —
+  /// one in flight, the latest pending — so the LAST position of a walk
+  /// always lands (the final frame is the one most likely to be dropped).
   Future<void> _updateRiderAnnotation() async {
     if (!mounted) return;
     // Pickup leg only: once the rider is aboard (slide to pick up done)
-    // the dot hides with the leg flip.
+    // the pin goes with the leg flip.
     if (!widget.toPickup) return;
-    final mgr = _circleMgr;
-    final lat = _riderMotion.lat;
-    final lng = _riderMotion.lng;
-    if (mgr == null || lat == null || lng == null) return;
-    if (!isValidLatLng(lat, lng)) return;
-    final p = mapbox.Point(coordinates: mapbox.Position(lng, lat));
+    if (_riderPinBusy) {
+      _riderPinDirty = true;
+      return;
+    }
+    final mgr = _riderMgr;
+    if (mgr == null) return;
+    _riderPinBusy = true;
     try {
-      // The blue location puck (user spec 2026-09-17): translucent halo +
-      // blue dot with a white ring — the same marker the rider side draws,
-      // never an icon.
-      if (_riderHaloAnnot == null) {
-        _riderHaloAnnot = await mgr.create(mapbox.CircleAnnotationOptions(
-          geometry: p,
-          circleRadius: 13.0,
-          circleColor: _riderBlue.withValues(alpha: 0.22).toARGB32(),
-        ));
-      } else {
-        _riderHaloAnnot!.geometry = p;
-        await mgr.update(_riderHaloAnnot!);
-      }
-      if (!mounted) return;
-      if (_riderDotAnnot == null) {
-        _riderDotAnnot = await mgr.create(mapbox.CircleAnnotationOptions(
-          geometry: p,
-          circleRadius: 7.0,
-          circleColor: _riderBlue.toARGB32(),
-          circleStrokeWidth: 2.5,
-          circleStrokeColor: Colors.white.toARGB32(),
-        ));
-      } else {
-        _riderDotAnnot!.geometry = p;
-        await mgr.update(_riderDotAnnot!);
-      }
+      do {
+        _riderPinDirty = false;
+        final lat = _riderMotion.lat ?? _dest.latitude;
+        final lng = _riderMotion.lng ?? _dest.longitude;
+        if (!isValidLatLng(lat, lng)) return;
+        final p = mapbox.Point(coordinates: mapbox.Position(lng, lat));
+        final annot = _riderPinAnnot;
+        if (annot == null) {
+          final bytes = _riderPinBytes ??= await renderCircularPinBytes(
+            icon: CircularPinIcon.person,
+            isPickup: true,
+            radius: 32,
+          );
+          if (!mounted || !identical(mgr, _riderMgr) || !widget.toPickup) {
+            return;
+          }
+          final created = await mgr.create(mapbox.PointAnnotationOptions(
+            geometry: p,
+            image: bytes,
+            iconSize: 0.62,
+            // The tip on the rider.
+            iconAnchor: mapbox.IconAnchor.BOTTOM,
+          ));
+          if (!mounted || !widget.toPickup) {
+            // The leg flipped while it was on the way: nobody to show.
+            unawaited(mgr.delete(created).catchError((Object _) {}));
+            return;
+          }
+          _riderPinAnnot = created;
+        } else {
+          annot.geometry = p;
+          await mgr.update(annot);
+        }
+      } while (_riderPinDirty && mounted && identical(mgr, _riderMgr));
     } catch (_) {
-      _riderHaloAnnot = null;
-      _riderDotAnnot = null;
+      _riderPinAnnot = null;
+    } finally {
+      if (identical(mgr, _riderMgr)) _riderPinBusy = false;
     }
   }
 

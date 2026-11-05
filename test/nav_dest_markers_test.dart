@@ -56,6 +56,12 @@ void main() {
     }
   });
 
+  test('the pickup stop ring is centred on the spot', () async {
+    final pin = await fakePin();
+    final (_, _, c) = await centre(await stopRingMarker(160, pin));
+    expect(c, Colors.white);
+  });
+
   test('the reservation is the ring under the pill, centred on the spot',
       () async {
     final pin = await fakePin();
@@ -69,7 +75,11 @@ void main() {
         .replaceAll('\r\n', '\n');
     final dest = nav.substring(nav.indexOf('Future<void> _drawDestPin() async {'));
     final body = dest.substring(0, dest.indexOf('unawaited(_drawStopPin());'));
-    expect(body, contains('bytes = await pinOnGround(pin, halo: widget.toPickup);'));
+    expect(body, contains(': await stopRingMarker(unit, pin);'),
+        reason: 'the pickup is the ring alone: the gold pin is the rider');
+    expect(body, contains('bytes = await pinOnGround(pin);'));
+    expect(body, contains('final stop = _stopPoint;'),
+        reason: 'the ring is where the line ends, not the raw address');
     expect(body, contains('iconAnchor: mapbox.IconAnchor.CENTER,'));
     expect(body, isNot(contains('IconAnchor.BOTTOM')));
   });

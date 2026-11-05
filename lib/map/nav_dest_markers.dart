@@ -5,10 +5,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 /// The navigation's destination marks, Lyft's way in Cruise gold (owner
-/// 2026-11-04, with Lyft photos): an ordinary pickup or dropoff is the gold
-/// pin standing on a small ring at the exact spot — the pickup inside a
-/// soft gold halo; a reservation's pickup is the ring alone under a dark
-/// "Reservado" pill, no pin.
+/// 2026-11-04, with Lyft photos): the ring is where the driver STOPS (the
+/// end of the line, on the street); at the pickup it is the ring alone —
+/// the gold pin is the rider, live — under a dark "Reservado" pill for a
+/// reservation; at a dropoff or stop the flag pin stands on it.
 ///
 /// Both images are drawn around the spot, so the caller anchors them at
 /// `IconAnchor.CENTER`.
@@ -71,6 +71,17 @@ Future<Uint8List> pinOnGround(Uint8List pinPng, {bool halo = false}) async {
   _paintGroundRing(canvas, c, ringR);
   canvas.drawImage(pin, Offset(c.dx - pinW / 2, c.dy - lift - pinH), Paint());
   return _toPng(recorder, w, h, pinPng);
+}
+
+/// The pickup's stop: the ground ring alone, sized from [unit] (the width
+/// of the pin it goes with).
+Future<Uint8List> stopRingMarker(double unit, Uint8List fallback) async {
+  final ringR = unit * 0.17;
+  final half = ringR * 1.9 + 2;
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, half * 2, half * 2));
+  _paintGroundRing(canvas, Offset(half, half), ringR);
+  return _toPng(recorder, half * 2, half * 2, fallback);
 }
 
 /// A reservation's pickup: the ground ring under a dark pill with [label]

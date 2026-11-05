@@ -1024,14 +1024,18 @@ void main() {
               'the teardrop stands upright at any camera bearing');
     });
 
-    test('the rider live location is the blue puck, never an icon', () {
-      expect(nav.contains('mapbox.CircleAnnotation? _riderHaloAnnot'), isTrue);
-      expect(nav.contains('mapbox.CircleAnnotation? _riderDotAnnot'), isTrue);
-      expect(nav.contains('_riderBlue = Color(0xFF3B82F6)'), isTrue,
-          reason: 'the same blue the rider side draws for the live dot');
-      expect(nav, isNot(contains('_renderRiderFigure')),
-          reason: 'user spec 2026-09-17: the gold person icon is gone — the '
-              'driver sees the rider as the blue location dot');
+    test('the rider live location is the gold pin (owner 2026-11-04)', () {
+      // Replaces the blue puck of 2026-09-17: "el pin es la representación
+      // del rider donde está en tiempo real moviéndose".
+      expect(nav.contains('mapbox.PointAnnotation? _riderPinAnnot'), isTrue);
+      expect(nav, isNot(contains('_riderBlue')));
+      final body = bodyOf(
+          nav, 'Future<void> _updateRiderAnnotation() async {', maxLen: 2200);
+      expect(body, contains('final lat = _riderMotion.lat ?? _dest.latitude;'),
+          reason: 'at the address until the first live fix');
+      expect(body, contains('icon: CircularPinIcon.person,'));
+      expect(body, contains('} while (_riderPinDirty'),
+          reason: 'the last position of a walk always lands');
     });
 
     test('the bar always carries a real distance + big soft-swap icon', () {

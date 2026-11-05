@@ -97,7 +97,7 @@ void main() {
 
   test('the pickup is the "Reservado" pill on the ring', () {
     final nav = read('lib/screens/driver/driver_nav_view.dart');
-    expect(nav, contains('bytes = await scheduledPickupMarker(badge, unit, pin);'));
+    expect(nav, contains('? await scheduledPickupMarker(badge, unit, pin)'));
     expect(nav, contains('if (oldWidget.pickupBadge != widget.pickupBadge) {'));
   });
 

@@ -5138,6 +5138,11 @@ class S {
       _es ? '$price Viaje reservado' : '$price Reserved ride';
   String goOnlineBy(String time) =>
       _es ? 'Conéctate antes de las $time' : 'Go online by $time';
+  // The same reservation on the map before it starts (owner 2026-11-05,
+  // Lyft's "Reserved Lyft · 5:55 PM"; tapped, the "Scheduled Ride" card).
+  String get reservedCalloutTitle =>
+      _es ? 'Cruise reservado' : 'Reserved Cruise';
+  String get resMapCardTitle => _es ? 'Viaje reservado' : 'Scheduled Ride';
 
   // ── The driver's reservation, tapped (owner 2026-11-03) ──
   String resDetailWith(String name) => _es ? 'con $name' : 'with $name';

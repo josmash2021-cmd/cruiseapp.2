@@ -26,9 +26,10 @@ TextStyle calloutLineStyle(CalloutFont font,
 
 const TextHeightBehavior _kCalloutHeightBehavior = TextHeightBehavior();
 
-/// The Lyft-style map callout (owner spec 2026-11-01), one widget for both
-/// variants: TRIP (gold tile + "$10" + " CRUISE" + "9 min away", tappable)
-/// and AIRPORT (gold plane + "BHM" + "1-5 Drivers").
+/// The Lyft-style map callout (owner spec 2026-11-01), one widget for every
+/// variant: TRIP (gold tile + "$10" + " CRUISE" + "9 min away", tappable),
+/// AIRPORT (gold plane + "BHM" + "1-5 Drivers") and RESERVED (calendar +
+/// "Reserved Cruise" + "5:55 PM", tappable; gold while [selected]).
 ///
 /// Place it with its TOP-LEFT at the projected map pixel (a `Positioned`
 /// with left/top): it translates itself so that pixel is the tail tip
@@ -47,6 +48,7 @@ class MapCalloutBubble extends StatefulWidget {
     this.subtitle,
     required this.expanded,
     this.onTap,
+    this.selected = false,
     this.font = calloutPoppins,
   });
 
@@ -65,6 +67,10 @@ class MapCalloutBubble extends StatefulWidget {
   /// Trip callouts open the claim card; airport ones pass null (and sit
   /// under an IgnorePointer).
   final VoidCallback? onTap;
+
+  /// Gold box, black text and icon (the reservation whose card is open,
+  /// owner 2026-11-05). The swap fades over 180 ms.
+  final bool selected;
   final CalloutFont font;
 
   /// Test handles (siblings never repeat them, so one per bubble is fine).
@@ -178,7 +184,10 @@ class _MapCalloutBubbleState extends State<MapCalloutBubble>
         textDirection: TextDirection.ltr,
       );
 
-  Widget _icon(CalloutFrame f) {
+  Widget _icon(CalloutFrame f, Color ink) {
+    if (widget.variant == CalloutVariant.reserved) {
+      return Icon(kReservedCalloutGlyph, size: f.glyph, color: ink);
+    }
     if (widget.variant == CalloutVariant.trip) {
       return DecoratedBox(
         decoration: BoxDecoration(
@@ -219,97 +228,110 @@ class _MapCalloutBubbleState extends State<MapCalloutBubble>
         label: label,
         button: widget.onTap != null,
         excludeSemantics: true,
-        child: AnimatedBuilder(
-          animation: _morph,
-          builder: (context, _) {
-            final f = layout.frameAt(_morph.value);
-            final clip = f.textClip;
-            final fade = widget.titleFade;
-            final sub = widget.subtitle;
-            final stack = SizedBox.fromSize(
-              size: u.size,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned.fromRect(
-                    rect: local(f.box),
-                    child: CustomPaint(
-                      key: MapCalloutBubble.boxKey,
-                      painter: _CalloutBoxPainter(
-                        tailTip: -f.box.topLeft,
-                        tailOpacity: f.tailOpacity,
-                      ),
-                    ),
-                  ),
-                  Positioned.fromRect(
-                    key: MapCalloutBubble.iconKey,
-                    rect: local(f.icon),
-                    child: _icon(f),
-                  ),
-                  // Line 2 and the product run: fading, and trimmed by the
-                  // closing box. Out of the tree once the collapse is done.
-                  if (f.showFading)
+        // The selected look is a colour swap, not geometry: its own short
+        // implicit fade, outside the morph's one controller.
+        child: TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: widget.selected ? 1.0 : 0.0),
+          duration: const Duration(milliseconds: 180),
+          builder: (context, sel, _) => AnimatedBuilder(
+            animation: _morph,
+            builder: (context, _) {
+              final f = layout.frameAt(_morph.value);
+              final clip = f.textClip;
+              final fade = widget.titleFade;
+              final sub = widget.subtitle;
+              final fill = Color.lerp(kCalloutFill, kCalloutFillSelected, sel)!;
+              final ink = Color.lerp(Colors.white, kCalloutInkSelected, sel)!;
+              final titleStyle =
+                  sel == 0 ? _titleStyle : _titleStyle.copyWith(color: ink);
+              final subStyle =
+                  sel == 0 ? _subStyle : _subStyle.copyWith(color: ink);
+              final stack = SizedBox.fromSize(
+                size: u.size,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
                     Positioned.fromRect(
-                      rect: local(clip),
-                      child: ClipRect(
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            if (fade != null && fade.isNotEmpty)
-                              Positioned(
-                                left: f.titleAt.dx +
-                                    layout.text.keepWidth * f.titleScale -
-                                    clip.left,
-                                top: f.titleAt.dy - clip.top,
-                                child: Opacity(
-                                  opacity: f.fade,
-                                  child: Transform.scale(
-                                    scale: f.titleScale,
-                                    alignment: Alignment.topLeft,
-                                    child: _text(fade, _titleStyle,
-                                        MapCalloutBubble.titleFadeKey),
-                                  ),
-                                ),
-                              ),
-                            if (sub != null && sub.isNotEmpty)
-                              Positioned(
-                                left: f.subtitleAt.dx - clip.left,
-                                top: f.subtitleAt.dy - clip.top,
-                                child: Opacity(
-                                  opacity: f.fade,
-                                  child: _text(sub, _subStyle,
-                                      MapCalloutBubble.subtitleKey),
-                                ),
-                              ),
-                          ],
+                      rect: local(f.box),
+                      child: CustomPaint(
+                        key: MapCalloutBubble.boxKey,
+                        painter: _CalloutBoxPainter(
+                          tailTip: -f.box.topLeft,
+                          tailOpacity: f.tailOpacity,
+                          fill: fill,
                         ),
                       ),
                     ),
-                  // The price / code: left edge fixed, slides to the icon's
-                  // centre line and grows 13 → 15.5 px from its top-left.
-                  Positioned(
-                    left: f.titleAt.dx - u.left,
-                    top: f.titleAt.dy - u.top,
-                    child: Transform.scale(
-                      scale: f.titleScale,
-                      alignment: Alignment.topLeft,
-                      child: _text(
-                          widget.title, _titleStyle, MapCalloutBubble.titleKey),
+                    Positioned.fromRect(
+                      key: MapCalloutBubble.iconKey,
+                      rect: local(f.icon),
+                      child: _icon(f, ink),
                     ),
-                  ),
-                ],
-              ),
-            );
-            final onTap = widget.onTap;
-            if (onTap == null) return stack;
-            // deferToChild: only the drawn parts take the tap — the empty
-            // corners of the bounds let it through to the map.
-            return GestureDetector(
-              behavior: HitTestBehavior.deferToChild,
-              onTap: onTap,
-              child: stack,
-            );
-          },
+                    // Line 2 and the product run: fading, and trimmed by the
+                    // closing box. Out of the tree once the collapse is done.
+                    if (f.showFading)
+                      Positioned.fromRect(
+                        rect: local(clip),
+                        child: ClipRect(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              if (fade != null && fade.isNotEmpty)
+                                Positioned(
+                                  left: f.titleAt.dx +
+                                      layout.text.keepWidth * f.titleScale -
+                                      clip.left,
+                                  top: f.titleAt.dy - clip.top,
+                                  child: Opacity(
+                                    opacity: f.fade,
+                                    child: Transform.scale(
+                                      scale: f.titleScale,
+                                      alignment: Alignment.topLeft,
+                                      child: _text(fade, titleStyle,
+                                          MapCalloutBubble.titleFadeKey),
+                                    ),
+                                  ),
+                                ),
+                              if (sub != null && sub.isNotEmpty)
+                                Positioned(
+                                  left: f.subtitleAt.dx - clip.left,
+                                  top: f.subtitleAt.dy - clip.top,
+                                  child: Opacity(
+                                    opacity: f.fade,
+                                    child: _text(sub, subStyle,
+                                        MapCalloutBubble.subtitleKey),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    // The price / code: left edge fixed, slides to the icon's
+                    // centre line and grows 13 → 15.5 px from its top-left.
+                    Positioned(
+                      left: f.titleAt.dx - u.left,
+                      top: f.titleAt.dy - u.top,
+                      child: Transform.scale(
+                        scale: f.titleScale,
+                        alignment: Alignment.topLeft,
+                        child: _text(widget.title, titleStyle,
+                            MapCalloutBubble.titleKey),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+              final onTap = widget.onTap;
+              if (onTap == null) return stack;
+              // deferToChild: only the drawn parts take the tap — the empty
+              // corners of the bounds let it through to the map.
+              return GestureDetector(
+                behavior: HitTestBehavior.deferToChild,
+                onTap: onTap,
+                child: stack,
+              );
+            },
+          ),
         ),
       ),
     );
@@ -319,18 +341,25 @@ class _MapCalloutBubbleState extends State<MapCalloutBubble>
 /// The black box + tail + shadow, in the box's own coordinates; the tail
 /// tip ([tailTip]) and the shadow paint outside it.
 class _CalloutBoxPainter extends CustomPainter {
-  _CalloutBoxPainter({required this.tailTip, required this.tailOpacity});
+  _CalloutBoxPainter({
+    required this.tailTip,
+    required this.tailOpacity,
+    this.fill = kCalloutFill,
+  });
 
   final Offset tailTip;
   final double tailOpacity;
+  final Color fill;
 
   @override
   void paint(Canvas canvas, Size size) {
     paintCalloutBubble(canvas, Offset.zero & size,
-        tailTip: tailTip, tailOpacity: tailOpacity);
+        tailTip: tailTip, tailOpacity: tailOpacity, fill: fill);
   }
 
   @override
   bool shouldRepaint(_CalloutBoxPainter old) =>
-      old.tailTip != tailTip || old.tailOpacity != tailOpacity;
+      old.tailTip != tailTip ||
+      old.tailOpacity != tailOpacity ||
+      old.fill != fill;
 }

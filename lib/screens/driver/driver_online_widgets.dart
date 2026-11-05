@@ -234,6 +234,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               )),
               // The zone's "FL: <city>" label — a Flutter overlay glued per
               // frame (NOT a Mapbox SymbolLayer — see driver_online_map.dart).
+              // The driver's own reservation on its pickup (owner
+              // 2026-11-05) — OVER the marker, as Lyft's "Reserved Lyft".
+              Positioned.fill(child: _reservationCalloutOverlay()),
               Positioned.fill(child: _zoneLabelOverlay()),
               // Gold airport pills of the driver's working state (visual
               // only, same flat-projection pipeline — 2026-10-22).
@@ -4916,7 +4919,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   /// (owner report 2026-10-31). They fade out as soon as it starts to open
   /// and stop taking taps until it closes again.
   Widget _hideUnderOpenSheet(Widget child) {
-    final hidden = _panelFrac > 0.04;
+    // The reservation's card takes the sheet's place: they step away too.
+    final hidden = _panelFrac > 0.04 || _resvCardShown;
     return IgnorePointer(
       ignoring: hidden,
       child: AnimatedOpacity(

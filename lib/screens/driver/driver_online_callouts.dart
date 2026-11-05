@@ -186,12 +186,141 @@ extension _DriverOnlineCallouts on _DriverOnlineScreenState {
     if (offer == null) return;
     HapticService.lightImpact();
     _setState(() {
+      _resvCardOpen = false;
       _pendingOffers = [offer];
       _currentOfferIndex = 0;
       _nextOfferRevealAt = null;
       _hideFindingBar = true;
     });
     _autoTriggerRoutePreview(offer);
+  }
+
+  // ── The driver's own reservation (owner 2026-11-05) ─────────────────────
+  //
+  // Lyft's "Reserved Lyft · 5:55 PM": before the reservation starts, a
+  // callout sits on its pickup, online or offline. Tapped, it turns gold
+  // and the "Scheduled Ride" card takes the sheet's place; More info opens
+  // the reservation's own page, the X puts the sheet back.
+
+  /// Over a plain, rendered map: no offer, no preview, no trip phase.
+  bool get _reservationCalloutWanted =>
+      !kIsWeb &&
+      _phase == _Phase.searching &&
+      _pendingOffers.isEmpty &&
+      _previewingOffer == null &&
+      _acceptedOverlay == null &&
+      _mapMounted &&
+      _mapStyleLoaded &&
+      _firstRenderDone;
+
+  /// The pickup of the driver's next reservation, or null.
+  LatLng? get _reservationPickup {
+    final r = _nextReservation;
+    if (r == null) return null;
+    final lat = calloutNum(r['pickup_lat']);
+    final lng = calloutNum(r['pickup_lng']);
+    if (lat == null || lng == null || !isValidLatLng(lat, lng)) return null;
+    return LatLng(lat, lng);
+  }
+
+  /// The card is up: open, and its callout could be drawn.
+  bool get _resvCardShown =>
+      _resvCardOpen && _reservationCalloutWanted && _reservationPickup != null;
+
+  /// The reservation's callout. Tappable: open the card, or close it again.
+  Widget _reservationCalloutOverlay() {
+    if (kIsWeb) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: _markerFrame,
+      builder: (context, _) {
+        final r = _nextReservation;
+        final at = r == null ? null : parseServerTime(r['scheduled_at']);
+        final pickup = _reservationPickup;
+        if (r == null ||
+            at == null ||
+            pickup == null ||
+            !_reservationCalloutWanted) {
+          return const SizedBox.shrink();
+        }
+        final cam = _onlineCamState;
+        final size = _onlineMapSize;
+        if (cam == null || size == null) return const SizedBox.shrink();
+        final c = cam.center.coordinates;
+        final off = FlatMapProjection.screenOffsetHeading(
+          target: pickup,
+          cameraCenter: LatLng(c.lat.toDouble(), c.lng.toDouble()),
+          zoom: cam.zoom,
+          bearingDeg: cam.bearing,
+          pitchDeg: cam.pitch,
+          viewport: size,
+        );
+        if (off == null) return const SizedBox.shrink();
+        final p = off + _camPadShift(cam);
+        if (!FlatMapProjection.isOnScreen(p, size,
+            margin: _kCalloutCullMargin)) {
+          return const SizedBox.shrink();
+        }
+        final s = S.of(context);
+        return Stack(clipBehavior: Clip.none, children: [
+          Positioned(
+            key: ValueKey('res-callout-${r['id']}'),
+            left: p.dx,
+            top: p.dy,
+            child: MapCalloutBubble(
+              variant: CalloutVariant.reserved,
+              title: s.reservedCalloutTitle,
+              subtitle: reservationCalloutWhen(s, at.toLocal()),
+              expanded: _calloutsExpandedAt(cam.zoom),
+              selected: _resvCardOpen,
+              onTap: _toggleReservationCard,
+            ),
+          ),
+        ]);
+      },
+    );
+  }
+
+  void _toggleReservationCard() {
+    if (!mounted || !_reservationCalloutWanted) return;
+    HapticService.selectionClick();
+    _setState(() => _resvCardOpen = !_resvCardOpen);
+  }
+
+  void _closeReservationCard() {
+    if (!mounted || !_resvCardOpen) return;
+    HapticService.selectionClick();
+    _setState(() => _resvCardOpen = false);
+  }
+
+  /// The card, slid in from the bottom in the sheet's place.
+  Widget _reservationCardLayer() {
+    final r = _nextReservation;
+    if (r == null) return const SizedBox.shrink();
+    final shown = _resvCardShown;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: IgnorePointer(
+        ignoring: !shown,
+        child: AnimatedSlide(
+          offset: shown ? Offset.zero : const Offset(0, 1),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          child: AnimatedOpacity(
+            opacity: shown ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 300),
+            child: ReservationMapCard(
+              key: ValueKey('res-map-card-${r['id']}'),
+              address: (r['pickup_address'] ?? '').toString(),
+              bottomInset: MediaQuery.paddingOf(context).bottom,
+              onClose: _closeReservationCard,
+              onMoreInfo: () => _openReservationDetail(r),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// New trips on the board ease the follow camera OUT once, smoothly, so

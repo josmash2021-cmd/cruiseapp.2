@@ -33,6 +33,12 @@ import '../utils/vehicle_tier_style.dart';
 /// Box fill: pure black, like Lyft's.
 const Color kCalloutFill = Color(0xFF000000);
 
+/// A SELECTED callout (the driver's reservation, tapped — owner 2026-11-05,
+/// Lyft's "Reserved Lyft" lighting up, "en vez de blanco dorado"): the app
+/// gold with black text and icon, as the trip tile.
+const Color kCalloutFillSelected = kTripCalloutTileGold;
+const Color kCalloutInkSelected = Color(0xFF000000);
+
 // Sizes cut ~25 % on 2026-11-01 (owner: "en el mapa está súper grande").
 
 /// Box corner radius, both states.
@@ -113,9 +119,15 @@ bool calloutExpandedForZoom(double zoom, {required bool wasExpanded}) {
   return wasExpanded;
 }
 
-// ── The two variants ──────────────────────────────────────────────────────
+// ── The variants ──────────────────────────────────────────────────────────
 
-enum CalloutVariant { trip, airport }
+/// TRIP and AIRPORT (above), and RESERVED: the driver's own reservation on
+/// its pickup before it starts (owner 2026-11-05, Lyft's "Reserved Lyft ·
+/// 5:55 PM") — a calendar with a check, in the text's colour, no tile.
+enum CalloutVariant { trip, airport, reserved }
+
+/// The reservation's calendar (white; ink once selected).
+const IconData kReservedCalloutGlyph = Icons.event_available_outlined;
 
 /// What a variant looks like. Padding is the same in both states.
 @immutable
@@ -160,8 +172,20 @@ const CalloutSpec kAirportCalloutSpec = CalloutSpec(
   tile: false,
 );
 
-CalloutSpec calloutSpecOf(CalloutVariant v) =>
-    v == CalloutVariant.trip ? kTripCalloutSpec : kAirportCalloutSpec;
+/// RESERVED: padding 9 / 7 / 12 / 7, calendar 22 → 26, no tile.
+const CalloutSpec kReservedCalloutSpec = CalloutSpec(
+  padding: EdgeInsets.fromLTRB(9, 7, 12, 7),
+  iconExpanded: 22,
+  iconCompact: 26,
+  glyphPerIcon: 1.0,
+  tile: false,
+);
+
+CalloutSpec calloutSpecOf(CalloutVariant v) => switch (v) {
+      CalloutVariant.trip => kTripCalloutSpec,
+      CalloutVariant.airport => kAirportCalloutSpec,
+      CalloutVariant.reserved => kReservedCalloutSpec,
+    };
 
 // ── Geometry ──────────────────────────────────────────────────────────────
 
@@ -375,11 +399,12 @@ Path calloutTailPath(Rect box, Offset tip) => Path()
   ..lineTo(tip.dx, tip.dy)
   ..close();
 
-/// Shadow first, then the black fill. A fully grown tail is part of the
-/// box's single contour (and of its shadow); a fading one is drawn on its
-/// own at [tailOpacity] over the box's bottom edge.
+/// Shadow first, then the fill (black; [fill] for a selected one). A fully
+/// grown tail is part of the box's single contour (and of its shadow); a
+/// fading one is drawn on its own at [tailOpacity] over the box's bottom
+/// edge.
 void paintCalloutBubble(Canvas canvas, Rect box,
-    {Offset? tailTip, double tailOpacity = 1}) {
+    {Offset? tailTip, double tailOpacity = 1, Color fill = kCalloutFill}) {
   final tip = (tailTip != null && tailTip.dy > box.bottom && tailOpacity > 0)
       ? tailTip
       : null;
@@ -392,11 +417,11 @@ void paintCalloutBubble(Canvas canvas, Rect box,
       ..maskFilter =
           const MaskFilter.blur(BlurStyle.normal, kCalloutShadowSigma),
   );
-  canvas.drawPath(outline, Paint()..color = kCalloutFill);
+  canvas.drawPath(outline, Paint()..color = fill);
   if (tip != null && !whole) {
     canvas.drawPath(
       calloutTailPath(box, tip),
-      Paint()..color = kCalloutFill.withValues(alpha: tailOpacity),
+      Paint()..color = fill.withValues(alpha: fill.a * tailOpacity),
     );
   }
 }

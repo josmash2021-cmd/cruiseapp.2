@@ -3237,7 +3237,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             ? ''
             : '${r['id']}|${r['scheduled_at']}|${r['fare']}|${r['status']}';
         if (sig(next) != sig(_nextReservation)) {
-          _setState(() => _nextReservation = next);
+          _setState(() {
+            // Another reservation (or none): its card does not stay open.
+            if (next?['id'] != _nextReservation?['id']) _resvCardOpen = false;
+            _nextReservation = next;
+          });
         }
       }
     } catch (_) {}

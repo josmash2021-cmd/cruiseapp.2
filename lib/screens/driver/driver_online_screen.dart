@@ -124,6 +124,7 @@ import '../../utils/offer_metrics.dart';
 import '../../utils/server_time.dart';
 import 'package:intl/intl.dart';
 import 'reservation_detail_page.dart';
+import 'reservation_map_card.dart';
 
 part 'driver_online_controller.dart';
 part 'driver_online_map.dart';
@@ -570,6 +571,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// The driver's OWN next reservation (scheduled_accepted / _active) — the
   /// gold card on the offline sheet. Null = none; the card fades away.
   Map<String, dynamic>? _nextReservation;
+
+  /// Its callout on the map was tapped: the callout turns gold and the
+  /// "Scheduled Ride" card takes the sheet's place (owner 2026-11-05). Reset
+  /// when the reservation changes or goes.
+  bool _resvCardOpen = false;
 
   // ── Marketplace de viajes sin agarrar (user spec 2026-10-02) ──
   // Viajes que ya sonaron a los candidatos y nadie tomó: la píldora arriba
@@ -2862,17 +2868,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
             if (_phase == _Phase.searching)
               Positioned.fill(
+                // Away under an offer, and under the reservation's card,
+                // which takes its place (owner 2026-11-05).
                 child: AnimatedSlide(
-                  offset: _pendingOffers.isNotEmpty
+                  offset: (_pendingOffers.isNotEmpty || _resvCardShown)
                       ? const Offset(0, 1)
                       : Offset.zero,
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut,
                   child: AnimatedOpacity(
-                    opacity: _pendingOffers.isNotEmpty ? 0.0 : 1.0,
+                    opacity:
+                        (_pendingOffers.isNotEmpty || _resvCardShown) ? 0.0 : 1.0,
                     duration: const Duration(milliseconds: 300),
                     child: IgnorePointer(
-                      ignoring: _pendingOffers.isNotEmpty,
+                      ignoring: _pendingOffers.isNotEmpty || _resvCardShown,
                       child: Stack(
                         children: [
                           _floatingPanel(
@@ -2919,7 +2928,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 _previewingOffer == null &&
                 _acceptedOverlay == null)
               _buildMorphingGoButton(MediaQuery.of(context).padding,
-                  hidden: _driverOnline),
+                  hidden: _driverOnline || _resvCardShown),
 
             // Recentre FAB while OFFLINE (user spec 2026-10-10) — shared
             // _RecenterFab (dark disc + white arrow) with blur-in/pop-out.
@@ -2929,7 +2938,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             // box covers the FAB's spot exactly (both bottoms align at the
             // collapsed sheet's top + lift) and its transparent body was
             // swallowing the FAB's taps. On top of it, every tap lands.
-            if (!_driverOnline && !isNav && _acceptedOverlay == null)
+            if (!_driverOnline &&
+                !isNav &&
+                _acceptedOverlay == null &&
+                !_resvCardShown)
               Positioned(
                 // Above the sheet's CURRENT top — it now rests half-open
                 // (2026-10-13 spec), not always collapsed.
@@ -2946,6 +2958,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   },
                 ),
               ),
+
+            // The reservation's "Scheduled Ride" card, in the sheet's
+            // place while its callout is selected (owner 2026-11-05).
+            _reservationCardLayer(),
 
             // ── "Viaje cancelado" notice ──
             // Centred on a semi-dark wash, ~5 s, fluid fade both ways. It

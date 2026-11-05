@@ -40,7 +40,7 @@ void main() {
     expect(ctrl, contains('ApiService.getDriverScheduledTrips(id)'));
     expect(ctrl,
         contains("if (st != 'scheduled_accepted' && st != 'scheduled_active') continue;"));
-    expect(ctrl, contains('_setState(() => _nextReservation = next);'));
+    expect(ctrl, contains('_nextReservation = next;'));
   });
 
   test('lists fade a vanished reservation out, quietly and live', () {

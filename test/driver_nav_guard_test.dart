@@ -150,12 +150,14 @@ void main() {
       expect(drop, lessThan(reacquire));
     });
 
-    test('back inside navigation leaves navigation, not the trip', () {
+    // Owner 2026-11-05 ("páginas viejas no deben salir"): leaving
+    // navigation uncovered the old trip page — back stays in navigation.
+    test('back inside navigation stays in navigation', () {
       final start = accept.indexOf('onPopInvokedWithResult: (didPop, _) {');
       expect(start, isNonNegative);
       final block = accept.substring(start, start + 400);
-      expect(block.contains('if (_navMode)'), isTrue);
-      expect(block.contains('_exitNavMode();'), isTrue);
+      expect(block.contains('if (_navMode) return;'), isTrue);
+      expect(block.contains('_exitNavMode();'), isFalse);
     });
 
     test('Start Trip enters dropoff navigation in-app, only on backend success',

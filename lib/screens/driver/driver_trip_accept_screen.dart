@@ -84,7 +84,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
     required this.tripId,
     required this.riderName,
     this.riderPhotoUrl = '',
-    this.autoNav = false,
+    this.autoNav = true,
     this.riderRating = 0,
     this.riderIsNew = true,
     required this.pickupLatLng,
@@ -115,7 +115,10 @@ class DriverTripAcceptScreen extends StatefulWidget {
   /// Straight into the navigation (owner design 2026-11-02: accept →
   /// "Viaje Aceptado" → navigation, no trip page in between): the page
   /// stays hidden under a plain background, never mounts its mini map, and
-  /// enters nav on the first frame. Leaving nav shows the page as before.
+  /// enters nav on the first frame. ON for every way in since 2026-11-05
+  /// (owner: "esta página ya no debe salir cuando cierro y abro la app,
+  /// páginas viejas no deben salir") — reopening the app with a trip, a
+  /// push, the next chained ride, a reservation: all land in navigation.
   final bool autoNav;
   final int? riderId;
   final double riderRating;
@@ -5531,11 +5534,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        // Inside navigation, back leaves NAVIGATION — not the trip.
-        if (_navMode) {
-          _exitNavMode();
-          return;
-        }
+        // Inside navigation, back stays in navigation: leaving it uncovered
+        // the old trip page (owner 2026-11-05, "páginas viejas no deben
+        // salir").
+        if (_navMode) return;
         _returnToDriverHome();
       },
       // Tap on any empty area collapses the PIN numeric pad — the iOS

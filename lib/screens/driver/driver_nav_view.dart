@@ -694,6 +694,9 @@ class DriverNavViewState extends State<DriverNavView>
   // The panel's height at rest: the mph and the map buttons stay above it
   // while the panel opens over them (the camera still follows [_panelH]).
   double _panelRestH = 0;
+  // The turn box and whatever hangs from it ("Luego", an open guide, the
+  // status pills): the route overview frames the line below its bottom.
+  final GlobalKey _topBarKey = GlobalKey();
   bool _panelMoving = false;
   DateTime? _stillSince;
   late final Stream<int> _chatUnread = ChatService().unreadCountStream(
@@ -1064,16 +1067,7 @@ class DriverNavViewState extends State<DriverNavView>
     // A restart keeps the position the dot already has. Snapped onto the
     // route like every later fix (2026-09-19) — the nav opens with the
     // arrow ON the line, never floating in the pickup's block.
-    if (_dot.lat == null) {
-      final seed = _snapToNavRoute(widget.initialDriverPos);
-      if (seed != null) {
-        _dot.setTarget(
-          seed.latitude,
-          seed.longitude,
-          timestampMs: DateTime.now().millisecondsSinceEpoch.toDouble(),
-        );
-      }
-    }
+    _placeArrowOnRoute();
     // Aim down-route from the very first frame: the GPS heading at 0 mph is
     // noise, so the opening arrow (and chase camera) takes the route
     // tangent instead (user spec 2026-09-16).
@@ -1335,6 +1329,32 @@ class DriverNavViewState extends State<DriverNavView>
 
   double? _routeHeadingFor(LatLng pos) {
     return _roadLock.project(_routePts, pos, speedMps: _speedMps).bearing;
+  }
+
+  /// The arrow's place on the line, seeded or re-projected whenever a line
+  /// arrives. A route that was not prefetched is not there yet when
+  /// _startGps seeds, and indoors every fix reads > 30 m and is dropped:
+  /// the dot stayed empty, so the camera never left its opening pose (no
+  /// line under the arrow), a recenter had nothing to blend to and left the
+  /// overview frozen behind the pinned arrow, and the overview had no arrow
+  /// at all (owner report 2026-11-04). A dot placed before the line existed
+  /// is re-projected too — the parked chase would centre it off the route.
+  void _placeArrowOnRoute() {
+    if (_routePts.length < 2) return;
+    final lat = _dot.lat;
+    final lng = _dot.lng;
+    if (lat != null && lng != null) {
+      _renderPos = _snapToNavRoute(LatLng(lat, lng)) ?? _renderPos;
+      return;
+    }
+    final seed = _snapToNavRoute(widget.initialDriverPos);
+    if (seed == null) return;
+    _dot.setTarget(
+      seed.latitude,
+      seed.longitude,
+      timestampMs: DateTime.now().millisecondsSinceEpoch.toDouble(),
+    );
+    _renderPos = seed;
   }
 
   /// Where the arrow points on the route while moving (owner 2026-11-02,
@@ -1714,6 +1734,7 @@ class DriverNavViewState extends State<DriverNavView>
     }
     if (!mounted) return;
     _offlineKeepRoute = false;
+    _placeArrowOnRoute();
     // A race won by Google/OSRM arrives with EMPTY steps — the bar would
     // read "Follow the route" forever (user report 2026-09-17). Fill the
     // maneuvers from Mapbox in the background, once per plan.
@@ -2476,6 +2497,34 @@ class DriverNavViewState extends State<DriverNavView>
     } catch (_) {}
   }
 
+  /// What the route overview frames: the line and the car on it. Only the
+  /// line, with the old fixed +120 top inset, left the start of the route —
+  /// where the car is — under the turn box (owner report 2026-11-04: "no se
+  /// ve completa la ruta", and no arrow in the overview).
+  List<LatLng> get _overviewPoints {
+    final lat = _renderPos?.latitude ?? _dot.lat;
+    final lng = _renderPos?.longitude ?? _dot.lng;
+    return [
+      ..._routePts.where((p) => isValidLatLng(p.latitude, p.longitude)),
+      if (isValidLatLng(lat, lng)) LatLng(lat!, lng!),
+    ];
+  }
+
+  /// The overview's top and bottom insets: below the turn box with
+  /// everything hanging from it, above the panel and the map buttons.
+  ({double top, double bottom}) _overviewInsets(MediaQueryData media) {
+    var top = media.padding.top + 120;
+    final box = _topBarKey.currentContext?.findRenderObject();
+    if (box is RenderBox && box.attached && box.hasSize) {
+      top = math.max(
+          top, box.localToGlobal(Offset(0, box.size.height)).dy + 28);
+    }
+    return (
+      top: top,
+      bottom: math.max(media.size.height * 0.30, _panelRestH + 24),
+    );
+  }
+
   /// The overview-toggle bounds fit (the only top-down view left, user spec
   /// 2026-09-16 — opening and route updates use _snapToChasePose instead).
   Future<void> _fitRouteOnce() async {
@@ -2493,21 +2542,21 @@ class DriverNavViewState extends State<DriverNavView>
     final map = _map;
     if (map == null) return;
     final media = MediaQuery.of(context);
-    final coords = _routePts
-        .where((p) => isValidLatLng(p.latitude, p.longitude))
+    final coords = _overviewPoints
         .map((p) =>
             mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
         .toList();
     if (coords.isEmpty) return;
+    final inset = _overviewInsets(media);
     final seq = _cameraActionGate.begin();
     try {
       final cam = await map.cameraForCoordinatesPadding(
         coords,
         mapbox.CameraOptions(pitch: 0, bearing: 0),
         mapbox.MbxEdgeInsets(
-          top: media.padding.top + 120,
+          top: inset.top,
           left: 48,
-          bottom: media.size.height * 0.30,
+          bottom: inset.bottom,
           right: 48,
         ),
         null,
@@ -3103,15 +3152,13 @@ class DriverNavViewState extends State<DriverNavView>
       return;
     }
     final media = MediaQuery.of(context);
-    final pts = _routePts
-        .where((p) => isValidLatLng(p.latitude, p.longitude))
-        .toList();
+    final inset = _overviewInsets(media);
     final to = FlatMapProjection.fitFlat(
-      points: pts,
+      points: _overviewPoints,
       viewport: media.size,
-      top: media.padding.top + 120,
+      top: inset.top,
       left: 48,
-      bottom: media.size.height * 0.30,
+      bottom: inset.bottom,
       right: 48,
       maxZoom: 17,
     );
@@ -3526,6 +3573,7 @@ class DriverNavViewState extends State<DriverNavView>
           left: 14,
           right: 14,
           child: Column(
+            key: _topBarKey,
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [

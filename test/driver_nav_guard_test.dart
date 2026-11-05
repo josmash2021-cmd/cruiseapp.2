@@ -746,12 +746,12 @@ void main() {
           reason: 'off-route detection must read the RAW fix, never the '
               'snapped display point — that is what answers "did he take '
               'the exit or not" in real time');
-      final seed = bodyOf(nav, 'if (_dot.lat == null) {', maxLen: 500);
+      final seed = bodyOf(nav, 'void _placeArrowOnRoute() {', maxLen: 700);
       expect(seed.contains('_snapToNavRoute(widget.initialDriverPos)'),
           isTrue,
           reason: 'the nav opens with the arrow ON the line, not floating '
               'in the pickup\'s block');
-      expect(seed.contains('if (seed != null)'), isTrue);
+      expect(seed.contains('if (seed == null) return;'), isTrue);
     });
   });
 

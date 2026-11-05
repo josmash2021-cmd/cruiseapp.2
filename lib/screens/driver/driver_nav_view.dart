@@ -15,7 +15,7 @@ import '../../config/mapbox_config.dart';
 import '../../l10n/app_localizations.dart';
 import '../../map/camera_action_gate.dart';
 import '../../map/driver_road_lock.dart';
-import '../../map/pin_top_label.dart';
+import '../../map/nav_dest_markers.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../map/web_map_view.dart';
 import '../../models/lat_lng.dart';
@@ -2430,23 +2430,33 @@ class DriverNavViewState extends State<DriverNavView>
       } catch (_) {}
     }
     try {
-      // The same golden teardrop every other map draws: person at the
-      // pickup, flag at the dropoff.
-      var bytes = await renderCircularPinBytes(
+      // The same golden teardrop every other map draws (person at the
+      // pickup, flag at the dropoff), standing on a ring at the exact
+      // spot, the pickup inside a gold halo; a reservation's pickup is the
+      // ring under a "Reservado" pill, no pin (owner 2026-11-04, Lyft).
+      final pin = await renderCircularPinBytes(
         icon: widget.toPickup ? CircularPinIcon.person : CircularPinIcon.flag,
         isPickup: widget.toPickup,
         radius: 32,
       );
       final badge = widget.pickupBadge;
+      final Uint8List bytes;
       if (widget.toPickup && badge != null) {
-        bytes = await pinWithTopLabel(bytes, badge);
+        final unit = (await (await ui.instantiateImageCodec(pin))
+                .getNextFrame())
+            .image
+            .width
+            .toDouble();
+        bytes = await scheduledPickupMarker(badge, unit, pin);
+      } else {
+        bytes = await pinOnGround(pin, halo: widget.toPickup);
       }
       if (!mounted || seq != _destPinSeq) return;
       final annot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: point,
         image: bytes,
         iconSize: 0.62,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconAnchor: mapbox.IconAnchor.CENTER,
       ));
       if (!mounted || seq != _destPinSeq) {
         // A newer draw owns the pin now — this one must not linger.
@@ -2485,14 +2495,14 @@ class DriverNavViewState extends State<DriverNavView>
       return;
     }
     try {
-      final bytes = await renderCircularPinBytes(
-          icon: CircularPinIcon.flag, isPickup: false, radius: 32);
+      final bytes = await pinOnGround(await renderCircularPinBytes(
+          icon: CircularPinIcon.flag, isPickup: false, radius: 32));
       if (!mounted) return;
       _stopAnnot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: point,
         image: bytes,
         iconSize: 0.62,
-        iconAnchor: mapbox.IconAnchor.BOTTOM,
+        iconAnchor: mapbox.IconAnchor.CENTER,
       ));
     } catch (_) {}
   }

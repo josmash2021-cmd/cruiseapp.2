@@ -95,9 +95,9 @@ void main() {
     expect(trip, contains(': S.of(context).pickupBadgeReserved,'));
   });
 
-  test('the pickup pin carries the "Reservado" bubble', () {
+  test('the pickup is the "Reservado" pill on the ring', () {
     final nav = read('lib/screens/driver/driver_nav_view.dart');
-    expect(nav, contains('bytes = await pinWithTopLabel(bytes, badge);'));
+    expect(nav, contains('bytes = await scheduledPickupMarker(badge, unit, pin);'));
     expect(nav, contains('if (oldWidget.pickupBadge != widget.pickupBadge) {'));
   });
 

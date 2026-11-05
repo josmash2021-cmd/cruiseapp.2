@@ -439,15 +439,18 @@ void main() {
 
     test('the destination pin is the shared golden teardrop', () {
       final body =
-          bodyOf(nav, 'Future<void> _drawDestPin() async {', maxLen: 1400);
+          bodyOf(nav, 'Future<void> _drawDestPin() async {', maxLen: 2000);
       expect(body.contains('renderCircularPinBytes('), isTrue,
           reason: 'the same pin the mini-map and every other map draws');
       expect(body.contains('CircularPinIcon.person'), isTrue,
           reason: 'person pin on the pickup leg');
       expect(body.contains('CircularPinIcon.flag'), isTrue,
           reason: 'flag pin on the dropoff leg');
-      expect(body.contains('iconAnchor: mapbox.IconAnchor.BOTTOM'), isTrue,
-          reason: 'the teardrop tip lands on the coordinate');
+      // Owner 2026-11-04 (Lyft): the pin stands on a ring drawn around the
+      // spot, so the image is anchored at its centre — the ring's middle is
+      // the coordinate (test/nav_dest_markers_test.dart).
+      expect(body.contains('iconAnchor: mapbox.IconAnchor.CENTER'), isTrue,
+          reason: 'the ring at the image centre lands on the coordinate');
       expect(body, isNot(contains("'★'")), reason: 'the star glyph is gone');
       // Two draws in flight (the "Reservado" redraw) must not leave two
       // pins: a superseded draw deletes what it created (2026-11-03).

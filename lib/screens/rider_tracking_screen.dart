@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../map/map_surface_coordinator.dart';
+import '../map/route_follower.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -443,10 +444,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// route (and with it `_segDist`) is rebuilt.
   int _projHintIdx = 0;
 
-  /// How far along the route the car is DRAWN (owner 2026-11-05): the glide
-  /// projected onto the street, never creeping back. Null = not on the
-  /// route (or a new route).
-  double? _roadM;
+  /// The car along the route (owner 2026-11-05, rule 63): drawn on the
+  /// street, at the driver's pace, turning with the road. Off the route the
+  /// free glide (_carMotion) draws it.
+  final RouteFollower _follower = RouteFollower();
 
   /// Pin-raster retry bookkeeping for `_schedulePinLoadRetry` (a GPU-busy
   /// mount used to mean no pins for the whole session).

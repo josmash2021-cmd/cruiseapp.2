@@ -1177,7 +1177,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
     // A rebuilt route invalidates the projection window's anchor.
     _projHintIdx = 0;
-    _roadM = null;
+    // The follower rounds and keeps its own copy of the street.
+    _follower.setRoute(_routePts);
   }
 
   /// Returns (position, bearing) at a given distance along the route (meters).

@@ -579,6 +579,19 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         // The driver's own reported speed travels on the relay — ~0 while
         // parked, so the rider's car freezes against relayed GPS wander.
         speedMps: speed);
+    // Along a usable route the follower draws the car (rule 63): on the
+    // street, at the driver's pace now — not the fix's — turning with the
+    // road. With no route yet (or the approach not fetched) it stands aside.
+    if (_routePts.length >= 2 &&
+        _segDist.isNotEmpty &&
+        !(_phase == _TrackPhase.arriving && !_approachRouteFetched)) {
+      _follower.onFix(ll.latitude, ll.longitude,
+          speedMps: speed,
+          timestampMs: timestampMs,
+          drawnNow: _carMotion.hasPosition ? _animPos : null);
+    } else {
+      _follower.leaveRoute();
+    }
     // 2026-04-27 diagnostic: log every incoming GPS so we can see in
     // device logs whether the rider is even RECEIVING the driver
     // updates. If this never prints while the car sits frozen, the
@@ -2276,36 +2289,32 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // measured speed while the car rolls, swallow wander while it is parked,
     // freeze the extrapolation when the feed goes quiet.
     _carMotion.tick(dt);
-    if (_carMotion.hasPosition) {
-      final glide = LatLng(_carMotion.lat!, _carMotion.lng!);
-      _animPos = glide;
+    _follower.tick(dt);
+    // On the route the follower draws the car ON the street (owner
+    // 2026-11-05, rule 63): it moves at the driver's pace now (each fix
+    // filtered with the phone's own speed and aged on the driver's clock),
+    // turns through the bends as the road does, never steps back. Fed the
+    // same 1 Hz fixes, the free glide cut a corner by 11 m and trailed the
+    // car by ~5 m; the follower stays within 1.4 m of the line and ~2 m of
+    // the driver. Off the route, the free glide.
+    final onRoad = _follower.active ? _follower.position : null;
+    LatLng? drawn;
+    if (onRoad != null) {
+      drawn = onRoad;
+      _animBearing = _follower.bearing;
+    } else if (_carMotion.hasPosition) {
+      drawn = LatLng(_carMotion.lat!, _carMotion.lng!);
       _animBearing = _carMotion.bearing;
-      // Route progress is derived from the smoothed position, never driven:
+    }
+    if (drawn != null) {
+      _animPos = drawn;
+      _driverPos = drawn;
+      _driverBearing = _animBearing;
+      // Route progress is derived from the drawn position, never driven:
       // ETA, remaining distance and the route erase all read this.
       if (_segDist.isNotEmpty) {
-        _traveledM = _projectOntoRoute(glide).clamp(0.0, _segDist.last);
-        // On the route the car is drawn ON the street (owner 2026-11-05,
-        // "ver moverse el carrito fluido"): the glide alone runs straight
-        // between fixes — the real engine fed 1 Hz fixes cut a corner by
-        // 11 m and, with phone GPS noise, sat 6 m+ off the line one frame in
-        // five. Its progress along the route is drawn at the route's own
-        // point instead, and never creeps back (a glide that overshot a
-        // corner holds there until the street catches up).
-        final onRoute = _carSnapActive &&
-            _hav(glide, _posAtDistUltraSmooth(_traveledM).$1) * 1609.34 < 35;
-        if (onRoute) {
-          final prev = _roadM;
-          if (prev != null && _traveledM < prev && prev - _traveledM < 25) {
-            _traveledM = prev;
-          }
-          _roadM = _traveledM;
-          _animPos = _posAtDistUltraSmooth(_traveledM).$1;
-        } else {
-          _roadM = null;
-        }
+        _traveledM = _projectOntoRoute(drawn).clamp(0.0, _segDist.last);
       }
-      _driverPos = _animPos;
-      _driverBearing = _animBearing;
     }
 
     // Update map annotations directly — no setState needed (avoids 60fps widget rebuilds)

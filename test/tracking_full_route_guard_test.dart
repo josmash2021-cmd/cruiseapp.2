@@ -284,7 +284,7 @@ void main() {
     test('ETA priority is traffic-duration first, and speed decays at stops',
         () {
       final fn = ctrl.indexOf('void _onRealDriverLocation(');
-      final body = ctrl.substring(fn, fn + 14200);
+      final body = ctrl.substring(fn, fn + 16000);
       final durIdx = body.indexOf('_routeDurationSec != null && _routeDurationSec! > 0');
       final velIdx = body.indexOf('_velocityMps > 3.0');
       expect(durIdx, isNonNegative);

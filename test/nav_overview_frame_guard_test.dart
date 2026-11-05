@@ -18,9 +18,11 @@ void main() {
   }
 
   test('the overview frames the car with the line', () {
-    final pts = bodyOf('List<LatLng> get _overviewPoints {', maxLen: 500);
+    final pts = bodyOf('List<LatLng> get _overviewPoints {', maxLen: 800);
     expect(pts, contains('_renderPos?.latitude ?? _dot.lat'));
     expect(pts, contains('LatLng(lat!, lng!)'));
+    expect(pts, contains('DestBuilding.slice(_routePts, _trimS, _drawEndS)'),
+        reason: 'only what is left: the driven stretch shrank the road ahead');
   });
 
   test('the overview frames below the turn box and above the panel', () {

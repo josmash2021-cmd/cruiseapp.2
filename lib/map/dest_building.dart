@@ -77,15 +77,18 @@ class DestBuilding {
 
   /// Where the drawn route must end (owner 2026-11-04: "la línea de la ruta
   /// no debe salirse de las calles… ni estar encima de la estructura
-  /// marcada ni otra estructura… sino donde se debe parar"): [clearM]
-  /// metres before the route first runs into a building within its last
-  /// [tailM] metres — the driveway or service lane the router snapped the
-  /// address to. Null when it never does.
+  /// marcada ni otra estructura… la línea no debe tocar la estructura sino
+  /// donde se debe parar"): the last point, within the route's last [tailM]
+  /// metres, before it comes within [touchM] metres of any building — in,
+  /// across, or merely running along its wall (a club's drive that hugs the
+  /// clubhouse never crosses it, yet drew the line over its outline). Null
+  /// when it never does. Sampled every [stepM] metres.
   static double? tailCutS(
     List<LatLng> route,
     List<List<LatLng>> footprints, {
     double tailM = 200,
-    double clearM = 3,
+    double touchM = 2.5,
+    double stepM = 0.5,
   }) {
     if (route.length < 2 || footprints.isEmpty) return null;
     final total = lengthM(route);
@@ -100,34 +103,57 @@ class DestBuilding {
     final polys = [
       for (final f in footprints) [for (final p in f) xy(p)],
     ];
-    var s = 0.0;
-    for (var i = 0; i + 1 < route.length; i++) {
-      final seg = _distM(route[i], route[i + 1]);
-      if (s + seg >= from && seg > 0) {
-        final a = xy(route[i]);
-        final b = xy(route[i + 1]);
-        // Only the part of this segment inside the tail window.
-        final t0 = s >= from ? 0.0 : (from - s) / seg;
-        final ax = a.x + (b.x - a.x) * t0, ay = a.y + (b.y - a.y) * t0;
-        var hit = double.infinity;
-        for (var k = 0; k < polys.length; k++) {
-          if (contains(footprints[k], _lerp(route[i], route[i + 1], t0))) {
-            hit = 0;
-            break;
-          }
-          final poly = polys[k];
-          for (var e = 0; e + 1 < poly.length; e++) {
-            final u = _segHit(ax, ay, b.x, b.y, poly[e].x, poly[e].y,
-                poly[e + 1].x, poly[e + 1].y);
-            if (u != null && u < hit) hit = u;
+    // Each footprint's box, grown by [touchM]: most are nowhere near.
+    final boxes = [
+      for (final poly in polys)
+        (
+          minX: poly.map((p) => p.x).reduce(math.min) - touchM,
+          maxX: poly.map((p) => p.x).reduce(math.max) + touchM,
+          minY: poly.map((p) => p.y).reduce(math.min) - touchM,
+          maxY: poly.map((p) => p.y).reduce(math.max) + touchM,
+        ),
+    ];
+    bool touches(double x, double y) {
+      for (var k = 0; k < polys.length; k++) {
+        final bx = boxes[k];
+        if (x < bx.minX || x > bx.maxX || y < bx.minY || y > bx.maxY) continue;
+        final poly = polys[k];
+        var inside = false;
+        for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          final a = poly[i], b = poly[j];
+          if ((a.y > y) != (b.y > y) &&
+              x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) {
+            inside = !inside;
           }
         }
-        if (hit.isFinite) {
-          final t = t0 + (1 - t0) * hit;
-          return math.max(0.0, s + seg * t - clearM);
+        if (inside) return true;
+        for (var e = 0; e + 1 < poly.length; e++) {
+          final ax = poly[e].x - x, ay = poly[e].y - y;
+          final dx = poly[e + 1].x - poly[e].x, dy = poly[e + 1].y - poly[e].y;
+          final l2 = dx * dx + dy * dy;
+          final t = l2 == 0 ? 0.0 : ((-ax * dx - ay * dy) / l2).clamp(0.0, 1.0);
+          final cx = ax + dx * t, cy = ay + dy * t;
+          if (cx * cx + cy * cy < touchM * touchM) return true;
         }
       }
-      s += seg;
+      return false;
+    }
+
+    var i = 0;
+    var segStart = 0.0;
+    var segLen = _distM(route[0], route[1]);
+    for (var q = from; q <= total + 1e-9; q += stepM) {
+      while (i + 2 < route.length && q > segStart + segLen) {
+        segStart += segLen;
+        i++;
+        segLen = _distM(route[i], route[i + 1]);
+      }
+      final t = segLen <= 0 ? 0.0 : ((q - segStart) / segLen).clamp(0.0, 1.0);
+      final a = xy(route[i]);
+      final b = xy(route[i + 1]);
+      if (touches(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) {
+        return math.max(0.0, q - stepM);
+      }
     }
     return null;
   }
@@ -199,20 +225,6 @@ class DestBuilding {
             math.cos(b.latitude * math.pi / 180) *
             math.pow(math.sin(dLng / 2), 2);
     return 2 * r * math.asin(math.sqrt(h));
-  }
-
-  /// Where along p0→p1 (0..1) it crosses q0→q1, or null.
-  static double? _segHit(double p0x, double p0y, double p1x, double p1y,
-      double q0x, double q0y, double q1x, double q1y) {
-    final rx = p1x - p0x, ry = p1y - p0y;
-    final sx = q1x - q0x, sy = q1y - q0y;
-    final den = rx * sy - ry * sx;
-    if (den.abs() < 1e-12) return null;
-    final qpx = q0x - p0x, qpy = q0y - p0y;
-    final t = (qpx * sy - qpy * sx) / den;
-    final u = (qpx * ry - qpy * rx) / den;
-    if (t < 0 || t > 1 || u < 0 || u > 1) return null;
-    return t;
   }
 
   static List<LatLng>? _outer(List poly) {

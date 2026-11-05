@@ -98,10 +98,25 @@ void main() {
       final cut = DestBuilding.tailCutS(
           route, [box(33.44995, -86.79984, 33.45005, -86.79960)])!;
       final total = DestBuilding.lengthM(route);
-      expect(total - cut, closeTo(18, 2), reason: "3 m short of touching it");
+      expect(total - cut, closeTo(18, 2), reason: "2.5 m short of touching it");
       final drawn = DestBuilding.slice(route, 0, cut);
       expect(drawn.last.longitude, closeTo(-86.79987, 5e-6));
       expect(drawn.first, route.first);
+    });
+
+    test('a drive running along the wall stops before it touches it', () {
+      // The real Country Club case: the drive hugs the clubhouse 1.5 m off
+      // its wall and never crosses it — the line drew over the outline.
+      // Wall from 10 m to 25 m before the end, 1.5 m north of the lane.
+      const north = 1.5 / 111320;
+      final cut = DestBuilding.tailCutS(route, [
+        box(33.4500 + north, -86.79995, 33.4502, -86.79979),
+      ])!;
+      final total = DestBuilding.lengthM(route);
+      // The wall starts 4.6 m into the 30 m lane, 1.5 m off it: the line
+      // comes within 2.5 m of it sqrt(2.5² − 1.5²) = 2 m before that — 2.6 m
+      // into the lane — and stops one 0.5 m step earlier.
+      expect(total - cut, closeTo(30 - 2.6 + 0.5, 1.0));
     });
 
     test('a building it never touches, or one far back, cuts nothing', () {

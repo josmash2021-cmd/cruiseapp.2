@@ -2730,8 +2730,13 @@ class DriverNavViewState extends State<DriverNavView>
   List<LatLng> get _overviewPoints {
     final lat = _renderPos?.latitude ?? _dot.lat;
     final lng = _renderPos?.longitude ?? _dot.lng;
+    // What is LEFT — from the car to where the line ends (rendered on the
+    // real map 2026-11-04: the whole leg left the road ahead a corner of
+    // the screen behind the stretch already driven).
+    final ahead = DestBuilding.slice(_routePts, _trimS, _drawEndS);
     return [
-      ..._routePts.where((p) => isValidLatLng(p.latitude, p.longitude)),
+      ...(ahead.length >= 2 ? ahead : _routePts)
+          .where((p) => isValidLatLng(p.latitude, p.longitude)),
       if (isValidLatLng(lat, lng)) LatLng(lat!, lng!),
     ];
   }

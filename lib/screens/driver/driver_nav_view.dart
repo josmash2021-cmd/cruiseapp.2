@@ -372,18 +372,24 @@ class DriverNavViewState extends State<DriverNavView>
   int _mapPointers = 0;
   mapbox.CameraOptions? _pendingCamWrite;
   bool _camWriteBusy = false;
-  // The route overview and the way back to the chase are ONE native flight
-  // each (owner 2026-11-05: "se mueve como relentizado… no busco que sea
-  // rápido sino que se vea fluido y smooth"): the map animates it in its own
-  // render loop. The 1.6 s per-frame blend from Dart that it replaces
-  // stuttered whenever a camera write lagged behind the frame, and read as
-  // slow motion. The plugin's flyTo returns when the flight STARTS (audit
-  // D4), so the landing is timed here: the chase stays out (camState
-  // recentering) until the flight is down, and a gesture supersedes it
-  // through the action gate. Unhurried on purpose (owner 2026-11-02: 1.1 s
-  // "sigue muy rápido"); flyTo eases in and out.
+  // The route overview and the way back to the chase are ONE eased native
+  // animation each (owner 2026-11-05: "se mueve como relentizado… que se vea
+  // fluido y smooth", then chose option "B" of
+  // https://claude.ai/artifact/WdhPHWnrG7n6B8PtP64fkt): zoom out, flatten and
+  // turn north together, easing in and out, 1.3 s. It runs in the map's own
+  // render loop through its viewport — the per-frame blend from Dart it
+  // replaces stuttered whenever a write lagged, and a plain easeTo is
+  // ease-out only on iOS. The chase stays out (camState recentering) until
+  // the viewport reports the landing; [_camFlightTimer] lands it anyway if
+  // that report never comes. Idle the rest of the time, so the chase's own
+  // writes are the only camera.
+  mapbox.ViewportState? _viewport;
   Timer? _camFlightTimer;
-  static const _camFlightMs = 1400;
+  static const _camFlightMs = 1300;
+  static const _camFlight = mapbox.EasingViewportTransition(
+    curve: Curves.easeInOutCubic,
+    duration: Duration(milliseconds: _camFlightMs),
+  );
   // The cover card's lift glides on this curve.
   static const Curve _camGlideCurve = Curves.easeInOutSine;
 
@@ -1023,8 +1029,10 @@ class DriverNavViewState extends State<DriverNavView>
         _arrowWatchdog?.cancel();
         _arrowHandoffTimer?.cancel();
         _arrowHandoffPending = false;
-        // A flight mid-air has no camera left to land.
+        // A flight mid-air has no camera left to land, and the next map
+        // must not open on its half-flown camera.
         _camFlightTimer?.cancel();
+        _viewport = null;
         if (_camState == _CamState.recentering) {
           _camState = _CamState.following;
         }
@@ -3433,23 +3441,32 @@ class DriverNavViewState extends State<DriverNavView>
     }
     // A chase write still queued would land after take-off and cancel it.
     _pendingCamWrite = null;
-    try {
-      await map.flyTo(
-        mapbox.CameraOptions(
-          center: mapbox.Point(
-              coordinates:
-                  mapbox.Position(to.center.longitude, to.center.latitude)),
-          zoom: to.zoom,
-          bearing: 0,
-          pitch: 0,
-          padding: mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
-        ),
-        mapbox.MapAnimationOptions(duration: _camFlightMs),
-      );
-    } catch (e) {
-      debugPrint('[Nav] overview flight failed: $e');
-      if (mounted && _overview) await _fitRouteOnce();
-    }
+    _flyViewport(mapbox.CameraViewportState(
+      center: mapbox.Point(
+          coordinates: mapbox.Position(to.center.longitude, to.center.latitude)),
+      zoom: to.zoom,
+      bearing: 0,
+      pitch: 0,
+      padding: EdgeInsets.zero,
+    ));
+  }
+
+  /// One eased native animation to [to] (option B). [onLanded] runs when it
+  /// lands — not when a finger or a newer flight cut it short. Either way
+  /// the viewport goes back to idle afterwards.
+  void _flyViewport(mapbox.ViewportState to, {VoidCallback? onLanded}) {
+    if (!mounted) return;
+    setStateWithViewportAnimation(
+      () => _viewport = to,
+      transition: _camFlight,
+      completion: (landed) {
+        if (!mounted) return;
+        if (identical(_viewport, to)) {
+          setState(() => _viewport = const mapbox.IdleViewportState());
+        }
+        if (landed) onLanded?.call();
+      },
+    );
   }
 
   /// Recenter → recentering → following: ONE native flight to the chase
@@ -3460,6 +3477,7 @@ class DriverNavViewState extends State<DriverNavView>
   Future<void> _recenter() async {
     HapticService.lightImpact();
     final seq = _cameraActionGate.begin();
+    _camFlightTimer?.cancel();
     final lat = _renderPos?.latitude ?? _dot.lat;
     final lng = _renderPos?.longitude ?? _dot.lng;
     if (lat == null || lng == null) {
@@ -3483,7 +3501,6 @@ class DriverNavViewState extends State<DriverNavView>
       _settleFollowing();
       return;
     }
-    _camFlightTimer?.cancel();
     setState(() {
       _overview = false;
       _camState = _CamState.recentering;
@@ -3493,29 +3510,7 @@ class DriverNavViewState extends State<DriverNavView>
     _pendingCamWrite = null;
     final aim = _recenterAim(LatLng(lat, lng));
     final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 240;
-    try {
-      await map.flyTo(
-        mapbox.CameraOptions(
-          center: mapbox.Point(
-              coordinates: mapbox.Position(aim.longitude, aim.latitude)),
-          zoom: _chaseZoom,
-          bearing: _dot.bearing,
-          pitch: _pitch,
-          padding: mapbox.MbxEdgeInsets(
-              top: topPad, left: 0, right: 0, bottom: _camBottomPad),
-        ),
-        mapbox.MapAnimationOptions(duration: _camFlightMs),
-      );
-    } catch (e) {
-      debugPrint('[Nav] recenter flight failed: $e');
-      if (mounted && _cameraActionGate.isCurrent(seq)) {
-        _endRecenterBlend(_CamState.following);
-        _snapToChasePose();
-      }
-      return;
-    }
-    if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
-    _camFlightTimer = Timer(const Duration(milliseconds: _camFlightMs), () {
+    void land() {
       if (!mounted ||
           !_cameraActionGate.isCurrent(seq) ||
           _camState != _CamState.recentering) {
@@ -3524,7 +3519,22 @@ class DriverNavViewState extends State<DriverNavView>
       _endRecenterBlend(_CamState.following);
       // Parked, no chase frame comes to settle the exact pose.
       _snapToChasePose();
-    });
+    }
+
+    _flyViewport(
+      mapbox.CameraViewportState(
+        center: mapbox.Point(
+            coordinates: mapbox.Position(aim.longitude, aim.latitude)),
+        zoom: _chaseZoom,
+        bearing: _dot.bearing,
+        pitch: _pitch,
+        padding: EdgeInsets.only(top: topPad, bottom: _camBottomPad),
+      ),
+      onLanded: land,
+    );
+    // If the viewport's report never comes, the chase still takes over.
+    _camFlightTimer =
+        Timer(const Duration(milliseconds: _camFlightMs + 500), land);
   }
 
   /// Where the car will be when a [_camFlightMs] flight lands.
@@ -3630,6 +3640,7 @@ class DriverNavViewState extends State<DriverNavView>
                       if (_mapPointers > 0) _mapPointers--;
                     },
                     child: mapbox.MapWidget(
+                      viewport: _viewport,
                       textureView: true,
                       styleUri: MapboxConfig.styleDark,
                       // The very first native frame is already the chase

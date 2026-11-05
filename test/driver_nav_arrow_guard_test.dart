@@ -155,28 +155,41 @@ void main() {
 
   group('D4/D5: camera buttons', () {
     // Owner 2026-11-05 ("se mueve como relentizado… que se vea fluido y
-    // smooth"): the per-frame blend from Dart stuttered whenever a camera
-    // write lagged. Both ways are now ONE native flight, unhurried (1.1 s
-    // was "sigue muy rápido" on 2026-11-02), and the landing is TIMED — the
-    // plugin's flyTo returns when the flight starts (audit D4), so the chase
-    // stays out until it has landed.
-    test('recenter is one native flight; the chase waits for the landing', () {
+    // smooth"), then option "B" of WdhPHWnrG7n6B8PtP64fkt: both ways are ONE
+    // eased native animation through the map's viewport — zoom out, flatten
+    // and turn north together, easeInOutCubic, 1.3 s. The per-frame blend
+    // from Dart stuttered; a plain easeTo is ease-out only on iOS. The chase
+    // stays out until the viewport reports the landing (audit D4).
+    test('recenter is option B; the chase waits for the landing', () {
       final body = bodyOf(nav, 'Future<void> _recenter() async {', maxLen: 3200);
-      expect(body.contains('map.flyTo('), isTrue);
-      expect(body.contains('duration: _camFlightMs'), isTrue);
+      expect(body.contains('_flyViewport('), isTrue);
+      expect(body.contains('onLanded: land,'), isTrue);
       expect(body, isNot(contains('.getCameraState()')),
           reason: 'that read (up to 0.8 s) held every recenter back');
       expect(body.contains('_camState = _CamState.recentering;'), isTrue,
           reason: 'the per-frame chase writes nothing while recentering — '
-              'nothing cancels the flight');
-      expect(body.contains('Timer(const Duration(milliseconds: _camFlightMs)'),
-          isTrue);
+              'nothing cuts the animation');
       expect(body.contains('!_cameraActionGate.isCurrent(seq)'), isTrue,
           reason: 'a gesture supersedes the sequence and the landing yields');
+      expect(body.contains('Timer(const Duration(milliseconds: _camFlightMs + 500), land)'),
+          isTrue, reason: 'no report from the viewport still lands it');
       expect(body.contains('_recenterAim('), isTrue,
           reason: 'a moving car is met where it will be at the landing');
-      expect(nav.contains('static const _camFlightMs = 1400;'), isTrue);
+      expect(nav.contains('static const _camFlightMs = 1300;'), isTrue);
+      expect(nav.contains('curve: Curves.easeInOutCubic,'), isTrue);
+      expect(nav.contains('mapbox.EasingViewportTransition('), isTrue);
       expect(nav, isNot(contains('_onRecenterTick')));
+    });
+
+    test('after a flight the viewport is idle: the chase owns the camera', () {
+      final fly = bodyOf(nav, 'void _flyViewport(', maxLen: 700);
+      expect(fly.contains('setStateWithViewportAnimation('), isTrue);
+      expect(fly.contains('transition: _camFlight,'), isTrue);
+      expect(fly.contains('_viewport = const mapbox.IdleViewportState()'), isTrue);
+      expect(fly.contains('if (landed) onLanded?.call();'), isTrue);
+      expect(nav.contains('viewport: _viewport,'), isTrue);
+      expect(nav.contains('_viewport = null;'), isTrue,
+          reason: 'a new map surface never opens on a half-flown camera');
     });
 
     test('overview only flips state with a route and a map', () {
@@ -186,18 +199,18 @@ void main() {
       expect(body.contains('unawaited(_recenter());'), isTrue);
     });
 
-    test('INTO the overview: the same native flight as the way back', () {
+    test('INTO the overview: option B, the same as the way back', () {
       final body = bodyOf(nav, 'void _toggleOverview() {', maxLen: 1300);
       expect(body.contains('unawaited(_glideToOverview());'), isTrue);
       expect(body, isNot(contains('unawaited(_fitRouteOnce());')));
       final glide =
           bodyOf(nav, 'Future<void> _glideToOverview() async {', maxLen: 1800);
       expect(glide.contains('FlatMapProjection.fitFlat('), isTrue);
-      expect(glide.contains('map.flyTo('), isTrue);
-      expect(glide.contains('duration: _camFlightMs'), isTrue);
+      expect(glide.contains('_flyViewport(mapbox.CameraViewportState('), isTrue);
+      expect(glide.contains('padding: EdgeInsets.zero,'), isTrue);
       expect(glide.contains('_pendingCamWrite = null;'), isTrue,
-          reason: 'a queued chase write landing after take-off would cancel '
-              'the flight');
+          reason: 'a queued chase write landing after take-off would cut '
+              'the animation');
       expect(nav, isNot(contains('_onOverviewTick')));
     });
 

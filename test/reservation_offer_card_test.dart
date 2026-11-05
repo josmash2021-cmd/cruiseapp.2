@@ -79,6 +79,11 @@ void main() {
         const Color(0xFFE8C547));
     expect(find.textContaining('/h estimado por este viaje'), findsOneWidget);
     expect(find.text('A'), findsNothing, reason: 'no avatar initial');
+    // Verificado and the rating on the name's right, one row.
+    final name = t.getCenter(find.text('Apple C.'));
+    final ver = t.getCenter(find.text('Verificado'));
+    expect(ver.dx, greaterThan(name.dx));
+    expect((ver.dy - name.dy).abs(), lessThan(4));
     final verified = t.widget<Text>(find.text('Verificado'));
     expect(verified.style?.color, const Color(0xFFE8C547));
     final icon = t.widget<Icon>(find.byIcon(Icons.verified_rounded));

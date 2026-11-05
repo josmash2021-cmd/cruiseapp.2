@@ -202,51 +202,58 @@ class ReservationOfferCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: hairline,
           ),
-          // ── Who is riding: no photo ──
+          // ── Who is riding: no photo; Verificado and ★ on the right, as on
+          // the offer card (owner 2026-11-04, "a la derecha como estaba") ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+            child: Row(
               children: [
-                Text(
-                  riderName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
+                Expanded(
+                  child: Text(
+                    riderName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-                if (verified || rating > 0) ...[
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      if (verified) ...[
-                        // Gold, never the blue (owner 2026-11-04).
-                        const Icon(Icons.verified_rounded,
-                            color: _gold, size: 17),
-                        const SizedBox(width: 4),
-                        Text(
-                          s.faceVerified,
-                          style: const TextStyle(color: _gold, fontSize: 14.5),
-                        ),
-                        const SizedBox(width: 12),
-                      ],
-                      if (rating > 0) ...[
-                        Icon(Icons.stars_rounded,
-                            color: Colors.white.withValues(alpha: 0.85),
-                            size: 17),
-                        const SizedBox(width: 4),
-                        Text(
-                          rating.toStringAsFixed(1),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.85),
-                            fontSize: 15,
-                          ),
-                        ),
-                      ],
-                    ],
+                if (verified) ...[
+                  const SizedBox(width: 8),
+                  // Gold, never the blue (owner 2026-11-04).
+                  const Icon(Icons.verified_rounded, color: _gold, size: 15),
+                  const SizedBox(width: 3),
+                  Text(
+                    s.faceVerified,
+                    style: const TextStyle(
+                      color: _gold,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                const SizedBox(width: 10),
+                if (rating <= 0)
+                  Text(
+                    s.newRiderLabel,
+                    style: const TextStyle(
+                      color: _gold,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                else ...[
+                  const Icon(Icons.star_rounded, color: _gold, size: 15),
+                  const SizedBox(width: 3),
+                  Text(
+                    rating.toStringAsFixed(1),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ],

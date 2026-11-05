@@ -82,9 +82,9 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   static const _sheetDetail = 0.44;
 
   /// Height the floating ride card + Reservar take at the bottom: they
-  /// measure 410 (English) to 428 (Spanish, rendered 2026-11-04), + 12
+  /// measure 386 (English) to 404 (Spanish, rendered 2026-11-04), + 12
   /// below them and a little air above.
-  static const double _kDetailCardSpace = 455;
+  static const double _kDetailCardSpace = 430;
   static const _sheetMax = 0.85;
 
   // Unique per instance: this screen can sit on top of (or under) other

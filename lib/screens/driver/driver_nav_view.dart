@@ -486,11 +486,45 @@ class DriverNavViewState extends State<DriverNavView>
   /// the map lifts in step with it; closed, it is 0.
   double get _camBottomPad {
     final mq = MediaQuery.maybeOf(context);
-    if (mq == null || _panelH <= 0) return 0;
+    final cover = math.max(_panelH, _coverH);
+    if (mq == null || cover <= 0) return 0;
     final h = mq.size.height;
     final focus = h / 2 + (mq.padding.top + 240) / 2;
-    final want = h - _panelH - 70;
+    final want = h - cover - 70;
     return math.max(0.0, 2 * (focus - want));
+  }
+
+  // Something drawn over the map from outside the panel — the "Llegaste
+  // temprano" card (owner 2026-11-04: "tampoco debe tapar la ubicación"):
+  // the camera keeps the car and the pickup above it, as for the open
+  // panel. Glides to each new height; parked, no chase frame would move it.
+  double _coverH = 0;
+  double _coverFrom = 0;
+  double _coverTo = 0;
+  Duration? _coverStart;
+  Ticker? _coverTicker;
+  static const _coverGlideMs = 450;
+
+  /// [h] = how much of the bottom of the screen the card covers; 0 = gone.
+  void setCoverHeight(double h) {
+    if (!mounted || (h - _coverTo).abs() < 0.5) return;
+    _coverFrom = _coverH;
+    _coverTo = h;
+    _coverStart = null;
+    _coverTicker ??= createTicker(_onCoverTick);
+    _coverTicker!
+      ..stop()
+      ..start();
+  }
+
+  void _onCoverTick(Duration elapsed) {
+    _coverStart ??= elapsed;
+    final t = ((elapsed - _coverStart!).inMilliseconds / _coverGlideMs)
+        .clamp(0.0, 1.0);
+    _coverH =
+        _coverFrom + (_coverTo - _coverFrom) * _camGlideCurve.transform(t);
+    _snapToChasePose();
+    if (t >= 1.0) _coverTicker?.stop();
   }
 
   /// The camera carries the arrow's bearing exactly, frame for frame: on
@@ -850,6 +884,7 @@ class DriverNavViewState extends State<DriverNavView>
     _arrowHandoffTimer?.cancel();
     _recenterTicker?.dispose();
     _overviewTicker?.dispose();
+    _coverTicker?.dispose();
     _riderTicker?.dispose();
     _camSettleTicker?.dispose();
     _arrowScreenBearing.dispose();

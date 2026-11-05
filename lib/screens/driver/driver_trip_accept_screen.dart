@@ -1983,6 +1983,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         context,
         riderFirstName: widget.riderName.trim().split(' ').first,
         waitStartsAt: pickupAt,
+        // The camera keeps the pickup above the card (owner 2026-11-04,
+        // "tampoco debe tapar la ubicación"); 0 once it closes.
+        onHeight: (h) => _navViewKey.currentState?.setCoverHeight(h),
       ));
     }
   }

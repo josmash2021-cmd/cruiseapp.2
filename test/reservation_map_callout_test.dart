@@ -164,7 +164,9 @@ void main() {
     expect(callouts, contains('onClose: _closeReservationCard,'));
     expect(screen, contains('_reservationCardLayer(),'));
     // The card takes the sheet's place: sheet, GO and side buttons step away.
-    expect(screen, contains('(_pendingOffers.isNotEmpty || _resvCardShown)'));
+    expect(screen,
+        contains('_pendingOffers.isNotEmpty || _resvCardShown || _acceptedOverlay != null;'));
+    expect(screen, contains('offset: _sheetStepsAway ? const Offset(0, 1) : Offset.zero,'));
     expect(screen, contains('hidden: _driverOnline || _resvCardShown'));
     expect(widgets, contains('_panelFrac > 0.04 || _resvCardShown'));
     // Another reservation (or none) never inherits an open card; a trip

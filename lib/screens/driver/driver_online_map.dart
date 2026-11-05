@@ -2382,9 +2382,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // where the annotation was its 160-px bitmap scaled up ~2.4× — the
     // pixelated photo the driver reported.
     if (_isCardAnimating) return false;
-    if (_cameraFollowing && _previewingOffer == null) return true;
+    if (_cameraFollowing && !_cameraFramesRoute) return true;
     return _dotScreenOffset != null;
   }
+
+  /// The camera is framing a route (an offer preview, or "Viaje aceptado"
+  /// showing the whole trip), not following the driver: the arrow is drawn
+  /// at the driver's own pixel, never at the centre of the screen (owner
+  /// 2026-11-05: "la flecha, ¿por qué se movió de su sitio?").
+  bool get _cameraFramesRoute =>
+      _previewingOffer != null || _acceptedOverlay != null;
 
   /// The camera padding shifts where the camera centre actually renders:
   /// Mapbox centres the frame INSIDE the padded viewport, so every overlay
@@ -2422,7 +2429,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final p = _pos;
     final size = _onlineMapSize;
     if (cam == null || p == null || size == null) return null;
-    if (_cameraFollowing && _previewingOffer == null) {
+    if (_cameraFollowing && !_cameraFramesRoute) {
       return Offset(size.width / 2, size.height / 2) + _camPadShift(cam);
     }
     final c = cam.center.coordinates;

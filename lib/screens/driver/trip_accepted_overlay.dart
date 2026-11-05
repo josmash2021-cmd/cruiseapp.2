@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../../widgets/verified_avatar.dart';
@@ -57,9 +59,6 @@ class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFD4AF37);
 
-  late final AnimationController _fadeCtrl;
-  late final Animation<double> _fadeAnim;
-
   // Slide-up animation for the content card
   late final AnimationController _slideCtrl;
   late final Animation<Offset> _slideAnim;
@@ -68,20 +67,13 @@ class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
   @override
   void initState() {
     super.initState();
-    _fadeCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeInOut);
-    _fadeCtrl.forward();
-
-    // Slide-up + fade for the bottom card
+    // A short rise + fade into the centre.
     _slideCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 420),
     );
     _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.3),
+      begin: const Offset(0, 0.06),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
     _slideFadeAnim =
@@ -95,7 +87,6 @@ class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
 
   @override
   void dispose() {
-    _fadeCtrl.dispose();
     _slideCtrl.dispose();
     super.dispose();
   }
@@ -111,207 +102,203 @@ class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
     return '${ApiService.publicBaseUrl}/$raw';
   }
 
+  /// The map behind: blurred and dimmed (owner 2026-11-05: "todo ese
+  /// contenido debe salir en el centro nublando el contenido detrás de
+  /// él") — soft, the whole trip still shows through.
+  static const double _kBlur = 10;
+  static const double _kDim = 0.45;
+
   @override
   Widget build(BuildContext context) {
-    final bottomPad = MediaQuery.of(context).padding.bottom;
     final firstName = widget.riderName.split(' ').first;
 
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Darkening only behind the text (owner 2026-11-02: "se debe ver
-          // la ruta completa"): the top half stays clear, so the whole route
-          // the camera frames above the card reads at a glance.
-          IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.0),
-                    Colors.black.withValues(alpha: 0.62),
-                    Colors.black.withValues(alpha: 0.9),
-                  ],
-                  stops: const [0.48, 0.64, 1.0],
-                ),
-              ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // The blur grows in instead of fading: a BackdropFilter under an
+        // Opacity < 1 does not see the native map (rule 43).
+        IgnorePointer(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+            builder: (_, t, __) => BackdropFilter(
+              filter:
+                  ui.ImageFilter.blur(sigmaX: _kBlur * t, sigmaY: _kBlur * t),
+              child:
+                  ColoredBox(color: Colors.black.withValues(alpha: _kDim * t)),
             ),
           ),
-          // Content — slides up from the bottom.
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: SlideTransition(
-              position: _slideAnim,
-              child: FadeTransition(
-                opacity: _slideFadeAnim,
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomPad),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // ── Gold check circle ──
-                        TweenAnimationBuilder<double>(
-                          tween: Tween(begin: 0.0, end: 1.0),
-                          duration: const Duration(milliseconds: 600),
-                          curve: Curves.elasticOut,
-                          builder: (_, scale, child) =>
-                              Transform.scale(scale: scale, child: child),
-                          child: Container(
-                            width: 72,
-                            height: 72,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _gold.withValues(alpha: 0.15),
-                              border: Border.all(color: _gold, width: 2),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: _gold.withValues(alpha: 0.3),
-                                  blurRadius: 24,
-                                  spreadRadius: 4,
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.check_rounded,
-                              color: _gold,
-                              size: 36,
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // ── Title ──
-                        Text(
-                          S.of(context).tripAcceptedTitle,
-                          style: const TextStyle(
-                            color: _gold,
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        // ── Subtitle ──
-                        Text(
-                          S.of(context).riderIsWaiting(firstName),
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 16,
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        // ── Rider info — no box any more ──
-                        // The card background is gone by request: avatar,
-                        // name and stats sit straight on the dark wash over
-                        // the map, same as the title above them.
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            children: [
-                              // Rider avatar (centered)
-                              VerifiedAvatar(
-                                uid: widget.riderId?.toString(),
-                                role: 'rider',
-                                fallbackName: widget.riderInitials,
-                                photoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl),
-                                isVerified: widget.riderVerified,
-                                radius: 28,
-                              ),
-                              const SizedBox(height: 10),
-                              // Rider name (centered)
-                              Text(
-                                widget.riderName,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 6),
-                              // Rating + ETA + distance (centered, miles)
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  if (widget.riderIsNew)
-                                    Text(
-                                      S.of(context).newRiderLabel,
-                                      style: const TextStyle(
-                                        color: _gold,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    )
-                                  else if (widget.riderRating > 0) ...[
-                                    const Icon(Icons.star_rounded,
-                                        color: _gold, size: 14),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      widget.riderRating.toStringAsFixed(1),
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                  if (widget.riderIsNew || widget.riderRating > 0)
-                                    const SizedBox(width: 12),
-                                  // Hours past 60 min, like the offer card —
-                                  // the ETA is uncapped now (was 1..99).
-                                  Text(
-                                    '${S.of(context).offerDuration(widget.etaMinutes)} · '
-                                    '${(widget.distToPickupKm * 0.621371).toStringAsFixed(1)} mi',
-                                    style: const TextStyle(
-                                      color: Colors.white38,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
+        ),
+        // The content, in the centre of the screen.
+        Center(
+          child: SlideTransition(
+            position: _slideAnim,
+            child: FadeTransition(
+              opacity: _slideFadeAnim,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // ── Gold check circle ──
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0.0, end: 1.0),
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.elasticOut,
+                        builder: (_, scale, child) =>
+                            Transform.scale(scale: scale, child: child),
+                        child: Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _gold.withValues(alpha: 0.15),
+                            border: Border.all(color: _gold, width: 2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _gold.withValues(alpha: 0.3),
+                                blurRadius: 24,
+                                spreadRadius: 4,
                               ),
                             ],
                           ),
-                        ),
-
-                        // No pickup address here (owner 2026-11-02).
-                        const SizedBox(height: 16),
-
-                        // ── Gold progress bar (fills over [duration]) ──
-                        TweenAnimationBuilder<double>(
-                          tween: Tween(begin: 0.0, end: 1.0),
-                          duration: widget.duration,
-                          curve: Curves.easeInOut,
-                          builder: (_, value, __) => ClipRRect(
-                            borderRadius: BorderRadius.circular(2),
-                            child: LinearProgressIndicator(
-                              value: value,
-                              backgroundColor: Colors.white12,
-                              valueColor:
-                                  const AlwaysStoppedAnimation<Color>(_gold),
-                              minHeight: 3,
-                            ),
+                          child: const Icon(
+                            Icons.check_rounded,
+                            color: _gold,
+                            size: 36,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // ── Title ──
+                      Text(
+                        S.of(context).tripAcceptedTitle,
+                        style: const TextStyle(
+                          color: _gold,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      // ── Subtitle ──
+                      Text(
+                        S.of(context).riderIsWaiting(firstName),
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 16,
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // ── Rider info — no box any more ──
+                      // The card background is gone by request: avatar,
+                      // name and stats sit straight on the dark wash over
+                      // the map, same as the title above them.
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            // Rider avatar (centered)
+                            VerifiedAvatar(
+                              uid: widget.riderId?.toString(),
+                              role: 'rider',
+                              fallbackName: widget.riderInitials,
+                              photoUrl:
+                                  _normalizedPhotoUrl(widget.riderPhotoUrl),
+                              isVerified: widget.riderVerified,
+                              radius: 28,
+                            ),
+                            const SizedBox(height: 10),
+                            // Rider name (centered)
+                            Text(
+                              widget.riderName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 6),
+                            // Rating + ETA + distance (centered, miles)
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (widget.riderIsNew)
+                                  Text(
+                                    S.of(context).newRiderLabel,
+                                    style: const TextStyle(
+                                      color: _gold,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  )
+                                else if (widget.riderRating > 0) ...[
+                                  const Icon(Icons.star_rounded,
+                                      color: _gold, size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    widget.riderRating.toStringAsFixed(1),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                                if (widget.riderIsNew || widget.riderRating > 0)
+                                  const SizedBox(width: 12),
+                                // Hours past 60 min, like the offer card —
+                                // the ETA is uncapped now (was 1..99).
+                                Text(
+                                  '${S.of(context).offerDuration(widget.etaMinutes)} · '
+                                  '${(widget.distToPickupKm * 0.621371).toStringAsFixed(1)} mi',
+                                  style: const TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // No pickup address here (owner 2026-11-02).
+                      const SizedBox(height: 16),
+
+                      // ── Gold progress bar (fills over [duration]) ──
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0.0, end: 1.0),
+                        duration: widget.duration,
+                        curve: Curves.easeInOut,
+                        builder: (_, value, __) => ClipRRect(
+                          borderRadius: BorderRadius.circular(2),
+                          child: LinearProgressIndicator(
+                            value: value,
+                            backgroundColor: Colors.white12,
+                            valueColor:
+                                const AlwaysStoppedAnimation<Color>(_gold),
+                            minHeight: 3,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

@@ -63,6 +63,7 @@ import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
 import '../../map/flat_map_projection.dart';
+import '../../map/gradient_route_line.dart';
 import '../../map/camera_action_gate.dart';
 import '../../map/recenter_landing_guard.dart';
 import '../../map/driver_road_lock.dart';
@@ -577,6 +578,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// when the reservation changes or goes.
   bool _resvCardOpen = false;
 
+  /// The online/offline sheet slides away: under an offer, the
+  /// reservation's card, or the "Viaje aceptado" celebration.
+  bool get _sheetStepsAway =>
+      _pendingOffers.isNotEmpty || _resvCardShown || _acceptedOverlay != null;
+
   // ── Marketplace de viajes sin agarrar (user spec 2026-10-02) ──
   // Viajes que ya sonaron a los candidatos y nadie tomó: la píldora arriba
   // del sheet los cuenta, y al tocarla el sheet se transforma en la(s)
@@ -616,8 +622,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // meant every accept briefly held two native Mapbox surfaces alive at
   // once. Non-null while the celebration is on screen.
   _AcceptedOverlayData? _acceptedOverlay;
-  // The faded pickup → stop → destination leg drawn under the celebration.
-  mapbox.PolylineAnnotation? _acceptedTripLine;
+  // The whole trip under the celebration — car → pickup → stop →
+  // destination — as the navigation's gold→white line (owner 2026-11-05,
+  // "la línea con diseño nuevo").
+  final GradientRouteLine _acceptedRouteLine = GradientRouteLine(
+    sourceId: 'accepted-route-src',
+    layerId: 'accepted-route-line',
+    width: 6.5,
+  );
 
   // ── "Viaje cancelado" notice ──
   // Centred, semi-dark, never tappable: the driver is already back to
@@ -2870,18 +2882,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               Positioned.fill(
                 // Away under an offer, and under the reservation's card,
                 // which takes its place (owner 2026-11-05).
+                // ... and under "Viaje aceptado" (owner 2026-11-05: "el sheet
+                // se debe ocultar, no debe verse detrás de esa pantalla").
                 child: AnimatedSlide(
-                  offset: (_pendingOffers.isNotEmpty || _resvCardShown)
-                      ? const Offset(0, 1)
-                      : Offset.zero,
+                  offset: _sheetStepsAway ? const Offset(0, 1) : Offset.zero,
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut,
                   child: AnimatedOpacity(
-                    opacity:
-                        (_pendingOffers.isNotEmpty || _resvCardShown) ? 0.0 : 1.0,
+                    opacity: _sheetStepsAway ? 0.0 : 1.0,
                     duration: const Duration(milliseconds: 300),
                     child: IgnorePointer(
-                      ignoring: _pendingOffers.isNotEmpty || _resvCardShown,
+                      ignoring: _sheetStepsAway,
                       child: Stack(
                         children: [
                           _floatingPanel(

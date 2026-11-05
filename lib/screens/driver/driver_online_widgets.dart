@@ -594,6 +594,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     _pinAnnotMgr = null;
     _carAnnot = null;
     _carAnnotGen = 0;
+    _acceptedRouteLine.forget();
     _goldDotAnnot = null;
     _goldDotAnnotGen = 0;
     _pickupAnnot = null;
@@ -4919,8 +4920,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   /// (owner report 2026-10-31). They fade out as soon as it starts to open
   /// and stop taking taps until it closes again.
   Widget _hideUnderOpenSheet(Widget child) {
-    // The reservation's card takes the sheet's place: they step away too.
-    final hidden = _panelFrac > 0.04 || _resvCardShown;
+    // The reservation's card or "Viaje aceptado" takes the sheet's place:
+    // they step away too.
+    final hidden =
+        _panelFrac > 0.04 || _resvCardShown || _acceptedOverlay != null;
     return IgnorePointer(
       ignoring: hidden,
       child: AnimatedOpacity(

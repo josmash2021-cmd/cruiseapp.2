@@ -4664,32 +4664,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       ...trip,
     ]);
 
-    if (trip.length >= 2) {
-      final geom = safeLineString(trip);
-      final mgr = _polylineAnnotMgr;
-      if (geom != null && mgr != null) {
-        try {
-          _acceptedTripLine = await mgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: geom,
-            lineColor: const Color(0x73E8C547).toARGB32(),
-            lineWidth: 5.5,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-        } catch (e) {
-          debugPrint('[DriverOnline] accepted trip leg failed: $e');
-        }
-      }
-    }
-    if (!mounted || _acceptedOverlay == null || toPickup.length < 2) return;
-    try {
-      // stillWanted overrides the helper's default "a preview is open"
-      // liveness check — the preview was torn down before we got here.
-      await _drawGoldGlossRoute(
-        toPickup,
-        stillWanted: () => _acceptedOverlay != null,
-      );
-    } catch (e) {
-      debugPrint('[DriverOnline] accepted route draw failed: $e');
+    // One line for the whole trip in the navigation's design (owner
+    // 2026-11-05, "la línea con diseño nuevo"): gold at the car, white at
+    // the destination — it used to be a bright gold leg to the pickup over
+    // a faded gold rest of the trip.
+    final whole = <LatLng>[
+      ...toPickup,
+      ...(trip.isNotEmpty && toPickup.isNotEmpty ? trip.skip(1) : trip),
+    ];
+    final map = _map;
+    if (map == null || whole.length < 2) return;
+    if (!mounted || _acceptedOverlay == null) return;
+    await _acceptedRouteLine.set(map, whole);
+    // Gone while it was drawing: take it straight off again.
+    if (!mounted || _acceptedOverlay == null) {
+      unawaited(_acceptedRouteLine.hide(map));
     }
   }
 
@@ -4710,10 +4699,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final cam = await map.cameraForCoordinatesPadding(
         coords,
         mapbox.CameraOptions(pitch: 0, bearing: 0),
+        // The whole trip on screen, soft behind the centred content (owner
+        // 2026-11-05); it used to be squeezed above a bottom card.
         mapbox.MbxEdgeInsets(
-          top: mq.padding.top + 40,
+          top: mq.padding.top + 60,
           left: 48,
-          bottom: 360 + mq.padding.bottom,
+          bottom: 120 + mq.padding.bottom,
           right: 48,
         ),
         null,
@@ -4729,10 +4720,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Take the celebration off screen. Safe to call more than once.
   void _hideAcceptedOverlay() {
-    final line = _acceptedTripLine;
-    _acceptedTripLine = null;
-    if (line != null) {
-      _polylineAnnotMgr?.delete(line).catchError((Object _) {});
+    final map = _map;
+    if (map != null) {
+      unawaited(_acceptedRouteLine.hide(map));
+    } else {
+      _acceptedRouteLine.forget();
     }
     if (_acceptedOverlay == null) return;
     _setState(() => _acceptedOverlay = null);
@@ -4857,6 +4849,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Bump the generation so any in-flight annotation work recognises its
     // handles as dead instead of poking a destroyed native object.
     _mapGeneration++;
+    _acceptedRouteLine.forget();
     _polylineAnnotMgr = null;
     _pointAnnotMgr = null;
     _pinAnnotMgr = null;

@@ -220,7 +220,7 @@ void main() {
       expect(pill, contains('MapChipSurface('));
       expect(pill, isNot(contains('BackdropFilter')));
       final fab = sched.substring(sched.indexOf('Widget _buildRecenterFab'),
-          sched.indexOf('Widget _buildReserveButton'));
+          sched.indexOf('Widget _sheetHandle()'));
       expect(fab, contains('MapChipSurface('));
     });
 

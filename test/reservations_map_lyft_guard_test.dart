@@ -14,7 +14,7 @@ void main() {
 
   test('the card: pickup with day and time, the ride\'s own min · mi, the '
       'rider verified with ★', () {
-    expect(map, contains('Widget _rideCard(Map<String, dynamic> trip, {bool floating = false}) {'));
+    expect(map, contains('Widget _rideCard(Map<String, dynamic> trip) {'));
     expect(map, contains("pickupTitle: at == null ? '' : _whenShort(s, at, isEs),"));
     expect(map, contains("dropTitle: '\$tripMin min · \${tripMi.toStringAsFixed(1)} mi',"));
     expect(map, contains("var tripMin = (trip['duration_minutes'] as num?)?.round();"));

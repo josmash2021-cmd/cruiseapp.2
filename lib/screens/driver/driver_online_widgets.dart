@@ -2013,7 +2013,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       // shadow well below the card, a short contact shadow, and a hairline
       // of light on the top edge give it actual 3-D lift off the map.
       decoration: BoxDecoration(
-        color: neuSurface,
+        // The offer cards' ground (owner 2026-11-04): #0B0B0F at 95 %.
+        color: const Color(0xF20B0B0F),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
         boxShadow: [
@@ -2156,7 +2157,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       badges.add(_OfferBadgeData(
         label: s.badgeReserved,
         icon: Icons.schedule_rounded,
-        color: const Color(0xFF8B5CF6), // purple
+        // Gold, never the purple (owner 2026-11-04).
+        color: const Color(0xFFE8C547),
       ));
       if (isAirportTrip) {
         badges.add(_OfferBadgeData(
@@ -2199,12 +2201,17 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       children: [
         // ── Badges (scheduled / airport / cash) ─────────────────────
         if (badges.isNotEmpty) ...[
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final b in badges) _buildOfferBadge(b),
-            ],
+          // Centred (owner 2026-11-04).
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final b in badges) _buildOfferBadge(b),
+              ],
+            ),
           ),
           const SizedBox(height: 4),
           if (confirmPickupAt != null) ...[
@@ -2297,7 +2304,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       ),
                       const SizedBox(width: 8),
                       _offerMetric(
-                        Icons.straighten_rounded,
+                        Icons.route_rounded,
                         '${(distToPickupMi + tripDistMi).toStringAsFixed(1)} mi',
                       ),
                     ],
@@ -2530,7 +2537,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // single journey; a box each said they were two unrelated rows.
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: neuBox(radius: 16),
+      decoration: BoxDecoration(
+        // The card's own ground with a hairline (owner 2026-11-04: the neu
+        // grey read as a different colour from the card).
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2644,7 +2656,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     const goldAccent = Color(0xFFE8C547);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: neuBox(radius: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -5170,13 +5185,13 @@ class _RecenterFabState extends State<_RecenterFab>
 
 /// Render a compact pill-shaped badge used on the driver offer card.
 /// The color controls both the border and the translucent fill.
+// The outline only — no filled box (owner 2026-11-04).
 Widget _buildOfferBadge(_OfferBadgeData b) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
     decoration: BoxDecoration(
-      color: b.color.withValues(alpha: 0.15),
       borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: b.color.withValues(alpha: 0.4)),
+      border: Border.all(color: b.color, width: 1.2),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,

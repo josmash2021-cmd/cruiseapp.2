@@ -13,12 +13,32 @@ const _kGold = Color(0xFFE8C547);
 const _kWeekEs = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
 const _kWeekEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const _kMonEs = [
-  'ene', 'feb', 'mar', 'abr', 'may', 'jun',
-  'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
 ];
 const _kMonEn = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 /// "Reserve this ride?" (owner 2026-11-03, Lyft's confirm card, identical
@@ -122,8 +142,8 @@ class ReserveConfirmCard extends StatelessWidget {
                   color: const Color(0xE61E1E26),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
-                    side: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.12)),
+                    side:
+                        BorderSide(color: Colors.white.withValues(alpha: 0.12)),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(22, 26, 22, 20),
@@ -131,11 +151,15 @@ class ReserveConfirmCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(s.resvConfirmTitle,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 25,
-                                fontWeight: FontWeight.w800)),
+                        // Clear of the X in the corner.
+                        Padding(
+                          padding: const EdgeInsets.only(right: 44),
+                          child: Text(s.resvConfirmTitle,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.w800)),
+                        ),
                         if (at != null) ...[
                           const SizedBox(height: 8),
                           Text(s.resvConfirmBody(_when(at, isEs)),
@@ -182,53 +206,59 @@ class ReserveConfirmCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 22),
-                        GestureDetector(
-                          key: const ValueKey('reserve-confirm-ok'),
-                          onTap: () {
-                            HapticService.mediumImpact();
-                            close(true);
-                          },
-                          child: Container(
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: _kGold,
-                              borderRadius: BorderRadius.circular(999),
+                        // Narrower than the card, as in the reference.
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Column(children: [
+                            GestureDetector(
+                              key: const ValueKey('reserve-confirm-ok'),
+                              onTap: () {
+                                HapticService.mediumImpact();
+                                close(true);
+                              },
+                              child: Container(
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: _kGold,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(s.resvReserve,
+                                    style: const TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800)),
+                              ),
                             ),
-                            alignment: Alignment.center,
-                            child: Text(s.resvReserve,
-                                style: const TextStyle(
-                                    color: Colors.black,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800)),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        GestureDetector(
-                          key: const ValueKey('reserve-confirm-policy'),
-                          onTap: onViewPolicy,
-                          child: Container(
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(999),
+                            const SizedBox(height: 10),
+                            GestureDetector(
+                              key: const ValueKey('reserve-confirm-policy'),
+                              onTap: onViewPolicy,
+                              child: Container(
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(s.resvViewPolicy,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700)),
+                              ),
                             ),
-                            alignment: Alignment.center,
-                            child: Text(s.resvViewPolicy,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w700)),
-                          ),
+                          ]),
                         ),
                       ],
                     ),
                   ),
                 ),
-                // The X sits on the card's top-right corner, as in the
-                // reference.
+                // The X inside the card's top-right corner, level with the
+                // title, as in the reference (owner 2026-11-04).
                 Positioned(
-                  top: -14,
-                  right: -6,
+                  top: 18,
+                  right: 16,
                   child: GestureDetector(
                     key: const ValueKey('reserve-confirm-close'),
                     onTap: close,

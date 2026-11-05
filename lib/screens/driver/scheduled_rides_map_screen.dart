@@ -35,6 +35,7 @@ import '../../widgets/glass_notification_banner.dart';
 import 'driver_rest_gate_mixin.dart';
 import 'my_reservations_page.dart';
 import 'reservation_detail_page.dart' show showReservationPolicy;
+import 'reservation_offer_card.dart';
 import 'reserve_confirm_sheet.dart';
 import '../../utils/name_helper.dart' as nh;
 import '../../utils/offer_metrics.dart';
@@ -80,8 +81,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   // bottom ~44% and the route owns the rest of the map.
   static const _sheetDetail = 0.44;
 
-  /// Height the floating ride card + Reservar take at the bottom.
-  static const double _kDetailCardSpace = 390;
+  /// Height the floating ride card + Reservar take at the bottom: the offer
+  /// card with Reservar measures 458 (rendered 2026-11-04), + 12 below it
+  /// and a little air above.
+  static const double _kDetailCardSpace = 490;
   static const _sheetMax = 0.85;
 
   // Unique per instance: this screen can sit on top of (or under) other
@@ -1450,9 +1453,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
           ),
 
           // ── The selected ride, floating above Reservar ──
+          // The offer card's side inset: card and Reservar equally wide.
           Positioned(
-            left: 12,
-            right: 12,
+            left: 20,
+            right: 20,
             bottom: media.padding.bottom + 12,
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 280),
@@ -1612,44 +1616,6 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   /// The one CTA of detail mode. Gold, full width — and a child of the
   /// sheet, right below the card. It never floats over the map.
-  Widget _buildReserveButton(S s, Map<String, dynamic> trip) {
-    final tripId = trip['id'] as int? ?? 0;
-    final claiming = _claimingId == tripId;
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton(
-        onPressed: claiming
-            ? null
-            : driverIsResting
-                ? showDriverRestRemaining
-                : () => _confirmReserve(trip),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: driverIsResting ? const Color(0xFF6B6B70) : _gold,
-          foregroundColor: driverIsResting ? Colors.white : Colors.black,
-          disabledBackgroundColor: _gold.withValues(alpha: 0.4),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-          elevation: 8,
-          shadowColor: Colors.black.withValues(alpha: 0.5),
-        ),
-        child: claiming
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2.5, color: Colors.black87),
-              )
-            : Text(
-                driverIsResting ? driverRestLabel : s.resvReserve,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w800, fontSize: 18),
-              ),
-      ),
-    );
-  }
-
   // ─────────────────────────────────────────────
   //  Sheet contents
   // ─────────────────────────────────────────────
@@ -1681,15 +1647,32 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     await _claimTrip(tripId);
   }
 
-  /// The selected ride, floating like an offer card above Reservar (owner
-  /// 2026-11-03, Lyft): the full route on the map behind it.
+  /// The selected ride as the trip offer card, with Reservar under it as
+  /// wide as the card (owner 2026-11-04: "la tarjeta tal cual como la
+  /// tarjeta de oferta y botón de reserve mismo ancho que la tarjeta"): the
+  /// full route on the map behind it. Reservar asks first (_confirmReserve).
   Widget _buildFloatingDetail(S s, Map<String, dynamic> trip) {
+    final at = _parseScheduledAt(trip);
+    final isEs = Localizations.localeOf(context).languageCode == 'es';
+    final tripId = trip['id'] as int? ?? 0;
     return Column(
       key: ValueKey('sched-detail-${trip['id']}'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        _rideCard(trip, floating: true),
-        _buildReserveButton(s, trip),
+        ReservationOfferCard(
+          trip: trip,
+          whenLabel: at == null ? '' : _whenShort(s, at, isEs),
+          driverPos: _driverPos,
+        ),
+        const SizedBox(height: 8),
+        ReserveOfferButton(
+          label: driverIsResting ? driverRestLabel : s.resvReserve,
+          busy: _claimingId == tripId,
+          resting: driverIsResting,
+          onTap: driverIsResting
+              ? showDriverRestRemaining
+              : () => _confirmReserve(trip),
+        ),
       ],
     );
   }
@@ -1855,11 +1838,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     return '$day · $time';
   }
 
-  /// A ride as Lyft's scheduled-ride card (owner 2026-11-03): the pay; the
-  /// pickup with its day and time; the drop-off with the ride's own minutes
-  /// and miles; the rider ("Nombre I.", verified, ★). [floating] = the
-  /// selected ride over the map, solid like an offer card.
-  Widget _rideCard(Map<String, dynamic> trip, {bool floating = false}) {
+  /// A ride in the list, as Lyft's scheduled-ride card (owner 2026-11-03):
+  /// the pay; the pickup with its day and time; the drop-off with the
+  /// ride's own minutes and miles; the rider ("Nombre I.", verified, ★).
+  /// The selected one floats as the offer card (ReservationOfferCard).
+  Widget _rideCard(Map<String, dynamic> trip) {
     final s = S.of(context);
     final isEs = Localizations.localeOf(context).languageCode == 'es';
     final fare = (trip['fare'] as num?)?.toDouble() ?? 0;
@@ -1896,25 +1879,13 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         Container(height: 1, color: Colors.white.withValues(alpha: 0.08));
 
     return Container(
-      margin: EdgeInsets.only(bottom: floating ? 12 : 14),
-      decoration: floating
-          ? BoxDecoration(
-              color: const Color(0xF20B0B0F),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-              boxShadow: const [
-                BoxShadow(
-                    color: Color(0x88000000),
-                    blurRadius: 18,
-                    offset: Offset(0, 6)),
-              ],
-            )
-          // A lift of the sheet's own glass (2026-10-31) — an opaque card
-          // on a frosted sheet reads as a grey slab again.
-          : glassInnerBox(
-              radius: 20,
-              borderColor: isAirport ? _airport.withValues(alpha: 0.25) : null,
-            ),
+      margin: const EdgeInsets.only(bottom: 14),
+      // A lift of the sheet's own glass (2026-10-31) — an opaque card on a
+      // frosted sheet reads as a grey slab again.
+      decoration: glassInnerBox(
+        radius: 20,
+        borderColor: isAirport ? _airport.withValues(alpha: 0.25) : null,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -2007,13 +1978,14 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
                   Row(
                     children: [
                       if (verified) ...[
+                        // Gold, never the blue (owner 2026-11-04).
                         const Icon(Icons.verified_rounded,
-                            color: Color(0xFF60A5FA), size: 17),
+                            color: _gold, size: 17),
                         const SizedBox(width: 4),
                         Text(
                           s.faceVerified,
                           style: const TextStyle(
-                            color: Color(0xFF60A5FA),
+                            color: _gold,
                             fontSize: 14.5,
                           ),
                         ),

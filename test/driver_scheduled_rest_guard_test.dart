@@ -27,7 +27,12 @@ void main() {
       test('keeps cards visible but swaps accept for the grey timer', () {
         expect(screen, contains('driverIsResting'));
         expect(screen, contains('driverRestLabel'));
-        expect(screen, contains('const Color(0xFF6B6B70)'));
+        // The grey lives in the offer-style Reservar (2026-11-04).
+        expect(screen, contains('resting: driverIsResting,'));
+        expect(
+            File('lib/screens/driver/reservation_offer_card.dart')
+                .readAsStringSync(),
+            contains('const Color(0xFF6B6B70)'));
         expect(screen, contains('showDriverRestRemaining'));
       });
 

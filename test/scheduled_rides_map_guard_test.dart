@@ -53,9 +53,10 @@ void main() {
     test('reserve sits right below the floating card', () {
       final start = screen.indexOf('Widget _buildFloatingDetail(');
       expect(start, greaterThan(-1));
-      final block = screen.substring(start, start + 600);
-      final cardIdx = block.indexOf('_rideCard(trip, floating: true)');
-      final reserveIdx = block.indexOf('_buildReserveButton(s, trip)');
+      final block = screen.substring(start, start + 1400);
+      // The offer card and its Reservar (owner 2026-11-04).
+      final cardIdx = block.indexOf('ReservationOfferCard(');
+      final reserveIdx = block.indexOf('ReserveOfferButton(');
       expect(cardIdx, greaterThan(-1));
       expect(reserveIdx, greaterThan(cardIdx),
           reason: 'Reservar builds right after the card, below it.');

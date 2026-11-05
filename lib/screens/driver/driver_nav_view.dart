@@ -372,27 +372,19 @@ class DriverNavViewState extends State<DriverNavView>
   int _mapPointers = 0;
   mapbox.CameraOptions? _pendingCamWrite;
   bool _camWriteBusy = false;
-  // Audit D4: recenter is a per-frame blend from the pose the camera had
-  // to the live chase pose (~600 ms, eased), on its own ticker so a parked
-  // car blends too, cancelled by any gesture through the action gate.
-  Ticker? _recenterTicker;
-  mapbox.CameraState? _recenterFrom;
-  Duration? _recenterStartedAt;
-  int _recenterSeq = -1;
-  // The glide INTO the route overview: from the chase pose to a flat,
-  // north-up frame of the whole route.
-  Ticker? _overviewTicker;
-  mapbox.CameraState? _overviewFrom;
-  ({LatLng center, double zoom})? _overviewTo;
-  Duration? _overviewStartedAt;
-  int _overviewSeq = -1;
-  // The route overview and the way back to the chase glide the same,
-  // frame by frame (owner 2026-11-02: "debe de moverse de forma smooth y no
-  // tan de golpe, al igual cuando regresa a la vista chase" — and then, at
-  // 1.1 s easeInOutCubic, "sigue muy rápido"): 1.6 s on a sine ease, whose
-  // middle runs at about half the cubic's peak speed. It was 0.6 s back and
-  // a native 0.9 s flyTo out.
-  static const _recenterBlendMs = 1600;
+  // The route overview and the way back to the chase are ONE native flight
+  // each (owner 2026-11-05: "se mueve como relentizado… no busco que sea
+  // rápido sino que se vea fluido y smooth"): the map animates it in its own
+  // render loop. The 1.6 s per-frame blend from Dart that it replaces
+  // stuttered whenever a camera write lagged behind the frame, and read as
+  // slow motion. The plugin's flyTo returns when the flight STARTS (audit
+  // D4), so the landing is timed here: the chase stays out (camState
+  // recentering) until the flight is down, and a gesture supersedes it
+  // through the action gate. Unhurried on purpose (owner 2026-11-02: 1.1 s
+  // "sigue muy rápido"); flyTo eases in and out.
+  Timer? _camFlightTimer;
+  static const _camFlightMs = 1400;
+  // The cover card's lift glides on this curve.
   static const Curve _camGlideCurve = Curves.easeInOutSine;
 
   // Dynamic chase zoom: 16.8 at city pace, 16.3 past 20 m/s, 17.3 with a
@@ -497,14 +489,39 @@ class DriverNavViewState extends State<DriverNavView>
   /// would come within ~70 px of the arrow, the focus rises by exactly that
   /// much. It follows the panel's height, which glides frame by frame, so
   /// the map lifts in step with it; closed, it is 0.
+  ///
+  /// Capped (owner 2026-11-05: "cuando se abre y se cierra varias veces el
+  /// mapa pierde la flecha"): the whole trip covers the screen, and the lift
+  /// used to follow it all the way up — the focus, and the arrow drawn at
+  /// it, went off the top of the screen, and the padding grew past the
+  /// map's own height. The arrow now rises no higher than just under the
+  /// turn box.
   double get _camBottomPad {
     final mq = MediaQuery.maybeOf(context);
     final cover = math.max(_panelH, _coverH);
     if (mq == null || cover <= 0) return 0;
     final h = mq.size.height;
-    final focus = h / 2 + (mq.padding.top + 240) / 2;
+    final topPad = mq.padding.top + 240;
+    final focus = h / 2 + topPad / 2;
     final want = h - cover - 70;
-    return math.max(0.0, 2 * (focus - want));
+    final cap = math.min(2 * (focus - (mq.padding.top + 190)), h - topPad - 40);
+    return (2 * (focus - want)).clamp(0.0, math.max(0.0, cap)).toDouble();
+  }
+
+  /// The lift as last applied — what the arrow overlay listens to, so a
+  /// moving panel rebuilds only the arrow, not the whole navigation.
+  final ValueNotifier<double> _camLift = ValueNotifier<double>(0);
+
+  /// The panel or the cover card changed height: a new lift goes to the
+  /// arrow, and — parked, with no chase frame coming — to the camera too.
+  void _onLiftChanged() {
+    final lift = _camBottomPad;
+    if ((lift - _camLift.value).abs() < 0.5) return;
+    _camLift.value = lift;
+    if (DateTime.now().difference(_lastChaseFrameAt) >
+        const Duration(milliseconds: 250)) {
+      _snapToChasePose();
+    }
   }
 
   // Something drawn over the map from outside the panel — the "Llegaste
@@ -536,6 +553,7 @@ class DriverNavViewState extends State<DriverNavView>
         .clamp(0.0, 1.0);
     _coverH =
         _coverFrom + (_coverTo - _coverFrom) * _camGlideCurve.transform(t);
+    _camLift.value = _camBottomPad;
     _snapToChasePose();
     if (t >= 1.0) _coverTicker?.stop();
   }
@@ -895,8 +913,8 @@ class DriverNavViewState extends State<DriverNavView>
     _drawOnTimer?.cancel();
     _arrowWatchdog?.cancel();
     _arrowHandoffTimer?.cancel();
-    _recenterTicker?.dispose();
-    _overviewTicker?.dispose();
+    _camFlightTimer?.cancel();
+    _camLift.dispose();
     _coverTicker?.dispose();
     _riderTicker?.dispose();
     _camSettleTicker?.dispose();
@@ -1005,11 +1023,8 @@ class DriverNavViewState extends State<DriverNavView>
         _arrowWatchdog?.cancel();
         _arrowHandoffTimer?.cancel();
         _arrowHandoffPending = false;
-        // A recenter blend mid-flight has no camera left to blend.
-        _recenterTicker?.stop();
-        _stopOverviewGlide();
-        _recenterFrom = null;
-        _recenterStartedAt = null;
+        // A flight mid-air has no camera left to land.
+        _camFlightTimer?.cancel();
         if (_camState == _CamState.recentering) {
           _camState = _CamState.following;
         }
@@ -3380,10 +3395,8 @@ class DriverNavViewState extends State<DriverNavView>
           'map=${_map != null}');
       return;
     }
-    // A recenter blend in flight yields to the fit.
-    _recenterTicker?.stop();
-    _recenterFrom = null;
-    _recenterStartedAt = null;
+    // A recenter in flight yields to the fit.
+    _camFlightTimer?.cancel();
     setState(() {
       _overview = true;
       _camState = _CamState.freeLook;
@@ -3393,10 +3406,10 @@ class DriverNavViewState extends State<DriverNavView>
     unawaited(_glideToOverview());
   }
 
-  /// Into the route overview the same way [_recenter] comes back out: the
-  /// camera blended frame by frame from the pose it has to a flat,
-  /// north-up frame of the whole route (worked out by our own Mercator,
-  /// flown with ZERO map padding), over [_recenterBlendMs] eased.
+  /// Into the route overview: ONE native flight to a flat, north-up frame of
+  /// the whole route (worked out by our own Mercator, flown with ZERO map
+  /// padding). Nothing else writes the camera in the overview, so nothing
+  /// cuts the flight short; a drag simply takes over from it.
   Future<void> _glideToOverview() async {
     final map = _map;
     if (kIsWeb || map == null) {
@@ -3418,88 +3431,32 @@ class DriverNavViewState extends State<DriverNavView>
       await _fitRouteOnce();
       return;
     }
-    final seq = _cameraActionGate.begin();
-    mapbox.CameraState? from;
+    // A chase write still queued would land after take-off and cancel it.
+    _pendingCamWrite = null;
     try {
-      from = await map
-          .getCameraState()
-          .timeout(const Duration(milliseconds: 800));
+      await map.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+              coordinates:
+                  mapbox.Position(to.center.longitude, to.center.latitude)),
+          zoom: to.zoom,
+          bearing: 0,
+          pitch: 0,
+          padding: mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
+        ),
+        mapbox.MapAnimationOptions(duration: _camFlightMs),
+      );
     } catch (e) {
-      debugPrint('[Nav] overview: camera state unavailable: $e');
+      debugPrint('[Nav] overview flight failed: $e');
+      if (mounted && _overview) await _fitRouteOnce();
     }
-    if (!mounted || !_overview || !_cameraActionGate.isCurrent(seq)) return;
-    if (from == null) {
-      await _fitRouteOnce();
-      return;
-    }
-    _overviewTicker ??= createTicker(_onOverviewTick);
-    _overviewTicker!.stop();
-    _overviewFrom = from;
-    _overviewTo = to;
-    _overviewStartedAt = null;
-    _overviewSeq = seq;
-    _overviewTicker!.start();
   }
 
-  void _stopOverviewGlide() {
-    _overviewTicker?.stop();
-    _overviewFrom = null;
-    _overviewTo = null;
-    _overviewStartedAt = null;
-  }
-
-  /// One frame of the glide into the overview — the mirror of
-  /// [_onRecenterTick]: same length, same curve, shortest way round to
-  /// north, the tilt easing flat and the chase padding easing to none.
-  void _onOverviewTick(Duration elapsed) {
-    final from = _overviewFrom;
-    final to = _overviewTo;
-    if (!mounted ||
-        from == null ||
-        to == null ||
-        !_mapMounted ||
-        !_overview ||
-        !_cameraActionGate.isCurrent(_overviewSeq)) {
-      // Back to the chase, a gesture or a revoke took the camera: yield.
-      _stopOverviewGlide();
-      return;
-    }
-    _overviewStartedAt ??= elapsed;
-    final t =
-        ((elapsed - _overviewStartedAt!).inMilliseconds / _recenterBlendMs)
-            .clamp(0.0, 1.0);
-    final e = _camGlideCurve.transform(t);
-    double lerp(double a, double b) => a + (b - a) * e;
-    final fc = from.center.coordinates;
-    var dBrg = (0 - from.bearing) % 360;
-    if (dBrg > 180) dBrg -= 360;
-    final fp = from.padding;
-    _writeCamera(mapbox.CameraOptions(
-      center: mapbox.Point(
-          coordinates: mapbox.Position(
-              lerp(fc.lng.toDouble(), to.center.longitude),
-              lerp(fc.lat.toDouble(), to.center.latitude))),
-      zoom: lerp(from.zoom, to.zoom),
-      bearing: (from.bearing + dBrg * e) % 360,
-      pitch: lerp(from.pitch, 0),
-      padding: mapbox.MbxEdgeInsets(
-        top: lerp(fp.top, 0),
-        left: lerp(fp.left, 0),
-        right: lerp(fp.right, 0),
-        bottom: lerp(fp.bottom, 0),
-      ),
-    ));
-    if (t >= 1.0) _stopOverviewGlide();
-  }
-
-  /// Recenter → recentering → following. Audit D4: NOT a flyTo. The
-  /// plugin's flyTo returns the moment the native animation STARTS, so
-  /// "await it, then follow" let the very next chase frame's setCamera
-  /// cancel the flight — the smooth recenter was a cut by construction.
-  /// Now the camera is blended per frame from the pose it had toward the
-  /// LIVE chase pose over [_recenterBlendMs] (eased), on its own ticker so
-  /// a parked car blends too; any gesture supersedes the action-gate
-  /// sequence and the blend yields to freeLook mid-flight.
+  /// Recenter → recentering → following: ONE native flight to the chase
+  /// pose where the car will be when it lands (a moving car is aimed ahead
+  /// along its heading, onto the route; a parked one exactly where it is),
+  /// then the chase takes over. No camera read first: that round trip (up to
+  /// 0.8 s) held every recenter back before it moved.
   Future<void> _recenter() async {
     HapticService.lightImpact();
     final seq = _cameraActionGate.begin();
@@ -3516,7 +3473,7 @@ class DriverNavViewState extends State<DriverNavView>
         zoom: _chaseZoom,
         bearing: _dot.bearing,
         pitch: _pitch,
-        durationMs: _recenterBlendMs,
+        durationMs: _camFlightMs,
       );
       _settleFollowing();
       return;
@@ -3526,33 +3483,63 @@ class DriverNavViewState extends State<DriverNavView>
       _settleFollowing();
       return;
     }
-    mapbox.CameraState? from;
-    try {
-      from = await map
-          .getCameraState()
-          .timeout(const Duration(milliseconds: 800));
-    } catch (e) {
-      debugPrint('[Nav] recenter: camera state unavailable: $e');
-    }
-    if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
-    if (from == null) {
-      // No pose to blend from — one explicit chase write, then follow.
-      _settleFollowing();
-      _snapToChasePose();
-      return;
-    }
-    _recenterTicker ??= createTicker(_onRecenterTick);
-    _recenterTicker!.stop();
-    _recenterFrom = from;
-    _recenterStartedAt = null;
-    _recenterSeq = seq;
+    _camFlightTimer?.cancel();
     setState(() {
       _overview = false;
       _camState = _CamState.recentering;
     });
     unawaited(_syncSignsShown());
     _syncArrowOwner();
-    _recenterTicker!.start();
+    _pendingCamWrite = null;
+    final aim = _recenterAim(LatLng(lat, lng));
+    final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 240;
+    try {
+      await map.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+              coordinates: mapbox.Position(aim.longitude, aim.latitude)),
+          zoom: _chaseZoom,
+          bearing: _dot.bearing,
+          pitch: _pitch,
+          padding: mapbox.MbxEdgeInsets(
+              top: topPad, left: 0, right: 0, bottom: _camBottomPad),
+        ),
+        mapbox.MapAnimationOptions(duration: _camFlightMs),
+      );
+    } catch (e) {
+      debugPrint('[Nav] recenter flight failed: $e');
+      if (mounted && _cameraActionGate.isCurrent(seq)) {
+        _endRecenterBlend(_CamState.following);
+        _snapToChasePose();
+      }
+      return;
+    }
+    if (!mounted || !_cameraActionGate.isCurrent(seq)) return;
+    _camFlightTimer = Timer(const Duration(milliseconds: _camFlightMs), () {
+      if (!mounted ||
+          !_cameraActionGate.isCurrent(seq) ||
+          _camState != _CamState.recentering) {
+        return;
+      }
+      _endRecenterBlend(_CamState.following);
+      // Parked, no chase frame comes to settle the exact pose.
+      _snapToChasePose();
+    });
+  }
+
+  /// Where the car will be when a [_camFlightMs] flight lands.
+  LatLng _recenterAim(LatLng here) {
+    final v = _dot.speedMps;
+    if (!v.isFinite || v < 1.5) return here;
+    final lead = math.min(v, 40.0) * _camFlightMs / 1000;
+    final b = _dot.bearing * math.pi / 180;
+    final cosLat = math.cos(here.latitude * math.pi / 180);
+    if (cosLat.abs() < 1e-6) return here;
+    final ahead = LatLng(
+      here.latitude + lead * math.cos(b) / 110540.0,
+      here.longitude + lead * math.sin(b) / (111320.0 * cosLat),
+    );
+    return _snapToNavRoute(ahead) ?? ahead;
   }
 
   /// following, overview off, arrow owner synced — the common landing.
@@ -3583,63 +3570,8 @@ class DriverNavViewState extends State<DriverNavView>
     }
   }
 
-  /// One frame of the recenter blend: eased lerp from [_recenterFrom] to the
-  /// chase pose evaluated NOW (the car keeps moving during the blend), so
-  /// the landing frame is exactly what the next chase frame would write —
-  /// no cut on either end.
-  void _onRecenterTick(Duration elapsed) {
-    if (!mounted) {
-      _recenterTicker?.stop();
-      return;
-    }
-    final from = _recenterFrom;
-    if (from == null ||
-        !_mapMounted ||
-        _camState != _CamState.recentering ||
-        !_cameraActionGate.isCurrent(_recenterSeq)) {
-      // A gesture (or a revoke) took the camera mid-blend: yield.
-      _endRecenterBlend(_CamState.freeLook);
-      return;
-    }
-    final lat = _renderPos?.latitude ?? _dot.lat;
-    final lng = _renderPos?.longitude ?? _dot.lng;
-    if (lat == null || lng == null) {
-      _endRecenterBlend(_CamState.following);
-      return;
-    }
-    _recenterStartedAt ??= elapsed;
-    final t =
-        ((elapsed - _recenterStartedAt!).inMilliseconds / _recenterBlendMs)
-            .clamp(0.0, 1.0);
-    final e = _camGlideCurve.transform(t);
-    double lerp(double a, double b) => a + (b - a) * e;
-    final fc = from.center.coordinates;
-    var dBrg = (_dot.bearing - from.bearing) % 360;
-    if (dBrg > 180) dBrg -= 360;
-    final bearing = (from.bearing + dBrg * e) % 360;
-    final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 240;
-    final fp = from.padding;
-    _writeCamera(mapbox.CameraOptions(
-      center: mapbox.Point(
-          coordinates: mapbox.Position(
-              lerp(fc.lng.toDouble(), lng), lerp(fc.lat.toDouble(), lat))),
-      zoom: lerp(from.zoom, _chaseZoom),
-      bearing: bearing,
-      pitch: lerp(from.pitch, _pitch),
-      padding: mapbox.MbxEdgeInsets(
-        top: lerp(fp.top, topPad),
-        left: lerp(fp.left, 0),
-        right: lerp(fp.right, 0),
-        bottom: lerp(fp.bottom, _camBottomPad),
-      ),
-    ));
-    if (t >= 1.0) _endRecenterBlend(_CamState.following);
-  }
-
   void _endRecenterBlend(_CamState to) {
-    _recenterTicker?.stop();
-    _recenterFrom = null;
-    _recenterStartedAt = null;
+    _camFlightTimer?.cancel();
     if (!mounted) return;
     if (_camState == _CamState.recentering) {
       setState(() => _camState = to);
@@ -3659,7 +3591,7 @@ class DriverNavViewState extends State<DriverNavView>
     _cameraActionGate.begin();
     if (_overview) return;
     if (_camState == _CamState.recentering) {
-      // The blend yields to the finger (audit D4).
+      // The flight yields to the finger (audit D4).
       _endRecenterBlend(_CamState.freeLook);
       return;
     }
@@ -3787,35 +3719,39 @@ class DriverNavViewState extends State<DriverNavView>
                   // the screen centre.
                   final topPad =
                       (MediaQuery.maybeOf(ctx)?.padding.top ?? 0) + 240;
-                  final focusY =
-                      c.maxHeight / 2 + topPad / 2 - _camBottomPad / 2;
-                  return Stack(
-                    children: [
-                      Positioned(
-                        left: c.maxWidth / 2 - sz / 2,
-                        top: focusY - sz / 2,
-                        child: Transform(
-                          alignment: Alignment.center,
-                          // Laid on the ground like the native arrow
-                          // (icon-pitch-alignment 'map'): foreshortened by
-                          // the chase tilt, with a touch of perspective.
-                          transform: Matrix4.identity()
-                            ..setEntry(3, 2, 0.0015)
-                            ..rotateX(_pitch * math.pi / 180),
-                          // Heading-up chase: the camera carries the arrow's
-                          // bearing, so on screen the arrow always points up.
-                          // Heading-up chase with a damped map: the arrow
-                          // shows what the camera has not turned yet.
-                          child: ValueListenableBuilder<double>(
-                            valueListenable: _arrowScreenBearing,
-                            builder: (_, rel, __) => GoldLocationDotOverlay(
-                              bearing: rel,
-                              size: sz,
+                  return ValueListenableBuilder<double>(
+                    valueListenable: _camLift,
+                    builder: (_, lift, __) {
+                      final focusY = c.maxHeight / 2 + topPad / 2 - lift / 2;
+                      return Stack(
+                        children: [
+                          Positioned(
+                            left: c.maxWidth / 2 - sz / 2,
+                            top: focusY - sz / 2,
+                            child: Transform(
+                              alignment: Alignment.center,
+                              // Laid on the ground like the native arrow
+                              // (icon-pitch-alignment 'map'): foreshortened by
+                              // the chase tilt, with a touch of perspective.
+                              transform: Matrix4.identity()
+                                ..setEntry(3, 2, 0.0015)
+                                ..rotateX(_pitch * math.pi / 180),
+                              // Heading-up chase: the camera carries the arrow's
+                              // bearing, so on screen the arrow always points up.
+                              // Heading-up chase with a damped map: the arrow
+                              // shows what the camera has not turned yet.
+                              child: ValueListenableBuilder<double>(
+                                valueListenable: _arrowScreenBearing,
+                                builder: (_, rel, __) => GoldLocationDotOverlay(
+                                  bearing: rel,
+                                  size: sz,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                    ],
+                        ],
+                      );
+                    },
                   );
                 },
               ),
@@ -3986,9 +3922,13 @@ class DriverNavViewState extends State<DriverNavView>
             onToggleReceiving: widget.onToggleReceiving,
             onToggleLastTrip: widget.onToggleLastTrip,
             onNoShow: widget.onNoShow,
+            // Every frame of a moving panel: only the arrow overlay
+            // listens (_camLift), not the whole navigation (owner
+            // 2026-11-05: "al deslizarse hacia arriba a veces cuesta").
             onHeightChanged: (h) {
               if (!mounted || (h - _panelH).abs() < 0.5) return;
-              setState(() => _panelH = h);
+              _panelH = h;
+              _onLiftChanged();
             },
             onRestHeightChanged: (h) {
               if (!mounted || (h - _panelRestH).abs() < 0.5) return;

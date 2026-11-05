@@ -93,7 +93,7 @@ void main() {
       expect(created.contains('_startArrowWatchdog();'), isTrue);
       final dispose = bodyOf(nav, 'void dispose() {', maxLen: 900);
       expect(dispose.contains('_arrowWatchdog?.cancel();'), isTrue);
-      expect(dispose.contains('_recenterTicker?.dispose();'), isTrue);
+      expect(dispose.contains('_camFlightTimer?.cancel();'), isTrue);
     });
   });
 
@@ -154,23 +154,29 @@ void main() {
   });
 
   group('D4/D5: camera buttons', () {
-    test('recenter is a per-frame blend, never a flyTo-then-follow race', () {
-      final body = bodyOf(nav, 'Future<void> _recenter() async {', maxLen: 2000);
-      expect(body.contains('.getCameraState()'), isTrue);
-      expect(body.contains('_recenterTicker!.start();'), isTrue);
-      expect(body, isNot(contains('map.flyTo(')),
-          reason: 'the plugin flyTo returns when the animation STARTS — the '
-              'next chase setCamera cancelled it (a cut by construction)');
-      // Both ways the same, slow and even (owner 2026-11-02: "debe de
-      // moverse de forma smooth y no tan de golpe…", then "sigue muy
-      // rápido" at 1.1 s cubic).
-      expect(nav.contains('static const _recenterBlendMs = 1600;'), isTrue);
-      expect(nav.contains('_camGlideCurve = Curves.easeInOutSine;'), isTrue);
-      final tick = bodyOf(nav, 'void _onRecenterTick(Duration elapsed) {',
-          maxLen: 2200);
-      expect(tick.contains('!_cameraActionGate.isCurrent(_recenterSeq)'), isTrue,
-          reason: 'a gesture supersedes the sequence and the blend yields');
-      expect(tick.contains('_camGlideCurve.transform(t)'), isTrue);
+    // Owner 2026-11-05 ("se mueve como relentizado… que se vea fluido y
+    // smooth"): the per-frame blend from Dart stuttered whenever a camera
+    // write lagged. Both ways are now ONE native flight, unhurried (1.1 s
+    // was "sigue muy rápido" on 2026-11-02), and the landing is TIMED — the
+    // plugin's flyTo returns when the flight starts (audit D4), so the chase
+    // stays out until it has landed.
+    test('recenter is one native flight; the chase waits for the landing', () {
+      final body = bodyOf(nav, 'Future<void> _recenter() async {', maxLen: 3200);
+      expect(body.contains('map.flyTo('), isTrue);
+      expect(body.contains('duration: _camFlightMs'), isTrue);
+      expect(body, isNot(contains('.getCameraState()')),
+          reason: 'that read (up to 0.8 s) held every recenter back');
+      expect(body.contains('_camState = _CamState.recentering;'), isTrue,
+          reason: 'the per-frame chase writes nothing while recentering — '
+              'nothing cancels the flight');
+      expect(body.contains('Timer(const Duration(milliseconds: _camFlightMs)'),
+          isTrue);
+      expect(body.contains('!_cameraActionGate.isCurrent(seq)'), isTrue,
+          reason: 'a gesture supersedes the sequence and the landing yields');
+      expect(body.contains('_recenterAim('), isTrue,
+          reason: 'a moving car is met where it will be at the landing');
+      expect(nav.contains('static const _camFlightMs = 1400;'), isTrue);
+      expect(nav, isNot(contains('_onRecenterTick')));
     });
 
     test('overview only flips state with a route and a map', () {
@@ -180,21 +186,19 @@ void main() {
       expect(body.contains('unawaited(_recenter());'), isTrue);
     });
 
-    test('INTO the overview glides like the way back: same length, curve', () {
+    test('INTO the overview: the same native flight as the way back', () {
       final body = bodyOf(nav, 'void _toggleOverview() {', maxLen: 1300);
       expect(body.contains('unawaited(_glideToOverview());'), isTrue);
-      expect(body, isNot(contains('unawaited(_fitRouteOnce());')),
-          reason: 'the native flyTo out was the jump');
+      expect(body, isNot(contains('unawaited(_fitRouteOnce());')));
       final glide =
-          bodyOf(nav, 'Future<void> _glideToOverview() async {', maxLen: 1600);
+          bodyOf(nav, 'Future<void> _glideToOverview() async {', maxLen: 1800);
       expect(glide.contains('FlatMapProjection.fitFlat('), isTrue);
-      expect(glide.contains('_overviewTicker!.start();'), isTrue);
-      final tick =
-          bodyOf(nav, 'void _onOverviewTick(Duration elapsed) {', maxLen: 2200);
-      expect(tick.contains('/ _recenterBlendMs'), isTrue);
-      expect(tick.contains('_camGlideCurve.transform(t)'), isTrue);
-      expect(tick.contains('!_cameraActionGate.isCurrent(_overviewSeq)'), isTrue,
-          reason: 'back to the chase or a gesture: the glide yields');
+      expect(glide.contains('map.flyTo('), isTrue);
+      expect(glide.contains('duration: _camFlightMs'), isTrue);
+      expect(glide.contains('_pendingCamWrite = null;'), isTrue,
+          reason: 'a queued chase write landing after take-off would cancel '
+              'the flight');
+      expect(nav, isNot(contains('_onOverviewTick')));
     });
 
     test('the remaining nav flights are 600 ms', () {

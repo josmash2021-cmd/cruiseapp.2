@@ -253,6 +253,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Rider pickup confirmation listener ──
   StreamSubscription? _riderConfirmSub;
+  // The trip's Socket.io room (owner 2026-11-05: "cuando se marca desde
+  // dispatch… funciona lento, no responde a veces"): a status change there
+  // runs the status check at once instead of waiting for the 8 s poll.
+  StreamSubscription<Map<String, dynamic>>? _socketStatusSub;
+  // Firestore drops a snapshot listener on its first error; the trip doc
+  // listener is set up again after a short, growing pause.
+  Timer? _tripListenRetry;
+  int _tripListenErrors = 0;
+  bool _tripStatusCheckAgain = false;
   bool _riderConfirmedPickup = false;
 
   // Nav panel switches (owner design 2026-11-02): "Recibiendo viajes"
@@ -1586,6 +1595,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _gpsSub?.cancel();
     _dropoffGpsSub?.cancel();
     _riderConfirmSub?.cancel();
+    _socketStatusSub?.cancel();
+    _tripListenRetry?.cancel();
     _statusPollTimer?.cancel();
     _finishNavTimer?.cancel();
     _navReadyTimeout?.cancel();
@@ -1693,7 +1704,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         final tid = int.tryParse(widget.tripId.toString());
         if (tid != null) {
           await SocketService.init();
-          if (mounted) SocketService.joinTrip(tid);
+          if (mounted) {
+            SocketService.joinTrip(tid);
+            _socketStatusSub ??= SocketService.tripStatusStream.listen((m) {
+              if ('${m['trip_id']}' != '$tid') return;
+              unawaited(_checkTripStatusNow());
+            });
+          }
         }
 
         // Eager-upload the latest known position so the rider sees the car
@@ -1993,12 +2010,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Listen for rider confirming they are with the driver ────────────────
   void _listenForRiderConfirmation() {
+    _riderConfirmSub?.cancel();
     _riderConfirmSub = FirebaseFirestore.instance
         .collection('trips')
         .doc(_fsDocId)
         .snapshots()
         .listen((snap) async {
       if (!mounted) return;
+      _tripListenErrors = 0;
       final data = snap.data();
       if (data == null) return;
 
@@ -2127,6 +2146,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       if (isPermDenied || e.toString().contains('permission-denied')) {
         FirebaseAuthRecovery.ensureSignedIn().ignore();
       }
+      // Firestore has removed this listener: it never "recovered on the
+      // next push", and the driver was left on the 8 s poll for the rest of
+      // the trip. Set it up again — 2 s, then longer, at most 30 s.
+      _tripListenErrors++;
+      _tripListenRetry?.cancel();
+      _tripListenRetry =
+          Timer(Duration(seconds: (2 * _tripListenErrors).clamp(2, 30)), () {
+        if (mounted && !_tripFinished) _listenForRiderConfirmation();
+      });
     });
   }
 
@@ -2137,115 +2165,129 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// cancel/complete a trip and the driver is stuck on FINISH RIDE.
   void _startStatusPoll() {
     _statusPollTimer?.cancel();
-    _statusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) async {
+    _statusPollTimer = Timer.periodic(
+        const Duration(seconds: 8), (_) => unawaited(_checkTripStatusNow()));
+  }
+
+  /// One read of the trip from the server, applied as the Firestore
+  /// listener would: the 8 s poll, and at once when the trip's socket room
+  /// says its status changed (owner 2026-11-05).
+  Future<void> _checkTripStatusNow() async {
+    if (!mounted || _tripFinished) return;
+    // Guard: skip if a request is already in-flight (prevents polling storm
+    // when the network is slow or the backend is under load) — but run once
+    // more after it: that read may predate the change that called us.
+    if (_isPollingTripStatus) {
+      _tripStatusCheckAgain = true;
+      return;
+    }
+    _isPollingTripStatus = true;
+    try {
+      final trip = await ApiService.getTrip(widget.tripId);
       if (!mounted || _tripFinished) return;
-      // Guard: skip if a request is already in-flight (prevents polling storm
-      // when the network is slow or the backend is under load).
-      if (_isPollingTripStatus) return;
-      _isPollingTripStatus = true;
-      try {
-        final trip = await ApiService.getTrip(widget.tripId);
-        if (!mounted || _tripFinished) return;
-        final status = (trip['status'] ?? '').toString().toLowerCase();
-        if (status == 'completed') {
-          debugPrint('[Driver] Backend poll: trip completed → onExternalCompletion');
-          _onExternalCompletion();
-        } else if (status == 'cancelled' || status == 'canceled') {
-          // Check if this was a wait timeout (passenger no-show)
-          final cancelReason = (trip['cancel_reason'] ??
-                  trip['cancelReason'] ??
-                  trip['cancellation_reason'] ??
-                  '')
-              .toString()
-              .toLowerCase();
-          final isWaitTimeout = cancelReason.contains('wait_timeout') ||
-              cancelReason.contains('no_show');
+      final status = (trip['status'] ?? '').toString().toLowerCase();
+      if (status == 'completed') {
+        debugPrint('[Driver] Backend poll: trip completed → onExternalCompletion');
+        _onExternalCompletion();
+      } else if (status == 'cancelled' || status == 'canceled') {
+        // Check if this was a wait timeout (passenger no-show)
+        final cancelReason = (trip['cancel_reason'] ??
+                trip['cancelReason'] ??
+                trip['cancellation_reason'] ??
+                '')
+            .toString()
+            .toLowerCase();
+        final isWaitTimeout = cancelReason.contains('wait_timeout') ||
+            cancelReason.contains('no_show');
 
-          debugPrint('[Driver] Backend poll: trip cancelled (wait_timeout=$isWaitTimeout) → popping');
-          _tripFinished = true;
-          _statusPollTimer?.cancel();
-          _riderConfirmSub?.cancel();
+        debugPrint('[Driver] Backend poll: trip cancelled (wait_timeout=$isWaitTimeout) → popping');
+        _tripFinished = true;
+        _statusPollTimer?.cancel();
+        _riderConfirmSub?.cancel();
 
-          // Show specific message for passenger no-show (glass banner, as
-          // in the Firestore path above).
-          if (isWaitTimeout && mounted) {
-            GlassNotificationBanner.show(
-              context: context,
-              title: S.of(context).tripCancelled,
-              body: S.of(context).riderNoShowCancelledBody,
-              icon: Icons.person_off_rounded,
-            );
-            await Future.delayed(const Duration(seconds: 3));
-          }
+        // Show specific message for passenger no-show (glass banner, as
+        // in the Firestore path above).
+        if (isWaitTimeout && mounted) {
+          GlassNotificationBanner.show(
+            context: context,
+            title: S.of(context).tripCancelled,
+            body: S.of(context).riderNoShowCancelledBody,
+            icon: Icons.person_off_rounded,
+          );
+          await Future.delayed(const Duration(seconds: 3));
+        }
 
-          if (!mounted) return;
-          try {
-            _exitAfterRemoteCancel();
-          } catch (e) {
-            debugPrint('[Driver] poll-cancel-navigate failed: $e');
-          }
-        } else if (_tripTakenAwayByDispatch(status, trip['driver_id'])) {
-          // Dispatch reassigned the trip: back in the queue (`requested`)
-          // or another driver owns it now. The backend is authoritative
-          // here — accept commits driver_id before this screen is pushed,
-          // so a trip that is not ours anymore is not a mirror lag.
-          debugPrint('[Driver] Backend poll: trip reassigned by dispatch → returning to online');
-          _tripFinished = true;
-          _statusPollTimer?.cancel();
-          _riderConfirmSub?.cancel();
-          try {
-            _exitAfterRemoteCancel(reassigned: true);
-          } catch (e) {
-            debugPrint('[Driver] poll-reassign-navigate failed: $e');
-          }
-        } else {
-          // Dispatch advanced the trip while the Firestore stream lagged.
-          _applyRemoteStage(status);
+        if (!mounted) return;
+        try {
+          _exitAfterRemoteCancel();
+        } catch (e) {
+          debugPrint('[Driver] poll-cancel-navigate failed: $e');
         }
-        _applyStopWait(trip);
-        // Booking-time stop backstop: resume paths that never saw the offer
-        // still read `stops` off the trip payload here — seeded once, no
-        // banner (it was in the fare since booking, not a route change).
-        if (_stopLatLng == null) {
-          final st = parseTripStop(trip);
-          if (st != null && mounted) {
-            setState(() {
-              _stopLatLng = st.point;
-              _stopLabel = st.label;
-            });
-            unawaited(RiderStopVoice.warm());
-            unawaited(_redrawMiniMapForRouteChange());
-          }
+      } else if (_tripTakenAwayByDispatch(status, trip['driver_id'])) {
+        // Dispatch reassigned the trip: back in the queue (`requested`)
+        // or another driver owns it now. The backend is authoritative
+        // here — accept commits driver_id before this screen is pushed,
+        // so a trip that is not ours anymore is not a mirror lag.
+        debugPrint('[Driver] Backend poll: trip reassigned by dispatch → returning to online');
+        _tripFinished = true;
+        _statusPollTimer?.cancel();
+        _riderConfirmSub?.cancel();
+        try {
+          _exitAfterRemoteCancel(reassigned: true);
+        } catch (e) {
+          debugPrint('[Driver] poll-reassign-navigate failed: $e');
         }
-      } on ApiException catch (e) {
-        // A 404 is not transient: the trip does not exist server-side at
-        // all, so there is nothing to keep this screen for. Treat it like
-        // an external cancel and leave — retrying it every 8 s forever was
-        // how a driver got stuck on a dead trip (the sql_453 case, where
-        // only an optimistic Firestore doc kept the trip "alive").
-        // A 403 is just as final: the backend only refuses the read to a
-        // driver who is NOT this trip's driver (and never was offered it),
-        // i.e. it is somebody else's now — dispatch reassigned it, or the
-        // accept race was lost. Leave as "reassigned", not as cancelled.
-        final notOurs = e.statusCode == 403;
-        if ((e.statusCode == 404 || notOurs) && mounted && !_tripFinished) {
-          debugPrint('[Driver] Backend poll: trip ${widget.tripId} '
-              '${notOurs ? "not ours (403)" : "not found (404)"} → leaving');
-          _tripFinished = true;
-          _statusPollTimer?.cancel();
-          _riderConfirmSub?.cancel();
-          try {
-            _exitAfterRemoteCancel(reassigned: notOurs);
-          } catch (navErr) {
-            debugPrint('[Driver] 404-navigate failed: $navErr');
-          }
-        }
-      } catch (_) {
-        // Ignore transient errors — next tick retries.
-      } finally {
-        _isPollingTripStatus = false;
+      } else {
+        // Dispatch advanced the trip while the Firestore stream lagged.
+        _applyRemoteStage(status);
       }
-    });
+      _applyStopWait(trip);
+      // Booking-time stop backstop: resume paths that never saw the offer
+      // still read `stops` off the trip payload here — seeded once, no
+      // banner (it was in the fare since booking, not a route change).
+      if (_stopLatLng == null) {
+        final st = parseTripStop(trip);
+        if (st != null && mounted) {
+          setState(() {
+            _stopLatLng = st.point;
+            _stopLabel = st.label;
+          });
+          unawaited(RiderStopVoice.warm());
+          unawaited(_redrawMiniMapForRouteChange());
+        }
+      }
+    } on ApiException catch (e) {
+      // A 404 is not transient: the trip does not exist server-side at
+      // all, so there is nothing to keep this screen for. Treat it like
+      // an external cancel and leave — retrying it every 8 s forever was
+      // how a driver got stuck on a dead trip (the sql_453 case, where
+      // only an optimistic Firestore doc kept the trip "alive").
+      // A 403 is just as final: the backend only refuses the read to a
+      // driver who is NOT this trip's driver (and never was offered it),
+      // i.e. it is somebody else's now — dispatch reassigned it, or the
+      // accept race was lost. Leave as "reassigned", not as cancelled.
+      final notOurs = e.statusCode == 403;
+      if ((e.statusCode == 404 || notOurs) && mounted && !_tripFinished) {
+        debugPrint('[Driver] Backend poll: trip ${widget.tripId} '
+            '${notOurs ? "not ours (403)" : "not found (404)"} → leaving');
+        _tripFinished = true;
+        _statusPollTimer?.cancel();
+        _riderConfirmSub?.cancel();
+        try {
+          _exitAfterRemoteCancel(reassigned: notOurs);
+        } catch (navErr) {
+          debugPrint('[Driver] 404-navigate failed: $navErr');
+        }
+      }
+    } catch (_) {
+      // Ignore transient errors — next tick retries.
+    } finally {
+      _isPollingTripStatus = false;
+    }
+    if (_tripStatusCheckAgain && mounted && !_tripFinished) {
+      _tripStatusCheckAgain = false;
+      unawaited(_checkTripStatusNow());
+    }
   }
 
   /// Handle trip completed externally (by dispatch admin).

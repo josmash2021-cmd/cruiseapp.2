@@ -607,6 +607,18 @@ class _NavTripPanelState extends State<NavTripPanel>
 
     final fullWidth = MediaQuery.maybeOf(context)?.size.width ?? 390;
 
+    // Built once per change of the panel, not once per frame of the sheet:
+    // the builder below wraps these SAME instances, so a drag or a spring
+    // re-lays the frame without rebuilding the whole trip under the finger
+    // (owner 2026-11-05: "al deslizarse hacia arriba a veces cuesta").
+    final face = AnimatedSize(
+      duration: _glideDur,
+      curve: _glide,
+      alignment: Alignment.bottomCenter,
+      child: _closedBody(s),
+    );
+    final grown = open ? body() : null;
+
     return AnimatedBuilder(
       animation: _sheet,
       builder: (context, _) {
@@ -663,20 +675,15 @@ class _NavTripPanelState extends State<NavTripPanel>
                     ignoring: t > 0.02,
                     child: Opacity(
                       opacity: (1 - t / 0.4).clamp(0.0, 1.0),
-                      child: AnimatedSize(
-                        duration: _glideDur,
-                        curve: _glide,
-                        alignment: Alignment.bottomCenter,
-                        child: _closedBody(s),
-                      ),
+                      child: face,
                     ),
                   ),
-                  if (open)
+                  if (grown != null)
                     IgnorePointer(
                       ignoring: t < 0.5,
                       child: Opacity(
                         opacity: ((t - 0.3) / 0.5).clamp(0.0, 1.0),
-                        child: body(),
+                        child: grown,
                       ),
                     ),
                 ],

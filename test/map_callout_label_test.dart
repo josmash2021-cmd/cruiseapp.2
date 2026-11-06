@@ -12,13 +12,18 @@ void main() {
   final es = S(const Locale('es'));
 
   group('trip price', () {
-    test('the driver pay rounded to whole dollars', () {
-      expect(tripCalloutPrice(10), r'$10');
-      expect(tripCalloutPrice(9.5), r'$10');
-      expect(tripCalloutPrice(10.49), r'$10');
-      expect(tripCalloutPrice(10.5), r'$11');
-      expect(tripCalloutPrice('12.7'), r'$13', reason: 'numeric strings too');
-      expect(tripCalloutPrice(-3), r'$0');
+    test('the driver pay to the cent, exactly as the offer card writes it',
+        () {
+      // Owner 2026-11-05: the callout said $13 and the card $12.98.
+      expect(tripCalloutPrice(10), r'$10.00');
+      expect(tripCalloutPrice(12.98), r'$12.98');
+      expect(tripCalloutPrice(10.5), r'$10.50');
+      expect(tripCalloutPrice('12.7'), r'$12.70', reason: 'numeric strings too');
+      expect(tripCalloutPrice(-3), r'$0.00');
+      for (final f in [8.65, 10.01, 12.98, 18.2, 33.333]) {
+        expect(tripCalloutPrice(f), '\$${f.toStringAsFixed(2)}',
+            reason: 'the card prints \$${f.toStringAsFixed(2)}');
+      }
     });
 
     test('no usable fare → no price', () {
@@ -113,11 +118,11 @@ void main() {
         item(3, vt: 'premium', fare: 18.2),
       ], minAway: en.tripCalloutMinAway);
       expect(out.map((c) => c.tripId), [1, 3]);
-      expect(out[0].title, r'$10 CRUISE');
-      expect(out[0].keepRun, r'$10');
+      expect(out[0].title, r'$9.60 CRUISE');
+      expect(out[0].keepRun, r'$9.60');
       expect(out[0].fadeRun, ' CRUISE');
       expect(out[0].subtitle, '9 min away');
-      expect(out[1].title, r'$18 CRUISE PREMIUM');
+      expect(out[1].title, r'$18.20 CRUISE PREMIUM');
       expect(out[1].fadeRun, ' CRUISE PREMIUM');
     });
 

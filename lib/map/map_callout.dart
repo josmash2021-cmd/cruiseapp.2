@@ -511,12 +511,13 @@ double boardRevealZoom({
   return z.clamp(kBoardRevealMinZoom, kSearchFollowZoom).toDouble();
 }
 
-/// The driver's pay rounded to whole dollars: 9.5 → "$10", 10.49 → "$10".
-/// Null when the feed has no usable number.
+/// The driver's pay to the cent, written exactly as the offer card writes it
+/// (owner 2026-11-05: "el del globito y tarjeta son diferente" — the callout
+/// said $13 and the card $12.98). Null when the feed has no usable number.
 String? tripCalloutPrice(Object? fare) {
   final f = calloutNum(fare);
   if (f == null || !f.isFinite) return null;
-  return '\$${(f < 0 ? 0 : f).round()}';
+  return '\$${(f < 0 ? 0 : f).toStringAsFixed(2)}';
 }
 
 /// "CRUISE" for the standard tier, "CRUISE COMPACT" / "CRUISE PREMIUM" /

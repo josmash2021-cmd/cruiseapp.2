@@ -2847,13 +2847,26 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             alreadyAcceptedOnBackend: true);
         return true;
       }
-      _setState(() => _claimingTripId = null);
       if (httpStatus == 409) {
-        _snack(S.of(context).tripNoLongerAvailable);
         _availableTrips.removeWhere((x) => x['trip_id'] == tripId);
-        _setState(() {});
+        final boardCard = _pendingOffers.firstWhere(
+            (o) => o[kBoardTripKey] == tripId,
+            orElse: () => const <String, dynamic>{});
+        if (boardCard.isNotEmpty) {
+          // Accepted on its card (a map callout): the card says it on
+          // itself, the same as a ring (owner 2026-11-06). _claimingTripId
+          // stays until it is over, so the button stays inert; the caller
+          // takes the card down (_closeBoardOffer).
+          await _playTakenOnCard((boardCard['offer_id'] ?? '').toString());
+          if (!mounted) return false;
+          _setState(() => _claimingTripId = null);
+        } else {
+          _setState(() => _claimingTripId = null);
+          _snack(S.of(context).tripNoLongerAvailable);
+        }
         unawaited(_fetchAvailableTrips());
       } else {
+        _setState(() => _claimingTripId = null);
         _snack(S.of(context).acceptFailedTryAgain);
       }
     } catch (e) {
@@ -2896,6 +2909,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
     _setState(() {
       _pendingOffers = _pendingOffers.where((o) => !_isBoardOffer(o)).toList();
+      _takenCardId = null; // the same frame the card leaves the list
       if (_pendingOffers.isEmpty) _hideFindingBar = false;
       if (wasPreviewing) {
         _previewingOffer = null;
@@ -3340,6 +3354,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // and before this gate only the backup poll was stopped — SSE kept
     // delivering cards the whole "pause".
     if (_isPaused) return;
+    // The on-card "taken" notice is playing (~3.4 s): the list holds still —
+    // the poll would drop that card mid-animation. The reset after it
+    // restarts the poll, which brings anything that arrived meanwhile.
+    if (_takenCardId != null) return;
     int? toInt(dynamic v) {
       if (v == null) return null;
       if (v is int) return v;
@@ -4186,23 +4204,33 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _hideAcceptedOverlay();
           if (tripId != null) {
             // notify: false — the driver already gets the clearer
-            // "trip no longer available" message just below.
-            await _returnTripToDispatch(
+            // "another driver took it" notice just below. In parallel: the
+            // notice must not wait on the network.
+            unawaited(_returnTripToDispatch(
               tripId,
               reason: 'accept_failed',
               notify: false,
-            );
+            ));
           }
-          // mounted guard required: previous awaits (getTrip, release) mean
-          // context may be defunct if the driver navigated away mid-verify.
-          if (mounted) {
-            _setState(() {
-              _offerAcceptState = _OfferAcceptState.normal;
-              _acceptingCardId = null;
-            });
-            _snack(S.of(context).tripNoLongerAvailable);
+          // mounted guard required: previous awaits (getTrip) mean context
+          // may be defunct if the driver navigated away mid-verify.
+          if (!mounted) return;
+          // The card the driver accepted says it on itself (owner
+          // 2026-11-06): it frosts, the notice rises onto it, both leave —
+          // then searching resumes. The accept spinner state stays until
+          // the reset, so nothing on the card can be tapped meanwhile.
+          final takenId = _acceptingCardId;
+          final onScreen = takenId != null &&
+              _pendingOffers.any(
+                  (o) => (o['offer_id'] ?? o['id'] ?? '').toString() == takenId);
+          if (onScreen) {
+            await _playTakenOnCard(takenId);
+            if (!mounted) return;
+            _resetToSearchingOnRemoteCancel(notice: false);
+          } else {
+            // The card is already gone: the centred notice says it.
+            _resetToSearchingOnRemoteCancel(taken: true);
           }
-          _resetToSearchingOnRemoteCancel(taken: true);
           return;
         }
       }
@@ -5526,7 +5554,50 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
-  void _resetToSearchingOnRemoteCancel({bool reassigned = false, bool taken = false}) {
+  /// "Otro conductor lo tomó" on the card the driver accepted ([oid], its
+  /// offer id), the approved demo's run (_kTakenMs): it frosts, the notice
+  /// rises onto it, holds, and both leave while the route and its rings
+  /// fade. Completes with the card invisible but still listed — the caller
+  /// takes it out (the reset, or _closeBoardOffer), which clears
+  /// [_takenCardId] in the same frame so it never flashes back.
+  Future<void> _playTakenOnCard(String oid) async {
+    if (!mounted || _takenCardId != null) return;
+    HapticService.mediumImpact();
+    final ctrl = _takenCtrl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: _kTakenMs),
+    );
+    _setState(() => _takenCardId = oid);
+    Future.delayed(const Duration(milliseconds: _kTakenExitMs), () {
+      if (mounted && _takenCardId == oid) unawaited(_fadeOfferRouteOut());
+    });
+    await ctrl.forward(from: 0);
+  }
+
+  /// The offer's line and rings fade out with the leaving card (450 ms, six
+  /// steps: each write is an IPC to the native map). A step that is lost is
+  /// harmless — the clear right after takes them off anyway.
+  Future<void> _fadeOfferRouteOut() async {
+    final map = _map;
+    for (var i = 1; i <= 6; i++) {
+      await Future.delayed(const Duration(milliseconds: 75));
+      if (!mounted || _takenCardId == null) return;
+      final o = 1 - i / 6;
+      if (map != null && identical(map, _map)) {
+        unawaited(_offerRouteLine.setOpacity(map, o));
+      }
+      final mgr = _pinAnnotMgr;
+      if (mgr == null) continue;
+      for (final a in [_prevPickupAnnot, _prevStopAnnot, _prevDropoffAnnot]) {
+        if (a == null) continue;
+        a.iconOpacity = o;
+        unawaited(mgr.update(a).catchError((_) {}));
+      }
+    }
+  }
+
+  void _resetToSearchingOnRemoteCancel(
+      {bool reassigned = false, bool taken = false, bool notice = true}) {
     // All callers are async-after-await, so the State may already be
     // disposed by the time we land here.
     if (!mounted) return;
@@ -5554,6 +5625,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _pendingOffers = [];
       _offerAcceptState = _OfferAcceptState.normal;
       _acceptingCardId = null;
+      _takenCardId = null; // the same frame the card leaves the list
     });
     if (!mounted) return;
     _syncOfferLiveActivity();
@@ -5577,7 +5649,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // The notice replaces the old corner snackbar: a rider cancel is the
     // one event the driver must not miss in their periphery, so it lands
     // centred on a semi-dark wash for ~5 s and then fades out of the way.
-    _showCancelledNotice(reassigned: reassigned, taken: taken);
+    // [notice] false: the card already said it (_playTakenOnCard).
+    if (notice) _showCancelledNotice(reassigned: reassigned, taken: taken);
     // Dispatch took the driver offline during this trip — apply it now.
     _flushDeferredDispatchOffline();
   }

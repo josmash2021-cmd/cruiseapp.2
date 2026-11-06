@@ -264,6 +264,15 @@ enum _Phase {
 // static inside a const expression without the compiler choking on iOS.
 const Duration _acceptedOverlayDuration = Duration(seconds: 3);
 
+// "Otro conductor lo tomó" ON the accepted card (owner 2026-11-06, approved
+// demo https://claude.ai/artifact/1ysaVs28Z9MD3pAqVoAbEg), in ms from the
+// refused accept: the card frosts over 450 ms, the notice rises onto it from
+// 120 ms (420 ms), it holds, and from 2940 ms card and notice leave together
+// in 450 ms while the route and its rings fade. Top-level: a part file reads
+// them inside const expressions (CLAUDE.md #16).
+const int _kTakenMs = 3390;
+const int _kTakenExitMs = 2940;
+
 // Brand colors (top-level for extension access)
 const _gold = Color(0xFFD4A843);
 const _goldLight = Color(0xFFF5D990);
@@ -663,6 +672,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Timer? _cancelledNoticeTimer;
   AnimationController? _cancelledNoticeCtrl;
   Animation<double>? _cancelledNoticeFade;
+  // The card whose accept another driver beat (its offer id) while the
+  // on-card notice plays; the offer poll holds still meanwhile.
+  String? _takenCardId;
+  AnimationController? _takenCtrl;
 
   // ── Accept card animation state ──
   _OfferAcceptState _offerAcceptState = _OfferAcceptState.normal;
@@ -2100,6 +2113,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _markerFrame.dispose();
     _cancelledNoticeTimer?.cancel();
     _cancelledNoticeCtrl?.dispose();
+    _takenCtrl?.dispose();
     MapSurfaceCoordinator.instance.release(_kMapSurfaceOwner);
     unawaited(_posStream?.stop());
     // Only when the driver actually went offline.

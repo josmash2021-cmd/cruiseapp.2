@@ -26,6 +26,7 @@ class GradientRouteLine {
   final double width;
 
   bool _shown = false;
+  bool _faded = false;
   bool _busy = false;
   List<LatLng>? _pending;
   mapbox.MapboxMap? _pendingMap;
@@ -130,6 +131,17 @@ class GradientRouteLine {
     }
   }
 
+  /// Fades the drawn line (an offer leaving); the next [hide] puts it back
+  /// to full strength for the next [set].
+  Future<void> setOpacity(mapbox.MapboxMap map, double opacity) async {
+    _faded = opacity < 1;
+    try {
+      if (await map.style.styleLayerExists(layerId)) {
+        await map.style.setStyleLayerProperty(layerId, 'line-opacity', opacity);
+      }
+    } catch (_) {}
+  }
+
   /// Takes the line off the map (kept, hidden, for the next [set]).
   Future<void> hide(mapbox.MapboxMap map) async {
     _pending = null;
@@ -137,6 +149,10 @@ class GradientRouteLine {
     try {
       if (await map.style.styleLayerExists(layerId)) {
         await map.style.setStyleLayerProperty(layerId, 'visibility', 'none');
+        if (_faded) {
+          _faded = false;
+          await map.style.setStyleLayerProperty(layerId, 'line-opacity', 1.0);
+        }
       }
     } catch (_) {}
   }
@@ -146,5 +162,6 @@ class GradientRouteLine {
     _pending = null;
     _pendingMap = null;
     _shown = false;
+    _faded = false;
   }
 }

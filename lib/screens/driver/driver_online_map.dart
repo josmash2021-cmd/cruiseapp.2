@@ -586,6 +586,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // both — stop it before deleting, or it keeps updating dead annotations.
     _rerouteFadeTimer?.cancel();
     _rerouteFadeTimer = null;
+    // Awaited: a set() for the next offer must not land before this hide.
+    final map = _map;
+    if (map != null) {
+      await _offerRouteLine.hide(map);
+    } else {
+      _offerRouteLine.forget();
+    }
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null) return;
     for (final a in [_routeAnnot, _previewPickupAnnot, _previewDropoffAnnot]) {
@@ -624,44 +631,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     );
     final driverPos = _pos ?? pickupLL;
 
-    // Same gold, weight and join the gloss draw rests at.
-    final polyMgr = _polylineAnnotMgr;
-    if (polyMgr != null) {
-      final g1 = _fullSegOne.length >= 2 ? safeLineString(_fullSegOne) : null;
-      if (g1 != null) {
-        try {
-          _previewPickupAnnot =
-              await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: g1,
-            lineColor: const Color(0xFFFFD700).toARGB32(),
-            lineWidth: 4.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-        } catch (_) {}
-      }
+    // The whole line at rest, in one write.
+    final map = _map;
+    final whole = _offerWholeLine();
+    if (map != null && whole.length >= 2) {
+      await _offerRouteLine.set(map, whole);
       if (!mounted || _previewingOffer == null) {
-        // Dismissed mid-restore: the reject clear already ran before g1
-        // existed — take it back or it floats over "Finding trips".
-        final stale = _previewPickupAnnot;
-        _previewPickupAnnot = null;
-        if (stale != null) {
-          try {
-            await polyMgr.delete(stale);
-          } catch (_) {}
-        }
+        // Dismissed mid-restore: the reject clear already ran before the
+        // line existed — take it back or it floats over "Finding trips".
+        unawaited(_offerRouteLine.hide(map));
         return;
-      }
-      final g2 = _fullSegTwo.length >= 2 ? safeLineString(_fullSegTwo) : null;
-      if (g2 != null) {
-        try {
-          _previewDropoffAnnot =
-              await polyMgr.create(mapbox.PolylineAnnotationOptions(
-            geometry: g2,
-            lineColor: const Color(0xFFFFD700).toARGB32(),
-            lineWidth: 4.0,
-            lineJoin: mapbox.LineJoin.ROUND,
-          ));
-        } catch (_) {}
       }
     }
     if (!mounted || _previewingOffer == null) return;
@@ -875,6 +854,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (_routeAnnot == null &&
         _previewPickupAnnot == null &&
         _previewDropoffAnnot == null &&
+        !_offerRouteLine.isShown &&
         _prevPickupAnnot == null &&
         _prevDropoffAnnot == null &&
         _prevStopAnnot == null) {
@@ -882,7 +862,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
     debugPrint('[OfferRoute] sweep: orphan preview annotations removed '
         '(route=${_routeAnnot != null} seg1=${_previewPickupAnnot != null} '
-        'seg2=${_previewDropoffAnnot != null} pins='
+        'seg2=${_previewDropoffAnnot != null} '
+        'line=${_offerRouteLine.isShown} pins='
         '${_prevPickupAnnot != null || _prevDropoffAnnot != null} '
         'stop=${_prevStopAnnot != null})');
     try {
@@ -1147,39 +1128,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           color: '#FFD700',
           width: 4,
         );
-      } else {
-        // Instant geometry swap — the cinematic draw is for the offer's
-        // arrival, not for every GPS fix.
-        final annot = _previewPickupAnnot;
-        final polyMgr = _polylineAnnotMgr;
-        final safeGeom = safeLineString(_fullSegOne);
-        if (annot != null && polyMgr != null && safeGeom != null) {
-          annot.geometry = safeGeom;
-          try {
-            await polyMgr.update(annot);
-          } catch (_) {}
-        } else if (annot == null && polyMgr != null && safeGeom != null) {
-          // The initial gloss draw was skipped (route fetch failed when the
-          // offer arrived, so there was nothing to draw). This refresh just
-          // fetched real geometry — update-only would silently drop it and
-          // the preview would stay lineless despite the successful fetch.
-          try {
-            final created =
-                await polyMgr.create(mapbox.PolylineAnnotationOptions(
-              geometry: safeGeom,
-              lineColor: const Color(0xFFFFD700).toARGB32(),
-              lineWidth: 4.0,
-              lineJoin: mapbox.LineJoin.ROUND,
-            ));
-            if (_previewingOffer != null && mounted) {
-              _previewPickupAnnot = created;
-            } else {
-              // Preview dismissed while create() was in flight.
-              try {
-                await polyMgr.delete(created);
-              } catch (_) {}
-            }
-          } catch (_) {}
+      } else if (!_isCardAnimating) {
+        // Instant geometry swap — the draw-on is for the offer's arrival,
+        // not for every GPS fix, and while it runs it owns the line. Also
+        // the first line when the arrival draw had nothing to draw (the
+        // route fetch failed then; this one just succeeded).
+        final map = _map;
+        final whole = _offerWholeLine();
+        if (map != null && whole.length >= 2) {
+          await _offerRouteLine.set(map, whole);
+          if (!mounted || _previewingOffer == null) {
+            unawaited(_offerRouteLine.hide(map)); // dismissed meanwhile
+          }
         }
       }
       _setState(() {});
@@ -1409,11 +1369,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
 
-    // ── PHASE 4: Draw segment 1 (driver → pickup) ──
-    if (_fullSegOne.length >= 2) {
+    // ── PHASE 4: The line grows from the car to the pickup ──
+    // One gold→white line for the whole trip (owner 2026-11-06), drawn in
+    // two stretches so the pickup ring pops between them.
+    final whole = _offerWholeLine();
+    final toPickupKm = _fullSegOne.length >= 2 ? _polylineKm(_fullSegOne) : 0.0;
+    final totalKm = whole.length >= 2 ? _polylineKm(whole) : 0.0;
+    if (toPickupKm > 0) {
       try {
-        await _drawGoldGlossRoute(
-          _fullSegOne,
+        await _drawOfferLine(
+          whole,
+          0,
+          toPickupKm,
+          ms: (_fullSegOne.length * 10).clamp(1800, 3500),
           // The draw takes time. Without this it finishes after the
           // offer was dismissed and paints a route onto an empty map —
           // which is how a yellow line was left over the "You're
@@ -1436,11 +1404,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
 
-    // ── PHASE 6: Draw segment 2 (pickup → dropoff) ──
-    if (_fullSegTwo.length >= 2) {
+    // ── PHASE 6: …and on from the pickup to the destination ──
+    if (totalKm > toPickupKm) {
       try {
-        await _drawGoldGlossRouteAppend(
-          _fullSegTwo,
+        await _drawOfferLine(
+          whole,
+          toPickupKm,
+          totalKm,
+          ms: (_fullSegTwo.length * 10).clamp(1800, 3500),
           stillWanted: () => mounted && _previewingOffer != null,
         ).timeout(const Duration(seconds: 8));
       } catch (_) {}
@@ -1713,266 +1684,85 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return completer.future;
   }
 
-  /// Draw a single gold route line with distance-based interpolation — smooth 60fps.
+  /// The offer's whole route as one line: car → pickup, then on through the
+  /// stop to the destination (the shared pickup point once).
+  List<LatLng> _offerWholeLine() => [
+        ..._fullSegOne,
+        ...(_fullSegOne.isNotEmpty && _fullSegTwo.isNotEmpty
+            ? _fullSegTwo.skip(1)
+            : _fullSegTwo),
+      ];
+
+  double _polylineKm(List<LatLng> pts) {
+    var km = 0.0;
+    for (var i = 1; i < pts.length; i++) {
+      km += _hav(pts[i - 1], pts[i]);
+    }
+    return km;
+  }
+
+  /// [pts] cut [km] along the road, the last point interpolated.
+  List<LatLng> _offerLinePrefix(List<LatLng> pts, double km) {
+    final out = <LatLng>[pts.first];
+    var acc = 0.0;
+    for (var i = 1; i < pts.length; i++) {
+      final seg = _hav(pts[i - 1], pts[i]);
+      if (acc + seg >= km) {
+        final f = seg <= 0 ? 0.0 : ((km - acc) / seg).clamp(0.0, 1.0);
+        out.add(LatLng(
+          pts[i - 1].latitude + (pts[i].latitude - pts[i - 1].latitude) * f,
+          pts[i - 1].longitude + (pts[i].longitude - pts[i - 1].longitude) * f,
+        ));
+        return out;
+      }
+      acc += seg;
+      out.add(pts[i]);
+    }
+    return out;
+  }
+
+  /// Grows the offer's gold→white line along the road from [fromKm] to
+  /// [toKm] over [ms] (S-curve, every frame). Writes coalesce inside
+  /// [GradientRouteLine.set], so a slow one never queues frames and the last
+  /// — the full stretch — always lands.
   ///
-  /// [stillWanted] decides, per frame, whether the draw is still relevant.
-  /// It defaults to "an offer preview is open", which is what every caller
-  /// wanted until the accepted-trip celebration started drawing on this
-  /// same canvas — by then `_previewingOffer` is already null, so without
-  /// an override the ticker would bail on its first frame and leave a
-  /// two-point stub on the map.
-  Future<void> _drawGoldGlossRoute(
-    List<LatLng> points, {
-    bool Function()? stillWanted,
+  /// [stillWanted] decides, per frame, whether the draw is still relevant:
+  /// a preview dismissed mid-draw takes its line off with it.
+  Future<void> _drawOfferLine(
+    List<LatLng> pts,
+    double fromKm,
+    double toKm, {
+    required int ms,
+    required bool Function() stillWanted,
   }) async {
-    final polyMgr = _polylineAnnotMgr;
-    if (polyMgr == null || points.length < 2) {
+    final map = _map;
+    if (map == null || pts.length < 2 || toKm <= fromKm) {
       // This used to return in silence, which is indistinguishable from
       // "the route drew fine" anywhere except on the screen.
       debugPrint('[OfferRoute] not drawn — '
-          'mgr=${polyMgr != null} points=${points.length}');
+          'map=${map != null} points=${pts.length}');
       return;
     }
-    bool wanted() =>
-        stillWanted != null ? stillWanted() : _previewingOffer != null;
-
-    // Pre-compute cumulative distances for distance-based interpolation
-    final cumDist = <double>[0.0];
-    for (int i = 1; i < points.length; i++) {
-      cumDist.add(cumDist.last + _hav(points[i - 1], points[i]));
-    }
-    final totalDist = cumDist.last;
-    if (totalDist < 1e-9) return;
-
-    // Pre-create annotation before ticker to avoid async frame skipping
-    final initSafe = safeLineString(points.sublist(0, 2));
-    if (initSafe == null) return;
-    mapbox.PolylineAnnotation? mainLine;
-    try {
-      mainLine = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: initSafe,
-        lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 4.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-      ));
-    } catch (_) {}
-    if (mainLine == null) return;
-    if (!mounted || !wanted()) {
-      // Dismissed while create() was in flight: the clear has already run,
-      // so this line would outlive the offer that asked for it.
-      try {
-        await polyMgr.delete(mainLine);
-      } catch (_) {}
-      return;
-    }
-    // Track the handle NOW, not at progress 1.0. The cleanup contract used
-    // to be "the ticker deletes the half-drawn line itself when it notices
-    // the preview is gone" — but anything that kills the ticker before that
-    // frame runs (_closePreview disposes it, the 8s timeout in
-    // _onOfferCardTap letting PHASE 6 stop/dispose a seg1 ticker frozen by
-    // an iOS background) left the line with no handle at all, and no clear
-    // on reject/expire could reach it: the gold route stayed painted with
-    // the offer card already gone.
-    _previewPickupAnnot = mainLine;
-
-    final totalMs = (points.length * 10).clamp(1800, 3500);
     final completer = Completer<void>();
     final stopwatch = Stopwatch()..start();
-    bool updating = false;
-
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = createTicker((_) {
-      if (!mounted || !wanted()) {
+      if (!mounted || !stillWanted() || !identical(map, _map)) {
         _routeDrawTicker?.stop();
         if (!completer.isCompleted) completer.complete();
-        // Take the half-drawn line back with it. Belt-and-suspenders: the
-        // handle is already tracked from creation (see above), so the clear
-        // on reject/expire reaches it even if this frame never runs — this
-        // delete covers the window where the clear already ran before the
-        // handle was assigned.
-        final stale = mainLine;
-        if (stale != null) {
-          polyMgr.delete(stale).catchError((_) {});
-        }
+        if (identical(map, _map)) unawaited(_offerRouteLine.hide(map));
         return;
       }
-      if (updating) return;
-
-      final elapsed = stopwatch.elapsedMilliseconds;
-      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      // S-curve easing for smooth acceleration/deceleration
-      final t = progress;
+      final t = (stopwatch.elapsedMilliseconds / ms).clamp(0.0, 1.0);
       final eased = t < 0.5 ? 4 * t * t * t : 1 - math.pow(-2 * t + 2, 3) / 2;
-      final targetDist = eased * totalDist;
-
-      // Find the segment where targetDist falls and interpolate tip point
-      int segIdx = 0;
-      for (int i = 1; i < cumDist.length; i++) {
-        if (cumDist[i] >= targetDist) {
-          segIdx = i - 1;
-          break;
-        }
-        if (i == cumDist.length - 1) segIdx = i - 1;
-      }
-      final segLen = cumDist[segIdx + 1] - cumDist[segIdx];
-      final frac =
-          segLen > 1e-9 ? (targetDist - cumDist[segIdx]) / segLen : 1.0;
-      final tipLat = points[segIdx].latitude +
-          (points[segIdx + 1].latitude - points[segIdx].latitude) * frac;
-      final tipLng = points[segIdx].longitude +
-          (points[segIdx + 1].longitude - points[segIdx].longitude) * frac;
-      if (!isValidLatLng(tipLat, tipLng)) return;
-
-      // Build coords: all points up to segIdx + interpolated tip
-      final coords = <mapbox.Position>[];
-      for (int i = 0; i <= segIdx; i++) {
-        coords.add(mapbox.Position(points[i].longitude, points[i].latitude));
-      }
-      coords.add(mapbox.Position(tipLng, tipLat));
-
-      final ml = mainLine;
-      final safeCoords = coords
-          .where((p) => isValidLatLng(p.lat.toDouble(), p.lng.toDouble()))
-          .toList();
-      if (safeCoords.length >= 2 && ml != null) {
-        ml.geometry = mapbox.LineString(coordinates: safeCoords);
-        updating = true;
-        polyMgr
-            .update(ml)
-            .then((_) => updating = false)
-            .catchError((_) => updating = false);
-      }
-
-      if (progress >= 1.0) {
+      final km = fromKm + (toKm - fromKm) * eased;
+      unawaited(_offerRouteLine.set(map, _offerLinePrefix(pts, km)));
+      if (t >= 1.0) {
         _routeDrawTicker?.stop();
-        final fullSafe = safeLineString(points);
-        if (fullSafe != null && ml != null) {
-          ml.geometry = fullSafe;
-          // catchError like every other call here: the handle may already
-          // be natively deleted (clear beat the ticker to it), and an
-          // unawaited rejection is an unhandled async error.
-          polyMgr.update(ml).catchError((_) {});
-        }
-        // Handle already tracked since creation — nothing to assign here.
         if (!completer.isCompleted) completer.complete();
       }
     });
-
-    _routeDrawTicker!.start();
-    return completer.future;
-  }
-
-  /// Draw a second gold route segment (appended as new polyline annotation).
-  /// Used for the pickup→dropoff leg after the driver→pickup leg is drawn.
-  Future<void> _drawGoldGlossRouteAppend(
-    List<LatLng> points, {
-    bool Function()? stillWanted,
-  }) async {
-    final polyMgr = _polylineAnnotMgr;
-    if (polyMgr == null || points.length < 2) return;
-    bool wanted() =>
-        stillWanted != null ? stillWanted() : _previewingOffer != null;
-
-    final cumDist = <double>[0.0];
-    for (int i = 1; i < points.length; i++) {
-      cumDist.add(cumDist.last + _hav(points[i - 1], points[i]));
-    }
-    final totalDist = cumDist.last;
-    if (totalDist < 1e-9) return;
-
-    final initSafe = safeLineString(points.sublist(0, 2));
-    if (initSafe == null) return;
-    mapbox.PolylineAnnotation? seg2Line;
-    try {
-      seg2Line = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: initSafe,
-        lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 4.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-      ));
-    } catch (_) {}
-    if (!mounted || seg2Line == null) return;
-    // Same early tracking as seg1: a ticker killed before its first frame
-    // (_closePreview disposes it, an iOS background freeze + the 8s draw
-    // timeout) must not orphan the half-drawn line — the reject/expire
-    // clear only reaches annotations reachable through the State fields.
-    _previewDropoffAnnot = seg2Line;
-
-    final totalMs = (points.length * 10).clamp(1800, 3500);
-    final completer = Completer<void>();
-    final stopwatch = Stopwatch()..start();
-    bool updating = false;
-
-    _routeDrawTicker?.stop();
-    _routeDrawTicker?.dispose();
-    _routeDrawTicker = createTicker((_) {
-      if (!mounted || !wanted()) {
-        _routeDrawTicker?.stop();
-        if (!completer.isCompleted) completer.complete();
-        // Take the half-drawn line back with it.
-        final stale = seg2Line;
-        if (stale != null) {
-          polyMgr.delete(stale).catchError((_) {});
-        }
-        return;
-      }
-      if (updating) return;
-
-      final elapsed = stopwatch.elapsedMilliseconds;
-      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final t = progress;
-      final eased = t < 0.5 ? 4 * t * t * t : 1 - math.pow(-2 * t + 2, 3) / 2;
-      final targetDist = eased * totalDist;
-
-      int segIdx = 0;
-      for (int i = 1; i < cumDist.length; i++) {
-        if (cumDist[i] >= targetDist) {
-          segIdx = i - 1;
-          break;
-        }
-        if (i == cumDist.length - 1) segIdx = i - 1;
-      }
-      final segLen = cumDist[segIdx + 1] - cumDist[segIdx];
-      final frac =
-          segLen > 1e-9 ? (targetDist - cumDist[segIdx]) / segLen : 1.0;
-      final tipLat = points[segIdx].latitude +
-          (points[segIdx + 1].latitude - points[segIdx].latitude) * frac;
-      final tipLng = points[segIdx].longitude +
-          (points[segIdx + 1].longitude - points[segIdx].longitude) * frac;
-      if (!isValidLatLng(tipLat, tipLng)) return;
-
-      final coords = <mapbox.Position>[];
-      for (int i = 0; i <= segIdx; i++) {
-        coords.add(mapbox.Position(points[i].longitude, points[i].latitude));
-      }
-      coords.add(mapbox.Position(tipLng, tipLat));
-
-      final sl = seg2Line;
-      final safeCoords = coords
-          .where((p) => isValidLatLng(p.lat.toDouble(), p.lng.toDouble()))
-          .toList();
-      if (safeCoords.length >= 2 && sl != null) {
-        sl.geometry = mapbox.LineString(coordinates: safeCoords);
-        updating = true;
-        polyMgr
-            .update(sl)
-            .then((_) => updating = false)
-            .catchError((_) => updating = false);
-      }
-
-      if (progress >= 1.0) {
-        _routeDrawTicker?.stop();
-        final fullSafe = safeLineString(points);
-        if (fullSafe != null && sl != null) {
-          sl.geometry = fullSafe;
-          polyMgr.update(sl).catchError((_) {});
-        }
-        // Handle already tracked since creation — nothing to assign here.
-        if (!completer.isCompleted) completer.complete();
-      }
-    });
-
     _routeDrawTicker!.start();
     return completer.future;
   }

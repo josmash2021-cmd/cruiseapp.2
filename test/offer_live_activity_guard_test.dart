@@ -141,61 +141,71 @@ void main() {
   // — the yellow route staying painted after the card was gone, and the
   // "Go" chime replaying at every trip end.
   group('a dismissed offer never leaves its route behind', () {
-    test('the seg1 draw ticker deletes the half-drawn line on !wanted()', () {
+    // Owner 2026-11-06: the offer's route is ONE gold→white line (a style
+    // layer, _offerRouteLine) instead of two flat gold annotations — the
+    // same leak rules, through the layer.
+    test('the draw ticker takes the line off on !stillWanted()', () {
       final map =
           File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
-      final start = map.indexOf('Future<void> _drawGoldGlossRoute(');
-      expect(start, isNonNegative, reason: '_drawGoldGlossRoute not found');
-      final body = map.substring(start, start + 3600);
-      // The ticker's branch, not the create-in-flight guard above it.
+      final start = map.indexOf('Future<void> _drawOfferLine(');
+      expect(start, isNonNegative, reason: '_drawOfferLine not found');
+      final body = map.substring(start, start + 2400);
       final tickerStart = body.indexOf('createTicker((_) {');
       expect(tickerStart, isNonNegative, reason: 'ticker not found');
-      final ticker = body.indexOf('if (!mounted || !wanted()) {', tickerStart);
-      expect(ticker, isNonNegative, reason: 'ticker guard not found');
-      final branch = body.substring(ticker, ticker + 700);
-      expect(branch.contains('polyMgr.delete(stale)'), isTrue,
-          reason: 'seg1 stopping without the delete leaves an UNTRACKED '
-              'polyline — _previewPickupAnnot is only assigned at progress '
-              '1.0, so the reject/expire clear has no handle to it and the '
-              'yellow route stays with the card already gone (the append '
-              'variant has always deleted; seg1 must match)');
+      final guard = body.indexOf(
+          'if (!mounted || !stillWanted() || !identical(map, _map)) {',
+          tickerStart);
+      expect(guard, isNonNegative, reason: 'ticker guard not found');
+      final branch = body.substring(guard, guard + 400);
+      expect(branch, contains('_offerRouteLine.hide(map)'),
+          reason: 'a draw stopped by a dismiss must take its half-drawn '
+              'line with it — the yellow route stayed with the card gone');
     });
 
-    test('both preview lines are tracked from creation, not at progress 1.0',
-        () {
-      // The ticker's own delete (above) only runs if the ticker lives long
-      // enough to notice the dismiss. Anything that kills it first —
-      // _closePreview() disposes _routeDrawTicker on the spot, and the 8s
-      // draw timeout in _onOfferCardTap lets PHASE 6 stop/dispose a seg1
-      // ticker frozen by an iOS background — used to leave the half-drawn
-      // gold line with no handle at all, and no reject/expire clear could
-      // reach it. The handles must be assigned right after create().
-      final map =
-          File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    test('whatever kills the draw, every clear reaches the line', () {
+      // A ticker killed before it notices the dismiss (_closePreview
+      // disposes it, the 8 s draw timeout after an iOS background freeze)
+      // used to orphan an annotation. The layer has no handle to lose: the
+      // clear funnel hides it (awaited, so the next offer's first write
+      // cannot land before the hide), the orphan sweep looks at it, and a
+      // lost surface forgets it.
+      final map = File('lib/screens/driver/driver_online_map.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+      final clear = map.substring(
+          map.indexOf('Future<void> _clearRouteAnnotation() async {'),
+          map.indexOf('Future<void> _restoreOfferPreviewOnFreshSurface()'));
+      expect(clear, contains('await _offerRouteLine.hide(map);'));
+      expect(clear, contains('_offerRouteLine.forget();'));
+      final sweep = map.substring(
+          map.indexOf('Future<void> _sweepPreviewOrphans() async {'));
+      expect(sweep.substring(0, 900), contains('!_offerRouteLine.isShown &&'));
+      for (final f in [
+        'lib/screens/driver/driver_online_controller.dart',
+        'lib/screens/driver/driver_online_widgets.dart',
+      ]) {
+        expect(File(f).readAsStringSync(), contains('_offerRouteLine.forget();'),
+            reason: '$f resets the surface: the layer died with it');
+      }
+    });
 
-      final s1 = map.indexOf('Future<void> _drawGoldGlossRoute(');
-      expect(s1, isNonNegative, reason: '_drawGoldGlossRoute not found');
-      final body1 = map.substring(s1, s1 + 3600);
-      final track1 = body1.indexOf('_previewPickupAnnot = mainLine;');
-      final ticker1 = body1.indexOf('createTicker((_) {');
-      expect(track1, isNonNegative,
-          reason: 'seg1 handle must be tracked at creation');
-      expect(track1 < ticker1, isTrue,
-          reason: 'seg1 handle must be assigned BEFORE the ticker starts — '
-              'assigned only at progress 1.0, a ticker killed mid-draw '
-              '(background freeze + 8s timeout, or _closePreview dispose) '
-              'orphans the half-drawn gold line and the X leaves it painted');
-
-      final s2 = map.indexOf('Future<void> _drawGoldGlossRouteAppend(');
-      expect(s2, isNonNegative, reason: '_drawGoldGlossRouteAppend not found');
-      final body2 = map.substring(s2, s2 + 3600);
-      final track2 = body2.indexOf('_previewDropoffAnnot = seg2Line;');
-      final ticker2 = body2.indexOf('createTicker((_) {');
-      expect(track2, isNonNegative,
-          reason: 'seg2 handle must be tracked at creation');
-      expect(track2 < ticker2, isTrue,
-          reason: 'seg2 handle must be assigned BEFORE the ticker starts — '
-              'same orphan-on-kill hole as seg1');
+    test('the offer draws the gold→white line, not flat gold annotations', () {
+      final map = File('lib/screens/driver/driver_online_map.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+      final screen = File('lib/screens/driver/driver_online_screen.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+      expect(screen,
+          contains('final GradientRouteLine _offerRouteLine = GradientRouteLine('));
+      final seq = map.substring(
+          map.indexOf('Future<void> _offerCardTapSequence('),
+          map.indexOf('Future<void> _previewOfferRouteWeb('));
+      expect(seq, contains('final whole = _offerWholeLine();'));
+      expect('_drawOfferLine('.allMatches(seq).length, 2,
+          reason: 'car → pickup, then pickup → destination');
+      expect(seq, isNot(contains('PolylineAnnotationOptions')));
+      expect(map, isNot(contains('_drawGoldGlossRoute')));
     });
 
     test('the fresh-surface restore bails only when the preview is GONE', () {

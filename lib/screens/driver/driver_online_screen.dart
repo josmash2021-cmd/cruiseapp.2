@@ -642,6 +642,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     layerId: 'accepted-route-line',
     width: 6.5,
   );
+  // An instant offer's route — car → pickup → stop → destination — in the
+  // same gold→white design (owner 2026-11-06, "que tenga la línea mismo
+  // diseño que las demás, dorada con blanco"); it used to be two flat gold
+  // polyline annotations.
+  final GradientRouteLine _offerRouteLine = GradientRouteLine(
+    sourceId: 'offer-route-src',
+    layerId: 'offer-route-line',
+    width: 6.5,
+  );
 
   // ── "Viaje cancelado" notice ──
   // Centred, semi-dark, never tappable: the driver is already back to

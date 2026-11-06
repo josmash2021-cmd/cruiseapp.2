@@ -598,6 +598,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     _carAnnot = null;
     _carAnnotGen = 0;
     _acceptedRouteLine.forget();
+    _offerRouteLine.forget();
     _heat.forgetSurface();
     _goldDotAnnot = null;
     _goldDotAnnotGen = 0;

@@ -5156,6 +5156,20 @@ class S {
   String get heatZoneEnd => _es ? 'Terminar' : 'End';
   String get heatZoneNearby => _es ? 'Zona cercana' : 'Nearby zone';
 
+  // ── Rider's floating support bubble (owner 2026-11-07) ──
+  // Never the message text (owner rule: a support notice only says "open
+  // the chat").
+  String get supportBubbleLabel => _es ? 'Chat de soporte' : 'Support chat';
+  String supportBubbleUnread(int n) => _es
+      ? (n == 1 ? '1 mensaje nuevo' : '$n mensajes nuevos')
+      : (n == 1 ? '1 new message' : '$n new messages');
+  String get supportBubblePreviewTitle =>
+      _es ? 'Soporte te escribió' : 'Support wrote to you';
+  String get supportBubblePreviewBody =>
+      _es ? 'Toca para abrir el chat' : 'Tap to open the chat';
+  String get supportBubbleDismiss =>
+      _es ? 'Ocultar chat de soporte' : 'Hide support chat';
+
   // ── The driver's reservation, tapped (owner 2026-11-03) ──
   String resDetailWith(String name) => _es ? 'con $name' : 'with $name';
   String get resDetailToday => _es ? 'Hoy' : 'Today';

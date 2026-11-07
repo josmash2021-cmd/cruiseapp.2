@@ -461,14 +461,26 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// The drivers' heat map (owner 2026-11-05): a typed pickup is step 2, a
-  /// dropoff on top of it step 3 — always at the pickup point.
+  /// dropoff on top of it step 3 — always at the pickup point. The labels
+  /// the rider sees (and the dropoff point) go to the panel's live list.
   void _reportHeat() {
     final p = _state.pickup;
     if (p == null) return;
-    if (_state.dropoff != null) {
-      RiderHeatReporter.instance.dropoff(p.lat, p.lng);
+    final pickupText =
+        _state.pickupLabel.isNotEmpty ? _state.pickupLabel : p.address;
+    final d = _state.dropoff;
+    if (d != null) {
+      RiderHeatReporter.instance.dropoff(
+        p.lat,
+        p.lng,
+        pickupAddress: pickupText,
+        dropoffLat: d.lat,
+        dropoffLng: d.lng,
+        dropoffAddress:
+            _state.dropoffLabel.isNotEmpty ? _state.dropoffLabel : d.address,
+      );
     } else {
-      RiderHeatReporter.instance.pickup(p.lat, p.lng);
+      RiderHeatReporter.instance.pickup(p.lat, p.lng, pickupAddress: pickupText);
     }
   }
 

@@ -43,6 +43,7 @@ import 'services/account_session_guard.dart';
 import 'services/map_controller_cache.dart';
 import 'services/notification_service.dart';
 import 'widgets/glass_notification_banner.dart';
+import 'widgets/support_bubble.dart';
 import 'services/live_activity_service.dart';
 import 'services/referral_link_service.dart';
 import 'services/security_service.dart';
@@ -59,6 +60,7 @@ import 'services/firebase_auth_recovery.dart';
 import 'services/prefs_cache.dart';
 import 'services/socket_service.dart';
 import 'services/rider_presence_service.dart';
+import 'services/support_bubble_controller.dart';
 import 'screens/chat_screen.dart';
 import 'screens/help_screen.dart';
 import 'screens/ride_request_screen.dart';
@@ -80,6 +82,13 @@ final accessibilityNotifier = AccessibilityNotifier();
 
 /// M2: Global navigator key for imperative navigation (auto-logout on 401).
 final _navigatorKey = GlobalKey<NavigatorState>();
+
+/// What is on top of the navigator, for the rider's support bubble: it
+/// stays off the splash / login pages and from under dialogs and sheets.
+final _supportBubbleRouteObserver = SupportBubbleRouteObserver(
+  SupportBubbleController.instance,
+  blocks: (route) => route is PopupRoute || isAuthRouteName(route.settings.name),
+);
 
 bool _riderPresenceSyncScheduled = false;
 bool _riderPresenceConsentPromptOpen = false;
@@ -686,6 +695,36 @@ void _showPushBanner(
         ? () => _handleNotificationTap(message)
         : null,
   );
+}
+
+/// A foreground support push. Riders: the support bubble refreshes and pops
+/// its "Support wrote to you" preview instead of the glass banner — the
+/// banner is drawn only when the bubble cannot show (driver mode, the
+/// bubble overlay not mounted, a dialog/sheet on top, the call failed).
+/// With the support chat itself on screen the message is already there.
+Future<void> _showSupportPush(
+  RemoteMessage message, {
+  required String type,
+  required String title,
+  required String body,
+}) async {
+  // An old iOS binary already drew the system banner: the bubble only
+  // updates, no second notice (same cut-off as _showPushBanner).
+  final systemBannerShown = !kIsWeb &&
+      Platform.isIOS &&
+      (_nativeBuildNumber ?? 0) < kFirstQuietForegroundPushIosBuild;
+  final handledByBubble = await SupportBubbleController.instance
+      .handleForegroundPush(systemBannerShown: systemBannerShown);
+  if (handledByBubble) return;
+  // Same text rule as the general foreground path: a data-only push with no
+  // copy of its own and no fallback stays silent.
+  final hasText = (message.notification?.title ?? '').trim().isNotEmpty ||
+      (message.notification?.body ?? '').trim().isNotEmpty ||
+      (message.data['title']?.toString() ?? '').trim().isNotEmpty ||
+      (message.data['body']?.toString() ?? '').trim().isNotEmpty ||
+      _riderNotifBody(type).isNotEmpty;
+  if (!hasText) return;
+  _showPushBanner(message, type: type, title: title, body: body);
 }
 
 /// Unified notification tap handler — routes to correct screen by FCM type.
@@ -1749,6 +1788,20 @@ Future<void> heavyInit() async {
               return;
             }
 
+            // Support wrote (owner 2026-11-07): for a rider the floating
+            // support bubble answers it — its preview, no glass banner on
+            // top. Drivers keep the banner exactly as before.
+            if (type == 'support_message' || type == 'support_followup') {
+              LocalDataService.addNotification(
+                title: title,
+                message: body,
+                type: type,
+              );
+              unawaited(_showSupportPush(message,
+                  type: type, title: title, body: body));
+              return;
+            }
+
             // New scheduled ride in the marketplace (2026-10-26 report: the
             // reservation broadcast "never arrived" with the app OPEN — this
             // type sat in neither allowlist below). The glass banner on both
@@ -1969,7 +2022,10 @@ class _UberCloneAppState extends State<UberCloneApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    UserSession.onBeforeLogout = RiderPresenceService.instance.stop;
+    UserSession.onBeforeLogout = () async {
+      SupportBubbleController.instance.clear();
+      await RiderPresenceService.instance.stop();
+    };
     // M2: auto-logout when JWT is expired and refresh also fails.
     // Guard against re-entry: if already on auth screens, skip.
     // Phone clock >30 min off: the backend refuses every signed call with
@@ -2017,6 +2073,7 @@ class _UberCloneAppState extends State<UberCloneApp>
         return true; // don't actually pop — just inspect
       });
       await ApiService.clearToken();
+      SupportBubbleController.instance.clear();
       if (!alreadyOnAuth) {
         nav.pushAndRemoveUntil(
           PageRouteBuilder(
@@ -2049,6 +2106,7 @@ class _UberCloneAppState extends State<UberCloneApp>
         unawaited(SocketService.reconnectWithFreshToken());
       }
       _requestRiderPresenceSync();
+      unawaited(SupportBubbleController.instance.refresh());
     };
 
     // Driver session replaced on another device — show dialog then force logout
@@ -2250,6 +2308,9 @@ class _UberCloneAppState extends State<UberCloneApp>
               // surface while something else is on top — see
               // lib/config/route_observers.dart.
               mapRouteObserver,
+              // The rider's support bubble: what is on top (splash, a
+              // dialog or sheet) — see support_bubble_controller.dart.
+              _supportBubbleRouteObserver,
             ],
             home: const SplashScreen(),
             builder: (context, child) {
@@ -2259,9 +2320,24 @@ class _UberCloneAppState extends State<UberCloneApp>
                 data: MediaQuery.of(context).copyWith(
                   textScaler: TextScaler.linear(scale),
                 ),
-                child: ScrollConfiguration(
-                  behavior: const SmoothScrollBehavior(),
-                  child: child!,
+                // The rider's floating support bubble sits above every
+                // route (owner 2026-11-07); riders only — the controller
+                // keeps it off in driver mode.
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ScrollConfiguration(
+                      behavior: const SmoothScrollBehavior(),
+                      child: child!,
+                    ),
+                    Positioned.fill(
+                      child: SupportBubbleOverlay(
+                        controller: SupportBubbleController.instance,
+                        onOpen: (chatId) =>
+                            _navigateToSupportChat(chatId: chatId),
+                      ),
+                    ),
+                  ],
                 ),
               );
             },

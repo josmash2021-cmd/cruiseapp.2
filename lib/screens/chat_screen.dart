@@ -10,6 +10,7 @@ import '../services/chat_service.dart';
 import '../services/error_service.dart';
 import '../services/masked_call_service.dart';
 import '../services/socket_service.dart';
+import '../services/support_bubble_controller.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../widgets/neu_style.dart';
@@ -120,6 +121,8 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     ChatScreen.activeTripId = widget.tripId;
+    // The floating support bubble steps aside while a support chat is open.
+    if (widget.isSupport) SupportBubbleController.instance.supportChatOpened();
     _initChat();
   }
 
@@ -285,6 +288,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     ChatScreen.activeTripId = null;
+    if (widget.isSupport) SupportBubbleController.instance.supportChatClosed();
     _pollTimer?.cancel();
     _typingTimer?.cancel();
     _restPollTimer?.cancel();

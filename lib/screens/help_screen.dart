@@ -14,6 +14,7 @@ import '../widgets/neu_style.dart';
 import '../widgets/steering_wheel_icon.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
+import '../services/support_bubble_controller.dart';
 import '../services/support_chat_cache.dart';
 import '../services/user_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1168,6 +1169,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   @override
   void initState() {
     super.initState();
+    // The rider's floating support bubble steps aside while this chat is
+    // open, and looks again when it closes.
+    SupportBubbleController.instance.supportChatOpened();
     _queueDuration = AiSupportService.randomQueueWait();
     // Cache first (synchronous, before the first build); the network only
     // ever updates in place from the post-frame callback below.
@@ -1180,6 +1184,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   @override
   void dispose() {
+    SupportBubbleController.instance.supportChatClosed();
     _pollTimer?.cancel();
     _typingDebounce?.cancel();
     _queueSafetyTimer?.cancel();

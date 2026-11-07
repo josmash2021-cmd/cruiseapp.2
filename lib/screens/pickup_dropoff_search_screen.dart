@@ -219,6 +219,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    // Left the page: the "typing an address" run on the panel is over.
+    RiderHeatReporter.instance.typingDone();
     _pickupCtrl.dispose();
     _dropoffCtrl.dispose();
     _stopCtrl.dispose();
@@ -232,6 +234,16 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
 
   void _onTextChanged(String text) {
     _debounce?.cancel();
+    // The panel's live list (owner 2026-11-07): "typing an address" for the
+    // pickup or the dropoff field — throttled in the reporter. The stop
+    // field is not a booking step.
+    if (!_editingStop) {
+      if (_editingDropoff) {
+        RiderHeatReporter.instance.typing('dropoff', text);
+      } else if (_editingPickup) {
+        RiderHeatReporter.instance.typing('pickup', text);
+      }
+    }
     if (text.trim().length < 2) {
       setState(() => _suggestions = []);
       return;
@@ -305,8 +317,16 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       // rider's step at the pickup — or where they are, if none is typed.
       final pLat = _pickupDetails?.lat ?? widget.initialPickupLat;
       final pLng = _pickupDetails?.lng ?? widget.initialPickupLng;
+      RiderHeatReporter.instance.typingDone();
       if (pLat != null && pLng != null) {
-        RiderHeatReporter.instance.dropoff(pLat, pLng);
+        RiderHeatReporter.instance.dropoff(
+          pLat,
+          pLng,
+          pickupAddress: _pickupLabel,
+          dropoffLat: details.lat,
+          dropoffLng: details.lng,
+          dropoffAddress: suggestion.description,
+        );
       }
       setState(() {
         _dropoffDetails = details;
@@ -336,10 +356,25 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         _pickupFocus.requestFocus();
       }
     } else {
-      if (_dropoffDetails != null) {
-        RiderHeatReporter.instance.dropoff(details.lat, details.lng);
+      RiderHeatReporter.instance.typingDone();
+      final chosenDropoff = _dropoffDetails;
+      if (chosenDropoff != null) {
+        RiderHeatReporter.instance.dropoff(
+          details.lat,
+          details.lng,
+          pickupAddress: suggestion.description,
+          dropoffLat: chosenDropoff.lat,
+          dropoffLng: chosenDropoff.lng,
+          dropoffAddress: _dropoffLabel.isNotEmpty
+              ? _dropoffLabel
+              : chosenDropoff.address,
+        );
       } else {
-        RiderHeatReporter.instance.pickup(details.lat, details.lng);
+        RiderHeatReporter.instance.pickup(
+          details.lat,
+          details.lng,
+          pickupAddress: suggestion.description,
+        );
       }
       setState(() {
         _pickupDetails = details;

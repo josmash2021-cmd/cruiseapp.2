@@ -1765,24 +1765,81 @@ class ApiService {
   /// The rider typed a pickup (`step: 'pickup'`) or a dropoff
   /// (`step: 'dropoff'`): their heat moves to [lat]/[lng] — the pickup — on
   /// the drivers' map (owner 2026-11-05, heat zones). Best-effort.
+  ///
+  /// [address] is the pickup text the rider sees; with `step: 'dropoff'`
+  /// the chosen dropoff rides along ([dropoffLat]/[dropoffLng] both or
+  /// neither, [dropoffAddress]) so the live "booking now" list on the panel
+  /// shows where they are going. Null keys are left out, never sent as null.
   static Future<bool> reportTripIntent({
     required String step,
     required double lat,
     required double lng,
+    String? address,
+    double? dropoffLat,
+    double? dropoffLng,
+    String? dropoffAddress,
   }) async {
     final headers = await _authHeaders();
     if (!headers.containsKey('Authorization')) return false;
+    final withDropoff = step == 'dropoff';
+    final hasDropoffPoint = withDropoff &&
+        dropoffLat != null &&
+        dropoffLng != null &&
+        dropoffLat.isFinite &&
+        dropoffLng.isFinite;
+    final pickupText = _intentText(address);
+    final dropoffText = withDropoff ? _intentText(dropoffAddress) : null;
     try {
       final res = await _client
           .post(
             Uri.parse('$_baseUrl/demand/intent'),
             headers: headers,
-            body: jsonEncode({'step': step, 'lat': lat, 'lng': lng}),
+            body: jsonEncode({
+              'step': step,
+              'lat': lat,
+              'lng': lng,
+              if (pickupText != null) 'address': pickupText,
+              if (hasDropoffPoint) ...{
+                'dropoff_lat': dropoffLat,
+                'dropoff_lng': dropoffLng,
+              },
+              if (dropoffText != null) 'dropoff_address': dropoffText,
+            }),
           )
           .timeout(const Duration(seconds: 5));
       return res.statusCode >= 200 && res.statusCode < 300;
     } catch (error) {
       debugPrint('[ApiService] trip intent failed: ${error.runtimeType}');
+      return false;
+    }
+  }
+
+  /// An address for /demand/intent: trimmed, empty = none, at most 300
+  /// characters (the server's limit).
+  static String? _intentText(String? text) {
+    final t = text?.trim() ?? '';
+    if (t.isEmpty) return null;
+    return t.length > 300 ? t.substring(0, 300) : t;
+  }
+
+  /// The rider is typing in the pickup or the dropoff search field
+  /// ([field] `'pickup'` / `'dropoff'`): the panel's live list shows them
+  /// as "typing an address". Fire-and-forget — the caller throttles it
+  /// (RiderHeatReporter.typing) and no failure ever reaches the rider.
+  static Future<bool> reportTyping({required String field}) async {
+    final headers = await _authHeaders();
+    if (!headers.containsKey('Authorization')) return false;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/demand/typing'),
+            headers: headers,
+            body: jsonEncode({'field': field}),
+          )
+          .timeout(const Duration(seconds: 5));
+      return res.statusCode >= 200 && res.statusCode < 300;
+    } catch (error) {
+      debugPrint('[ApiService] typing signal failed: ${error.runtimeType}');
       return false;
     }
   }
@@ -2735,6 +2792,38 @@ class ApiService {
       );
     } catch (e) {
       debugPrint('[ApiService] getSupportUnread failed: $e');
+      return null;
+    }
+  }
+
+  /// The rider's live support conversation, for the floating support
+  /// bubble: `chatId` null = no live conversation (no bubble). `lastId` /
+  /// `lastFromSupport` describe the newest message — never its text (owner
+  /// rule: a support notice only says "open the chat"). Null when the call
+  /// failed.
+  static Future<
+      ({
+        int? chatId,
+        int unread,
+        int? lastId,
+        bool lastFromSupport,
+      })?> getSupportActive() async {
+    try {
+      final h = await _authHeaders();
+      if (!h.containsKey('Authorization')) return null;
+      final res = await _client
+          .get(Uri.parse('$_baseUrl/support/active'), headers: h)
+          .timeout(const Duration(seconds: 6));
+      final m = _parse(res);
+      final last = m['last'];
+      return (
+        chatId: (m['chat_id'] as num?)?.toInt(),
+        unread: (m['unread'] as num?)?.toInt() ?? 0,
+        lastId: last is Map ? (last['id'] as num?)?.toInt() : null,
+        lastFromSupport: last is Map && last['from_support'] == true,
+      );
+    } catch (e) {
+      debugPrint('[ApiService] getSupportActive failed: ${e.runtimeType}');
       return null;
     }
   }

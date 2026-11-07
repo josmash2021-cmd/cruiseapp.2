@@ -198,6 +198,30 @@ class DemandIntentIn(BaseModel):
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
     step: Literal["pickup", "dropoff"]
+    # What the panel's "Pidiendo ahora" shows (owner 2026-11-07). Optional:
+    # builds before it send only the pickup point. Drivers never see these —
+    # the heat map is still the 400 m cell around lat/lng.
+    address: Optional[str] = Field(default=None, max_length=300)
+    dropoff_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    dropoff_lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    dropoff_address: Optional[str] = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def dropoff_point_whole_and_only_with_dropoff(self):
+        if (self.dropoff_lat is None) != (self.dropoff_lng is None):
+            raise ValueError("dropoff_lat and dropoff_lng go together")
+        if self.step != "dropoff" and (
+                self.dropoff_lat is not None or self.dropoff_address):
+            raise ValueError("dropoff fields need step 'dropoff'")
+        return self
+
+
+class DemandTypingIn(BaseModel):
+    """The rider is typing in the pickup or the dropoff search field and has
+    not chosen an address yet (panel "Pidiendo ahora", owner 2026-11-07)."""
+    model_config = ConfigDict(extra="forbid")
+
+    field: Literal["pickup", "dropoff"] = "pickup"
 
 
 # ═══════════════════════════════════════════════════════

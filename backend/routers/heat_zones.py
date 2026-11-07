@@ -7,21 +7,23 @@ read fallback.
   DELETE /demand/intent   rider left the booking flow
   GET    /zones/heat      the live cells, for when the Firestore listen of
                           config/rider_heat fails
+  POST   /demand/typing   rider is typing an address (panel only, 2026-11-07)
+  GET    /admin/riders/booking-now   the panel's "Pidiendo ahora" (2026-11-07)
 """
 
 import logging
 import time
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import User, get_db
-from models.schemas import DemandIntentIn
-from services import rider_heat
+from models.schemas import DemandIntentIn, DemandTypingIn
+from services import booking_now, rider_heat
 from utils.helpers import ACTIVE_ACCOUNT_STATUSES
-from utils.security import _get_current_user, _verify_api_key
+from utils.security import _get_current_user, _require_dispatch_auth, _verify_api_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -63,8 +65,29 @@ async def record_demand_intent(
         raise HTTPException(403, "Account is not active")
     # A heat outage must not turn into an error on the booking screen:
     # record() already swallows it, and the app has nothing to retry.
-    await rider_heat.record(user.id, body.lat, body.lng,
-                            _INTENT_STEPS[body.step], time.time())
+    now = time.time()
+    step = _INTENT_STEPS[body.step]
+    await rider_heat.record(user.id, body.lat, body.lng, step, now)
+    await rider_heat.record_booking(
+        user.id, now, step=step, address=body.address,
+        dropoff=(None if body.dropoff_lat is None
+                 else (body.dropoff_lat, body.dropoff_lng)),
+        dropoff_address=body.dropoff_address)
+    return OkOut()
+
+
+@router.post("/demand/typing", response_model=OkOut,
+             dependencies=[Depends(_verify_api_key)])
+async def record_demand_typing(
+    body: DemandTypingIn,
+    user: User = Depends(_get_current_user),
+) -> OkOut:
+    # Panel only: no point, no heat — the rider has not chosen an address.
+    if user.role != "rider":
+        raise HTTPException(403, "Rider access required")
+    if user.status not in ACTIVE_ACCOUNT_STATUSES:
+        raise HTTPException(403, "Account is not active")
+    await rider_heat.record_booking(user.id, time.time(), typing_field=body.field)
     return OkOut()
 
 
@@ -96,3 +119,14 @@ async def zone_heat(
         raise HTTPException(503, "Heat zones temporarily unavailable")
     _heat_cache = (mono, cells)
     return HeatZonesOut(cells=cells)
+
+
+@router.get("/admin/riders/booking-now",
+            dependencies=[Depends(_require_dispatch_auth)])
+async def riders_booking_now(
+    counts_only: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Panel "Pidiendo ahora": riders typing or choosing an address right
+    now (services/booking_now.py). ``counts_only`` is the sidebar badge."""
+    return await booking_now.snapshot(db, time.time(), counts_only=counts_only)

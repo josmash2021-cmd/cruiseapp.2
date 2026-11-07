@@ -46,6 +46,13 @@ from services.dispatch_sessions import _forget_redis, _get_redis
 from services.platform_earnings import review_tester_ids
 
 RIDER_HEAT_KEY = "cruise:rider-heat:v1"
+# What the panel's "Pidiendo ahora" shows beside the heat row (owner
+# 2026-11-07): the addresses the rider chose and whether they are typing.
+# One row per rider, field = rider id, value = JSON
+# ``{"started_ts", "ts", "pickup_address", "dropoff_lat", "dropoff_lng",
+# "dropoff_address", "typing_ts", "typing_field"}``. It lives and dies with
+# the heat row: clear(), the consume and prune() drop both.
+RIDER_BOOKING_KEY = "cruise:rider-booking:v1"
 
 STEP_LOCATION = 1
 STEP_PICKUP = 2
@@ -54,6 +61,9 @@ STEP_WEIGHTS = {STEP_LOCATION: 0.55, STEP_PICKUP: 0.8, STEP_DROPOFF: 1.0}
 
 ROW_TTL_SECONDS = 180
 STEP_TTL_SECONDS = 15 * 60
+# The app re-sends "typing" at most every 20 s while the rider types.
+TYPING_TTL_SECONDS = 45
+_ADDRESS_MAX = 300
 PRUNE_AFTER_SECONDS = 60 * 60
 PRUNE_EVERY_SECONDS = 5 * 60
 HEAT_POLL_SECONDS = 1.5
@@ -178,12 +188,104 @@ async def record(rider_id: int, lat: float, lng: float, step: int,
         return False
 
 
+def _clean_address(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    value = " ".join(value.split())[:_ADDRESS_MAX]
+    return value or None
+
+
+def _finite(value: Any) -> Optional[float]:
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def parse_booking(raw: Any) -> Optional[dict]:
+    """Stored booking JSON -> dict, or None for anything malformed."""
+    try:
+        data = json.loads(raw)
+        ts = float(data["ts"])
+        started = float(data.get("started_ts", ts))
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return None
+    if not (math.isfinite(ts) and math.isfinite(started)):
+        return None
+    dlat, dlng = _finite(data.get("dropoff_lat")), _finite(data.get("dropoff_lng"))
+    if dlat is None or dlng is None or not (-90 <= dlat <= 90 and -180 <= dlng <= 180):
+        dlat = dlng = None
+    field = data.get("typing_field")
+    return {
+        "started_ts": started,
+        "ts": ts,
+        "pickup_address": _clean_address(data.get("pickup_address")),
+        "dropoff_lat": dlat,
+        "dropoff_lng": dlng,
+        "dropoff_address": _clean_address(data.get("dropoff_address")),
+        "typing_ts": _finite(data.get("typing_ts")),
+        "typing_field": field if field in ("pickup", "dropoff") else None,
+    }
+
+
+def merge_booking(current: Optional[dict], now: float, *,
+                  step: Optional[int] = None,
+                  address: Optional[str] = None,
+                  dropoff: Optional[tuple[float, float]] = None,
+                  dropoff_address: Optional[str] = None,
+                  typing_field: Optional[str] = None) -> dict:
+    """One booking report on top of the stored row, kept pure for the tests.
+
+    A row quiet for longer than a typed address lives (15 min) is a new
+    booking: it starts over. A chosen address ends the typing; choosing the
+    pickup again clears the dropoff (the app re-sends the dropoff with it).
+    """
+    if current is None or now - current["ts"] > STEP_TTL_SECONDS:
+        current = {"started_ts": now, "pickup_address": None,
+                   "dropoff_lat": None, "dropoff_lng": None,
+                   "dropoff_address": None, "typing_ts": None,
+                   "typing_field": None}
+    row = {**current, "ts": now}
+    if typing_field is not None:
+        row["typing_ts"] = now
+        row["typing_field"] = typing_field
+    if step is not None:
+        row["typing_ts"] = None
+        row["typing_field"] = None
+        row["pickup_address"] = _clean_address(address)
+        if step >= STEP_DROPOFF and dropoff is not None:
+            row["dropoff_lat"], row["dropoff_lng"] = dropoff
+            row["dropoff_address"] = _clean_address(dropoff_address)
+        else:
+            row["dropoff_lat"] = row["dropoff_lng"] = None
+            row["dropoff_address"] = None
+    return row
+
+
+async def record_booking(rider_id: int, now: float, **report: Any) -> bool:
+    """Store one booking report (see merge_booking). Never raises."""
+    client = None
+    try:
+        field = str(int(rider_id))
+        client = await _get_redis()
+        current = parse_booking(await client.hget(RIDER_BOOKING_KEY, field))
+        row = merge_booking(current, float(now), **report)
+        await client.hset(RIDER_BOOKING_KEY, field,
+                          json.dumps(row, separators=(",", ":")))
+        return True
+    except Exception:
+        _unavailable(client)
+        return False
+
+
 async def clear(rider_id: int) -> bool:
     """Forget a rider entirely. Never raises."""
     client = None
     try:
         client = await _get_redis()
         await client.hdel(RIDER_HEAT_KEY, str(int(rider_id)))
+        await client.hdel(RIDER_BOOKING_KEY, str(int(rider_id)))
         return True
     except Exception:
         _unavailable(client)
@@ -210,11 +312,37 @@ async def _load_rows() -> dict[int, dict]:
     return rows
 
 
+# Public: the panel's "Pidiendo ahora" reads the same rows.
+load_rows = _load_rows
+
+
+async def load_booking_rows() -> dict[int, dict]:
+    client = None
+    try:
+        client = await _get_redis()
+        raw = await client.hgetall(RIDER_BOOKING_KEY)
+    except Exception:
+        _unavailable(client)
+        return {}
+    rows: dict[int, dict] = {}
+    for field, value in (raw or {}).items():
+        try:
+            rider_id = int(field)
+        except (TypeError, ValueError):
+            continue
+        row = parse_booking(value)
+        if row is not None:
+            rows[rider_id] = row
+    return rows
+
+
 async def _consume_intents(rider_ids: list[int]) -> None:
     client = None
     try:
         client = await _get_redis()
-        await client.hdel(RIDER_HEAT_KEY, *[str(r) for r in rider_ids])
+        fields = [str(r) for r in rider_ids]
+        await client.hdel(RIDER_HEAT_KEY, *fields)
+        await client.hdel(RIDER_BOOKING_KEY, *fields)
     except Exception:
         _unavailable(client)
 
@@ -306,7 +434,15 @@ async def prune(now: float) -> int:
                 stale.append(field)
         if stale:
             await client.hdel(RIDER_HEAT_KEY, *stale)
-        return len(stale)
+        raw = await client.hgetall(RIDER_BOOKING_KEY)
+        stale_booking = []
+        for field, value in (raw or {}).items():
+            row = parse_booking(value)
+            if row is None or now - row["ts"] > PRUNE_AFTER_SECONDS:
+                stale_booking.append(field)
+        if stale_booking:
+            await client.hdel(RIDER_BOOKING_KEY, *stale_booking)
+        return len(stale) + len(stale_booking)
     except Exception:
         _unavailable(client)
         return 0

@@ -3628,11 +3628,16 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
     if not chat:
         raise HTTPException(404, "Chat not found")
 
+    return await _send_dispatch_message(db, chat, msg_text)
+
+
+async def _send_dispatch_message(db, chat, msg_text: str) -> dict:
+    """One panel message into ``chat``: bot off, Firestore, push."""
     # When dispatch sends a message, take over from bot
     if chat.bot_phase != "dispatch_takeover":
         chat.bot_phase = "dispatch_takeover"
 
-    msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="dispatch", message=msg_text)
+    msg = SupportMessage(chat_id=chat.id, sender_id=None, sender_role="dispatch", message=msg_text)
     db.add(msg)
     chat.updated_at = datetime.now(timezone.utc)
     await db.commit()
@@ -3643,7 +3648,7 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
     # Sync to Firestore
     if _HAS_FIRESTORE:
         try:
-            firestore_sync.sync_support_message(chat_id, msg.id, 0, sender_label, "dispatch", msg_text)
+            firestore_sync.sync_support_message(chat.id, msg.id, 0, sender_label, "dispatch", msg_text)
         except Exception as e:
             logging.error("Firestore dispatch msg sync failed: %s", e)
 
@@ -3653,6 +3658,141 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
     await _push_support_message(db, chat)
 
     return _support_msg_dict(msg, sender_label)
+
+
+_SUPPORT_CHAT_IDLE_RESTART = timedelta(hours=6)
+
+
+@router.post("/admin/users/{user_id}/support-chat", dependencies=[Depends(_require_dispatch_auth)])
+async def open_support_chat_for_user(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Support writes first (panel "Pidiendo ahora" -> Chatear, owner
+    2026-11-07). The user's open chat gets the message; without one, a chat
+    opens straight in dispatch_takeover with no bot greeting - the assistant
+    asking "how can I help?" after support already wrote reads backwards.
+    The message then goes out like any panel message (Firestore + push), and
+    the app's support bubble shows it. A chat idle for 6 h is closed and a
+    new one starts - the same rule as _get_or_create_support_chat."""
+    body = await request.json()
+    msg_text = (body.get("message") or "").strip()
+    if not msg_text:
+        raise HTTPException(400, "Message cannot be empty")
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(404, "User not found")
+
+    chat = (await db.execute(
+        select(SupportChat)
+        .where(SupportChat.user_id == user.id, SupportChat.status == "open")
+        .order_by(SupportChat.id.desc())
+        .limit(1)
+    )).scalars().first()
+    if chat is not None:
+        idle_since = chat.last_user_message_at or chat.updated_at or chat.created_at
+        if idle_since and datetime.now(timezone.utc) - _aware(idle_since) > _SUPPORT_CHAT_IDLE_RESTART:
+            chat.status = "closed"
+            chat.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+            if _HAS_FIRESTORE:
+                try:
+                    firestore_sync.sync_support_chat(
+                        chat.id, chat.user_id, user.first_name, user.last_name,
+                        user.photo_url, user.role, chat.subject, "closed",
+                    )
+                except Exception as e:
+                    logging.error("Firestore close-on-restart sync failed: %s", e)
+            chat = None
+    if chat is None:
+        locale = (getattr(user, "locale", None) or "es")[:5]
+        chat = SupportChat(
+            user_id=user.id,
+            subject="Soporte" if locale.lower().startswith("es") else "Support",
+            bot_phase="dispatch_takeover", locale=locale,
+            agent_name=_agent_for_role(user.role or "rider"),
+        )
+        db.add(chat)
+        await db.commit()
+        await db.refresh(chat)
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_support_chat(
+                    chat.id, user.id, user.first_name, user.last_name,
+                    user.photo_url, user.role, chat.subject, chat.status,
+                )
+            except Exception as e:
+                logging.error("Firestore outbound chat sync failed: %s", e)
+
+    message = await _send_dispatch_message(db, chat, msg_text)
+    return {"chat_id": chat.id, "message": message}
+
+
+_BUBBLE_ACTIVE_WINDOW = timedelta(minutes=30)
+_BUBBLE_UNREAD_WINDOW = timedelta(hours=12)
+
+
+@router.get("/support/active", dependencies=[Depends(_verify_api_key)])
+async def support_active(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """The rider app's support bubble (owner 2026-11-07: a bubble on every
+    screen "solo cuando escriben a soporte o soporte escribe a ellos").
+
+    Live = an open chat where the user or a person from support wrote in the
+    last 30 min, or with an unread message from a person of support in the
+    last 12 h (the /support/unread window). A chat where only the bot's
+    greeting exists is not a conversation. Never the message text: support
+    content stays inside the chat (same rule as the push).
+    """
+    none = {"chat_id": None, "unread": 0, "last": None}
+    chat = (await db.execute(
+        select(SupportChat)
+        .where(SupportChat.user_id == user.id, SupportChat.status == "open")
+        .order_by(SupportChat.updated_at.desc(), SupportChat.id.desc())
+        .limit(1)
+    )).scalars().first()
+    if chat is None:
+        return none
+    now = datetime.now(timezone.utc)
+    from_user = SupportMessage.sender_id == user.id
+    from_support = or_(SupportMessage.sender_id.is_(None), SupportMessage.sender_id != user.id)
+    last_human = (await db.execute(
+        select(func.max(SupportMessage.created_at)).where(
+            SupportMessage.chat_id == chat.id,
+            or_(from_user, SupportMessage.sender_role == "dispatch"),
+        )
+    )).scalar()
+    unread_person = (await db.execute(
+        select(func.count(SupportMessage.id)).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "dispatch",
+            SupportMessage.is_read == False,  # noqa: E712
+            SupportMessage.created_at >= now - _BUBBLE_UNREAD_WINDOW,
+        )
+    )).scalar() or 0
+    recent = last_human is not None and now - _aware(last_human) <= _BUBBLE_ACTIVE_WINDOW
+    if not recent and not unread_person:
+        return none
+    unread = (await db.execute(
+        select(func.count(SupportMessage.id)).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.is_read == False,  # noqa: E712
+            SupportMessage.sender_role != "system",
+            from_support,
+            SupportMessage.created_at >= now - _BUBBLE_UNREAD_WINDOW,
+        )
+    )).scalar() or 0
+    last = (await db.execute(
+        select(SupportMessage)
+        .where(SupportMessage.chat_id == chat.id, SupportMessage.sender_role != "system")
+        .order_by(SupportMessage.id.desc())
+        .limit(1)
+    )).scalars().first()
+    return {
+        "chat_id": chat.id,
+        "unread": int(unread),
+        "last": None if last is None else {
+            "id": last.id,
+            "from_support": last.sender_id != user.id,
+            "at": _aware(last.created_at).isoformat() if last.created_at else None,
+        },
+    }
 
 @router.post("/support/chats/{chat_id}/connect-supervisor", dependencies=[Depends(_require_dispatch_auth)])
 async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):

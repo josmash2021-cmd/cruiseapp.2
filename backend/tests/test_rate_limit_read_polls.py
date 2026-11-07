@@ -37,6 +37,8 @@ class TestReadPollPathClassification:
         assert _is_read_poll_path("/trips/625/poll")
         assert _is_read_poll_path("/trips/625/chat")
         assert _is_read_poll_path("/support/chats/52/messages")
+        assert _is_read_poll_path("/admin/riders/booking-now")
+        assert _is_read_poll_path("/support/active")
 
     def test_lookalikes_are_not_exempt(self):
         # Dispatch-only admin reads stay under the tier.

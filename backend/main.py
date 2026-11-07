@@ -1686,6 +1686,10 @@ def _is_read_poll_path(path: str) -> bool:
         path == "/trips/active"
         or path == "/pricing/revision"
         or path == "/support/chats"
+        # Panel "Pidiendo ahora" (every 3 s) + its menu badge, and the rider
+        # app's support bubble (2026-11-07).
+        or path == "/admin/riders/booking-now"
+        or path == "/support/active"
         or (path.startswith("/trips/") and (path.endswith("/poll") or path.endswith("/chat")))
         or (path.startswith("/support/chats/") and (path.endswith("/messages") or path.endswith("/typing")))
     )

@@ -368,7 +368,10 @@ async def test_presence_keeps_a_typed_pickup(client, db, test_rider, heat_redis)
     assert r.status_code == 200
     row = heat_redis.rows()[rider.id]
     assert (row["lat"], row["lng"], row["step"], row["step_ts"]) == (25.8, -80.25, 2, typed_at)
-    assert row["ts"] >= typed_at
+    # Presence stamps datetime.now() (whole microseconds), the intent
+    # time.time(): two requests inside one Windows clock tick (~15 ms) read
+    # the same instant and the truncated one lands up to 1 µs "earlier".
+    assert row["ts"] >= typed_at - 1e-6
 
 
 @pytest.mark.asyncio

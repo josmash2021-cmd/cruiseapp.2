@@ -82,7 +82,7 @@ const payload=await gs("/admin/trips",buildDispatchTripPayload(s));
 const id=payload===null||typeof payload!=="object"?null:payload.id??payload.trip_id??payload.tripId;
 if(typeof id!=="number"||!Number.isFinite(id))throw new Ce(500,"El backend no devolvió el id del viaje creado");
 return`sql_${Math.trunc(id)}`;
-}function rs({label:s,hint:l,dotClass:i,address:n,onAddressChange:o,lat:c,lng:t,onLatChange:h,onLngChange:m,suggestions:r,onPickSuggestion:u,error:p}){return e.jsxs("div",{children:[e.jsxs("div",{className:"flex items-start gap-2.5",children:[e.jsx("span",{className:A("mt-4 h-2 w-2 shrink-0 rounded-full",i)}),e.jsx("div",{className:"min-w-0 flex-1",children:e.jsx(q,{label:s,placeholder:l,value:n,onChange:x=>o(x.target.value),error:p})})]}),r.length>0&&e.jsx("div",{className:"ml-[18px] mt-1 rounded-[10px] border border-cardBorder bg-surface",children:r.map(x=>e.jsxs("button",{type:"button",onClick:()=>u(x),className:"flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surfaceHigh",children:[e.jsx(ze,{className:"h-4 w-4 shrink-0 text-textSecondary",strokeWidth:2}),e.jsx("span",{className:"line-clamp-2 text-[13px] text-textPrimary",children:x.placeName})]},`${x.lat},${x.lng}:${x.placeName}`))}),e.jsxs("div",{className:"ml-[18px] mt-2 flex gap-2",children:[e.jsx(q,{label:"Lat",value:c,onChange:x=>h(x.target.value),inputMode:"decimal",className:"py-2 text-xs"}),e.jsx(q,{label:"Lng",value:t,onChange:x=>m(x.target.value),inputMode:"decimal",className:"py-2 text-xs"})]})]})}function Ra(){
+}function rs({label:s,hint:l,dotClass:i,address:n,onAddressChange:o,lat:c,lng:t,onLatChange:h,onLngChange:m,suggestions:r,onPickSuggestion:u,error:p}){return e.jsxs("div",{children:[e.jsxs("div",{className:"flex items-start gap-2.5",children:[e.jsx("span",{className:A("mt-4 h-2 w-2 shrink-0 rounded-full",i)}),e.jsx("div",{className:"min-w-0 flex-1",children:e.jsx(q,{label:s,placeholder:l,value:n,onChange:x=>o(x.target.value),error:p})})]}),r.length>0&&e.jsx("div",{className:"ml-[18px] mt-1 rounded-[10px] border border-cardBorder bg-surface",children:r.map(x=>e.jsxs("button",{type:"button",onClick:()=>u(x),className:"flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surfaceHigh",children:[e.jsx(ze,{className:"h-4 w-4 shrink-0 text-textSecondary",strokeWidth:2}),e.jsx("span",{className:"line-clamp-2 text-[13px] text-textPrimary",children:x.placeName})]},`${x.lat},${x.lng}:${x.placeName}`))})]})}/*! guard-pin panel_booking_now_guard_test: "Nuevo viaje" sin Lat/Lng y con la ruta en el mapa (owner 2026-11-07) - el punto sale SOLO de elegir una dirección de la lista; escribir borra el punto de ese campo - re-aplicar tras rebuild */const TripRouteMapLazy=a.lazy(()=>import("./trip-route-map-Cruise2026.js").then(m=>({default:m.TripRouteMap})));function Ra(){
 /*! guard-pin panel_booking_now_guard_test: "Crear viaje" desde Pidiendo ahora llega con el pasajero y sus direcciones (location.state.bookingPrefill, 2026-11-07) - re-aplicar tras rebuild */const nav=te(),loc=Ae(),bookingPrefill=(loc.state&&loc.state.bookingPrefill)||null,bookingFix=v=>typeof v==="number"&&Number.isFinite(v)?v.toFixed(6):"";
 const[riderQuery,setRiderQuery]=a.useState(""),[riderResults,setRiderResults]=a.useState([]),[riderSearching,setRiderSearching]=a.useState(false),[rider,setRider]=a.useState(()=>bookingPrefill&&bookingPrefill.rider&&typeof bookingPrefill.rider.id==="number"?bookingPrefill.rider:null);
 const riderSeq=a.useRef(0);
@@ -113,7 +113,7 @@ const timer=setTimeout(()=>{searchDispatchDrivers(query).then(rows=>{if(seq!==dr
 return()=>clearTimeout(timer);
 },[driverQuery,isScheduled,targetMode,targetDriver]);
 const onAddressChange=(value,isPickup)=>{
-if(isPickup)setPickupAddress(value);else setDropoffAddress(value);
+if(isPickup){setPickupAddress(value);setPickupLat("");setPickupLng("")}else{setDropoffAddress(value);setDropoffLat("");setDropoffLng("")}
 if(geoTimer.current!==null)clearTimeout(geoTimer.current);
 if(value.trim().length<3){if(isPickup)setPickupSuggestions([]);else setDropoffSuggestions([]);return}
 geoTimer.current=setTimeout(()=>{oa(value).then(list=>{if(isPickup)setPickupSuggestions(list);else setDropoffSuggestions(list)}).catch(()=>{})},500);
@@ -161,8 +161,8 @@ return()=>{clearTimeout(timer);ctrl.abort()};
 const tipValue=tipAmount.trim()===""?0:Number(tipAmount);
 const errors={
 rider:rider===null?"Selecciona un rider existente":void 0,
-pickupAddress:pickupAddress.trim()===""?"Obligatorio":void 0,
-dropoffAddress:dropoffAddress.trim()===""?"Obligatorio":void 0,
+pickupAddress:pickupAddress.trim()===""?"Obligatorio":U(pickupLat)===null||U(pickupLng)===null?"Elige la dirección de la lista":void 0,
+dropoffAddress:dropoffAddress.trim()===""?"Obligatorio":U(dropoffLat)===null||U(dropoffLng)===null?"Elige la dirección de la lista":void 0,
 scheduled:isScheduled&&scheduledIso===null?"Elige la fecha y hora de la reserva.":void 0,
 target:isScheduled&&targetMode==="driver"&&targetDriver===null?"Elige el driver de la reserva.":void 0,
 tip:tipAmount.trim()!==""&&(!Number.isFinite(tipValue)||tipValue<0||tipValue>DISPATCH_TIP_MAX_USD)?`La propina debe ser entre $0 y $${DISPATCH_TIP_MAX_USD}.`:void 0,
@@ -245,6 +245,7 @@ e.jsx(se,{icon:G,title:"Ruta",children:e.jsxs("div",{className:"flex flex-col ga
 e.jsx(rs,{label:"Dirección de recogida",hint:"Ej. Calle Principal 123",dotClass:"bg-online shadow-[0_0_5px_rgba(76,175,80,0.6)]",address:pickupAddress,onAddressChange:value=>onAddressChange(value,true),lat:pickupLat,lng:pickupLng,onLatChange:setPickupLat,onLngChange:setPickupLng,suggestions:pickupSuggestions,onPickSuggestion:place=>onPickSuggestion(place,true),error:showErrors?errors.pickupAddress:void 0}),
 e.jsx("div",{className:"ml-[3px] h-4 w-[1.5px] bg-divider"}),
 e.jsx(rs,{label:"Dirección de destino",hint:"Ej. Av. Roble 456",dotClass:"bg-offline shadow-[0_0_5px_rgba(229,57,53,0.6)]",address:dropoffAddress,onAddressChange:value=>onAddressChange(value,false),lat:dropoffLat,lng:dropoffLng,onLatChange:setDropoffLat,onLngChange:setDropoffLng,suggestions:dropoffSuggestions,onPickSuggestion:place=>onPickSuggestion(place,false),error:showErrors?errors.dropoffAddress:void 0}),
+e.jsx(a.Suspense,{fallback:e.jsx("div",{style:{height:280,borderRadius:14,background:"#0f1626"}}),children:e.jsx(TripRouteMapLazy,{pickup:U(pickupLat)!==null&&U(pickupLng)!==null?{lat:U(pickupLat),lng:U(pickupLng)}:null,dropoff:U(dropoffLat)!==null&&U(dropoffLng)!==null?{lat:U(dropoffLat),lng:U(dropoffLng)}:null})}),
 ]})}),
 e.jsx(se,{icon:st,title:"Detalles del viaje",bodyClassName:"flex flex-col gap-4",children:[
 e.jsx("div",{className:"rounded-xl border border-primary/25 bg-primary/5 px-3.5 py-3",children:
@@ -328,10 +329,10 @@ e.jsx(Pe,{label:"Notas",placeholder:"Notas para el conductor o el equipo…",val
 ]}),
 e.jsxs(se,{icon:Oe,title:"Pago y propina",bodyClassName:"flex flex-col gap-4",children:[
 e.jsxs("div",{children:[
-e.jsx("span",{className:"mb-1.5 block text-[13px] font-medium text-textSecondary",children:"¿Quién paga el viaje?"}),
+e.jsx("span",{className:"mb-1.5 block text-[13px] font-medium text-textSecondary",children:"¿Se cobra o es gratis?"}),
 e.jsxs("div",{className:"flex flex-wrap gap-2",children:[
-chip({value:"rider",label:"Lo paga el rider"},fundingMode,setFundingMode),
-chip({value:"platform",label:"Cortesía de la plataforma"},fundingMode,setFundingMode),
+chip({value:"rider",label:"Se le cobra al pasajero"},fundingMode,setFundingMode),
+chip({value:"platform",label:"Gratis (lo paga Cruise)"},fundingMode,setFundingMode),
 ]}),
 ]}),
 fundingMode==="platform"&&e.jsxs("div",{className:"rounded-xl border border-primary/25 bg-primary/5 px-3.5 py-3",children:[

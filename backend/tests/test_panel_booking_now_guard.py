@@ -49,3 +49,29 @@ def test_create_trip_form_takes_the_prefill():
     assert "[pickupLat,setPickupLat]=a.useState(()=>bookingFix(bookingPrefill?.pickup?.lat))" in TRIPS
     assert "[dropoffLat,setDropoffLat]=a.useState(()=>bookingFix(bookingPrefill?.dropoff?.lat))" in TRIPS
     assert "bookingPrefill:{rider:{id:r.id" in PAGE
+
+
+ROUTE_MAP = (ASSETS / "trip-route-map-Cruise2026.js").read_text(encoding="utf-8")
+
+
+def test_new_trip_form_has_the_route_map_and_no_lat_lng():
+    """Owner 2026-11-07: "debajo de las direcciones un mapa como el de la
+    app mostrando la ruta, quita eso de lat y lng"."""
+    assert 'label:"Lat"' not in TRIPS and 'label:"Lng"' not in TRIPS
+    assert 'import("./trip-route-map-Cruise2026.js")' in TRIPS
+    assert "children:e.jsx(TripRouteMapLazy,{" in TRIPS
+    # With the inputs gone, the point comes only from a picked suggestion:
+    # typing clears it, and an address without one cannot be sent.
+    assert 'if(isPickup){setPickupAddress(value);setPickupLat("");setPickupLng("")}' in TRIPS
+    assert TRIPS.count('"Elige la dirección de la lista"') == 2
+    # Like the app: street route, gold→white, gold ring pickup, white dropoff.
+    assert "api.mapbox.com/directions/v5/mapbox/driving/" in ROUTE_MAP
+    assert '"line-gradient":["interpolate",["linear"],["line-progress"],0,GOLD,1,"#FFFFFF"]' in ROUTE_MAP
+    assert "lineMetrics:true" in ROUTE_MAP
+    assert ".trm-ring.pick{border:3.5px solid ${GOLD}}" in ROUTE_MAP
+    assert ".trm-ring.drop{border:3.5px solid #fff}" in ROUTE_MAP
+
+
+def test_payment_choice_reads_charged_or_free():
+    assert 'chip({value:"rider",label:"Se le cobra al pasajero"}' in TRIPS
+    assert 'chip({value:"platform",label:"Gratis (lo paga Cruise)"}' in TRIPS

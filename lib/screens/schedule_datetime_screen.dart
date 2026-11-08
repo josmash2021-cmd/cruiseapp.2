@@ -147,11 +147,11 @@ class _ScheduleDateTimeScreenState extends State<ScheduleDateTimeScreen> {
     final last = _lastWheelTime;
     if (_wheelTime.isAfter(last)) _wheelTime = last;
 
-    _dayCtrl = FixedExtentScrollController(initialItem: _dayIndexOf(_wheelTime));
-    _hourCtrl = FixedExtentScrollController(initialItem: _wheelTime.hour % 12);
-    _minCtrl = FixedExtentScrollController(initialItem: _wheelTime.minute ~/ 5);
-    _ampmCtrl =
-        FixedExtentScrollController(initialItem: _wheelTime.hour >= 12 ? 1 : 0);
+    final at = _positionsOf(_wheelTime);
+    _dayCtrl = FixedExtentScrollController(initialItem: at.day);
+    _hourCtrl = FixedExtentScrollController(initialItem: at.hour);
+    _minCtrl = FixedExtentScrollController(initialItem: at.minute);
+    _ampmCtrl = FixedExtentScrollController(initialItem: at.ampm);
 
     if (_est == null &&
         widget.prefilledPickup != null &&
@@ -251,64 +251,130 @@ class _ScheduleDateTimeScreenState extends State<ScheduleDateTimeScreen> {
   }
 
   // ── Wheels ─────────────────────────────────────────────────────────
+  //
+  // Each wheel lists only what can still be booked (owner 2026-11-08: "horas
+  // pasadas… no deben aparecer"): days from the earliest one, and on that
+  // day AM/PM, hours and minutes from the earliest on. A wheel's list
+  // depends only on the wheels left of it (day → AM/PM → hour → minute), so
+  // turning one only reshapes the ones after it.
 
-  /// Follows the wheels while the rider turns them (no correcting mid-turn:
-  /// that fights the finger). The check runs when they stop.
-  void _onWheelChange() {
-    setState(() {
-      _wheelTime = _compose(
-        _dayCtrl.selectedItem,
-        _hourCtrl.selectedItem,
-        _minCtrl.selectedItem,
-        _ampmCtrl.selectedItem,
-      );
-    });
+  int _dayValueOf(DateTime t) => _dayIndexOf(t);
+  int _ampmValueOf(DateTime t) => t.hour >= 12 ? 1 : 0;
+  int _hourValueOf(DateTime t) => t.hour % 12; // 0 shows "12"
+  int _minuteValueOf(DateTime t) => t.minute ~/ 5;
+
+  List<int> get _dayOptions {
+    final e = _earliestWheel;
+    final first = e == null ? 0 : _dayValueOf(e);
+    return [for (var d = first; d <= _maxDays; d++) d];
   }
 
-  /// A time that has passed (or is under 40 minutes away) can't stay on the
-  /// wheels: they roll forward to the earliest bookable one, like the
-  /// iPhone's own date picker.
-  void _keepBookable({bool announce = false}) {
-    if (!mounted || _snapping) return;
-    final earliest = _earliestWheel;
-    if (earliest == null || !_wheelTime.isBefore(earliest)) {
-      setState(() {}); // the "earliest" line and the dimmed times move on
-      return;
+  List<int> _ampmOptions(int day) {
+    final e = _earliestWheel;
+    if (e != null && day == _dayValueOf(e) && _ampmValueOf(e) == 1) {
+      return const [1];
     }
-    if (announce) _showNotice(S.of(context).schedMovedToEarliest(_fmtTime(earliest)));
-    _moveWheelsTo(earliest);
+    return const [0, 1];
   }
 
-  Future<void> _moveWheelsTo(DateTime t, {bool animate = true}) async {
+  List<int> _hourOptions(int day, int ampm) {
+    final e = _earliestWheel;
+    final from = (e != null && day == _dayValueOf(e) && ampm == _ampmValueOf(e))
+        ? _hourValueOf(e)
+        : 0;
+    return [for (var h = from; h < 12; h++) h];
+  }
+
+  List<int> _minuteOptions(int day, int ampm, int hour) {
+    final e = _earliestWheel;
+    final from = (e != null &&
+            day == _dayValueOf(e) &&
+            ampm == _ampmValueOf(e) &&
+            hour == _hourValueOf(e))
+        ? _minuteValueOf(e)
+        : 0;
+    return [for (var m = from; m < 12; m++) m];
+  }
+
+  /// Where each wheel sits for [t], in the lists [t] itself makes.
+  ({int day, int ampm, int hour, int minute}) _positionsOf(DateTime t) {
+    final d = _dayValueOf(t), a = _ampmValueOf(t), h = _hourValueOf(t);
+    int at(List<int> opts, int v) {
+      final i = opts.indexOf(v);
+      return i < 0 ? 0 : i;
+    }
+
+    return (
+      day: at(_dayOptions, d),
+      ampm: at(_ampmOptions(d), a),
+      hour: at(_hourOptions(d, a), h),
+      minute: at(_minuteOptions(d, a, h), _minuteValueOf(t)),
+    );
+  }
+
+  /// One wheel moved to [pos] of its list: rebuild the time from it and the
+  /// others' values. Coming onto the earliest day/half/hour with a value
+  /// that no longer exists there takes the earliest time.
+  void _onWheel(String wheel, int pos) {
+    if (_snapping) return;
+    final t = _wheelTime;
+    var day = _dayValueOf(t), ampm = _ampmValueOf(t);
+    var hour = _hourValueOf(t), minute = _minuteValueOf(t);
+    int pick(List<int> opts) => opts[pos.clamp(0, opts.length - 1)];
+    switch (wheel) {
+      case 'day':
+        day = pick(_dayOptions);
+      case 'ampm':
+        ampm = pick(_ampmOptions(day));
+      case 'hour':
+        hour = pick(_hourOptions(day, ampm));
+      case 'minute':
+        minute = pick(_minuteOptions(day, ampm, hour));
+    }
+    var next = _compose(day, hour, minute, ampm);
+    final e = _earliestWheel;
+    if (e != null && next.isBefore(e)) next = e;
+    _setWheelTime(next);
+  }
+
+  /// Puts the wheels on [t] — the lists change with it, so after the frame
+  /// each wheel is moved to where [t]'s value now sits in its list.
+  void _setWheelTime(DateTime t) {
     setState(() => _wheelTime = t);
-    final targets = <FixedExtentScrollController, int>{
-      _dayCtrl: _dayIndexOf(t),
-      _hourCtrl: t.hour % 12,
-      _minCtrl: t.minute ~/ 5,
-      _ampmCtrl: t.hour >= 12 ? 1 : 0,
-    };
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncWheels());
+  }
+
+  void _syncWheels() {
+    if (!mounted) return;
+    final at = _positionsOf(_wheelTime);
     _snapping = true;
     try {
-      await Future.wait([
-        for (final e in targets.entries)
-          if (e.key.hasClients && e.key.selectedItem != e.value)
-            animate
-                ? e.key.animateToItem(e.value,
-                    duration: const Duration(milliseconds: 320),
-                    curve: Curves.easeOutCubic)
-                : Future<void>.sync(() => e.key.jumpToItem(e.value)),
-      ]);
+      for (final (c, i) in [
+        (_dayCtrl, at.day),
+        (_ampmCtrl, at.ampm),
+        (_hourCtrl, at.hour),
+        (_minCtrl, at.minute),
+      ]) {
+        if (c.hasClients && c.selectedItem != i) c.jumpToItem(i);
+      }
     } finally {
       _snapping = false;
     }
-    if (mounted) setState(() => _wheelTime = t);
   }
 
-  /// A wheel item that would put the booking before the earliest time —
-  /// drawn dim, and rolled away from if the rider stops on it.
-  bool _isTooEarly(DateTime candidate) {
+  /// The earliest time moves with the clock: a time it passes gives way to
+  /// the earliest one (told, when [announce]); the lists shrink with it.
+  void _keepBookable({bool announce = false}) {
+    if (!mounted) return;
     final earliest = _earliestWheel;
-    return earliest != null && candidate.isBefore(earliest);
+    if (earliest != null && _wheelTime.isBefore(earliest)) {
+      if (announce) {
+        _showNotice(S.of(context).schedMovedToEarliest(_fmtTime(earliest)));
+      }
+      _setWheelTime(earliest);
+    } else {
+      _setWheelTime(_wheelTime);
+    }
   }
 
   void _showNotice(String text) {
@@ -342,7 +408,7 @@ class _ScheduleDateTimeScreenState extends State<ScheduleDateTimeScreen> {
     final earliest = _earliestWheel;
     if (earliest != null && t.isBefore(earliest)) t = earliest;
     if (t.isAfter(_lastWheelTime)) t = _lastWheelTime;
-    _moveWheelsTo(t);
+    _setWheelTime(t);
   }
 
   Future<void> _onNext() async {
@@ -485,71 +551,58 @@ class _ScheduleDateTimeScreenState extends State<ScheduleDateTimeScreen> {
                         ),
                 ),
 
-                // ── Wheels ──
-                // Times too early for a reservation are drawn dim, and the
-                // wheels roll off them when they stop there.
+                // ── Wheels ── only bookable times are listed.
                 Expanded(
                   child: Center(
-                    child: NotificationListener<ScrollEndNotification>(
-                      onNotification: (_) {
-                        // After the frame: the pickers settle their item first.
-                        WidgetsBinding.instance
-                            .addPostFrameCallback((_) => _keepBookable());
-                        return false;
-                      },
-                      child: SizedBox(
-                        height: 220,
-                        child: Row(
+                    child: SizedBox(
+                      height: 220,
+                      child: Builder(builder: (_) {
+                        final t = _wheelTime;
+                        final day = _dayValueOf(t), ampm = _ampmValueOf(t);
+                        final hour = _hourValueOf(t);
+                        final days = _dayOptions;
+                        final halves = _ampmOptions(day);
+                        final hours = _hourOptions(day, ampm);
+                        final minutes = _minuteOptions(day, ampm, hour);
+                        return Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             _wheel(
+                              key: const ValueKey('wheel-day'),
                               controller: _dayCtrl,
                               width: 128,
-                              itemCount: _maxDays + 1,
-                              label: (i) => _dayLabel(i, s),
-                              tooEarly: (i) {
-                                final d = _dayAt(i);
-                                return _isTooEarly(
-                                    DateTime(d.year, d.month, d.day, 23, 55));
-                              },
+                              itemCount: days.length,
+                              label: (i) => _dayLabel(days[i], s),
+                              onChanged: (i) => _onWheel('day', i),
                             ),
                             _wheel(
+                              key: const ValueKey('wheel-hour'),
                               controller: _hourCtrl,
                               width: 62,
-                              itemCount: 12,
-                              label: (i) => i == 0 ? '12' : '$i',
-                              tooEarly: (i) => _isTooEarly(_compose(
-                                      _dayIndexOf(_wheelTime),
-                                      i,
-                                      11,
-                                      _wheelTime.hour >= 12 ? 1 : 0)),
+                              itemCount: hours.length,
+                              label: (i) => hours[i] == 0 ? '12' : '${hours[i]}',
+                              onChanged: (i) => _onWheel('hour', i),
                             ),
                             _wheel(
+                              key: const ValueKey('wheel-minute'),
                               controller: _minCtrl,
                               width: 62,
-                              itemCount: 12,
-                              label: (i) => (i * 5).toString().padLeft(2, '0'),
-                              tooEarly: (i) => _isTooEarly(DateTime(
-                                  _wheelTime.year,
-                                  _wheelTime.month,
-                                  _wheelTime.day,
-                                  _wheelTime.hour,
-                                  i * 5)),
+                              itemCount: minutes.length,
+                              label: (i) =>
+                                  (minutes[i] * 5).toString().padLeft(2, '0'),
+                              onChanged: (i) => _onWheel('minute', i),
                             ),
                             _wheel(
+                              key: const ValueKey('wheel-ampm'),
                               controller: _ampmCtrl,
                               width: 66,
-                              itemCount: 2,
-                              label: (i) => i == 0 ? 'AM' : 'PM',
-                              tooEarly: (i) {
-                                final d = _wheelTime;
-                                return _isTooEarly(DateTime(
-                                    d.year, d.month, d.day, i == 0 ? 11 : 23, 55));
-                              },
+                              itemCount: halves.length,
+                              label: (i) => halves[i] == 0 ? 'AM' : 'PM',
+                              onChanged: (i) => _onWheel('ampm', i),
                             ),
                           ],
-                        ),
-                      ),
+                        );
+                      }),
                     ),
                   ),
                 ),
@@ -702,13 +755,15 @@ class _ScheduleDateTimeScreenState extends State<ScheduleDateTimeScreen> {
   }
 
   Widget _wheel({
+    Key? key,
     required FixedExtentScrollController controller,
     required double width,
     required int itemCount,
     required String Function(int) label,
-    required bool Function(int) tooEarly,
+    required ValueChanged<int> onChanged,
   }) {
     return SizedBox(
+      key: key,
       width: width,
       child: CupertinoTheme(
         data: const CupertinoThemeData(brightness: Brightness.dark),
@@ -720,13 +775,13 @@ class _ScheduleDateTimeScreenState extends State<ScheduleDateTimeScreen> {
           selectionOverlay: CupertinoPickerDefaultSelectionOverlay(
             background: _gold.withValues(alpha: 0.10),
           ),
-          onSelectedItemChanged: (_) => _onWheelChange(),
+          onSelectedItemChanged: onChanged,
           childCount: itemCount,
           itemBuilder: (ctx, i) => Center(
             child: Text(
               label(i),
-              style: TextStyle(
-                color: tooEarly(i) ? Colors.white24 : Colors.white,
+              style: const TextStyle(
+                color: Colors.white,
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
               ),

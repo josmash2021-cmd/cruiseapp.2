@@ -118,6 +118,54 @@ void main() {
     await close(t);
   });
 
+  testWidgets('passed times are not on the wheels at all', (t) async {
+    scheduleClock = () => DateTime(2026, 11, 9, 14, 2);
+    await open(
+        t,
+        ScheduleDateTimeScreen(
+          estimatedMinutes: 14,
+          prefilledPickup: pickup,
+          prefilledDropoff: dropoff,
+        ));
+    Finder inWheel(String wheel, String text) => find.descendant(
+        of: find.byKey(ValueKey('wheel-$wheel')), matching: find.text(text));
+    // Today from 2:45 PM: no AM, no 12 or 1, no :40 at 2 o'clock.
+    expect(inWheel('ampm', 'AM'), findsNothing);
+    expect(inWheel('hour', '12'), findsNothing);
+    expect(inWheel('hour', '1'), findsNothing);
+    expect(inWheel('hour', '2'), findsOneWidget);
+    expect(inWheel('minute', '40'), findsNothing);
+    expect(inWheel('minute', '45'), findsOneWidget);
+
+    // Tomorrow every hour is there again.
+    await t.drag(find.byKey(const ValueKey('wheel-day')), const Offset(0, -40));
+    await settle(t);
+    expect(inWheel('day', 'Mañana'), findsOneWidget);
+    expect(inWheel('ampm', 'AM'), findsOneWidget);
+    expect(inWheel('hour', '12'), findsOneWidget);
+    expect(inWheel('minute', '40'), findsOneWidget);
+    await close(t);
+  });
+
+  testWidgets('after 11:20 PM "Hoy" is gone: the earliest is tomorrow',
+      (t) async {
+    scheduleClock = () => DateTime(2026, 11, 9, 23, 40);
+    await open(
+        t,
+        ScheduleDateTimeScreen(
+          estimatedMinutes: 14,
+          prefilledPickup: pickup,
+          prefilledDropoff: dropoff,
+        ));
+    expect(
+        find.descendant(
+            of: find.byKey(const ValueKey('wheel-day')),
+            matching: find.text('Hoy')),
+        findsNothing);
+    expect(earliestLine(t), contains('12:20 AM'));
+    await close(t);
+  });
+
   testWidgets('turning to an old hour rolls back to the earliest', (t) async {
     scheduleClock = () => DateTime(2026, 11, 9, 14, 2);
     await open(

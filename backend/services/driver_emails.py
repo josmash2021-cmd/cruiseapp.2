@@ -150,23 +150,23 @@ async def _deliver_multichannel(user: User, subject: str, html: str,
 
 # ── 1. Scheduled-ride reminders ──────────────────────────────────────────
 
-def _fmt_pickup(sched_at: datetime) -> str:
-    """'Tue, Oct 21 · 8:30 AM ET / 7:30 AM CT' — FL is Eastern, AL is
-    Central and there is no per-user timezone, so the email shows both."""
+def _fmt_pickup(sched_at: datetime, lat=None, lng=None) -> str:
+    """'Tue, Oct 21 · 7:30 AM CDT' in the PICKUP's zone, from its
+    coordinates — every state its own hour (2026-11-07; it used to print
+    ET and CT side by side for everyone)."""
     if sched_at.tzinfo is None:
         sched_at = sched_at.replace(tzinfo=timezone.utc)
-    from zoneinfo import ZoneInfo
-    et = sched_at.astimezone(ZoneInfo("America/New_York"))
-    ct = sched_at.astimezone(ZoneInfo("America/Chicago"))
-    day = et.strftime("%a, %b %d")
-    _t = lambda d: d.strftime("%I:%M %p").lstrip("0")  # %-I is not portable
-    return f"{day} · {_t(et)} ET / {_t(ct)} CT"
+    from services import local_zone
+    local = sched_at.astimezone(local_zone.zone_for(lat, lng))
+    t = local.strftime("%I:%M %p").lstrip("0")  # %-I is not portable
+    return f"{local.strftime('%a, %b %d')} · {t} {local.tzname() or ''}".rstrip()
 
 
 async def send_scheduled_reminder_email(user: User, trip, hours: int) -> bool:
     """24 h / 1 h before the reserved pickup. ES/EN by driver locale."""
     es = _es(user)
-    when = _fmt_pickup(trip.scheduled_at)
+    when = _fmt_pickup(trip.scheduled_at, getattr(trip, "pickup_lat", None),
+                       getattr(trip, "pickup_lng", None))
     rider = _esc(getattr(trip, "guest_first_name", None) or "")
     if not rider:
         rider = _esc(getattr(trip, "_rider_name", "") or "")

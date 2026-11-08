@@ -31,3 +31,5 @@ openai>=1.35.0
 aiobotocore>=2.13.0
 Pillow>=10.0.0
 fpdf2>=2.7.9
+# Time zone of a pickup from its coordinates, offline (services/local_zone.py).
+tzfpy==2.1.1

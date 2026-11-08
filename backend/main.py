@@ -1690,6 +1690,9 @@ def _is_read_poll_path(path: str) -> bool:
         # app's support bubble (2026-11-07).
         or path == "/admin/riders/booking-now"
         or path == "/support/active"
+        # Each reservation card in the panel asks its pickup's time zone
+        # once (cached per point in the browser, 2026-11-07).
+        or path == "/admin/geo/time-zone"
         or (path.startswith("/trips/") and (path.endswith("/poll") or path.endswith("/chat")))
         or (path.startswith("/support/chats/") and (path.endswith("/messages") or path.endswith("/typing")))
     )

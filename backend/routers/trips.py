@@ -2865,10 +2865,11 @@ async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_cur
 # UTC string showed a 1:40 PM Miami pickup as 5:40 PM. A zone-less wall clock
 # in the pickup's zone parses as phone-local on every shipped screen (the
 # others call toLocal(), a no-op on it). Newer builds read scheduled_at_utc.
-# Service areas: Birmingham (Central) and South Florida (Eastern).
+# The zone comes from the pickup's coordinates, any state (2026-11-07,
+# services/local_zone.py).
 def _pickup_zone(trip: Trip) -> ZoneInfo:
-    lng = getattr(trip, "pickup_lng", None)
-    return ZoneInfo("America/Chicago" if lng is not None and lng < -85.0 else "America/New_York")
+    from services import local_zone
+    return local_zone.zone_for(getattr(trip, "pickup_lat", None), getattr(trip, "pickup_lng", None))
 
 
 def _with_wall_clock_schedule(trip: Trip, d: dict) -> dict:

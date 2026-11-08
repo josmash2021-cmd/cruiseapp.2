@@ -82,7 +82,9 @@ async def test_scheduled_reminder_24h_and_1h_fire_once(db, capture):
     await db.refresh(t1)
     assert t24.reminder_email_24h_at is not None
     assert t1.reminder_email_1h_at is not None
-    assert "ET /" in capture[0]["html"] or "ET /" in capture[1]["html"]
+    # Miami pickup → Miami's hour only, with its abbreviation (EST/EDT).
+    html = capture[0]["html"] + capture[1]["html"]
+    assert ("EST" in html or "EDT" in html) and " CT" not in html and "ET /" not in html
 
     capture.clear()
     await agent._scheduled_reminders(now, db)

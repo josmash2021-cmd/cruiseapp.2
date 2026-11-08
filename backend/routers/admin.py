@@ -4182,3 +4182,18 @@ async def admin_set_background_check_status(user_id: int, request: Request, db: 
         logging.warning("[Admin] approval recompute failed: %s", e)
     return {"background_check_status": user.background_check_status}
 
+
+
+# The panel writes and shows a reservation in the PICKUP's hour (owner
+# 2026-11-07: "alabama y florida deben tener sus propios horarios al igual
+# que para cualquier estado futuro"). Offline lookup, no cost — see
+# services/local_zone.py. `at` names the abbreviation for that instant
+# (CST vs CDT); without it, now.
+@router.get("/admin/geo/time-zone", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_time_zone(
+    lat: float = Query(..., ge=-90, le=90),
+    lng: float = Query(..., ge=-180, le=180),
+    at: Optional[datetime] = Query(default=None),
+):
+    from services import local_zone
+    return local_zone.describe(lat, lng, at)

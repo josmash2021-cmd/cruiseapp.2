@@ -1035,12 +1035,17 @@ async def places_autocomplete(
             "input": input,
             "key": GOOGLE_MAPS_API_KEY,
             "language": "en",
+            "components": "country:us",
         }
-        
-        # Add location bias if provided
+
+        # Prefer what's around the rider and measure each row from them.
+        # `locationbias` (not the old location+radius pair, which Google all
+        # but ignored: "walmart" from Hoover, AL listed Georgia stores -
+        # owner report 2026-11-08). A preference, not a fence: another state
+        # still answers when it's typed.
         if lat is not None and lng is not None:
-            params["location"] = f"{lat},{lng}"
-            params["radius"] = "160000"  # 160km radius
+            params["locationbias"] = f"circle:50000@{lat},{lng}"
+            params["origin"] = f"{lat},{lng}"
         
         url = f"{base_url}?{urllib.parse.urlencode(params)}"
         req = urllib.request.Request(url, method="GET")
@@ -1067,6 +1072,8 @@ async def places_autocomplete(
                 "description": p.get("description"),
                 "main_text": p.get("structured_formatting", {}).get("main_text", ""),
                 "secondary_text": p.get("structured_formatting", {}).get("secondary_text", ""),
+                "types": p.get("types") or [],
+                "distance_meters": p.get("distance_meters"),
             })
         
         return {"predictions": predictions}

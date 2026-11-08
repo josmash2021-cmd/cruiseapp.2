@@ -61,10 +61,11 @@ def test_panel_miami_time_and_reservation_reassign():
     assert "scheduledAtDate:S(t.scheduledAt)??S(t.scheduled_at)??null" in entry, (
         "the trip model must carry the reservation time or the detail shows nothing")
     detail = (assets / "index-B68rRA9U.js").read_text(encoding="utf-8")
-    assert 'label:"Reserva (hora Miami)"' in detail
     assert "reservation:t.scheduledAtDate!=null" in detail
-    assert "return miamiWallToIso(scheduledAt);" in detail
-    assert 'label:"Fecha y hora de la reserva (hora Miami)"' in detail
+    # Since 2026-11-07 a reservation is written and shown in the PICKUP's
+    # hour, not Miami's: tests/test_panel_local_zone_guard.py.
+    assert 'label:"Reserva (hora de la recogida)"' in detail
+    assert "return wallToIso(scheduledAt,pickupZone.zone);" in detail
 
 
 def test_panel_opens_pdf_documents():

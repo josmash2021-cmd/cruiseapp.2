@@ -2638,6 +2638,20 @@ extension _RideRequestMap on _RideRequestScreenState {
         lng: center.longitude,
       );
 
+      // Opened to fill one field of the search page (the pickup before a
+      // destination, or the stop): the spot goes back to that field.
+      if (widget.pickerReturnsPlace) {
+        final popNav = _nav;
+        if (popNav != null && popNav.canPop()) {
+          popNav.pop(<String, dynamic>{
+            'address': place.address,
+            'lat': place.lat,
+            'lng': place.lng,
+          });
+          return;
+        }
+      }
+
       if (_pickerIsPickup) {
         _ctrl.setPickup(place, _pickerAddress);
       } else {

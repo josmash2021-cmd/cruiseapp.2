@@ -117,6 +117,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   // time it travels inside the notes line ("Stop: …") — see
   // ride_request_controller's notes composition.
   bool _editingStop = false;
+
+  /// The rider emptied the pickup with its ✕ — until a new one is chosen,
+  /// tapping the empty field doesn't fill in the GPS address again.
+  bool _pickupCleared = false;
   bool _showStop = false;
   final _stopCtrl = TextEditingController();
   final _stopFocus = FocusNode();
@@ -175,6 +179,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           .reverseGeocode(lat: pos.latitude, lng: pos.longitude)
           .timeout(const Duration(seconds: 5));
       if (!mounted) return;
+      // The rider emptied the field (✕) while this was resolving: it stays
+      // empty — the answer must not come back and refill it.
+      if (_pickupCleared) return;
       if (address != null && address.isNotEmpty) {
         setState(() {
           _pickupDetails = PlaceDetails(
@@ -392,6 +399,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       }
       setState(() {
         _pickupDetails = details;
+        _pickupCleared = false;
         _pickupLabel = suggestion.description;
         _pickupCtrl.text = suggestion.description;
         _suggestions = [];
@@ -458,10 +466,67 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
 
   /// Push the single-canvas picker and lift the black handoff cover when
   /// it comes back, so returning here doesn't land on a blank screen.
-  void _pushPicker(Widget picker) {
-    Navigator.of(context).push(slideUpFadeRoute(picker)).then((_) {
-      if (mounted) setState(() => _handoffCover = false);
+  void _pushPicker(Widget picker, {ValueChanged<Object?>? onResult}) {
+    Navigator.of(context).push(slideUpFadeRoute(picker)).then((raw) {
+      if (!mounted) return;
+      setState(() => _handoffCover = false);
+      onResult?.call(raw);
     });
+  }
+
+  /// The spot marked on the map, into the field it was marked for; then
+  /// the next empty field takes the focus — as when a suggestion is tapped.
+  void _applyMapPick(String field, Map<dynamic, dynamic> raw) {
+    final address = (raw['address'] as String?)?.trim() ?? '';
+    final lat = (raw['lat'] as num?)?.toDouble();
+    final lng = (raw['lng'] as num?)?.toDouble();
+    if (address.isEmpty || lat == null || lng == null) return;
+    final place = PlaceDetails(address: address, lat: lat, lng: lng);
+    if (field == 'pickup') {
+      RiderHeatReporter.instance.typingDone();
+      RiderHeatReporter.instance.pickup(lat, lng, pickupAddress: address);
+    }
+    setState(() {
+      _suggestions = [];
+      if (field == 'stop') {
+        _stopDetails = place;
+        _stopLabel = address;
+        _stopCtrl.text = address;
+      } else {
+        _pickupDetails = place;
+        _pickupCleared = false;
+        _pickupLabel = address;
+        _pickupCtrl.text = address;
+      }
+      if (_dropoffDetails == null) {
+        _editingPickup = false;
+        _editingStop = false;
+        _editingDropoff = true;
+      }
+    });
+    if (_dropoffDetails == null) _dropoffFocus.requestFocus();
+  }
+
+  /// The ✕ in the pickup / destination field: empties it for a new search
+  /// (owner 2026-11-08, "una x para borrar todo más fácil"). The place it
+  /// held goes too — an empty field never books the old address.
+  void _clearField({required bool pickup}) {
+    HapticService.selectionClick();
+    _debounce?.cancel();
+    (pickup ? _pickupCtrl : _dropoffCtrl).clear();
+    setState(() {
+      _suggestions = [];
+      _loading = false;
+      if (pickup) {
+        _pickupDetails = null;
+        _pickupLabel = '';
+        _pickupCleared = true;
+      } else {
+        _dropoffDetails = null;
+        _dropoffLabel = '';
+      }
+    });
+    (pickup ? _pickupFocus : _dropoffFocus).requestFocus();
   }
 
   Future<void> _onFieldSubmitted(String value) async {
@@ -512,6 +577,16 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     // pushReplacement straight into RideRequestScreen's pickingLocation
     // phase. The same Mapbox canvas then drives picker → confirm →
     // route preview with zero teleports.
+    // The pickup before there is a destination, and the stop, come back
+    // into their own field (owner 2026-11-08: the marked spot goes "en el
+    // pickup donde se escribe"); before, a lone pickup was committed inside
+    // the picker and lost on the way back, and a stop was set as the
+    // destination.
+    final field = _editingStop
+        ? 'stop'
+        : (_editingPickup ? 'pickup' : 'dropoff');
+    final returnsPlace =
+        field == 'stop' || (field == 'pickup' && _dropoffDetails == null);
     setState(() => _handoffCover = true);
     // push, NOT pushReplacement — see _pushPicker: keeping this screen on
     // the stack is what makes the picker's back arrow return here instead
@@ -526,6 +601,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         handoffLng: lng,
         pickerMode: true,
         pickerIsPickup: _editingPickup,
+        pickerReturnsPlace: returnsPlace,
+        pickerIsStop: field == 'stop',
         // Same stop carry-over as _confirmDropoffOnMap — the booking
         // continues inside this canvas.
         initialStopAddress: _stopDetails != null
@@ -538,6 +615,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         scheduledAt: widget.scheduledAt,
         isAirportTrip: widget.isAirportTrip,
       ),
+      onResult: (raw) {
+        if (returnsPlace && raw is Map) _applyMapPick(field, raw);
+      },
     );
     return;
     // Unreachable (kept for reference / fallback path — auto-stripped).
@@ -1013,7 +1093,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                             // pickup field while it still shows the
                             // generic "Current location" placeholder.
                             final txt = _pickupCtrl.text.trim();
-                            if (txt.isEmpty || txt == widget.initialPickupText) {
+                            // Not right after its ✕: the rider emptied it
+                            // to type, a tap must not refill it with GPS.
+                            if ((txt.isEmpty && !_pickupCleared) ||
+                                txt == widget.initialPickupText) {
                               _resolveGpsPickup();
                             } else if (txt.length >= 2) {
                               // Auto-search existing text so suggestions
@@ -1028,6 +1111,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                           active: _editingPickup,
                           placeholderHint: S.of(context).enterPickupAddress,
                           isPickup: true,
+                          onClear: () => _clearField(pickup: true),
                         ),
                         // .vipRide__locPicker__field--pickup border-bottom
                         Container(
@@ -1105,6 +1189,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                           active: _editingDropoff,
                           placeholderHint: S.of(context).whereTo,
                           isPickup: false,
+                          onClear: () => _clearField(pickup: false),
                         ),
                       ],
                     ),
@@ -1178,6 +1263,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     required bool isPickup,
     // Optional right-side affordance (the stop field's remove ✕).
     Widget? trailing,
+    // Empties the field: its ✕ shows while it's the active one and has text.
+    VoidCallback? onClear,
   }) {
     // .vipRide__locPicker__field
     //   display:flex; align-items:center; gap:12px;
@@ -1261,7 +1348,32 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
             if (trailing != null) ...[
               const SizedBox(width: 8),
               trailing,
-            ],
+            ] else if (onClear != null && active)
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: controller,
+                builder: (_, value, __) => value.text.isEmpty
+                    ? const SizedBox.shrink()
+                    : Semantics(
+                        button: true,
+                        label: S.of(context).clearField,
+                        child: GestureDetector(
+                          key: ValueKey(
+                              isPickup ? 'clear-pickup' : 'clear-dropoff'),
+                          onTap: onClear,
+                          behavior: HitTestBehavior.opaque,
+                          child: SizedBox(
+                            width: 34,
+                            height: _kFieldContentH,
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: Icon(Icons.close_rounded,
+                                  color: Colors.white.withValues(alpha: 0.4),
+                                  size: 18),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
           ],
           ),
         ),

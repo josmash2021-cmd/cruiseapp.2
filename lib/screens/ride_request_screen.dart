@@ -144,6 +144,16 @@ class RideRequestScreen extends StatefulWidget {
   /// Shopify widget's behavior).
   final bool pickerMode;
   final bool pickerIsPickup;
+
+  /// The picker was opened to fill ONE field of the search page — the
+  /// pickup before there is a destination, or the stop: Confirm pops the
+  /// spot back to that field ({address, lat, lng}) instead of committing a
+  /// leg here. Committing a lone pickup and popping lost it (owner
+  /// 2026-11-08: "debe colocarse en el pickup donde se escribe").
+  final bool pickerReturnsPlace;
+
+  /// The spot being picked is the trip's stop (titles say so).
+  final bool pickerIsStop;
   const RideRequestScreen({
     super.key,
     this.fastRide = false,
@@ -168,6 +178,8 @@ class RideRequestScreen extends StatefulWidget {
     this.handoffPitch,
     this.pickerMode = false,
     this.pickerIsPickup = false,
+    this.pickerReturnsPlace = false,
+    this.pickerIsStop = false,
   });
 
   @override
@@ -1698,9 +1710,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                           ),
                           decoration: neuBox(radius: 100),
                           child: Text(
-                            _pickerIsPickup
-                                ? S.of(context).moveMapToSetPickup
-                                : S.of(context).moveMapToSetDropoff,
+                            widget.pickerIsStop
+                                ? S.of(context).moveMapToSetStop
+                                : _pickerIsPickup
+                                    ? S.of(context).moveMapToSetPickup
+                                    : S.of(context).moveMapToSetDropoff,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.center,
@@ -1908,7 +1922,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            _pickerIsPickup ? s.setYourPickup : s.setYourDropoff,
+            widget.pickerIsStop
+                ? s.setYourStop
+                : _pickerIsPickup
+                    ? s.setYourPickup
+                    : s.setYourDropoff,
             style: const TextStyle(
               fontFamily: 'Poppins',
               color: Colors.white,
@@ -1920,9 +1938,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            _pickerIsPickup
-                ? s.moveMapToPreferredPickup
-                : s.moveMapToPreferredDropoff,
+            widget.pickerIsStop
+                ? s.moveMapToPreferredStop
+                : _pickerIsPickup
+                    ? s.moveMapToPreferredPickup
+                    : s.moveMapToPreferredDropoff,
             style: TextStyle(
               fontFamily: 'Poppins',
               color: Colors.white.withValues(alpha: 0.5),

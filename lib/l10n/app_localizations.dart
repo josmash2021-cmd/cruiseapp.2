@@ -5873,6 +5873,15 @@ class S {
       : 'Move map to set pickup location';
   String get setYourDropoff => _es ? 'Define tu destino' : 'Set your drop-off';
   String get setYourPickup => _es ? 'Define tu origen' : 'Set your pickup';
+  String get setYourStop => _es ? 'Define tu parada' : 'Set your stop';
+  String get moveMapToSetStop => _es
+      ? 'Mueve el mapa para elegir la parada'
+      : 'Move map to set your stop';
+  String get moveMapToPreferredStop => _es
+      ? 'Mueve el mapa hasta el punto de tu parada.'
+      : 'Move map to where you want to stop.';
+  /// The ✕ that empties a search field.
+  String get clearField => _es ? 'Borrar' : 'Clear';
   String get moveMapToPreferredDropoff => _es
       ? 'Mueve el mapa hasta tu punto preferido de destino.'
       : 'Move map to your preferred drop-off location.';

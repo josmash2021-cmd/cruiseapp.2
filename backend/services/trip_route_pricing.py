@@ -115,6 +115,7 @@ async def reprice_quoted_trip(db, trip, *, stop=None, destination=None) -> dict 
         grant = grant_result.scalar_one_or_none()
 
     courtesy = trip.funding_source == "platform_courtesy"
+    amount_off = 0
     if courtesy:
         cap = int(redemption.original_fare_cents if redemption else trip.original_fare_cents)
         extra = max(0, route_original_cents - cap)
@@ -122,10 +123,18 @@ async def reprice_quoted_trip(db, trip, *, stop=None, destination=None) -> dict 
         driver_fare = cap + extra
     else:
         percent = 0
-        if grant is not None:
+        if grant is not None and grant.kind == "amount":
+            # $10 off (2026-11-07): the new route keeps the same dollars off
+            # and the driver keeps the full fare; Cruise credits the share.
+            amount_off = min(int(grant.amount_cents or 0), route_original_cents)
+        elif grant is not None:
             percent = grant.percent if grant.kind == "percent" else grant.fallback_percent
-        promo_total = int(round(route_original_cents * (100 - percent) / 100)) if 0 < percent < 100 else route_original_cents
-        driver_fare = promo_total
+        if amount_off > 0:
+            promo_total = route_original_cents - amount_off
+            driver_fare = route_original_cents
+        else:
+            promo_total = int(round(route_original_cents * (100 - percent) / 100)) if 0 < percent < 100 else route_original_cents
+            driver_fare = promo_total
     # A wait fee already rolled into the totals when the ride started (status
     # -> in_trip folds it into original/promo/driver/fare) is part of the
     # price, so a reprice keeps it. Before the ride starts it is not in the
@@ -201,7 +210,7 @@ async def reprice_quoted_trip(db, trip, *, stop=None, destination=None) -> dict 
     trip.cruise_cash_cents = cruise_cash
     trip.platform_credit_cents = (
         int(trip.platform_credit_cents or 0) if courtesy
-        else int(round(cruise_cash * vehicle_tiers.driver_share_for_trip(trip)))
+        else int(round((cruise_cash + amount_off) * vehicle_tiers.driver_share_for_trip(trip)))
     )
     trip.fare = fare_cents / 100.0
     trip.quoted_distance_miles = route["distance_miles"]

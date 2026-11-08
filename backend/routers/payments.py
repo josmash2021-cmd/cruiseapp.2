@@ -996,8 +996,9 @@ async def web_quote(request: Request, db: AsyncSession = Depends(get_db)):
     Returns every tier's price (the page shows four cards) plus a token per
     tier; the page sends back the token for whichever the rider picks. With a
     valid rider JWT in user_token the response also carries a persistent
-    RideQuote (`quote_id`) and the promotion result per tier (a new web rider's
-    free rides / 30% fallback); guests get the exact same shape as before.
+    RideQuote (`quote_id`) and the promotion result per tier (a new rider's
+    $10 off the first ride; older riders' free rides); guests get the exact
+    same shape as before.
     """
     _verify_web_origin(request)
     client_ip = request.client.host if request.client else "unknown"
@@ -1107,6 +1108,9 @@ async def web_quote(request: Request, db: AsyncSession = Depends(get_db)):
                 "original_cents": original_cents,
                 "is_free": bool(selection["is_free"]),
                 "discount_percent": selection["discount_percent"],
+                # "$10 OFF" on the web (2026-11-07): what kind and how much.
+                "discount_kind": selection.get("discount_kind"),
+                "discount_cents": int(original_cents) - final_cents,
                 "free_max_miles": selection["free_max_miles"],
                 "free_ineligible_reason": selection["free_ineligible_reason"],
                 "pricing_quote_id": quote_record.id,

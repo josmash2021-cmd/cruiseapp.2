@@ -1,13 +1,16 @@
 """Welcome promotion for riders who sign up on the website or the app.
 
-Every brand-new rider account created through those two channels gets 2 free
-rides of up to 5 miles each; longer rides fall back to 30% off without
-consuming a free use (rider_pricing._select_promotion returns
-promotion_grant_id=None for that fallback, so no redemption is ever reserved
-for it). A single template RiderPromotionGrant is shared by all recipients;
-its id lives in AppConfig so restarts and concurrent signups never duplicate
-it, and each rider is linked with an on-conflict-do-nothing upsert on the
-existing (grant_id, rider_id) constraint.
+Every brand-new rider account created through those two channels gets $10
+off the first ride (owner 2026-11-07; it replaced "2 free rides up to 5
+miles, longer ones 30% off"). Cruise pays the $10: the driver earns on the
+full fare (rider_pricing._amount_selection). A single template
+RiderPromotionGrant is shared by all recipients; its id lives in AppConfig
+so restarts and concurrent signups never duplicate it, and each rider is
+linked with an on-conflict-do-nothing upsert on the existing
+(grant_id, rider_id) constraint.
+
+Riders linked to the old free-ride template before the change keep it: that
+template stays active, only new signups go to the $10 one.
 """
 
 import json
@@ -39,10 +42,11 @@ from services.rider_pricing import (
 )
 from utils.helpers import utc_now
 
-TEMPLATE_CONFIG_KEY = "web_signup_free_promotion_grant_id"
-FREE_MAX_MILES = 5.0
-FREE_USES_PER_RIDER = 2
-FALLBACK_PERCENT = 30
+TEMPLATE_CONFIG_KEY = "signup_welcome_amount_grant_id"
+# The previous template ("2 free rides ≤ 5 mi, 30% beyond"); its riders keep it.
+LEGACY_FREE_TEMPLATE_CONFIG_KEY = "web_signup_free_promotion_grant_id"
+WELCOME_AMOUNT_CENTS = 1000
+WELCOME_USES_PER_RIDER = 1
 # Advisory-lock key serializing template creation (Postgres only).
 _TEMPLATE_LOCK_KEY = 770_200_001
 
@@ -71,15 +75,16 @@ async def _template_grant(db) -> RiderPromotionGrant:
             if grant is not None:
                 return grant
     grant = RiderPromotionGrant(
-        kind="free",
+        kind="amount",
         percent=30,
-        fallback_percent=FALLBACK_PERCENT,
-        max_miles=FREE_MAX_MILES,
+        fallback_percent=0,
+        amount_cents=WELCOME_AMOUNT_CENTS,
+        max_miles=None,
         allowed_tiers=json.dumps(list(PROMO_TIERS)),
-        uses_per_rider=FREE_USES_PER_RIDER,
+        uses_per_rider=WELCOME_USES_PER_RIDER,
         all_riders=False,
         is_active=True,
-        reason="Web signup welcome: 2 free rides up to 5 miles each",
+        reason="Signup welcome: $10 off the first ride",
         created_by="system",
     )
     db.add(grant)
@@ -87,7 +92,7 @@ async def _template_grant(db) -> RiderPromotionGrant:
     if row is None:
         row = AppConfig(
             key=TEMPLATE_CONFIG_KEY,
-            description="Template grant id for the web signup free-ride promotion",
+            description="Template grant id for the signup welcome promotion ($10 off the first ride)",
         )
         db.add(row)
     row.value = str(grant.id)

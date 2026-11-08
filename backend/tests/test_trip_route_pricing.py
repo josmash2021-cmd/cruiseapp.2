@@ -164,3 +164,48 @@ async def test_route_price_drop_returns_unused_cruise_cash(db, test_rider, monke
     transaction = (await db.execute(select(CruiseCashTransaction))).scalars().one()
     assert transaction.kind == "refund_ride"
     assert transaction.amount_cents == 205
+
+
+async def test_ten_off_keeps_its_dollars_and_the_driver_keeps_the_full_fare(db, test_rider, route_ten_miles):
+    """$10 off the first ride (owner 2026-11-07): a new destination keeps the
+    same $10 off; the driver's fare is the full price and Cruise credits the
+    driver's share of the $10."""
+    rider, _ = test_rider
+    grant = RiderPromotionGrant(
+        kind="amount", percent=30, fallback_percent=0, amount_cents=1000,
+        allowed_tiers=json.dumps(["standard"]), uses_per_rider=1,
+        all_riders=True, is_active=True,
+    )
+    quote = RideQuote(
+        id="test-quote", rider_id=rider.id, request_json="{}", quotes_json="[]",
+        pricing_version=1, expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    db.add_all([grant, quote])
+    await db.flush()
+    redemption = RiderPromotionRedemption(
+        grant_id=grant.id, rider_id=rider.id, quote_id=quote.id,
+        status="reserved", original_fare_cents=1350, rider_fare_cents=350,
+        driver_fare_cents=1350, platform_credit_cents=900, distance_miles=5.0,
+    )
+    db.add(redemption)
+    await db.flush()
+    trip = _trip(
+        rider,
+        fare=3.50,
+        rider_promo_total_cents=350,
+        driver_fare_cents=1350,
+        platform_credit_cents=900,
+        driver_share_rate=0.90,
+        promotion_redemption_id=redemption.id,
+        payment_status="held",
+    )
+    db.add(trip)
+    await db.flush()
+    redemption.trip_id = trip.id
+    await db.commit()
+    result = await reprice_quoted_trip(db, trip, destination={"lat": 34.0, "lng": -87.0})
+    assert result["original_fare_cents"] == 2250
+    assert trip.rider_promo_total_cents == 1250
+    assert trip.fare == 12.50
+    assert trip.driver_fare_cents == 2250
+    assert trip.platform_credit_cents == 900

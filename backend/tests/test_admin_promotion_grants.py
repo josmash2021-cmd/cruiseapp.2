@@ -120,3 +120,23 @@ async def test_vip_free_only_for_named_riders(client, test_rider):
     assert named["is_free"] is True and named["promo_total_cents"] == 0
     everyone = _select_promotion([grant(True)], {}, "vip", 120.0, 31000)
     assert everyone["is_free"] is False and everyone["promo_total_cents"] == 31000
+
+
+async def test_dispatch_creates_a_dollars_off_promotion(client, test_rider):
+    """kind="amount" (2026-11-07): dollars off, no mileage limit."""
+    rider, _ = test_rider
+    body = _body(rider.id, kind="amount", amount_cents=1000, max_miles=None, uses_per_rider=1)
+    with patch("routers.admin_promotions._notify_grant", new=AsyncMock()):
+        response = await client.post("/admin/promotion-grants", json=body, headers=_headers())
+    assert response.status_code == 200, response.text
+    assert response.json()["kind"] == "amount"
+    assert response.json()["amount_cents"] == 1000
+
+    for bad in (
+        _body(rider.id, kind="amount", max_miles=None),                     # no amount
+        _body(rider.id, kind="amount", amount_cents=1000),                 # with a mileage limit
+        _body(rider.id, kind="percent", max_miles=None, amount_cents=500),  # amount on a percent
+        _body(rider.id, kind="amount", amount_cents=50, max_miles=None),    # under $1
+    ):
+        response = await client.post("/admin/promotion-grants", json=bad, headers=_headers())
+        assert response.status_code == 422, bad

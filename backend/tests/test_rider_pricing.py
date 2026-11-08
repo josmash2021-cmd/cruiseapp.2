@@ -148,3 +148,22 @@ async def test_promotions_me_comes_from_server_grants(
     assert promotion["remaining_uses"] == 2
     assert promotion["status"] == "active"
     assert promotion["reason"] == "Owner courtesy"
+
+
+def test_the_bigger_discount_in_dollars_wins_between_percent_and_amount():
+    """A percent and a fixed amount compete on dollars off (2026-11-07)."""
+    from services.rider_pricing import _select_promotion
+
+    percent = _grant("percent", percent=20, uses_per_rider=1)
+    percent.id = 1
+    amount = _grant("amount", amount_cents=1000, uses_per_rider=1)
+    amount.id = 2
+    # $30 ride: 20% = $6 < $10 → the $10.
+    pick = _select_promotion([percent, amount], {}, "standard", 5.0, 3000)
+    assert pick["discount_kind"] == "amount" and pick["promo_total_cents"] == 2000
+    assert pick["driver_fare_cents"] == 3000 and pick["platform_credit_cents"] == 900
+    assert pick["promotion_grant_id"] == 2
+    # $80 ride: 20% = $16 > $10 → the percent, which the driver shares.
+    pick = _select_promotion([percent, amount], {}, "standard", 5.0, 8000)
+    assert pick["discount_kind"] == "percent" and pick["promo_total_cents"] == 6400
+    assert pick["driver_fare_cents"] == 6400 and pick["platform_credit_cents"] == 0

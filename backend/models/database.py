@@ -921,6 +921,9 @@ class RiderPromotionGrant(Base):
     percent = Column(Integer, nullable=False, default=30)
     fallback_percent = Column(Integer, nullable=False, default=30)
     max_miles = Column(Float, nullable=True)
+    # kind="amount": a fixed discount in cents (owner 2026-11-07: the
+    # welcome promotion is $10 off the first ride, Cruise pays the $10).
+    amount_cents = Column(Integer, nullable=True)
     allowed_tiers = Column(Text, nullable=False)
     uses_per_rider = Column(Integer, nullable=False, default=1)
     all_riders = Column(Boolean, nullable=False, default=False)
@@ -1396,6 +1399,8 @@ async def migrate_add_columns(conn):
         ("trips", "dispatch_tip_status", "VARCHAR(20)"),
         ("trips", "dispatch_tip_payment_intent_id", "VARCHAR(100)"),
         ("trips", "scheduled_target_driver_id", "INTEGER"),
+        # Fixed-amount promotions ($10 off the first ride, 2026-11-07).
+        ("rider_promotion_grants", "amount_cents", "INTEGER"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1697,6 +1702,8 @@ async def migrate_postgres(conn):
         ("trips", "dispatch_tip_status", "VARCHAR(20)"),
         ("trips", "dispatch_tip_payment_intent_id", "VARCHAR(100)"),
         ("trips", "scheduled_target_driver_id", "INTEGER"),
+        # Fixed-amount promotions ($10 off the first ride, 2026-11-07).
+        ("rider_promotion_grants", "amount_cents", "INTEGER"),
     ]
     for table, col, col_type in migrations:
         try:

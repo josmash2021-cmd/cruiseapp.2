@@ -372,6 +372,31 @@ def _grant_order(grant: RiderPromotionGrant) -> tuple:
     return (end or datetime.max.replace(tzinfo=timezone.utc), grant.id)
 
 
+def _amount_selection(grant: RiderPromotionGrant, tier: str, original_cents: int, off: int) -> dict:
+    """A fixed discount ($10 off the first ride, owner 2026-11-07). Cruise
+    pays it: the driver's fare stays the full price and the platform credits
+    the driver's share of the discount at settlement, like Cruise Cash. When
+    the discount covers the whole fare the ride is a free one."""
+    from services import vehicle_tiers
+    share = vehicle_tiers.commission(tier)[1]
+    final = original_cents - off
+    return {
+        "promotion_grant_id": grant.id,
+        "is_free": final == 0,
+        "discount_kind": "amount",
+        # 0 keeps shipped apps (they only badge a percent) from printing a
+        # made-up "43% OFF"; they show the lower price.
+        "discount_percent": 100 if final == 0 else 0,
+        "discount_amount_cents": off,
+        "promo_total_cents": final,
+        "driver_fare_cents": original_cents,
+        "platform_credit_cents": int(round((original_cents if final == 0 else off) * share)),
+        "funding_source": "platform_courtesy" if final == 0 else "rider",
+        "free_max_miles": None,
+        "free_ineligible_reason": None,
+    }
+
+
 def _select_promotion(
     grants: list[RiderPromotionGrant],
     usage: dict[int, RiderPromotionUsage],
@@ -387,6 +412,7 @@ def _select_promotion(
         return {
             "promotion_grant_id": selected.id,
             "is_free": True,
+            "discount_kind": "free",
             "discount_percent": 100,
             "discount_amount_cents": original_cents,
             "promo_total_cents": 0,
@@ -396,21 +422,30 @@ def _select_promotion(
             "free_max_miles": selected.max_miles,
             "free_ineligible_reason": None,
         }
-    percent_options: list[tuple[int, RiderPromotionGrant, float | None, str | None]] = []
+    # (cents off, grant, percent, max_miles, reason, amount) — the rider gets
+    # the biggest discount in dollars; a percent and a fixed amount compete.
+    options: list[tuple[int, RiderPromotionGrant, int, float | None, str | None, bool]] = []
     for grant in eligible:
         if grant.kind == "percent" and 0 < grant.percent < 100:
-            percent_options.append((grant.percent, grant, None, None))
+            off = original_cents - int(round(original_cents * (100 - grant.percent) / 100))
+            options.append((off, grant, grant.percent, None, None, False))
         elif grant.kind == "free" and grant.max_miles is not None and miles > grant.max_miles and 0 < grant.fallback_percent < 100:
-            percent_options.append((grant.fallback_percent, grant, grant.max_miles, "max_miles"))
-    if percent_options:
-        percent_options.sort(key=lambda item: (-item[0], _grant_order(item[1])))
-        percent, grant, max_miles, reason = percent_options[0]
-        final = int(round(original_cents * (100 - percent) / 100))
+            off = original_cents - int(round(original_cents * (100 - grant.fallback_percent) / 100))
+            options.append((off, grant, grant.fallback_percent, grant.max_miles, "max_miles", False))
+        elif grant.kind == "amount" and int(grant.amount_cents or 0) > 0:
+            options.append((min(int(grant.amount_cents), original_cents), grant, 0, None, None, True))
+    if options:
+        options.sort(key=lambda item: (-item[0], _grant_order(item[1])))
+        off, grant, percent, max_miles, reason, is_amount = options[0]
+        if is_amount:
+            return _amount_selection(grant, tier, original_cents, off)
+        final = original_cents - off
         return {
             # A Free grant's over-the-mileage fallback is a plain discount:
             # it must not reserve or consume one of the rider's free uses.
             "promotion_grant_id": None if reason == "max_miles" else grant.id,
             "is_free": False,
+            "discount_kind": "percent",
             "discount_percent": percent,
             "discount_amount_cents": original_cents - final,
             "promo_total_cents": final,
@@ -424,6 +459,7 @@ def _select_promotion(
     return {
         "promotion_grant_id": None,
         "is_free": False,
+        "discount_kind": None,
         "discount_percent": 0,
         "discount_amount_cents": 0,
         "promo_total_cents": original_cents,
@@ -534,8 +570,25 @@ async def pricing_revision(db, rider_id: int) -> dict:
     }
 
 
-async def rider_promotions(db, rider_id: int) -> list[dict]:
+WELCOME_REASON = {
+    "es": "Bienvenida: $10 de descuento en tu primer viaje",
+    "en": "Welcome: $10 off your first ride",
+}
+
+
+async def rider_promotions(
+    db, rider_id: int, include_amount: bool = False, lang: str = "en",
+) -> list[dict]:
+    """The rider's promotions for the app's Promotions page.
+
+    Amount grants ($10 off) go only to builds that ask for them
+    (`include_amount`): shipped builds title a card "N% OFF" from the
+    percent and would print "0% OFF". Their discount still applies to the
+    ride's price either way.
+    """
     grants = await _grants_for_rider(db, rider_id)
+    if not include_amount:
+        grants = [g for g in grants if g.kind != "amount"]
     usage = await _usage_for_grants(db, rider_id, [g.id for g in grants])
     now = utc_now()
     result = []
@@ -553,15 +606,24 @@ async def rider_promotions(db, rider_id: int) -> list[dict]:
         result.append({
             "id": grant.id,
             "kind": grant.kind,
-            "percent": grant.percent,
+            # An amount grant has no percent: shipped apps print "N% OFF"
+            # for any percent > 0, so 0 keeps them from showing "30% OFF".
+            "percent": 0 if grant.kind == "amount" else grant.percent,
             "fallback_percent": grant.fallback_percent,
             "max_miles": grant.max_miles,
+            "amount_cents": grant.amount_cents,
             "allowed_tiers": json.loads(grant.allowed_tiers or "[]"),
             "uses_per_rider": grant.uses_per_rider,
             "remaining_uses": remaining,
             "status": status,
             "starts_at": grant.starts_at.isoformat() if grant.starts_at else None,
             "expires_at": grant.expires_at.isoformat() if grant.expires_at else None,
-            "reason": grant.reason,
+            # The signup welcome is the system's own grant: its line is shown
+            # to the rider, so it goes in the rider's language.
+            "reason": (
+                WELCOME_REASON["es" if lang.startswith("es") else "en"]
+                if grant.kind == "amount" and grant.created_by == "system"
+                else grant.reason
+            ),
         })
     return result

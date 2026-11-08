@@ -112,6 +112,15 @@ async def credit_platform_funded_earnings(db, trip: Trip) -> bool:
     elif trip.funding_source == REVIEW_TEST_FUNDING_SOURCE:
         # App Store review rider — see apply_review_test_funding.
         pass
+    elif (trip.funding_source or "rider") == "rider":
+        # A fixed-amount promotion ($10 off, 2026-11-07): the rider pays the
+        # rest by card and Cruise pays the driver's share of the discount.
+        result = await db.execute(
+            select(RiderPromotionRedemption).where(RiderPromotionRedemption.trip_id == trip.id)
+        )
+        redemption = result.scalar_one_or_none()
+        if redemption is None or redemption.status == "released":
+            return False
     else:
         return False
 

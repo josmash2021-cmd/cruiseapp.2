@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,8 +64,10 @@ async def get_pricing_revision(
 
 @router.get("/promotions/me", dependencies=[Depends(_verify_api_key)])
 async def get_my_promotions(
+    amounts: bool = Query(False),
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     _require_rider(user)
-    return {"promotions": await rider_promotions(db, user.id)}
+    return {"promotions": await rider_promotions(
+        db, user.id, include_amount=amounts, lang=(user.locale or "en").lower())}

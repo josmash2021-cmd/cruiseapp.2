@@ -1,6 +1,9 @@
-"""Web signup welcome promotion — 2 free rides (up to 5 mi each) for NEW
-riders created via /auth/web/register or /auth/web/social, with a 30%
-fallback for longer rides that must NOT consume a free use."""
+"""Signup welcome promotion — $10 off the FIRST ride for NEW riders (app,
+web, phone, social), owner 2026-11-07. It replaced "2 free rides up to 5 mi,
+30% beyond". Cruise pays the $10: the rider pays the rest, the driver earns
+on the full fare (the platform credits the driver's share of the discount).
+A fare of $10 or less is a free ride. Riders linked to the old free-ride
+template keep it."""
 
 import asyncio
 import hashlib
@@ -25,7 +28,8 @@ from models.database import (
     User,
 )
 from services import web_pricing
-from services.promotion_redemptions import settle_promotion_on_cancel
+from services.platform_earnings import credit_platform_funded_earnings
+from services.promotion_redemptions import complete_promotion, settle_promotion_on_cancel
 from tests.conftest import _make_auth_headers
 
 pytestmark = pytest.mark.asyncio
@@ -80,7 +84,7 @@ async def _recipients(db):
 # ── Assignment ────────────────────────────────────────────────────────────
 
 
-async def test_web_register_grants_template_and_exactly_two_uses(
+async def test_web_register_grants_template_ten_off_one_use(
         client: AsyncClient, db, monkeypatch):
     _web_noop(monkeypatch)
     payload = await _register_web_rider(client, db, "promo-web-1@test.com")
@@ -88,10 +92,10 @@ async def test_web_register_grants_template_and_exactly_two_uses(
     grants = await _grants(db)
     assert len(grants) == 1
     grant = grants[0]
-    assert grant.kind == "free"
-    assert grant.max_miles == 5.0
-    assert grant.uses_per_rider == 2
-    assert grant.fallback_percent == 30
+    assert grant.kind == "amount"
+    assert grant.amount_cents == 1000
+    assert grant.uses_per_rider == 1
+    assert grant.max_miles is None
     assert grant.all_riders is False
 
     rider_id = payload["user"]["id"]
@@ -99,7 +103,7 @@ async def test_web_register_grants_template_and_exactly_two_uses(
     assert [(row.grant_id, row.rider_id) for row in recipients] == [(grant.id, rider_id)]
 
     config = (await db.execute(select(AppConfig).where(
-        AppConfig.key == "web_signup_free_promotion_grant_id"))).scalar_one()
+        AppConfig.key == "signup_welcome_amount_grant_id"))).scalar_one()
     assert int(config.value) == grant.id
 
     # A second signup reuses the SAME template grant — never duplicates it.
@@ -194,7 +198,7 @@ async def test_app_gets_template_but_system_and_driver_accounts_get_nothing(
     assert app_resp.status_code == 200, app_resp.text
     grants = await _grants(db)
     assert len(grants) == 1
-    assert grants[0].uses_per_rider == 2
+    assert grants[0].uses_per_rider == 1
     recipients = await _recipients(db)
     assert [(row.grant_id, row.rider_id) for row in recipients] == [
         (grants[0].id, app_resp.json()["user"]["id"])
@@ -237,9 +241,9 @@ async def test_phone_signup_grants_the_same_welcome_template(
     assert response.status_code == 200, response.text
     grants = await _grants(db)
     assert len(grants) == 1
-    assert grants[0].kind == "free"
-    assert grants[0].max_miles == 5.0
-    assert grants[0].uses_per_rider == 2
+    assert grants[0].kind == "amount"
+    assert grants[0].amount_cents == 1000
+    assert grants[0].uses_per_rider == 1
     recipients = await _recipients(db)
     assert [(row.grant_id, row.rider_id) for row in recipients] == [
         (grants[0].id, response.json()["user"]["id"])
@@ -278,7 +282,7 @@ async def test_social_signup_grants_once_and_login_does_not_duplicate(
     assert len(await _recipients(db)) == 1
 
 
-async def test_app_signup_gets_free_quote_up_to_five_miles(
+async def test_app_signup_gets_ten_off_its_quote(
         client: AsyncClient, db, monkeypatch):
     app_resp = await client.post("/auth/register", json={
         "first_name": "App",
@@ -309,10 +313,18 @@ async def test_app_signup_gets_free_quote_up_to_five_miles(
     assert response.status_code == 200, response.text
     quotes = response.json()["quotes"]
     standard = next(item for item in quotes if item["tier"] == "standard")
-    assert standard["is_free"] is True
-    assert standard["promo_total_cents"] == 0
+    assert standard["original_total_cents"] > 1000
+    assert standard["discount_kind"] == "amount"
+    assert standard["discount_amount_cents"] == 1000
+    assert standard["promo_total_cents"] == standard["original_total_cents"] - 1000
+    assert standard["is_free"] is False
+    # Shipped apps badge only a percent: none for a dollar discount.
+    assert standard["discount_percent"] == 0
+    # The money split never reaches the app.
+    assert "platform_credit_cents" not in standard and "driver_fare_cents" not in standard
     vip = next(item for item in quotes if item["tier"] == "vip")
     assert vip["is_free"] is False
+    assert vip["discount_kind"] is None
     assert vip["promo_total_cents"] == vip["original_total_cents"]
 
 
@@ -345,7 +357,7 @@ def _quote_payload(token: str | None = None, **overrides):
     return payload
 
 
-async def test_web_quote_free_up_to_five_miles_and_fallback_beyond(
+async def test_web_quote_ten_off_any_distance_free_when_it_covers_the_fare(
         client: AsyncClient, db, monkeypatch, web_route):
     _web_noop(monkeypatch)
     payload = await _register_web_rider(client, db, "promo-quote@test.com")
@@ -358,38 +370,43 @@ async def test_web_quote_free_up_to_five_miles_and_fallback_beyond(
 
     original = web_pricing.total_cents(
         "STANDARD", seconds=1200.0, meters=FIVE_MILES_METERS, mode="ride")
+    assert original > 1000
     standard = data["tiers"]["STANDARD"]
-    assert standard["is_free"] is True
-    assert standard["cents"] == 0
+    assert standard["is_free"] is False
+    assert standard["cents"] == original - 1000
     assert standard["original_cents"] == original
-    assert standard["discount_percent"] == 100
-    assert standard["free_max_miles"] == 5.0
+    assert standard["discount_kind"] == "amount"
+    assert standard["discount_cents"] == 1000
+    assert standard["discount_percent"] == 0
     assert standard["pricing_quote_id"] == data["quote_id"]
 
     # VIP (BLACK) never gets the benefit.
     black = data["tiers"]["BLACK"]
     assert black["is_free"] is False
-    assert black["discount_percent"] == 0
+    assert black["discount_kind"] is None
+    assert black["discount_cents"] == 0
     assert black["cents"] == black["original_cents"]
 
     # Quoting never reserves or consumes anything.
     assert (await db.execute(select(RiderPromotionRedemption))).scalars().all() == []
     assert (await db.execute(select(RiderPromotionUsage))).scalars().all() == []
 
-    # 5.01 miles → 30% fallback WITHOUT touching a free use.
-    web_route["meters"] = 5.01 * web_pricing.METERS_PER_MILE
+    # Ten miles: still exactly $10 off — there is no mileage limit anymore.
+    web_route["meters"] = 10 * web_pricing.METERS_PER_MILE
     response = await client.post("/bookings/web/quote", json=_quote_payload(token))
-    assert response.status_code == 200, response.text
     standard = response.json()["tiers"]["STANDARD"]
-    original_over = web_pricing.total_cents(
-        "STANDARD", seconds=1200.0, meters=5.01 * web_pricing.METERS_PER_MILE, mode="ride")
-    assert standard["is_free"] is False
-    assert standard["discount_percent"] == 30
-    assert standard["free_ineligible_reason"] == "max_miles"
-    assert standard["cents"] == round(original_over * 0.70)
-    assert standard["original_cents"] == original_over
-    assert (await db.execute(select(RiderPromotionRedemption))).scalars().all() == []
-    assert (await db.execute(select(RiderPromotionUsage))).scalars().all() == []
+    assert standard["cents"] == standard["original_cents"] - 1000
+    assert standard["discount_cents"] == 1000
+
+    # One mile: the $8 minimum is under $10, so the ride is free.
+    web_route["meters"] = 1 * web_pricing.METERS_PER_MILE
+    response = await client.post("/bookings/web/quote", json=_quote_payload(token))
+    standard = response.json()["tiers"]["STANDARD"]
+    assert standard["original_cents"] <= 1000
+    assert standard["is_free"] is True
+    assert standard["cents"] == 0
+    assert standard["discount_kind"] == "amount"
+    assert standard["discount_cents"] == standard["original_cents"]
 
 
 async def test_web_quote_guest_and_hourly_stay_exactly_as_before(
@@ -405,6 +422,7 @@ async def test_web_quote_guest_and_hourly_stay_exactly_as_before(
         "STANDARD", seconds=1200.0, meters=FIVE_MILES_METERS, mode="ride")
     assert data["tiers"]["STANDARD"]["cents"] == expected
     assert "is_free" not in data["tiers"]["STANDARD"]
+    assert "discount_kind" not in data["tiers"]["STANDARD"]
     assert "pricing_quote_id" not in data["tiers"]["STANDARD"]
 
     hourly = await client.post("/bookings/web/quote", json=_quote_payload(
@@ -447,11 +465,14 @@ async def _quote(client, token):
     return response.json()
 
 
-async def test_web_create_free_ride_without_stripe_and_reuse_conflict(
+async def test_web_create_short_ride_is_free_without_stripe_and_reuse_conflict(
         client: AsyncClient, db, web_create_noop, web_route):
     registered = await _register_web_rider(client, db, "promo-create@test.com")
     token = registered["access_token"]
+    # One mile = the $8 minimum: $10 off covers it whole.
+    web_route["meters"] = 1 * web_pricing.METERS_PER_MILE
     quote = await _quote(client, token)
+    original = quote["tiers"]["STANDARD"]["original_cents"]
 
     response = await client.post(
         "/bookings/web/create",
@@ -466,6 +487,9 @@ async def test_web_create_free_ride_without_stripe_and_reuse_conflict(
     assert trip.pricing_quote_id == quote["quote_id"]
     assert trip.vehicle_type == "standard"
     assert trip.funding_source == "platform_courtesy"
+    # Cruise pays the driver his share of the whole fare.
+    assert trip.driver_fare_cents == original
+    assert trip.platform_credit_cents == round(original * 0.90)
 
     redemption = (await db.execute(select(RiderPromotionRedemption))).scalars().one()
     assert redemption.status == "reserved"
@@ -549,34 +573,144 @@ async def test_web_create_free_ride_cancel_after_assignment_consumes_use(
     assert usage.used_count == 1
 
 
-async def test_web_create_fallback_keeps_hold_and_never_touches_free_uses(
+async def test_web_create_ten_off_holds_the_rest_and_reserves_the_use(
         client: AsyncClient, db, web_create_noop, web_route):
-    registered = await _register_web_rider(client, db, "promo-fallback@test.com")
+    registered = await _register_web_rider(client, db, "promo-ten-off@test.com")
     token = registered["access_token"]
 
-    web_route["meters"] = 5.01 * web_pricing.METERS_PER_MILE
     quote = await _quote(client, token)
-    discounted = quote["tiers"]["STANDARD"]["cents"]
+    tier = quote["tiers"]["STANDARD"]
+    original, discounted = tier["original_cents"], tier["cents"]
+    assert discounted == original - 1000
 
     response = await client.post(
         "/bookings/web/create",
         json=_booking_payload(
             token, quote["quote_id"], discounted,
-            payment_intent_id="pi_web_fallback",
+            payment_intent_id="pi_web_ten_off",
         ),
     )
     assert response.status_code == 200, response.text
     trip = (await db.execute(select(Trip))).scalars().one()
+    # The rider pays the rest by card; the driver's fare stays the full one
+    # and Cruise owes the driver's share of the $10.
     assert trip.fare == discounted / 100.0
     assert trip.payment_status == "held"
-    assert trip.stripe_payment_intent_id == "pi_web_fallback"
-    assert trip.pricing_quote_id == quote["quote_id"]
+    assert trip.stripe_payment_intent_id == "pi_web_ten_off"
     assert trip.funding_source == "rider"
+    assert trip.original_fare_cents == original
+    assert trip.rider_promo_total_cents == discounted
+    assert trip.driver_fare_cents == original
+    assert trip.platform_credit_cents == 900
 
-    # The 30% fallback is a plain discount: no redemption, no usage spent.
-    assert (await db.execute(select(RiderPromotionRedemption))).scalars().all() == []
-    assert (await db.execute(select(RiderPromotionUsage))).scalars().all() == []
-    assert len(await _grants(db)) == 1
+    redemption = (await db.execute(select(RiderPromotionRedemption))).scalars().one()
+    assert redemption.status == "reserved"
+    assert redemption.trip_id == trip.id
+    usage = (await db.execute(select(RiderPromotionUsage))).scalars().one()
+    assert usage.active_count == 1
+
+    # Only the first ride: the next quote has no discount.
+    again = (await _quote(client, token))["tiers"]["STANDARD"]
+    assert again["discount_kind"] is None
+    assert again["cents"] == again["original_cents"]
+
+
+async def test_settlement_pays_the_driver_his_share_of_the_ten(
+        client: AsyncClient, db, test_driver, web_create_noop, web_route):
+    driver, _ = test_driver
+    before = float(driver.pending_balance or 0.0)
+    registered = await _register_web_rider(client, db, "promo-settle@test.com")
+    token = registered["access_token"]
+    quote = await _quote(client, token)
+    response = await client.post(
+        "/bookings/web/create",
+        json=_booking_payload(
+            token, quote["quote_id"], quote["tiers"]["STANDARD"]["cents"],
+            payment_intent_id="pi_web_settle",
+        ),
+    )
+    assert response.status_code == 200, response.text
+    trip = (await db.execute(select(Trip))).scalars().one()
+    trip.driver_id = driver.id
+    trip.status = "completed"
+    await complete_promotion(db, trip.id)
+    await db.flush()
+
+    assert await credit_platform_funded_earnings(db, trip) is True
+    await db.commit()
+    await db.refresh(trip)
+    await db.refresh(driver)
+    assert trip.platform_credit_applied_cents == 900
+    assert round(float(driver.pending_balance) - before, 2) == 9.0
+    # Once only.
+    assert await credit_platform_funded_earnings(db, trip) is False
+
+
+async def test_a_released_ten_off_pays_nobody(
+        client: AsyncClient, db, test_driver, web_create_noop, web_route):
+    driver, _ = test_driver
+    registered = await _register_web_rider(client, db, "promo-released@test.com")
+    token = registered["access_token"]
+    quote = await _quote(client, token)
+    await client.post(
+        "/bookings/web/create",
+        json=_booking_payload(
+            token, quote["quote_id"], quote["tiers"]["STANDARD"]["cents"],
+            payment_intent_id="pi_web_released",
+        ),
+    )
+    trip = (await db.execute(select(Trip))).scalars().one()
+    await settle_promotion_on_cancel(db, trip, had_driver=False)
+    trip.driver_id = driver.id
+    trip.status = "completed"
+    await db.flush()
+    assert await credit_platform_funded_earnings(db, trip) is False
+
+
+async def test_riders_with_the_old_free_rides_keep_them(
+        client: AsyncClient, db, monkeypatch, web_route):
+    _web_noop(monkeypatch)
+    registered = await _register_web_rider(client, db, "promo-legacy@test.com")
+    rider_id = registered["user"]["id"]
+    legacy = RiderPromotionGrant(
+        kind="free", percent=30, fallback_percent=30, max_miles=5.0,
+        allowed_tiers='["standard", "compact", "electric_pro", "premium"]',
+        uses_per_rider=2, all_riders=False, is_active=True,
+        reason="Web signup welcome: 2 free rides up to 5 miles each",
+        created_by="system",
+    )
+    db.add(legacy)
+    await db.flush()
+    db.add(RiderPromotionGrantRider(grant_id=legacy.id, rider_id=rider_id))
+    await db.commit()
+
+    standard = (await _quote(client, registered["access_token"]))["tiers"]["STANDARD"]
+    assert standard["is_free"] is True
+    assert standard["discount_kind"] == "free"
+    assert standard["cents"] == 0
+
+
+async def test_promotions_page_lists_the_ten_only_to_builds_that_ask(
+        client: AsyncClient, db, monkeypatch):
+    _web_noop(monkeypatch)
+    registered = await _register_web_rider(client, db, "promo-page@test.com")
+    def headers():
+        # A fresh signed nonce per request, or the second one is a replay.
+        return {**_make_auth_headers(), "Authorization": f"Bearer {registered['access_token']}"}
+
+    old = await client.get("/promotions/me", headers=headers())
+    assert old.status_code == 200, old.text
+    # A shipped build would title it "0% OFF": it does not get it listed.
+    assert old.json()["promotions"] == []
+
+    new = await client.get("/promotions/me", params={"amounts": "true"}, headers=headers())
+    assert new.status_code == 200, new.text
+    [promo] = new.json()["promotions"]
+    assert promo["kind"] == "amount"
+    assert promo["amount_cents"] == 1000
+    assert promo["percent"] == 0
+    assert promo["remaining_uses"] == 1
+    assert promo["status"] == "active"
 
 
 async def test_web_create_quote_requires_the_signed_in_rider(
@@ -621,14 +755,13 @@ async def _registered_rider_with_customer(client, db, email):
     return registered
 
 
-async def test_web_create_fallback_production_validates_hold_and_stays_held(
+async def test_web_create_ten_off_production_validates_hold_and_stays_held(
         client: AsyncClient, db, web_create_noop, web_route, monkeypatch):
     registered = await _registered_rider_with_customer(client, db, "promo-prod@test.com")
     token = registered["access_token"]
     rider_id = registered["user"]["id"]
     monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
 
-    web_route["meters"] = 5.01 * web_pricing.METERS_PER_MILE
     quote = await _quote(client, token)
     discounted = quote["tiers"]["STANDARD"]["cents"]
     intent = _hold_intent(
@@ -653,19 +786,18 @@ async def test_web_create_fallback_production_validates_hold_and_stays_held(
     assert trip.payment_status == "held"
     assert trip.stripe_payment_intent_id == "pi_web_prod_ok"
     assert trip.fare == discounted / 100.0
-    # Fallback 30%: plain discount, no free use consumed.
-    assert (await db.execute(select(RiderPromotionRedemption))).scalars().all() == []
-    assert (await db.execute(select(RiderPromotionUsage))).scalars().all() == []
+    # $10 off: the one use is reserved with the trip.
+    redemption = (await db.execute(select(RiderPromotionRedemption))).scalars().one()
+    assert redemption.status == "reserved" and redemption.trip_id == trip.id
 
 
-async def test_web_create_fallback_production_foreign_hold_fails_and_cancels(
+async def test_web_create_ten_off_production_foreign_hold_fails_and_cancels(
         client: AsyncClient, db, web_create_noop, web_route, monkeypatch):
     registered = await _registered_rider_with_customer(client, db, "promo-foreign@test.com")
     token = registered["access_token"]
     rider_id = registered["user"]["id"]
     monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
 
-    web_route["meters"] = 5.01 * web_pricing.METERS_PER_MILE
     quote = await _quote(client, token)
     discounted = quote["tiers"]["STANDARD"]["cents"]
     # A hold stamped for somebody else must never fund this rider's trip.

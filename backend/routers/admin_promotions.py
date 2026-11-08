@@ -31,6 +31,8 @@ class PromotionGrantIn(BaseModel):
     percent: int = Field(default=30, ge=1, le=99)
     fallback_percent: int = Field(default=30, ge=0, le=99)
     max_miles: float | None = Field(default=None, gt=0, le=500)
+    # kind="amount": dollars off in cents ($10 = 1000), up to $200.
+    amount_cents: int | None = Field(default=None, ge=100, le=20000)
     allowed_tiers: list[str] = Field(default_factory=lambda: list(PROMO_TIERS), min_length=1)
     uses_per_rider: int = Field(default=1, ge=1, le=1000)
     all_riders: bool = False
@@ -42,8 +44,8 @@ class PromotionGrantIn(BaseModel):
     @field_validator("kind")
     @classmethod
     def validate_kind(cls, value):
-        if value not in ("percent", "free"):
-            raise ValueError("Promotion kind must be percent or free")
+        if value not in ("percent", "free", "amount"):
+            raise ValueError("Promotion kind must be percent, free or amount")
         return value
 
     @field_validator("allowed_tiers")
@@ -58,8 +60,12 @@ class PromotionGrantIn(BaseModel):
     def validate_audience_and_rules(self):
         if self.kind == "free" and self.max_miles is None:
             raise ValueError("Free promotions require a mileage limit")
-        if self.kind == "percent" and self.max_miles is not None:
+        if self.kind in ("percent", "amount") and self.max_miles is not None:
             raise ValueError("Mileage limits belong to Free promotions")
+        if self.kind == "amount" and self.amount_cents is None:
+            raise ValueError("Amount promotions require amount_cents")
+        if self.kind != "amount" and self.amount_cents is not None:
+            raise ValueError("amount_cents belongs to Amount promotions")
         if not self.all_riders and not self.rider_ids:
             raise ValueError("Select at least one rider or all riders")
         if self.all_riders and self.rider_ids:
@@ -100,6 +106,7 @@ def _grant_dict(grant: RiderPromotionGrant, recipients: list[dict] | None = None
         "percent": grant.percent,
         "fallback_percent": grant.fallback_percent,
         "max_miles": grant.max_miles,
+        "amount_cents": grant.amount_cents,
         "allowed_tiers": json.loads(grant.allowed_tiers or "[]"),
         "uses_per_rider": grant.uses_per_rider,
         "all_riders": grant.all_riders,
@@ -175,6 +182,7 @@ async def create_promotion_grant(
         percent=body.percent,
         fallback_percent=body.fallback_percent,
         max_miles=body.max_miles,
+        amount_cents=body.amount_cents,
         allowed_tiers=json.dumps(body.allowed_tiers),
         uses_per_rider=body.uses_per_rider,
         all_riders=body.all_riders,

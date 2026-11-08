@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/airport_airlines.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/airline_logo.dart';
 import '../widgets/neu_style.dart';
 
 /// Push the "Select your airline" page for [airportCode]; [onDone] receives
@@ -220,16 +221,8 @@ class _AirlineSelectScreenState extends State<AirlineSelectScreen> {
           decoration: neuBox(radius: 16),
           child: Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: _gold.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.flight_rounded,
-                    color: _gold, size: 19),
-              ),
+              // The airline's real logo (the plane mark for a charter).
+              AirlineLogo(name),
               const SizedBox(width: 14),
               Expanded(
                 child: Text(

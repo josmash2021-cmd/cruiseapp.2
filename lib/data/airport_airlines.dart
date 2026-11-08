@@ -74,3 +74,79 @@ AirportInfo? detectAirportForAddress(String text) {
   // to the terminal sheet's own picker, not to a guessed airline list.
   return null;
 }
+
+/// IATA code of every airline the app lists. Its real square logo is served
+/// from the backend at /static/airlines/{code}.png (owner 2026-11-08: "los
+/// íconos de las aerolíneas reales"). Regional brands fly under their
+/// parent's mark (American Eagle → AA, Delta Connection → DL, Horizon → AS).
+const Map<String, String> kAirlineIata = {
+  'ANA': 'NH',
+  'Aer Lingus': 'EI',
+  'Aeromexico': 'AM',
+  'Air Canada': 'AC',
+  'Air China': 'CA',
+  'Air France': 'AF',
+  'Air India': 'AI',
+  'Alaska Airlines': 'AS',
+  'Allegiant Air': 'G4',
+  'American Airlines': 'AA',
+  'American Eagle': 'AA',
+  'Avianca': 'AV',
+  'Bahamasair': 'UP',
+  'Breeze Airways': 'MX',
+  'British Airways': 'BA',
+  'Caribbean Airlines': 'BW',
+  'Cathay Pacific': 'CX',
+  'China Southern': 'CZ',
+  'Condor': 'DE',
+  'Copa Airlines': 'CM',
+  'Delta Air Lines': 'DL',
+  'Delta Connection': 'DL',
+  'Delta regional': 'DL',
+  'EVA Air': 'BR',
+  'Emirates': 'EK',
+  'Endeavor Air': '9E',
+  'Ethiopian Airlines': 'ET',
+  'Etihad Airways': 'EY',
+  'Finnair': 'AY',
+  'Frontier Airlines': 'F9',
+  'Hawaiian Airlines': 'HA',
+  'Horizon Air': 'AS',
+  'Iberia': 'IB',
+  'Icelandair': 'FI',
+  'Japan Airlines': 'JL',
+  'JetBlue': 'B6',
+  'JetBlue Airways': 'B6',
+  'KLM': 'KL',
+  'Korean Air': 'KE',
+  'LATAM Airlines': 'LA',
+  'LOT Polish': 'LO',
+  'Lufthansa': 'LH',
+  'Norse Atlantic': 'N0',
+  'Qantas': 'QF',
+  'Qatar Airways': 'QR',
+  'Royal Air Maroc': 'AT',
+  'Royal Jordanian': 'RJ',
+  'Silver Airways': '3M',
+  'Singapore Airlines': 'SQ',
+  'Southwest Airlines': 'WN',
+  'Spirit Airlines': 'NK',
+  'Sun Country': 'SY',
+  'Swiss': 'LX',
+  'TAP Air Portugal': 'TP',
+  'Turkish Airlines': 'TK',
+  'United Airlines': 'UA',
+  'United Express': 'UA',
+  'Virgin America': 'VX',
+  'Virgin Atlantic': 'VS',
+  'Viva Aerobus': 'VB',
+  'Volaris': 'Y4',
+  'WestJet': 'WS',
+};
+
+/// "United Airlines (intl)" → "UA"; null for a charter or a name we have no
+/// logo for.
+String? airlineIataFor(String name) {
+  final base = name.replaceAll(RegExp(r'\s*\(.*\)\s*$'), '').trim();
+  return kAirlineIata[base];
+}

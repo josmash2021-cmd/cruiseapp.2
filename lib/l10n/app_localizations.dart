@@ -5519,6 +5519,18 @@ class S {
       _es ? 'Llegada: $time' : 'Drop-off: $time';
   String schedPickupAt(String time) =>
       _es ? 'Recogida: $time' : 'Pickup: $time';
+  /// Under the wheels: the earliest a reservation can be (40 min ahead).
+  String schedEarliest(String time) => _es
+      ? 'Lo más pronto: $time · 40 min de anticipación'
+      : 'Earliest: $time · 40 min ahead';
+  String get schedRouteLoading =>
+      _es ? 'Calculando el tiempo del viaje…' : 'Working out the ride time…';
+  String get schedArriveNeedsRoute => _es
+      ? 'Para elegir la hora de llegada, primero elige las direcciones'
+      : 'Choose the addresses first to pick an arrival time';
+  String schedMovedToEarliest(String time) => _es
+      ? 'Ya pasó esa hora: lo más pronto ahora es $time'
+      : 'That time has passed: the earliest now is $time';
   String get schedPriorityNote => _es
       ? 'Los viajes programados tienen emparejamiento prioritario. Te avisaremos cuando un conductor acepte tu viaje.'
       : "Scheduled rides get priority matching. You'll be notified when a driver accepts your ride.";

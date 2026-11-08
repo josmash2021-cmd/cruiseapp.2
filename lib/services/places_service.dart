@@ -8,10 +8,21 @@ import 'package:uuid/uuid.dart';
 
 import '../config/mapbox_config.dart';
 import 'api_service.dart';
+import 'place_ranking.dart';
 
 // ─── Place type enum for smart icons ─────────────────────────────────
 
-enum PlaceType { airport, hotel, hospital, education, commerce, home }
+/// `business` = any other named place (restaurant, gym, bank…); `home` =
+/// an address.
+enum PlaceType {
+  airport,
+  hotel,
+  hospital,
+  education,
+  commerce,
+  business,
+  home,
+}
 
 // ─── Models (same interface — all screens keep working) ──────────────
 
@@ -73,27 +84,38 @@ class PlaceSuggestion {
     if (types.contains('university') || types.contains('school')) {
       return PlaceType.education;
     }
-    if (types.contains('shopping_mall') || types.contains('store')) {
+    if (types.contains('shopping_mall') ||
+        types.any((t) => t == 'store' || t.endsWith('_store'))) {
       return PlaceType.commerce;
+    }
+    // A named place that is none of the above — a restaurant, a gym, a
+    // bank — is not an address: it gets the business mark, not the pin.
+    if (types.contains('establishment') ||
+        types.contains('point_of_interest') ||
+        types.contains('food')) {
+      return PlaceType.business;
     }
     return PlaceType.home;
   }
 
-  /// Smart icon based on place type.
+  /// Smart icon based on place type — the outlined set, to sit with the
+  /// search page's line glyphs (place_glyph.dart).
   IconData get icon {
     switch (placeType) {
       case PlaceType.airport:
-        return Icons.local_airport_rounded;
+        return Icons.local_airport_outlined;
       case PlaceType.hotel:
-        return Icons.hotel_rounded;
+        return Icons.hotel_outlined;
       case PlaceType.hospital:
-        return Icons.local_hospital_rounded;
+        return Icons.local_hospital_outlined;
       case PlaceType.education:
-        return Icons.school_rounded;
+        return Icons.school_outlined;
       case PlaceType.commerce:
-        return Icons.storefront_rounded;
+        return Icons.shopping_bag_outlined;
+      case PlaceType.business:
+        return Icons.storefront_outlined;
       case PlaceType.home:
-        return Icons.location_on_rounded;
+        return Icons.location_on_outlined;
     }
   }
 }
@@ -301,10 +323,16 @@ class PlacesService {
 
   // ─── Autocomplete (text → list of suggestions) ────────────────────
   //
-  // Google Places Autocomplete — full worldwide coverage:
-  //  • No type restriction → addresses + businesses + POIs
-  //  • Session tokens → cost optimization
-  //  • Location bias → proximity ranking
+  // One Google answer (businesses by name, airports, addresses — ranked
+  // around the rider with a real distance) + Mapbox addresses, merged into
+  // one row per place: the rider's own state first, another state's
+  // look-alike only when they ask for it (place_ranking.dart).
+  //
+  // Before (owner report 2026-11-08) five sources ran at once — Mapbox x2,
+  // Google x2 and the server's copy of Google — and Google's old
+  // `location`+`radius` bias was all but ignored: "walmart" from Hoover, AL
+  // listed Walmarts in Georgia and "3659 Lorna Rd" the same house in four
+  // states.
 
   int _autocompleteSeq = 0;
 
@@ -319,52 +347,48 @@ class PlacesService {
     final seq = ++_autocompleteSeq;
     final hasLocation = latitude != null && longitude != null;
 
-    // ── Run Mapbox + SearchBox + Google + backend in parallel for comprehensive results ──
-    final futures = <Future<List<PlaceSuggestion>>>[];
-
-    // Always try Mapbox Geocoding v5 (addresses, regions)
-    futures.add(
-      _mapboxAutocomplete(cleanInput, lat: latitude, lon: longitude)
-          .catchError((_) => <PlaceSuggestion>[]),
-    );
-
-    // Mapbox SearchBox v6 (better POI/airport/business coverage)
-    futures.add(
-      _mapboxSearchBox(cleanInput, lat: latitude, lon: longitude)
-          .catchError((_) => <PlaceSuggestion>[]),
-    );
-
-    // Google Places (local key) + backend proxy — always try both for maximum coverage
-    if (isKeyValid) {
-      futures.add(
-        _googleAutocomplete(cleanInput, lat: latitude, lon: longitude)
-            .catchError((_) => <PlaceSuggestion>[]),
-      );
-      futures.add(
-        _googleAutocomplete(cleanInput, lat: latitude, lon: longitude, types: 'geocode')
-            .catchError((_) => <PlaceSuggestion>[]),
-      );
-    }
-    // Always add backend proxy as well — server-side key may have better API access
-    futures.add(
-      _backendAutocomplete(cleanInput, lat: latitude, lon: longitude)
-          .catchError((_) => <PlaceSuggestion>[]),
-    );
+    // The browser can't call Google's web service (no CORS): the web build
+    // asks the server, which makes the same call.
+    final localGoogle = isKeyValid && !kIsWeb;
+    final stateF = hasLocation
+        ? riderStateAt(latitude, longitude)
+        : Future<String?>.value(null);
+    final googleF = (localGoogle
+            ? _googleAutocomplete(cleanInput, lat: latitude, lon: longitude)
+            : _backendAutocomplete(cleanInput, lat: latitude, lon: longitude))
+        .catchError((_) => <PlaceSuggestion>[]);
+    final mapboxF = _mapboxAutocomplete(cleanInput, lat: latitude, lon: longitude)
+        .catchError((_) => <PlaceSuggestion>[]);
+    // Mapbox's POI search only stands in when Google has nothing: next to
+    // Google it added a row per store counter ("Walmart Deli", "Walmart
+    // Pharmacy", "Walmart Money Center"…).
+    final boxF = _mapboxSearchBox(cleanInput, lat: latitude, lon: longitude)
+        .catchError((_) => <PlaceSuggestion>[]);
 
     try {
-      final allResults = await Future.wait(futures);
+      var google = await googleF;
+      if (google.isEmpty && localGoogle && seq == _autocompleteSeq) {
+        // The app's key failed (restricted, quota): the server's copy.
+        google = await _backendAutocomplete(cleanInput,
+                lat: latitude, lon: longitude)
+            .catchError((_) => <PlaceSuggestion>[]);
+      }
+      final mapbox = await mapboxF;
+      final box = await boxF;
       if (seq != _autocompleteSeq) return [];
 
-      final merged = <PlaceSuggestion>[];
-      for (final batch in allResults) {
-        merged.addAll(batch);
-      }
+      final merged = <PlaceSuggestion>[
+        ...google,
+        ...mapbox,
+        if (google.isEmpty) ...box,
+      ];
 
-      // Enrich with distance
+      // Distance for the rows that came with coordinates (Mapbox); Google
+      // and the server send theirs already measured from the rider.
       if (hasLocation) {
         for (int i = 0; i < merged.length; i++) {
           final s = merged[i];
-          if (s.lat != null && s.lng != null) {
+          if (s.distanceMiles == null && s.lat != null && s.lng != null) {
             final dist = _haversineDistance(latitude, longitude, s.lat!, s.lng!);
             merged[i] = s.copyWith(distanceMiles: dist * 0.621371);
           }
@@ -381,18 +405,65 @@ class PlacesService {
           ]);
           if (seq == _autocompleteSeq) {
             for (final batch in fallbacks) {
-              merged.addAll(batch);
+              for (final f in batch) {
+                merged.add(hasLocation && f.lat != null && f.lng != null
+                    ? f.copyWith(
+                        distanceMiles: _haversineDistance(
+                                latitude, longitude, f.lat!, f.lng!) *
+                            0.621371)
+                    : f);
+              }
             }
           }
         } catch (_) {}
       }
 
       if (merged.isEmpty) return [];
-      final deduped = _dedupeByDescription(merged);
-      _rankSuggestions(cleanInput, deduped);
-      return deduped.take(15).toList();
+      final riderState = await stateF;
+      if (seq != _autocompleteSeq) return [];
+      return rankPlacesForRider(cleanInput, dedupePlaces(merged),
+              riderState: riderState)
+          .take(12)
+          .toList();
     } catch (_) {
       return [];
+    }
+  }
+
+  // ─── The rider's state ─────────────────────────────────────────────
+  //
+  // Two letters ("AL") for where the rider is, from Mapbox's region layer.
+  // Kept per ~5 km cell for the life of the app: every keystroke searches,
+  // the state doesn't change under them.
+
+  static final Map<String, String?> _stateCache = {};
+
+  Future<String?> riderStateAt(double lat, double lng) async {
+    final key = '${(lat * 20).round()},${(lng * 20).round()}';
+    if (_stateCache.containsKey(key)) return _stateCache[key];
+    final token = MapboxConfig.accessToken;
+    if (token.isEmpty) return null;
+    try {
+      final uri = Uri.https(
+        'api.mapbox.com',
+        '/geocoding/v5/mapbox.places/$lng,$lat.json',
+        {'access_token': token, 'limit': '1', 'types': 'region'},
+      );
+      final res = await http.get(uri).timeout(const Duration(seconds: 3));
+      if (res.statusCode != 200) return null;
+      final feats = (jsonDecode(res.body) as Map)['features'] as List?;
+      final props = (feats != null && feats.isNotEmpty)
+          ? feats.first['properties'] as Map?
+          : null;
+      final code = props?['short_code']?.toString();
+      // "US-AL" → "AL"; outside the US there is no state to prefer.
+      final state = (code != null && code.startsWith('US-') && code.length == 5)
+          ? code.substring(3)
+          : null;
+      _stateCache[key] = state;
+      return state;
+    } catch (_) {
+      return null; // not cached: a network blip retries on the next key
     }
   }
 
@@ -436,13 +507,15 @@ class PlacesService {
 
     return predictions.map<PlaceSuggestion>((p) {
       final mainText = p['main_text']?.toString() ?? '';
-      final secondaryText = p['secondary_text']?.toString() ?? '';
+      final secondaryText = withoutCountry(p['secondary_text']?.toString() ?? '');
+      final meters = p['distance_meters'];
       return PlaceSuggestion(
         description: p['description']?.toString() ?? '',
         placeId: p['place_id']?.toString() ?? '',
-        types: const [],
+        types: List<String>.from(p['types'] as List? ?? const []),
         mainText: mainText.isNotEmpty ? mainText : null,
         secondaryText: secondaryText.isNotEmpty ? secondaryText : null,
+        distanceMiles: meters is num ? meters / 1609.344 : null,
       );
     }).where((s) => s.description.isNotEmpty).toList();
   }
@@ -495,6 +568,17 @@ class PlacesService {
       final placeName = f['place_name']?.toString() ?? '';
       final shortName = f['text']?.toString() ?? '';
       if (placeName.isEmpty) return null;
+      // "3659 Lorna Road" over "Hoover, Alabama 35216", the way Google's
+      // rows read — an address feature carries its house number apart.
+      final houseNumber = f['address']?.toString() ?? '';
+      final isAddress =
+          ((f['place_type'] as List?) ?? const []).contains('address');
+      final title = isAddress && houseNumber.isNotEmpty && shortName.isNotEmpty
+          ? '$houseNumber $shortName'
+          : shortName;
+      final comma = placeName.indexOf(',');
+      final cityLine =
+          comma > 0 ? withoutCountry(placeName.substring(comma + 1).trim()) : '';
       final coords = f['geometry']?['coordinates'] as List?;
       final lng = (coords != null && coords.length >= 2)
           ? (coords[0] as num).toDouble() : null;
@@ -506,7 +590,10 @@ class PlacesService {
       final types = <String>[];
       for (final t in rawTypes) {
         if (t == 'poi') types.add('establishment');
-        if (t == 'address') types.add('street_address');
+        if (t == 'address') {
+          // A street with no house number is a road, not a place.
+          types.add(houseNumber.isEmpty ? 'route' : 'street_address');
+        }
         if (t == 'place') types.add('locality');
         if (t == 'region') types.add('administrative_area_level_1');
       }
@@ -526,6 +613,8 @@ class PlacesService {
         lat: lat,
         lng: lng,
         types: types,
+        mainText: title.isNotEmpty ? title : null,
+        secondaryText: cityLine.isNotEmpty ? cityLine : null,
       );
     }).whereType<PlaceSuggestion>().toList();
   }
@@ -593,11 +682,17 @@ class PlacesService {
         if (maki.contains('airport')) types.add('airport');
         if (featureType == 'poi') types.add('establishment');
         if (featureType == 'address') types.add('street_address');
+        if (featureType == 'street') types.add('route');
 
+        final meters = s['distance'];
+        final cityLine = withoutCountry(fullAddr);
         return PlaceSuggestion(
           description: description,
           placeId: mapboxId.isNotEmpty ? 'searchbox:$mapboxId' : '',
           types: types,
+          mainText: name,
+          secondaryText: cityLine.isNotEmpty ? cityLine : null,
+          distanceMiles: meters is num ? meters / 1609.344 : null,
         );
       }).whereType<PlaceSuggestion>().where((s) => s.placeId.isNotEmpty).toList();
     } catch (e) {
@@ -625,10 +720,13 @@ class PlacesService {
       params['types'] = types;
     }
 
-    // Location bias: center on user, 160km radius (soft preference, not filter)
+    // Prefer what's around the rider (a preference, not a fence: another
+    // state still answers when typed) and measure every row from them.
+    // `locationbias` — the old `location`+`radius` pair was all but ignored:
+    // "walmart" from Hoover, AL came back with Walmarts in Georgia.
     if (lat != null && lon != null) {
-      params['location'] = '$lat,$lon';
-      params['radius'] = '160000';
+      params['locationbias'] = 'circle:50000@$lat,$lon';
+      params['origin'] = '$lat,$lon';
     }
 
     final uri = Uri.https(
@@ -667,10 +765,20 @@ class PlacesService {
             final placeId = p['place_id']?.toString() ?? '';
             if (description.isEmpty || placeId.isEmpty) return null;
             final placeTypes = List<String>.from(p['types'] as List? ?? []);
+            // "Walmart Supercenter" over "Lakeshore Parkway, Homewood, AL":
+            // the name people search by, then where it is.
+            final fmt = p['structured_formatting'] as Map? ?? const {};
+            final main = fmt['main_text']?.toString() ?? '';
+            final secondary =
+                withoutCountry(fmt['secondary_text']?.toString() ?? '');
+            final meters = p['distance_meters'];
             return PlaceSuggestion(
               description: description,
               placeId: placeId,
               types: placeTypes,
+              mainText: main.isNotEmpty ? main : null,
+              secondaryText: secondary.isNotEmpty ? secondary : null,
+              distanceMiles: meters is num ? meters / 1609.344 : null,
             );
           })
           .whereType<PlaceSuggestion>()
@@ -931,82 +1039,5 @@ class PlacesService {
             sin(dLon / 2) *
             sin(dLon / 2);
     return r * 2 * atan2(sqrt(a), sqrt(1 - a));
-  }
-
-  String _normalize(String value) {
-    return value
-        .toLowerCase()
-        .trim()
-        .replaceAll('á', 'a')
-        .replaceAll('é', 'e')
-        .replaceAll('í', 'i')
-        .replaceAll('ó', 'o')
-        .replaceAll('ú', 'u')
-        .replaceAll('ü', 'u')
-        .replaceAll('ñ', 'n')
-        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  List<PlaceSuggestion> _dedupeByDescription(List<PlaceSuggestion> input) {
-    final out = <PlaceSuggestion>[];
-    final seen = <String>{};
-    for (final item in input) {
-      final key = _normalize(item.description);
-      if (key.isEmpty || seen.contains(key)) continue;
-      seen.add(key);
-      out.add(item);
-    }
-    return out;
-  }
-
-  // ─── Relevance ranking ─────────────────────────────────────────────
-  //
-  // Sources are merged in fixed order (Mapbox first), so without a sort
-  // fuzzy/remote matches buried the correct nearby address. Rank by:
-  //  1. Street-number match (input "3409 ..." → suggestion starts "3409")
-  //  2. Token coverage (how many query words appear in the suggestion)
-  //  3. Distance to the user (nearest first, unknown distance last)
-  //  4. Original merge order (stable)
-
-  void _rankSuggestions(String input, List<PlaceSuggestion> list) {
-    final normInput = _normalize(input);
-    if (normInput.isEmpty) return;
-    final tokens = normInput.split(' ').where((t) => t.isNotEmpty).toList();
-    final number = RegExp(r'^\d+').firstMatch(normInput)?.group(0);
-
-    double score(PlaceSuggestion s) {
-      final text = _normalize('${s.mainText ?? ''} ${s.description}');
-      if (text.isEmpty) return 0;
-      var pts = 0.0;
-      if (number != null && RegExp('(^| )$number ').hasMatch('$text ')) {
-        pts += 100; // same street number → almost certainly the address
-      }
-      for (final t in tokens) {
-        if (RegExp(r'^\d+$').hasMatch(t)) continue; // number already scored
-        if (text.contains(t)) pts += 10;
-      }
-      return pts;
-    }
-
-    final scored = list.map(score).toList();
-    final order = List<int>.generate(list.length, (i) => i);
-    order.sort((a, b) {
-      final byScore = scored[b].compareTo(scored[a]);
-      if (byScore != 0) return byScore;
-      final da = list[a].distanceMiles;
-      final db = list[b].distanceMiles;
-      if (da != null && db != null && (da - db).abs() > 0.05) {
-        return da.compareTo(db);
-      }
-      if (da != null && db == null) return -1;
-      if (da == null && db != null) return 1;
-      return a.compareTo(b);
-    });
-    final sorted = [for (final i in order) list[i]];
-    list
-      ..clear()
-      ..addAll(sorted);
   }
 }

@@ -11,9 +11,12 @@ import '../l10n/app_localizations.dart';
 import '../models/lat_lng.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
+import '../services/place_ranking.dart' show placeDistanceText;
 import '../services/places_service.dart';
 import '../services/rider_heat_reporter.dart';
 import '../widgets/neu_style.dart';
+import '../widgets/place_glyph.dart';
+import '../widgets/route_connector_line.dart';
 import 'map_picker_screen.dart';
 import 'ride_request_screen.dart';
 import 'schedule_datetime_screen.dart';
@@ -24,6 +27,17 @@ import 'schedule_flow_entry.dart';
 // ═══════════════════════════════════════════════════════════════════
 
 const _gold = Color(0xFFE8C547);
+
+// Field geometry the connector line is laid against: every field row is
+// 14 + _kFieldContentH + 14 tall and its marker sits on the row's center,
+// so the line can start and end exactly at the rings (owner 2026-11-08:
+// "ese círculo y línea como el de la app" — the offer card's rail).
+const double _kFieldPadV = 14;
+const double _kFieldContentH = 24;
+const double _kFieldPadH = 12;
+const double _kRing = 13;
+// The line touches each ring with a hairline of air, like the offer card.
+const double _kRingGap = 1;
 // Fondo negro puro como en la web
 const _bg = Color(0xFF000000);
 const _cardBg = Color(0xFF1A1A1F);
@@ -982,7 +996,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                     Column(
                       children: [
                         _buildField(
-                          dot: const _Dot(pickup: true),
+                          dot: const _Dot(_Mark.pickup),
                           label: S.of(context).currentLocation,
                           labelColor: _gold, // Dorado para pickup
                           controller: _pickupCtrl,
@@ -1025,7 +1039,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                         // Destination, and leaves with its ✕.
                         if (_showStop) ...[
                           _buildField(
-                            dot: const _Dot(pickup: true),
+                            dot: const _Dot(_Mark.stop),
                             label: S.of(context).stopFieldLabel,
                             labelColor: _gold,
                             controller: _stopCtrl,
@@ -1065,7 +1079,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                           ),
                         ],
                         _buildField(
-                          dot: const _Dot(pickup: false),
+                          dot: const _Dot(_Mark.dropoff),
                           label: S.of(context).whereTo,
                           labelColor: _gold,
                           controller: _dropoffCtrl,
@@ -1094,14 +1108,32 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                         ),
                       ],
                     ),
-                    // Connecting line between the two dots — matches the
-                    // web .vipRide__locPicker__line (vertical, dashed
-                    // gold/white, sitting in the dot column).
-                    const Positioned(
-                      left: 16,        // 12 (field horiz padding) + 4 (dot half width offset)
-                      top: 38,         // below pickup dot
-                      bottom: 38,      // above dropoff dot
-                      child: _DotConnectorLine(),
+                    // The app's route rail: gold leaving the pickup ring,
+                    // white reaching the drop-off ring (RouteConnectorLine,
+                    // the offer card's). A stop splits it around its ring —
+                    // the stop sits exactly halfway, every row being the
+                    // same height.
+                    Positioned(
+                      left: _kFieldPadH + _kRing / 2 - 1,
+                      top: _kFieldPadV + _kFieldContentH / 2 + _kRing / 2 + _kRingGap,
+                      bottom: _kFieldPadV + _kFieldContentH / 2 + _kRing / 2 + _kRingGap,
+                      child: _showStop
+                          ? Column(
+                              children: [
+                                Expanded(
+                                  child: RouteConnectorLine(
+                                    bottom: Color.lerp(_gold, Colors.white, 0.5)!,
+                                  ),
+                                ),
+                                const SizedBox(height: _kRing + 2 * _kRingGap),
+                                Expanded(
+                                  child: RouteConnectorLine(
+                                    top: Color.lerp(_gold, Colors.white, 0.5)!,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : const RouteConnectorLine(),
                     ),
                   ],
                 ),
@@ -1177,7 +1209,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        padding: const EdgeInsets.symmetric(
+            horizontal: _kFieldPadH, vertical: _kFieldPadV),
         // Active field becomes a sunken neumorphic well (same language as
         // the home address sheet); inactive stays transparent on the card.
         decoration: active
@@ -1186,7 +1219,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                 color: Colors.transparent,
                 borderRadius: radius,
               ),
-        child: Row(
+        child: SizedBox(
+          height: _kFieldContentH,
+          child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             dot,
@@ -1228,6 +1263,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
               trailing,
             ],
           ],
+          ),
         ),
       ),
     );
@@ -1382,42 +1418,35 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
 //  Building blocks
 // ═══════════════════════════════════════════════════════════════════
 
+enum _Mark { pickup, stop, dropoff }
+
+/// The rail's markers, the offer card's: a gold ring with a gold dot for
+/// the pickup, an empty white ring for the drop-off — and an empty gold
+/// ring for a stop on the way.
 class _Dot extends StatelessWidget {
-  final bool pickup;
-  const _Dot({required this.pickup});
+  final _Mark mark;
+  const _Dot(this.mark);
 
   @override
   Widget build(BuildContext context) {
-    // .vipRide__locPicker__dot--pickup:
-    //   width:10; height:10; border-radius:50%;
-    //   background:#E8C547;
-    //   box-shadow: 0 0 8px rgba(232,197,71,.7)
-    if (pickup) {
-      return Container(
-        width: 10,
-        height: 10,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: _gold,
-          boxShadow: [
-            BoxShadow(color: Color(0xB3E8C547), blurRadius: 8),
-          ],
-        ),
-      );
-    }
-    // .vipRide__locPicker__dot--dropoff:
-    //   width:9; height:9; background:#fff;
-    //   border-radius:3; box-shadow: 0 0 8px rgba(255,255,255,.5)
+    final color = mark == _Mark.dropoff ? Colors.white : _gold;
     return Container(
-      width: 9,
-      height: 9,
+      key: ValueKey('search-rail-${mark.name}'),
+      width: _kRing,
+      height: _kRing,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(3),
-        boxShadow: const [
-          BoxShadow(color: Color(0x80FFFFFF), blurRadius: 8),
-        ],
+        shape: BoxShape.circle,
+        border: Border.fromBorderSide(BorderSide(color: color, width: 1.8)),
       ),
+      alignment: Alignment.center,
+      child: mark == _Mark.pickup
+          ? Container(
+              width: 5,
+              height: 5,
+              decoration:
+                  const BoxDecoration(color: _gold, shape: BoxShape.circle),
+            )
+          : null,
     );
   }
 }
@@ -1443,34 +1472,6 @@ class _CircleBtn extends StatelessWidget {
           color: Colors.white.withValues(alpha: 0.85),
           size: 18,
         ),
-      ),
-    );
-  }
-}
-
-/// Vertical solid gold line connecting the gold pickup dot to the white
-/// dropoff dot — matches the web .vipRide__locPicker__line. Solid (not
-/// dashed), faint at the ends, brighter in the middle for a soft beam
-/// feel that ties the two inputs together visually.
-class _DotConnectorLine extends StatelessWidget {
-  const _DotConnectorLine();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 1.5,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            const Color(0xFFE8C547).withValues(alpha: 0.85),
-            const Color(0xFFE8C547).withValues(alpha: 0.55),
-            Colors.white.withValues(alpha: 0.55),
-          ],
-          stops: const [0.0, 0.5, 1.0],
-        ),
-        borderRadius: BorderRadius.circular(1),
       ),
     );
   }
@@ -1790,13 +1791,40 @@ class _SuggestionRowState extends State<_SuggestionRow>
           ),
           child: Row(
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: neuBox(radius: 12, pressed: true),
-                child: const Icon(Icons.place_rounded, color: _gold, size: 16),
+              // What it is (airport, store, hotel…) and how far, like Lyft:
+              // several "Walmart Supercenter" rows differ by the distance.
+              SizedBox(
+                width: 44,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: neuBox(radius: 12, pressed: true),
+                      // One thin-line family: pin for an address, bag,
+                      // shopfront, plane… for a place (place_glyph.dart).
+                      child: PlaceGlyph(widget.suggestion.placeType),
+                    ),
+                    if (widget.suggestion.distanceMiles != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        S.of(context).placeDistanceMi(placeDistanceText(
+                            widget.suggestion.distanceMiles!)),
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

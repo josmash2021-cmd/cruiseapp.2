@@ -1241,6 +1241,8 @@ class S {
   String get callSupport => _es ? 'Llamar' : 'Call';
   String get noResultsFound =>
       _es ? 'No se encontraron resultados' : 'No results found';
+  /// Distance under a search result's icon ("2.9 mi"); miles in both.
+  String placeDistanceMi(String miles) => '$miles mi';
   String get tryDifferentSearch =>
       _es ? 'Intenta con un término diferente' : 'Try a different search term';
   String get stillNeedHelp =>

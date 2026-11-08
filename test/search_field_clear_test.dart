@@ -78,6 +78,46 @@ void main() {
     await unmount(t);
   });
 
+  testWidgets('"Ahora ▾" switches to "Programado ▾" and back (owner pick B)',
+      (t) async {
+    await pumpSearch(t);
+    Future<void> frames() async {
+      for (var i = 0; i < 14; i++) {
+        await t.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    final chip = find.byKey(const ValueKey('when-chip'));
+    expect(find.descendant(of: chip, matching: find.text('Ahora')),
+        findsOneWidget);
+
+    await t.tap(chip);
+    await frames();
+    expect(find.text('Recoger ahora'), findsOneWidget);
+    await t.tap(find.text('Programar con tiempo'));
+    await frames();
+    expect(find.descendant(of: chip, matching: find.text('Programado')),
+        findsOneWidget);
+    expect(find.text('Programar un viaje'), findsOneWidget);
+
+    // A mistaken tap has a way back now.
+    await t.tap(chip);
+    await frames();
+    await t.tap(find.text('Recoger ahora'));
+    await frames();
+    expect(find.descendant(of: chip, matching: find.text('Ahora')),
+        findsOneWidget);
+    expect(find.text('Programar un viaje'), findsNothing);
+    await unmount(t);
+  });
+
+  test('"Elegir en mapa" wears the line map mark', () {
+    final search =
+        File('lib/screens/pickup_dropoff_search_screen.dart').readAsStringSync();
+    expect(search, contains('icon: const MapPickGlyph(),'));
+    expect(search, isNot(contains('Icons.map_rounded')));
+  });
+
   group('"Choose on map" fills the field being edited', () {
     final search =
         File('lib/screens/pickup_dropoff_search_screen.dart').readAsStringSync();

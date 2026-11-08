@@ -229,3 +229,81 @@ class PlaceGlyphPainter extends CustomPainter {
   bool shouldRepaint(covariant PlaceGlyphPainter old) =>
       old.type != type || old.color != color;
 }
+
+/// "Choose on map": a folded map with the address pin standing on it, in
+/// the same 1.8 px line as the place marks (owner 2026-11-08, "cámbialo
+/// para uno más moderno"). [cutout] is the well behind it — the pin hides
+/// the map's lines where it stands.
+class MapPickGlyph extends StatelessWidget {
+  const MapPickGlyph({
+    super.key,
+    this.color = const Color(0xFFE8C547),
+    this.cutout = const Color(0xFF101014),
+    this.size = 24,
+  });
+
+  final Color color;
+  final Color cutout;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        size: Size.square(size),
+        painter: _MapPickPainter(color, cutout),
+      );
+}
+
+class _MapPickPainter extends CustomPainter {
+  const _MapPickPainter(this.color, this.cutout);
+
+  final Color color;
+  final Color cutout;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final k = size.shortestSide / 24;
+    canvas.save();
+    canvas.translate((size.width - 24 * k) / 2, (size.height - 24 * k) / 2);
+    canvas.scale(k);
+    final line = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = PlaceGlyphPainter.strokePx / k
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    // The folded map: three panels.
+    canvas.drawPath(
+      Path()
+        ..moveTo(2.5, 7)
+        ..lineTo(8.5, 4.5)
+        ..lineTo(15.5, 7)
+        ..lineTo(21.5, 4.5)
+        ..lineTo(21.5, 18)
+        ..lineTo(15.5, 20.5)
+        ..lineTo(8.5, 18)
+        ..lineTo(2.5, 20.5)
+        ..close()
+        ..moveTo(8.5, 4.5)
+        ..lineTo(8.5, 18)
+        ..moveTo(15.5, 7)
+        ..lineTo(15.5, 20.5),
+      line,
+    );
+    // The pin on it, the address mark's shape.
+    const cx = 12.0, cy = 8.2, r = 4.3, tip = 16.6;
+    final pin = Path()
+      ..moveTo(cx, tip)
+      ..cubicTo(cx - r * 0.35, tip - r * 0.75, cx - r, cy + r * 0.55, cx - r, cy)
+      ..arcToPoint(const Offset(cx + r, cy), radius: const Radius.circular(r))
+      ..cubicTo(cx + r, cy + r * 0.55, cx + r * 0.35, tip - r * 0.75, cx, tip)
+      ..close();
+    canvas.drawPath(pin, Paint()..color = cutout);
+    canvas.drawPath(pin, line);
+    canvas.drawCircle(const Offset(cx, cy), r * 0.34, Paint()..color = color);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _MapPickPainter old) =>
+      old.color != color || old.cutout != cutout;
+}

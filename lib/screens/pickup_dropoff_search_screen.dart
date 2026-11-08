@@ -131,6 +131,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   /// flips when the chain has already consumed the confirmed pair.
   bool _scheduleChainLive = false;
 
+  /// The "when" chip's menu is showing (its chevron points up).
+  bool _whenMenuOpen = false;
+
   PlaceDetails? _pickupDetails;
   PlaceDetails? _dropoffDetails;
   String _pickupLabel = '';
@@ -928,43 +931,13 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                     // ── Top row: fields + add-stop ──
                     _buildTopRow(),
 
-                    // ── "Schedule ahead" — enters the schedule chain with
-                    // the addresses already typed (immediate mode only) ──
-                    if (!_scheduleChainLive && widget.scheduledAt == null) ...[
+                    // ── When: "Ahora ▾" / "Programado ▾" — the schedule
+                    // chain with the addresses already typed, and back ──
+                    if (widget.scheduledAt == null) ...[
                       const SizedBox(height: 10),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: GestureDetector(
-                          onTap: () {
-                            HapticService.lightImpact();
-                            setState(() => _scheduleChainLive = true);
-                            if (_pickupDetails != null &&
-                                _dropoffDetails != null) {
-                              _continueScheduleChain();
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 8),
-                            decoration: neuBox(radius: 20),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.schedule_rounded,
-                                    color: _gold, size: 15),
-                                const SizedBox(width: 6),
-                                Text(
-                                  S.of(context).scheduleAheadChip,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                        child: _buildWhenChip(),
                       ),
                     ],
 
@@ -1018,6 +991,163 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         ),
       ),
     );
+  }
+
+  /// When the ride is: "Ahora ▾", or "Programado ▾" in gold (owner pick B,
+  /// 2026-11-08, Uber-style). Before, "Programar con tiempo" just vanished
+  /// when tapped and only the title said so — a mistaken tap had no way
+  /// back to "now" short of closing the page. The menu switches both ways.
+  Widget _buildWhenChip() {
+    final s = S.of(context);
+    final later = _scheduleChainLive;
+    final fg = later ? const Color(0xFF141414) : Colors.white;
+    return PopupMenuButton<bool>(
+      key: const ValueKey('when-chip'),
+      tooltip: '',
+      offset: const Offset(0, 40),
+      color: const Color(0xFF22222B),
+      // A soft lift, not Material's 12dp slab (it drew a black ring on the
+      // dark page); the hairline edge does the separating.
+      elevation: 4,
+      shadowColor: Colors.black.withValues(alpha: 0.45),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      constraints: const BoxConstraints(minWidth: 250, maxWidth: 280),
+      onOpened: () {
+        HapticService.lightImpact();
+        setState(() => _whenMenuOpen = true);
+      },
+      onCanceled: () => setState(() => _whenMenuOpen = false),
+      onSelected: _setWhen,
+      itemBuilder: (_) => [
+        _whenItem(
+          value: false,
+          icon: Icons.schedule_rounded,
+          title: s.pickupNow,
+          subtitle: s.whenNowSub,
+          selected: !later,
+        ),
+        _whenItem(
+          value: true,
+          icon: Icons.event_outlined,
+          title: s.scheduleAheadChip,
+          subtitle: s.whenLaterSub,
+          selected: later,
+        ),
+      ],
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: later
+            ? BoxDecoration(
+                color: _gold,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: _gold.withValues(alpha: 0.25),
+                    blurRadius: 18,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              )
+            : neuBox(radius: 20),
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 320),
+          curve: const Cubic(0.22, 1, 0.36, 1),
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.schedule_rounded,
+                  color: later ? fg : _gold, size: 15),
+              const SizedBox(width: 6),
+              Text(
+                later ? s.whenScheduledChip : s.whenNowChip,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 3),
+              AnimatedRotation(
+                turns: _whenMenuOpen ? 0.5 : 0,
+                duration: const Duration(milliseconds: 250),
+                child: Icon(Icons.keyboard_arrow_down_rounded,
+                    color: fg, size: 17),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<bool> _whenItem({
+    required bool value,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool selected,
+  }) {
+    return PopupMenuItem<bool>(
+      value: value,
+      height: 58,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        children: [
+          Icon(icon, color: _gold, size: 19),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (selected) ...[
+            const SizedBox(width: 8),
+            const Icon(Icons.check_rounded, color: _gold, size: 19),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// "Programar con tiempo" with both addresses goes straight to the day and
+  /// time (as the old chip did); without them it waits for the destination.
+  /// "Recoger ahora" turns it back off.
+  void _setWhen(bool later) {
+    setState(() {
+      _whenMenuOpen = false;
+      _scheduleChainLive = later;
+    });
+    if (later && _pickupDetails != null && _dropoffDetails != null) {
+      _continueScheduleChain();
+    }
   }
 
   Widget _buildTitleRow() {
@@ -1391,7 +1521,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       children: [
         // ── "Choose on map" premium shortcut ──
         _ShortcutCard(
-          icon: Icons.map_rounded,
+          icon: const MapPickGlyph(),
           title: s.chooseOnMap,
           subtitle: s.dropPinAtExactSpot,
           onTap: _openMapPicker,
@@ -1590,7 +1720,7 @@ class _CircleBtn extends StatelessWidget {
 }
 
 class _ShortcutCard extends StatefulWidget {
-  final IconData icon;
+  final Widget icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -1645,7 +1775,7 @@ class _ShortcutCardState extends State<_ShortcutCard> {
               height: 48,
               decoration: neuBox(radius: 14, pressed: true),
               alignment: Alignment.center,
-              child: Icon(widget.icon, color: _gold, size: 22),
+              child: widget.icon,
             ),
             const SizedBox(width: 16),
             Expanded(

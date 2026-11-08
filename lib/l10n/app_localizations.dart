@@ -5552,6 +5552,13 @@ class S {
   String get stopFieldLabel => _es ? 'Parada' : 'Stop';
   String get scheduleAheadChip =>
       _es ? 'Programar con tiempo' : 'Schedule ahead';
+  /// The search page's "when" chip (owner pick B 2026-11-08): now…
+  String get whenNowChip => _es ? 'Ahora' : 'Now';
+  /// …or scheduled (gold).
+  String get whenScheduledChip => _es ? 'Programado' : 'Scheduled';
+  String get whenNowSub =>
+      _es ? 'Un conductor sale ya' : 'A driver heads out now';
+  String get whenLaterSub => _es ? 'Eliges día y hora' : 'Pick a day and time';
   String selectTierLabel(String tier) =>
       _es ? 'Seleccionar $tier' : 'Select $tier';
 

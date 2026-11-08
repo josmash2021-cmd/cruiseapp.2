@@ -34,7 +34,7 @@ void main() {
   test('quote, revision and promotions use the authenticated endpoints', () {
     expect(api, contains("Uri.parse('\$_baseUrl/pricing/quote')"));
     expect(api, contains("Uri.parse('\$_baseUrl/pricing/revision')"));
-    expect(api, contains("Uri.parse('\$_baseUrl/promotions/me')"));
+    expect(api, contains("Uri.parse('\$_baseUrl/promotions/me?amounts=true')"));
     expect(
       "if (quoteId != null) 'quote_id': quoteId".allMatches(api).length,
       2,

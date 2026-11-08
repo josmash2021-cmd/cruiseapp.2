@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/ride_quote.dart' show discountDollarsLabel;
 import '../config/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
@@ -282,6 +283,8 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
     final isActive = promo.status == 'active';
     final title = promo.kind == 'free'
         ? s.free
+        : promo.kind == 'amount' && promo.amountCents > 0
+            ? s.dollarOff(discountDollarsLabel(promo.amountCents))
         : promo.percent > 0
             ? '${promo.percent}% OFF'
             : '${promo.fallbackPercent}% OFF';
@@ -437,6 +440,7 @@ class _PromoItem {
   final int percent;
   final int fallbackPercent;
   final double? maxMiles;
+  final int amountCents;
   final List<String> allowedTiers;
   final int usesPerRider;
   final int remainingUses;
@@ -451,6 +455,7 @@ class _PromoItem {
     required this.percent,
     required this.fallbackPercent,
     required this.maxMiles,
+    this.amountCents = 0,
     required this.allowedTiers,
     required this.usesPerRider,
     required this.remainingUses,
@@ -468,6 +473,7 @@ class _PromoItem {
       percent: (json['percent'] as num?)?.toInt() ?? 0,
       fallbackPercent: (json['fallback_percent'] as num?)?.toInt() ?? 0,
       maxMiles: (json['max_miles'] as num?)?.toDouble(),
+      amountCents: (json['amount_cents'] as num?)?.toInt() ?? 0,
       allowedTiers: rawTiers is List
           ? rawTiers.map((tier) => tier.toString()).toList()
           : const [],

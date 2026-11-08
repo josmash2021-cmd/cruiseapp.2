@@ -230,7 +230,20 @@ class RideOption {
       !isFree &&
       discountPercent > 0 &&
       originalTotalCents! > promoTotalCents!;
+
+  /// Dollars off ($10 off the first ride, 2026-11-07): the server sends no
+  /// percent for it, only `discount_amount_cents`.
+  bool get hasAmountDiscount =>
+      hasServerPrice &&
+      !isFree &&
+      discountPercent == 0 &&
+      discountAmountCents > 0 &&
+      originalTotalCents! > promoTotalCents!;
 }
+
+/// "10" for whole dollars, "9.50" otherwise — for "$10 OFF".
+String discountDollarsLabel(int cents) =>
+    cents % 100 == 0 ? '${cents ~/ 100}' : (cents / 100).toStringAsFixed(2);
 
 class RideQuote {
   final String id;

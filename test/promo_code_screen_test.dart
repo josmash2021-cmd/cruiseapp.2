@@ -124,4 +124,22 @@ void main() {
       'Tus promociones asignadas se aplican automáticamente.',
     );
   });
+
+  testWidgets(r'a dollars-off promotion is titled $10 OFF, never 0% OFF',
+      (tester) async {
+    final ten = promotion(9, 'amount', 'active', percent: 0, fallback: 0)
+      ..['amount_cents'] = 1000
+      ..['uses_per_rider'] = 1;
+    await tester.pumpWidget(app(
+      PromoCodeScreen(
+        promotionsLoader: () async => {
+          'promotions': [ten],
+        },
+        pricingUpdates: const Stream.empty(),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text(r'$10 OFF'), findsOneWidget);
+    expect(find.text('0% OFF'), findsNothing);
+  });
 }

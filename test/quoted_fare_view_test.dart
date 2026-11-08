@@ -115,4 +115,24 @@ void main() {
     expect(find.text('25% OFF'), findsOneWidget);
     expect(find.text('30% OFF'), findsNothing);
   });
+
+  testWidgets(r'$10 off: dollars badge before the price, full fare struck below',
+      (tester) async {
+    // Owner 2026-11-07: the welcome promotion is $10 off the first ride. The
+    // server sends no percent for it, only the dollars off.
+    final ten = option(original: 2268, promo: 1268);
+    expect(ten.hasAmountDiscount, isTrue);
+    expect(ten.hasPercentageDiscount, isFalse);
+    await pumpFare(tester, ten);
+    final badge = find.byKey(const ValueKey('quotedFareBadge'));
+    final price = find.byKey(const ValueKey('quotedFarePrice'));
+    final original = find.byKey(const ValueKey('quotedFareOriginal'));
+    expect(find.text(r'$10 OFF'), findsOneWidget);
+    expect(find.text('0% OFF'), findsNothing);
+    expect(find.text(r'$12.68'), findsOneWidget);
+    expect(find.text(r'$22.68'), findsOneWidget);
+    expect(tester.getCenter(badge).dx, lessThan(tester.getCenter(price).dx));
+    expect(tester.widget<Text>(original).style?.decoration, TextDecoration.lineThrough);
+    expect(discountDollarsLabel(750), '7.50');
+  });
 }

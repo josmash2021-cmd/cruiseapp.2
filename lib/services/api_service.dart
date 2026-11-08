@@ -2504,8 +2504,10 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getMyPromotions() async {
     final h = await _authHeaders();
+    // amounts=true: this build titles a dollars-off grant "$10 OFF"; older
+    // builds don't ask and the server leaves it out (they'd print "0% OFF").
     final res = await _client
-        .get(Uri.parse('$_baseUrl/promotions/me'), headers: h)
+        .get(Uri.parse('$_baseUrl/promotions/me?amounts=true'), headers: h)
         .timeout(const Duration(seconds: 12));
     return _parse(res);
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/ride_quote.dart';
 
 class QuotedFareView extends StatelessWidget {
@@ -44,6 +45,13 @@ class QuotedFareView extends StatelessWidget {
     );
     final original = '\$${option.originalPriceEstimate.toStringAsFixed(2)}';
     final price = '\$${option.priceEstimate.toStringAsFixed(2)}';
+    final discounted =
+        option.hasPercentageDiscount || option.hasAmountDiscount;
+    final badge = option.hasAmountDiscount
+        ? S
+            .of(context)
+            .dollarOff(discountDollarsLabel(option.discountAmountCents))
+        : '${option.discountPercent}% OFF';
 
     final content = !known
         ? Text('—', key: const ValueKey('quotedFareUnknown'), style: priceStyle)
@@ -72,7 +80,7 @@ class QuotedFareView extends StatelessWidget {
                         ),
                       ),
                     ] else ...[
-                      if (option.hasPercentageDiscount) ...[
+                      if (discounted) ...[
                         Container(
                           key: const ValueKey('quotedFareBadge'),
                           padding: const EdgeInsets.symmetric(
@@ -84,7 +92,7 @@ class QuotedFareView extends StatelessWidget {
                             borderRadius: BorderRadius.circular(7),
                           ),
                           child: Text(
-                            '${option.discountPercent}% OFF',
+                            badge,
                             style: const TextStyle(
                               fontFamily: 'Poppins',
                               color: gold,
@@ -104,7 +112,7 @@ class QuotedFareView extends StatelessWidget {
                   ],
                 ),
               ),
-              if (option.hasPercentageDiscount) ...[
+              if (discounted) ...[
                 const SizedBox(height: 2),
                 Text(
                   original,
@@ -137,7 +145,8 @@ class QuotedFareView extends StatelessWidget {
         child: KeyedSubtree(
           key: ValueKey(
             '${option.originalTotalCents}:${option.promoTotalCents}:'
-            '${option.discountPercent}:${option.isFree}:$cash:$known',
+            '${option.discountPercent}:${option.discountAmountCents}:'
+            '${option.isFree}:$cash:$known',
           ),
           child: content,
         ),

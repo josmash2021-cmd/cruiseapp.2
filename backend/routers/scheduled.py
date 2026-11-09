@@ -475,7 +475,7 @@ async def claim_scheduled_trip(
         rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_r.scalar_one_or_none()
         if rider and rider.fcm_token:
-            driver_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Tu conductor"
+            full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
             # Fire-and-forget: the rider is a third party to this request and the
             # response makes no delivery claim, so a slow token must not stall the
             # driver's claim. _safe_create_task keeps a strong ref and logs failures.
@@ -483,7 +483,12 @@ async def claim_scheduled_trip(
                 _send_fcm_push_async(
                     token=rider.fcm_token,
                     title="Conductor asignado a tu viaje reservado",
-                    body=f"{driver_name} ha aceptado tu viaje programado. Te notificaremos cuando este en camino.",
+                    body=f"{full_name or 'Tu conductor'} aceptó tu viaje programado. "
+                         "Te avisaremos cuando vaya en camino.",
+                    title_en="A driver is assigned to your reserved ride",
+                    body_en=f"{full_name or 'Your driver'} accepted your scheduled "
+                            "ride. We'll let you know when they're on the way.",
+                    locale=rider.locale,
                     data={"type": "scheduled_claimed", "trip_id": str(trip.id)},
                 ),
                 name=f"scheduled_claim_push_{trip.id}",
@@ -674,8 +679,11 @@ async def start_scheduled_trip(
             _safe_create_task(
                 _send_fcm_push_async(
                     token=rider.fcm_token,
-                    title="Tu conductor esta en camino",
-                    body="Tu conductor ha iniciado el viaje y esta en camino al punto de recogida.",
+                    title="Tu conductor está en camino",
+                    body="Tu conductor inició el viaje y va en camino al punto de recogida.",
+                    title_en="Your driver is on the way",
+                    body_en="Your driver started the ride and is heading to your pickup.",
+                    locale=rider.locale,
                     data={"type": "driver_en_route", "trip_id": str(trip.id)},
                 ),
                 name=f"scheduled_start_push_{trip.id}",
@@ -753,8 +761,11 @@ async def cancel_claimed_scheduled_trip(
             _safe_create_task(
                 _send_fcm_push_async(
                     token=rider.fcm_token,
-                    title="Conductor cancelado",
-                    body="Tu conductor ha cancelado el viaje reservado. Estamos buscando otro conductor.",
+                    title="Tu conductor canceló",
+                    body="Tu conductor canceló tu viaje reservado. Estamos buscando otro conductor.",
+                    title_en="Your driver cancelled",
+                    body_en="Your driver cancelled your reserved ride. We're finding another driver.",
+                    locale=rider.locale,
                     data={"type": "scheduled_driver_cancelled", "trip_id": str(trip.id)},
                 ),
                 name=f"scheduled_cancel_push_{trip.id}",
@@ -931,7 +942,10 @@ async def drop_scheduled_trip(
                 _send_fcm_push_async(
                     token=rider.fcm_token,
                     title="Buscando otro conductor",
-                    body="Tu viaje reservado volvio al marketplace. Te asignaremos un nuevo conductor en breve.",
+                    body="Tu viaje reservado está buscando un nuevo conductor. Te avisaremos cuando lo tenga.",
+                    title_en="Finding another driver",
+                    body_en="Your reserved ride is looking for a new driver. We'll let you know when it has one.",
+                    locale=rider.locale,
                     data={"type": "scheduled_driver_dropped", "trip_id": str(trip.id)},
                 ),
                 name=f"scheduled_drop_push_{trip.id}",

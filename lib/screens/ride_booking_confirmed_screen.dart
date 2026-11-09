@@ -935,22 +935,28 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
                       ),
               ),
             ),
-            const SizedBox(height: 4),
-            TextButton(
-              key: const ValueKey('reservation-policy'),
-              onPressed: () => Navigator.maybeOf(context)
-                  ?.push(slideUpFadeRoute(const ScheduleCancelPolicyScreen())),
-              style: TextButton.styleFrom(
-                minimumSize: const Size(0, 38),
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(
-                s.viewCancelPolicy,
-                style: const TextStyle(
-                  color: _gold,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
+            const SizedBox(height: 10),
+            // A button like Cancelar, in gold (owner 2026-11-08: "un botón
+            // como el de cancelar, no la palabra estilo link").
+            SizedBox(
+              height: 50,
+              child: ElevatedButton(
+                key: const ValueKey('reservation-policy'),
+                onPressed: () => Navigator.maybeOf(context)
+                    ?.push(slideUpFadeRoute(const ScheduleCancelPolicyScreen())),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _gold.withValues(alpha: 0.10),
+                  foregroundColor: _gold,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: _gold.withValues(alpha: 0.45)),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  s.viewCancelPolicy,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w800),
                 ),
               ),
             ),

@@ -209,6 +209,11 @@ void main() {
     final cancel = t.getCenter(find.text('Cancelar reserva'));
     final policy = t.getCenter(find.text('Ver política'));
     expect(policy.dy, greaterThan(cancel.dy));
+    // A button like Cancelar, not a link (owner 2026-11-08).
+    final policyBtn = find.byKey(const ValueKey('reservation-policy'));
+    expect(t.widget(policyBtn), isA<ElevatedButton>());
+    expect(t.getSize(policyBtn).height,
+        t.getSize(find.byKey(const ValueKey('reservation-cancel'))).height);
     // The card hugs its content: nothing is left empty under "Ver política".
     final sheetBottom = t.getBottomLeft(find.text('Ver política')).dy;
     expect(t.view.physicalSize.height / 3 - sheetBottom, lessThan(40));

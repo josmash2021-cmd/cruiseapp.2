@@ -29,6 +29,7 @@ import 'biometric_consent_screen.dart';
 import 'identity_verification_screen.dart';
 import 'schedule_hub_screen.dart';
 import 'pickup_dropoff_search_screen.dart';
+import 'ride_booking_confirmed_screen.dart';
 import 'ride_request_screen.dart';
 import 'rider_tracking_screen.dart';
 import 'trip_receipt_screen.dart';
@@ -48,6 +49,7 @@ import '../widgets/cancel_reason_sheet.dart';
 import '../services/user_session.dart';
 import 'rider_permissions_screen.dart';
 import '../widgets/neu_style.dart';
+import '../widgets/reservation_card.dart';
 import '../widgets/glass_notification_banner.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/car_image_3d.dart';
@@ -112,34 +114,18 @@ class _HomeScreenState extends State<HomeScreen>
   bool _rideNow = true;
   int _dockIndex = 0; // 0=Ride, 1=Schedule, 2=Account
 
-  // Scheduled ride indicator
+  // Scheduled ride indicator: the next reservation, and how many there are
+  // ("Ver las N"). The count is set by _loadNextScheduledRide.
   Map<String, dynamic>? _nextScheduledRide;
+  int _scheduledRideCount = 0;
 
-  // Imminent scheduled ride (≤30 min away)
+  // The card's countdown ("En 24 min") reads the clock on every rebuild;
+  // this ticks the rebuild once a minute.
   Timer? _imminentRideTimer;
-  int _minutesUntilRide = 0;
-
-  bool get _hasImminentRide {
-    if (_nextScheduledRide == null || _activeRide != null) return false;
-    final sa = _nextScheduledRide!['scheduled_at']?.toString();
-    if (sa == null) return false;
-    final dt = DateTime.tryParse(sa);
-    if (dt == null) return false;
-    final diff = dt.difference(DateTime.now()).inMinutes;
-    return diff <= 30 && diff >= 0;
-  }
 
   void _updateImminentRide() {
-    if (_nextScheduledRide == null) {
-      _minutesUntilRide = 0;
-      return;
-    }
-    final sa = _nextScheduledRide!['scheduled_at']?.toString();
-    if (sa == null) return;
-    final dt = DateTime.tryParse(sa);
-    if (dt == null) return;
-    final diff = dt.difference(DateTime.now()).inMinutes;
-    if (mounted) setState(() => _minutesUntilRide = diff.clamp(0, 9999));
+    if (_nextScheduledRide == null || !mounted) return;
+    setState(() {});
   }
 
   // Active ride state
@@ -1092,22 +1078,18 @@ class _HomeScreenState extends State<HomeScreen>
       final userId = await ApiService.getCurrentUserId();
       if (userId != null) {
         final trips = await ApiService.getScheduledTrips(userId);
-        if (trips.isNotEmpty) {
-          final now = DateTime.now();
-          for (final t in trips) {
-            // Show all scheduled-origin trips until completed/canceled by driver/rider
-            final status = (t['status'] as String? ?? 'scheduled').toLowerCase();
-            const dismissedStatuses = {'completed', 'canceled', 'cancelled'};
-            if (dismissedStatuses.contains(status)) continue;
-            final sa = t['scheduled_at'];
-            if (sa != null) {
-              final dt = DateTime.tryParse(sa.toString());
-              if (dt != null && dt.isAfter(now)) {
-                return t;
-              }
-            }
-          }
-        }
+        final now = DateTime.now();
+        // Show all scheduled-origin trips until completed/canceled by
+        // driver/rider. The server sorts by scheduled_at.
+        const dismissedStatuses = {'completed', 'canceled', 'cancelled'};
+        final upcoming = trips.where((t) {
+          final status = (t['status'] as String? ?? 'scheduled').toLowerCase();
+          if (dismissedStatuses.contains(status)) return false;
+          final dt = Reservation.parseAt(t['scheduled_at']);
+          return dt != null && dt.isAfter(now);
+        }).toList();
+        _scheduledRideCount = upcoming.length;
+        return upcoming.isEmpty ? null : upcoming.first;
       }
     } catch (_) {}
     return null;

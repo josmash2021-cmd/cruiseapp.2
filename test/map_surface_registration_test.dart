@@ -30,12 +30,10 @@ void main() {
     'lib/widgets/tracking/tracking_map_view.dart':
         'part of rider_tracking_screen.dart',
 
-    // Terminal screens reached by pushReplacement/pushAndRemoveUntil, so the
-    // screen they replace is torn down rather than stacked under them.
+    // ride_booking_confirmed_screen.dart left this list 2026-11-08: it also
+    // opens over Inicio now (a reservation's page), so it claims the surface.
     // rider_rating_screen.dart left this list: its map is a StaticRoutePreview
     // image now (reopen flow), it mounts no MapWidget.
-    'lib/screens/ride_booking_confirmed_screen.dart':
-        'pushAndRemoveUntil from the booking flow',
 
     // Not reachable: no call sites.
     'lib/screens/waiting_for_driver_screen.dart': 'route helper has no callers',

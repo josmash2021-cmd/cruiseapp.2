@@ -5,20 +5,27 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
+import '../config/api_keys.dart';
 import '../config/mapbox_config.dart';
 import '../config/map_theme.dart';
 import '../config/page_transitions.dart';
+import '../map/map_surface_coordinator.dart';
 import '../map/web_map_view.dart';
 import '../models/lat_lng.dart';
 import '../l10n/app_localizations.dart';
-import '../services/place_ranking.dart' show withoutCountry;
+import '../services/api_service.dart';
+import '../services/directions_service.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/neu_style.dart';
-import '../widgets/route_connector_line.dart';
+import '../widgets/reservation_card.dart';
 import '../utils/mapbox_safe.dart';
+import '../utils/vehicle_tier_style.dart';
 import '../services/map_controller_cache.dart';
 import 'home_screen.dart';
+import 'schedule_cancel_policy_screen.dart';
 import 'schedule_hub_screen.dart';
+
+export '../widgets/reservation_card.dart' show splitBookedAddress;
 
 /// "Viaje reservado" — shown after the rider books a reservation.
 ///
@@ -29,6 +36,12 @@ import 'schedule_hub_screen.dart';
 /// "Esperando conductor", and "Listo" / "Ver mis reservas". It stays until
 /// the rider taps (it used to leave for home on its own after 3.5 s, before
 /// anyone had read it).
+///
+/// [RideBookingConfirmedScreen.reservation] is the same page for a
+/// reservation opened later from Inicio or Programar (owner 2026-11-08,
+/// https://claude.ai/artifact/KzawVoUMMVyLpHnKS7r7UU): who is coming (or
+/// "Buscando conductor"), until when cancelling is free, "Cancelar reserva"
+/// and "Ver política" under it.
 class RideBookingConfirmedScreen extends StatefulWidget {
   final DateTime scheduledAt;
   final String pickupAddress;
@@ -54,6 +67,27 @@ class RideBookingConfirmedScreen extends StatefulWidget {
   /// To the airport: the drop-off pin is the plane, not the flag.
   final bool dropoffIsAirport;
 
+  /// Set when the page shows an existing reservation, not a fresh booking.
+  final Reservation? reservation;
+
+  RideBookingConfirmedScreen.reservation(Reservation r, {super.key})
+      : reservation = r,
+        scheduledAt = r.at,
+        pickupAddress = r.pickupAddress,
+        dropoffAddress = r.dropoffAddress,
+        vehicleType = r.tierLabel,
+        fare = r.fare ?? 0,
+        isFree = false,
+        pickupLat = r.pickupLat,
+        pickupLng = r.pickupLng,
+        dropoffLat = r.dropoffLat,
+        dropoffLng = r.dropoffLng,
+        routePoints = null,
+        routeMinutes = null,
+        carAsset = r.carAsset,
+        paymentLabel = null,
+        dropoffIsAirport = r.isAirport;
+
   const RideBookingConfirmedScreen({
     super.key,
     required this.scheduledAt,
@@ -71,27 +105,31 @@ class RideBookingConfirmedScreen extends StatefulWidget {
     this.carAsset,
     this.paymentLabel,
     this.dropoffIsAirport = false,
-  });
+  }) : reservation = null;
 
   @override
   State<RideBookingConfirmedScreen> createState() =>
       _RideBookingConfirmedScreenState();
 }
 
-/// "BHM · Birmingham-Shuttlesworth … — Delta Air Lines" → (place, airline);
-/// "3659 Lorna Rd, Hoover, AL, USA" → ("3659 Lorna Rd", "Hoover, AL").
-(String, String) splitBookedAddress(String address) {
-  final a = address.trim();
-  final dash = a.indexOf(' — ');
-  if (dash > 0) return (a.substring(0, dash).trim(), a.substring(dash + 3).trim());
-  final comma = a.indexOf(',');
-  if (comma > 0) {
-    return (
-      a.substring(0, comma).trim(),
-      withoutCountry(a.substring(comma + 1).trim()),
-    );
-  }
-  return (a, '');
+/// App-side mirror of `_scheduled_cancel_fee` in backend/routers/trips.py:
+/// free with no driver or more than 60 min out, otherwise the tier fee
+/// (kScheduledCancelFeesUsd, the same table the policy page shows) capped
+/// by the upfront fare. An estimate — the backend's number is the one
+/// actually captured, so the tier resolves with tierKey (= the backend's
+/// normalize_tier), NOT the booking-name display mapping.
+double estimatedReservationCancelFee(Reservation r, DateTime now) {
+  if (!r.hasDriver) return 0;
+  if (r.at.difference(now).inMinutes > 60) return 0;
+  final feeTier = tierKey(r.vehicleType);
+  final feeLabel = feeTier == kTierElectricPro
+      ? 'Electric Pro'
+      : feeTier == kTierVip
+          ? 'VIP'
+          : feeTier[0].toUpperCase() + feeTier.substring(1);
+  final fee = (kScheduledCancelFeesUsd[feeLabel] ?? 5).toDouble();
+  final fare = r.fare ?? 0;
+  return fare > 0 && fare < fee ? fare : fee;
 }
 
 class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
@@ -109,7 +147,22 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
   final GlobalKey _sheetKey = GlobalKey();
   mapbox.MapboxMap? _mapCtrl;
   WebMapController? _webMap;
+  mapbox.PolylineAnnotationManager? _routeMgr;
   bool _leaving = false;
+
+  /// The one live Mapbox surface: opened from Inicio, the home mini map is
+  /// still mounted underneath, and two surfaces close the app on iOS.
+  static const String _mapSurfaceOwner = 'RideBookingConfirmed';
+  bool _mapMounted = false;
+
+  /// An existing reservation has no route in hand — fetched on open, for
+  /// the gold line and "Llegada aprox.".
+  List<LatLng>? _fetchedRoute;
+  int? _fetchedMinutes;
+  bool _cancelling = false;
+
+  bool get _isDetail => widget.reservation != null;
+  List<LatLng>? get _routePoints => widget.routePoints ?? _fetchedRoute;
 
   @override
   void initState() {
@@ -131,7 +184,13 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1600),
     );
-    _enterCtrl.forward();
+    // The page of an existing reservation is opened, not celebrated: the
+    // card is simply there and the check never pops.
+    if (_isDetail) {
+      _enterCtrl.value = 1;
+    } else {
+      _enterCtrl.forward();
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (!(MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
@@ -139,20 +198,95 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
       }
       _fitRoute();
     });
+    if (_hasMapData) unawaited(_acquireMapSurface());
+    if (_isDetail) unawaited(_loadRoute());
   }
 
   @override
   void dispose() {
+    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _enterCtrl.dispose();
     _pulseCtrl.dispose();
     super.dispose();
+  }
+
+  /// Claim the one live Mapbox surface before mounting the map.
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _mapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || !_mapMounted) return;
+        // Every native handle goes with the widget — a kept one writes into
+        // whichever map inherits its channel next.
+        _mapCtrl = null;
+        _webMap = null;
+        _routeMgr = null;
+        setState(() => _mapMounted = false);
+        await surfaceRemoved();
+      },
+    );
+    if (!mounted) {
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+      return;
+    }
+    setState(() => _mapMounted = true);
+  }
+
+  Future<void> _loadRoute() async {
+    final a = widget.pickupLat, b = widget.pickupLng;
+    final c = widget.dropoffLat, d = widget.dropoffLng;
+    if (a == null || b == null || c == null || d == null) return;
+    try {
+      final route = await DirectionsService(ApiKeys.webServices)
+          .getRoute(origin: LatLng(a, b), destination: LatLng(c, d))
+          .timeout(const Duration(seconds: 8), onTimeout: () => null);
+      if (!mounted || route == null) return;
+      final secs = route.durationSeconds;
+      setState(() {
+        if (route.points.length >= 2) _fetchedRoute = route.points;
+        if (secs != null && secs > 0) _fetchedMinutes = (secs / 60).ceil();
+      });
+      await _drawRoute();
+      // The card may have grown by "Llegada aprox." — frame again.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fitRoute());
+    } catch (_) {}
+  }
+
+  /// The gold line — whichever of the map and the route comes second
+  /// draws it.
+  Future<void> _drawRoute() async {
+    final pts = _routePoints;
+    if (pts == null || pts.length < 2) return;
+    final web = _webMap;
+    if (web != null) {
+      web.setPolyline(
+        'route',
+        pts.map((p) => (lng: p.longitude, lat: p.latitude)).toList(),
+        color: '#FFD700',
+        width: 5,
+      );
+      return;
+    }
+    final map = _mapCtrl;
+    if (map == null || _routeMgr != null) return;
+    final mgr = await map.annotations.createPolylineAnnotationManager();
+    if (!mounted || _mapCtrl != map) return;
+    _routeMgr = mgr;
+    final geo = safeLineString(pts);
+    if (geo == null) return;
+    await mgr.create(mapbox.PolylineAnnotationOptions(
+      geometry: geo,
+      lineColor: const Color(0xFFFFD700).toARGB32(),
+      lineWidth: 5.0,
+      lineJoin: mapbox.LineJoin.ROUND,
+    ));
   }
 
   bool get _hasMapData => widget.pickupLat != null && widget.pickupLng != null;
 
   /// Every point the camera has to show: the route, or the two ends.
   List<LatLng> get _framePoints {
-    final route = widget.routePoints;
+    final route = _routePoints;
     if (route != null && route.length >= 2) return route;
     return [
       if (widget.pickupLat != null && widget.pickupLng != null)
@@ -255,7 +389,8 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
 
     return PopScope(
       // Back = Listo: the booking is done, there is nothing behind to undo.
-      canPop: false,
+      // An existing reservation's page goes back where it came from.
+      canPop: _isDetail,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _goHome();
       },
@@ -265,7 +400,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
           fit: StackFit.expand,
           children: [
             // ── The route ──
-            if (_hasMapData)
+            if (_hasMapData && _mapMounted)
               IgnorePointer(
                 child: RepaintBoundary(
                   // The native MapWidget has no web implementation — GL JS
@@ -326,16 +461,103 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
                 child: _sheet(s, media),
               ),
             ),
+
+            if (_isDetail)
+              Positioned(
+                top: media.padding.top + 8,
+                left: 16,
+                child: GestureDetector(
+                  key: const ValueKey('reservation-back'),
+                  onTap: () => Navigator.maybeOf(context)?.maybePop(),
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: neuBase.withValues(alpha: 0.92),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: const Icon(Icons.arrow_back_rounded,
+                        color: Colors.white, size: 21),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
+  /// "Cancela gratis hasta las 4:30 AM", or what cancelling costs now.
+  String _cancelNote(S s, Reservation r) {
+    final now = DateTime.now();
+    final freeUntil = r.at.subtract(const Duration(minutes: 60));
+    if (now.isBefore(freeUntil)) return s.cancelFreeUntil(s.bookedClock(freeUntil));
+    final fee = estimatedReservationCancelFee(r, now);
+    return fee <= 0 ? s.cancelFreeNow : s.cancelFeeNow(fee.toStringAsFixed(0));
+  }
+
+  /// Confirmation shows the fee for THIS reservation's window/tier; the
+  /// backend applies the same rule and returns the fee it captured. Back to
+  /// the list with `true`, which fades the card out there.
+  Future<void> _confirmCancel(Reservation r) async {
+    final s = S.of(context);
+    final id = r.id;
+    if (id == null || _cancelling) return;
+    final fee = estimatedReservationCancelFee(r, DateTime.now());
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        backgroundColor: neuSurface,
+        title: Text(s.cancelRideQuestion,
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w800)),
+        content: Text(
+          '${s.cancelRideConfirm}\n\n'
+          '${fee <= 0 ? s.rideCancelFreeNote : s.rideCancelFeeNote(fee.toStringAsFixed(0))}',
+          style: const TextStyle(color: Colors.white70, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.maybeOf(dlgCtx)?.pop(false),
+            child: Text(s.keep,
+                style: const TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.maybeOf(dlgCtx)?.pop(true),
+            child: Text(s.cancelReservation,
+                style: const TextStyle(
+                    color: Color(0xFFFF6B6B),
+                    fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _cancelling = true);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final res = await ApiService.cancelTrip(id)
+          .timeout(const Duration(seconds: 15));
+      if (!mounted) return;
+      final charged = (res['cancellation_fee'] as num?)?.toDouble() ?? 0;
+      messenger?.showSnackBar(SnackBar(
+        content: Text(charged > 0
+            ? s.rideCancelledFee(charged.toStringAsFixed(2))
+            : s.rideCancelled),
+      ));
+      Navigator.maybeOf(context)?.pop(true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _cancelling = false);
+      messenger?.showSnackBar(SnackBar(content: Text(s.somethingWentWrong)));
+    }
+  }
+
   Widget _sheet(S s, MediaQueryData media) {
-    final (pickTitle, pickSub) = splitBookedAddress(widget.pickupAddress);
-    final (dropTitle, dropSub) = splitBookedAddress(widget.dropoffAddress);
-    final minutes = widget.routeMinutes;
+    final r = widget.reservation;
+    final minutes = widget.routeMinutes ?? _fetchedMinutes;
     final arrival = minutes != null && minutes > 0
         ? widget.scheduledAt.add(Duration(minutes: minutes))
         : null;
@@ -372,54 +594,56 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
           ),
           const SizedBox(height: 12),
 
-          // ✓ Viaje reservado
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ScaleTransition(
-                scale: _checkScale,
-                child: Container(
-                  width: 30,
-                  height: 30,
-                  margin: const EdgeInsets.only(top: 2),
-                  decoration: const BoxDecoration(
-                    color: _gold,
-                    shape: BoxShape.circle,
+          // ✓ Viaje reservado — only right after booking.
+          if (r == null) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ScaleTransition(
+                  scale: _checkScale,
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    margin: const EdgeInsets.only(top: 2),
+                    decoration: const BoxDecoration(
+                      color: _gold,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.check_rounded,
+                        color: Colors.black, size: 19),
                   ),
-                  child: const Icon(Icons.check_rounded,
-                      color: Colors.black, size: 19),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      s.bookedTitle,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
-                        height: 1.15,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        s.bookedTitle,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                          height: 1.15,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      s.bookedSubtitle.replaceAll('\n', ' '),
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.6),
-                        fontSize: 13,
-                        height: 1.35,
+                      const SizedBox(height: 3),
+                      Text(
+                        s.bookedSubtitle.replaceAll('\n', ' '),
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 13,
+                          height: 1.35,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
 
           // When — the time large, the arrival beside it.
           Container(
@@ -482,40 +706,9 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
           const SizedBox(height: 12),
 
           // Pickup → drop-off on the app's rail.
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  width: 20,
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 4),
-                      _ring(pickup: true),
-                      const Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 2),
-                          child: RouteConnectorLine(),
-                        ),
-                      ),
-                      _ring(pickup: false),
-                      const SizedBox(height: 18),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _place(pickTitle, pickSub),
-                      const SizedBox(height: 14),
-                      _place(dropTitle, dropSub),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          ReservationRail(
+            pickup: widget.pickupAddress,
+            dropoff: widget.dropoffAddress,
           ),
           const SizedBox(height: 10),
           Divider(color: Colors.white.withValues(alpha: 0.06), height: 1),
@@ -574,168 +767,226 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
                   ],
                 ),
               ),
-              Text(
-                price,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
+              if (r == null || widget.fare > 0)
+                Text(
+                  price,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 12),
 
-          // Esperando conductor
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: _gold.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  FadeTransition(
-                    opacity: Tween<double>(begin: 1, end: 0.25)
-                        .animate(_pulseCtrl),
-                    child: Container(
-                      width: 7,
-                      height: 7,
-                      decoration: const BoxDecoration(
-                          color: _gold, shape: BoxShape.circle),
+          // Esperando conductor — or, on an existing reservation, who is
+          // coming.
+          if (r == null) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _gold.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _gold.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FadeTransition(
+                      opacity: Tween<double>(begin: 1, end: 0.25)
+                          .animate(_pulseCtrl),
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                            color: _gold, shape: BoxShape.circle),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    s.bookedWaitingDriver,
-                    style: const TextStyle(
-                      color: _gold,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(width: 8),
+                    Text(
+                      s.bookedWaitingDriver,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
+          ] else if (r.hasDriver) ...[
+            ReservationDriverRow(
+              reservation: r,
+              subtitle: r.carLine.isNotEmpty ? r.carLine : r.tierLabel,
+              size: 42,
+            ),
+            const SizedBox(height: 12),
+          ] else ...[
+            Row(
+              children: [
+                FadeTransition(
+                  opacity:
+                      Tween<double>(begin: 1, end: 0.25).animate(_pulseCtrl),
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: const BoxDecoration(
+                        color: _gold, shape: BoxShape.circle),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  s.findingDriverLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
 
-          SizedBox(
-            height: 52,
-            child: ElevatedButton(
-              key: const ValueKey('booked-done'),
-              onPressed: _goHome,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: Colors.black,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
+          if (r == null) ...[
+            SizedBox(
+              height: 52,
+              child: ElevatedButton(
+                key: const ValueKey('booked-done'),
+                onPressed: _goHome,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _gold,
+                  foregroundColor: Colors.black,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                ),
+                child: Text(
+                  s.done,
+                  style:
+                      const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              key: const ValueKey('booked-see-reservations'),
+              onPressed: () => _goHome(openReservations: true),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 38),
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               child: Text(
-                s.done,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                s.bookedSeeReservations,
+                style: const TextStyle(
+                  color: _gold,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 4),
-          TextButton(
-            key: const ValueKey('booked-see-reservations'),
-            onPressed: () => _goHome(openReservations: true),
-            style: TextButton.styleFrom(
-              minimumSize: const Size(0, 38),
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              s.bookedSeeReservations,
+          ] else ...[
+            // Until when it is free (owner 2026-11-08: the policy is its
+            // own button under Cancelar).
+            Text(
+              _cancelNote(s, r),
+              key: const ValueKey('reservation-cancel-note'),
               style: const TextStyle(
                 color: _gold,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 50,
+              child: ElevatedButton(
+                key: const ValueKey('reservation-cancel'),
+                onPressed: _cancelling ? null : () => _confirmCancel(r),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF3A1C22),
+                  foregroundColor: const Color(0xFFFF6B6B),
+                  disabledBackgroundColor: const Color(0xFF3A1C22),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                        color: const Color(0xFFFF6B6B)
+                            .withValues(alpha: 0.45)),
+                  ),
+                  elevation: 0,
+                ),
+                child: _cancelling
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Color(0xFFFF6B6B)),
+                      )
+                    : Text(
+                        s.cancelReservation,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w800),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              key: const ValueKey('reservation-policy'),
+              onPressed: () => Navigator.maybeOf(context)
+                  ?.push(slideUpFadeRoute(const ScheduleCancelPolicyScreen())),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 38),
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                s.viewCancelPolicy,
+                style: const TextStyle(
+                  color: _gold,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _ring({required bool pickup}) {
-    final color = pickup ? _gold : Colors.white;
-    return Container(
-      width: 13,
-      height: 13,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.fromBorderSide(BorderSide(color: color, width: 1.8)),
-      ),
-      alignment: Alignment.center,
-      child: pickup
-          ? Container(
-              width: 5,
-              height: 5,
-              decoration:
-                  const BoxDecoration(color: _gold, shape: BoxShape.circle),
-            )
-          : null,
-    );
-  }
-
-  Widget _place(String title, String sub) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14.5,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        if (sub.isNotEmpty)
-          Text(
-            sub,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.55),
-              fontSize: 12.5,
-            ),
-          ),
-      ],
-    );
-  }
-
   /// Web counterpart of [_onMapCreated]: same navy/gold, same gold route,
   /// same pickup/dropoff pins.
-  void _onWebMapCreated(WebMapController c) {
+  Future<void> _onWebMapCreated(WebMapController c) async {
     _webMap = c;
     c.applyNavyGoldTheme();
-    final routePts = widget.routePoints;
-    if (routePts != null && routePts.length >= 2) {
-      c.setPolyline(
-        'route',
-        routePts.map((p) => (lng: p.longitude, lat: p.latitude)).toList(),
-        color: '#FFD700',
-        width: 5,
-      );
-    }
+    unawaited(_drawRoute());
+    _fitRoute();
+    // The app's own pins, not GL JS's default teardrop.
+    final pins = await Future.wait([
+      renderCircularPinBytes(
+          icon: CircularPinIcon.person, isPickup: true, radius: 32),
+      renderCircularPinBytes(
+          icon: widget.dropoffIsAirport
+              ? CircularPinIcon.airplane
+              : CircularPinIcon.flag,
+          isPickup: false,
+          radius: 32),
+    ]);
+    if (!mounted || _webMap != c) return;
     if (widget.pickupLat != null && widget.pickupLng != null) {
-      c.addMarker('pickup', widget.pickupLng!, widget.pickupLat!);
+      c.addMarker('pickup', widget.pickupLng!, widget.pickupLat!,
+          iconBytes: pins[0], widthPx: 52, heightPx: 48, anchor: 'bottom');
     }
     if (widget.dropoffLat != null && widget.dropoffLng != null) {
-      c.addMarker('dropoff', widget.dropoffLng!, widget.dropoffLat!);
+      c.addMarker('dropoff', widget.dropoffLng!, widget.dropoffLat!,
+          iconBytes: pins[1], widthPx: 52, heightPx: 48, anchor: 'bottom');
     }
-    _fitRoute();
   }
 
   Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
@@ -749,19 +1000,8 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
     unawaited(_fitRoute());
 
     // Route polyline
-    final routePts = widget.routePoints;
-    if (routePts != null && routePts.length >= 2) {
-      final polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
-      final routeGeo = safeLineString(routePts);
-      if (routeGeo != null) {
-        await polyMgr.create(mapbox.PolylineAnnotationOptions(
-          geometry: routeGeo,
-          lineColor: const Color(0xFFFFD700).toARGB32(),
-          lineWidth: 5.0,
-          lineJoin: mapbox.LineJoin.ROUND,
-        ));
-      }
-    }
+    await _drawRoute();
+    if (!mounted || _mapCtrl != ctrl) return;
 
     // Smart pins
     final pointMgr = await ctrl.annotations.createPointAnnotationManager();

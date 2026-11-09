@@ -321,9 +321,11 @@ void main() {
       expect(tripsPy, contains('"electric_pro": 5.0'));
     });
 
-    test('the hub estimate resolves the Electric Pro label', () {
-      final hub =
-          File('lib/screens/schedule_hub_screen.dart').readAsStringSync();
+    test('the reservation page estimate resolves the Electric Pro label', () {
+      // The estimate moved with the cancel to the reservation's page
+      // (2026-11-08).
+      final hub = File('lib/screens/ride_booking_confirmed_screen.dart')
+          .readAsStringSync();
       expect(hub, contains('kTierElectricPro'));
       expect(hub, contains("'Electric Pro'"),
           reason: 'feeTier electric_pro must look up the Electric Pro row, '

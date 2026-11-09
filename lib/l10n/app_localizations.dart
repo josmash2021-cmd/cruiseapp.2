@@ -5496,10 +5496,45 @@ class S {
   String get calendarScheduleRide => _es ? 'Programar viaje' : 'Schedule ride';
 
   // ── "Your rides" — the rider's active reservations in the hub ──
-  String get yourRidesTitle =>
-      _es ? 'Tus viajes agendados' : 'Your Scheduled rides';
+  String get yourRidesTitle => _es ? 'Tus reservas' : 'Your reservations';
   String get findingDriverLabel =>
       _es ? 'Buscando conductor' : 'Finding driver';
+  // ── The reservation card (Inicio + Programar) and its page, 2026-11-08 ──
+  String get nextReservation => _es ? 'Próxima reserva' : 'Next reservation';
+  String get yourReservation => _es ? 'Tu reserva' : 'Your reservation';
+  String seeAllReservations(int n) => _es ? 'Ver las $n' : 'See all $n';
+  String reservationInMinutes(int m) => _es ? 'En $m min' : 'In $m min';
+  String get reservationConfirmed => _es ? 'Confirmado' : 'Confirmed';
+  String get reservationDriverAssigned =>
+      _es ? 'Conductor asignado' : 'Driver assigned';
+  String get cancelReservation =>
+      _es ? 'Cancelar reserva' : 'Cancel reservation';
+  String get viewCancelPolicy => _es ? 'Ver política' : 'View policy';
+  String cancelFreeUntil(String clock) =>
+      _es ? 'Cancela gratis hasta las $clock' : 'Free to cancel until $clock';
+  String get cancelFreeNow =>
+      _es ? 'Cancelar ahora es gratis' : 'Cancelling now is free';
+  String cancelFeeNow(String fee) =>
+      _es ? 'Cancelar ahora cuesta \$$fee' : 'Cancelling now costs \$$fee';
+  /// "lun 9 nov" / "Mon, Nov 9" — a reservation's date, short.
+  String reservationDate(DateTime t) {
+    const wdEs = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
+    const wdEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const moEs = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago',
+        'sep', 'oct', 'nov', 'dic'];
+    const moEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
+        'Sep', 'Oct', 'Nov', 'Dec'];
+    return _es
+        ? '${wdEs[t.weekday - 1]} ${t.day} ${moEs[t.month - 1]}'
+        : '${wdEn[t.weekday - 1]}, ${moEn[t.month - 1]} ${t.day}';
+  }
+  /// "Hoy" / "Mañana", or null past tomorrow (calendar days, not 24 h).
+  String? reservationRelDay(DateTime t, DateTime now) {
+    final diff = DateTime.utc(t.year, t.month, t.day)
+        .difference(DateTime.utc(now.year, now.month, now.day))
+        .inDays;
+    return diff == 0 ? schedToday : diff == 1 ? schedTomorrow : null;
+  }
   String get rideCancelFreeNote =>
       _es ? 'Esta cancelación es gratis.' : 'This cancellation is free.';
   String rideCancelFeeNote(String fee) => _es

@@ -1056,11 +1056,24 @@ extension _HomeScreenController on _HomeScreenState {
       debugPrint('[HomeScreen] Scheduled ride live check failed: $e');
     }
 
-    // Fallback: open the schedule hub
+    // Not live yet: the reservation's own page (map, who is coming,
+    // cancel). A rider with more than one also has "Ver las N".
     if (!mounted) return;
+    final r = Reservation.fromTrip(ride);
+    await Navigator.of(context).push<bool>(
+      r != null
+          ? slideFromRightRoute(RideBookingConfirmedScreen.reservation(r))
+          : slideFromRightRoute(const ScheduleHubScreen()),
+    );
+    _loadSavedData();
+  }
+
+  /// "Ver las N" on the reservation card.
+  Future<void> _openScheduleHubFromCard() async {
     await Navigator.of(context).push(
       slideFromRightRoute(const ScheduleHubScreen()),
     );
+    if (!mounted) return;
     _loadSavedData();
   }
 

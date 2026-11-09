@@ -348,12 +348,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final active = _activeRide != null;
     final searching = _pendingSearchTripId != null && !active;
-    final imminent = _hasImminentRide;
     final zoneBlocked = !_serviceZoneActive && _activeServiceStates.isNotEmpty;
     // The card always paints "Where to?" — verification is enforced on the
     // way out (_ensureVerified downstream), not by swapping the hero for a
-    // verify card.
-    final disabled = !active && !imminent && zoneBlocked;
+    // verify card. A reservation in its last half hour no longer takes the
+    // hero over either (owner 2026-11-08): its own card below counts down.
+    final disabled = !active && zoneBlocked;
     return GestureDetector(
       onTap: () async {
         if (active) {
@@ -363,10 +363,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
         // Searching state: no navigation (same as the old floating bar) —
         // the cancel button inside the content handles its own tap.
         if (searching) return;
-        if (imminent) {
-          await _openScheduledRideLive();
-          return;
-        }
         if (zoneBlocked) {
           showDialog<void>(
             context: context,
@@ -417,7 +413,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 400),
           curve: Curves.easeInOutCubic,
-          height: (active || imminent)
+          height: active
               ? Responsive.h(195)
               : searching
                   ? Responsive.h(80)
@@ -435,9 +431,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   ? _buildHeroRideInProgress()
                   : searching
                       ? _buildSearchingDriverContent()
-                      : imminent
-                          ? _buildHeroUpcomingRide()
-                          : _buildHeroWhereToContent(isDark, disabled, zoneBlocked),
+                      : _buildHeroWhereToContent(isDark, disabled, zoneBlocked),
             ),
           ),
         ),
@@ -791,168 +785,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
           ],
         ),
       ],
-    );
-  }
-
-  // ─── "Your ride starts in X min" card for imminent scheduled rides ───
-  Widget _buildHeroUpcomingRide() {
-    final mins = _minutesUntilRide;
-    final isEs = Localizations.localeOf(context).languageCode == 'es';
-    final timeStr = mins < 60 ? '$mins min' : '${mins ~/ 60}h ${mins % 60}m';
-    final title = isEs
-        ? 'Tu viaje empieza en $timeStr'
-        : 'Your ride starts in $timeStr';
-    final subtitle = isEs ? 'Toca para ver detalles' : 'Tap for details';
-
-    return Column(
-      key: const ValueKey('hero_upcoming_ride'),
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Top row: icon + text + chevron
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.asset(
-                'assets/images/logoapp.png',
-                width: 42,
-                height: 42,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.38),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: Colors.white.withValues(alpha: 0.24),
-              size: 20,
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        // Progress bar (static at 0)
-        _buildUpcomingProgressBar(),
-        const SizedBox(height: 8),
-        // Labels: Driver — X min — Pickup
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              S.of(context).driverLabel,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.24),
-                fontSize: 12,
-              ),
-            ),
-            Text(
-              '$mins ${S.of(context).minSuffix}',
-              style: const TextStyle(
-                color: Color(0xFFFFD700),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Text(
-              S.of(context).pickupLabel,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.24),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildUpcomingProgressBar() {
-    // Animated pulsing bar at ~10% to indicate "waiting"
-    const barH = 14.0;
-    const carSize = 38.0;
-    const totalH = carSize;
-
-    return LayoutBuilder(
-      builder: (_, constraints) {
-        final barW = constraints.maxWidth;
-        const progress = 0.05; // small sliver to show "starting soon"
-        final carX = (barW * progress - carSize + 4).clamp(0.0, barW - carSize);
-
-        return SizedBox(
-          height: totalH,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // Bar track
-              Positioned(
-                left: 0, right: 0,
-                top: (totalH - barH) / 2,
-                height: barH,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(barH / 2),
-                  ),
-                ),
-              ),
-              // Pulsing gold fill
-              Positioned(
-                left: 0,
-                top: (totalH - barH) / 2,
-                height: barH,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 1000),
-                  curve: Curves.easeInOut,
-                  width: barW * progress,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(barH / 2),
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFFFFC200),
-                        Color(0xFFFFD700),
-                        Color(0xFFFFE566),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              // Car at start
-              Positioned(
-                left: carX,
-                top: (totalH - carSize) / 2,
-                child: Image.asset(
-                  'assets/images/cruisert2.png',
-                  width: carSize,
-                  height: carSize,
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -1895,80 +1727,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
   /// Formats a scheduled-ride date without intl. The project never calls
   /// initializeDateFormatting, so DateFormat(pattern, 'es') throws a
   /// LocaleDataException — this local month table works in both languages.
-  String _formatRideDate(DateTime dt, bool isEs) {
-    const monthsEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const monthsEs = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-    final m = isEs ? monthsEs[dt.month - 1] : monthsEn[dt.month - 1];
-    final h12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final mm = dt.minute.toString().padLeft(2, '0');
-    final ampm = dt.hour < 12 ? 'AM' : 'PM';
-    return isEs ? '${dt.day} de $m, $h12:$mm $ampm' : '$m ${dt.day}, $h12:$mm $ampm';
-  }
-
+  /// The next reservation — the same card as Programar, Inicio's version:
+  /// "Mañana · 5:30 AM", from where to where, and who is coming; a
+  /// countdown in its last hour and "Ver las N" with more than one.
   Widget _buildScheduledRideIndicator(BuildContext ctx) {
-    final ride = _nextScheduledRide!;
-    final sa = ride['scheduled_at']?.toString() ?? '';
-    final dt = DateTime.tryParse(sa);
-    final isEs = Localizations.localeOf(ctx).languageCode == 'es';
-    final status = (ride['status'] as String? ?? 'scheduled').toLowerCase();
-    final hasDriver = status == 'scheduled_accepted' || status == 'driver_assigned' ||
-        status == 'accepted' || status == 'en_route' || status == 'en_route_to_pickup' ||
-        status == 'driver_en_route' || status == 'arriving' || status == 'arrived' ||
-        status == 'driver_arrived' || status == 'in_trip' || status == 'in_progress';
-
-    final driverName = (ride['driver_name'] as String?)?.split(' ').first ?? '';
-    final label = hasDriver
-        ? (isEs
-            ? '${driverName.isNotEmpty ? '$driverName está' : 'Tu conductor está'} confirmado para tu viaje'
-            : '${driverName.isNotEmpty ? '$driverName is' : 'Your driver is'} confirmed for your ride')
-        : (isEs ? 'Tienes un viaje reservado' : 'You have a scheduled ride');
-    final dateStr = dt != null ? _formatRideDate(dt.toLocal(), isEs) : '';
-
-    final accent = hasDriver ? const Color(0xFF4CAF50) : _gold;
-
-    return GestureDetector(
-      onTap: () async {
-        await _openScheduledRideLive();
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        // Soft neumorphic surface; the green/gold accent stays on the
-        // border, icon and label.
-        decoration: neuBox(radius: 14).copyWith(
-          border: Border.all(color: accent.withValues(alpha: 0.25), width: 1),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              hasDriver ? Icons.check_circle_rounded : Icons.calendar_today_rounded,
-              color: accent,
-              size: 20,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: TextStyle(
-                        color: accent,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      )),
-                  if (dateStr.isNotEmpty)
-                    Text(dateStr,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 12,
-                        )),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded,
-                color: accent.withValues(alpha: 0.6), size: 22),
-          ],
-        ),
-      ),
+    final r = Reservation.fromTrip(_nextScheduledRide!);
+    if (r == null) return const SizedBox.shrink();
+    return ReservationCard(
+      key: const ValueKey('home-reservation-card'),
+      reservation: r,
+      style: ReservationCardStyle.home,
+      count: _scheduledRideCount,
+      onTap: _openScheduledRideLive,
+      onSeeAll: _openScheduleHubFromCard,
     );
   }
 

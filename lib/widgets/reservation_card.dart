@@ -192,30 +192,74 @@ class ReservationCard extends StatelessWidget {
     final fare = r.fare;
 
     // Top right: the countdown in the last hour, otherwise the status.
+    // Under way (owner 2026-11-08, "como lyft"): who is coming and the
+    // pickup time; the card opens the live ride.
+    final status = (r.trip['status'] ?? '').toString().toLowerCase();
+    final inTrip = r.isLive &&
+        const {'in_trip', 'in_progress'}.contains(status);
+    final here = r.isLive &&
+        const {'arrived', 'driver_arrived'}.contains(status);
+    final first = r.driverName.split(' ').first;
+
     final String label;
     final String title;
-    if (home) {
-      label = soon || r.isLive ? s.yourReservation : s.nextReservation;
+    String? line;
+    if (r.isLive) {
+      label = s.yourReservation;
+      title = inTrip
+          ? s.reservationInTrip
+          : here
+              ? s.reservationDriverHere(first)
+              : s.reservationOnTheWay(first);
+      if (!inTrip) line = s.pickupAtClock(clock);
+    } else if (home) {
+      label = soon ? s.yourReservation : s.nextReservation;
       title = '${rel ?? s.reservationDate(r.at)} · $clock';
     } else {
       label = rel != null ? '$rel · ${s.reservationDate(r.at)}' : s.reservationDate(r.at);
       title = clock;
     }
-    final status = ReservationStatusPill(
-      hasDriver: r.hasDriver,
-      label: r.hasDriver
-          ? (home ? s.reservationConfirmed : s.reservationDriverAssigned)
-          : s.findingDriverLabel,
-    );
-    final Widget trailing = soon
+    final statusPill = r.isLive
+        ? ReservationStatusPill(
+            hasDriver: true,
+            live: true,
+            label: inTrip
+                ? s.liveInTrip
+                : here
+                    ? s.liveArrived
+                    : s.liveOnTheWay,
+          )
+        : ReservationStatusPill(
+            hasDriver: r.hasDriver,
+            label: r.hasDriver
+                ? (home ? s.reservationConfirmed : s.reservationDriverAssigned)
+                : s.findingDriverLabel,
+          );
+    final Widget trailing = soon && !r.isLive
         ? _CountdownChip(s.reservationInMinutes(minsAway < 1 ? 1 : minsAway))
-        : status;
+        : statusPill;
 
     // Bottom right: "Ver las N" — or, counting down with nobody yet, the
     // status the countdown took the corner from.
     Widget? footerEnd;
-    if (soon && !r.hasDriver) {
-      footerEnd = status;
+    if (r.isLive) {
+      footerEnd = Row(
+        key: const ValueKey('reservation-see-map'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            s.seeMap,
+            style: const TextStyle(
+              color: _gold,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded, size: 18, color: _gold),
+        ],
+      );
+    } else if (soon && !r.hasDriver) {
+      footerEnd = statusPill;
     } else if (home && count > 1) {
       footerEnd = GestureDetector(
         key: const ValueKey('reservation-see-all'),
@@ -324,7 +368,7 @@ class ReservationCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (fare != null && fare > 0)
+                if (fare != null && fare > 0 && !r.isLive)
                   Text(
                     '\$${fare.toStringAsFixed(2)}',
                     style: const TextStyle(
@@ -335,6 +379,16 @@ class ReservationCard extends StatelessWidget {
                   ),
               ],
             ),
+            if (line != null)
+              Text(
+                line,
+                key: const ValueKey('reservation-live-line'),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -482,10 +536,14 @@ class ReservationStatusPill extends StatefulWidget {
     super.key,
     required this.hasDriver,
     required this.label,
+    this.live = false,
   });
 
   final bool hasDriver;
   final String label;
+
+  /// Under way ("En camino"): gold with a black dot breathing.
+  final bool live;
 
   @override
   State<ReservationStatusPill> createState() => _ReservationStatusPillState();
@@ -502,7 +560,7 @@ class _ReservationStatusPillState extends State<ReservationStatusPill>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final still = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    if (!widget.hasDriver && !still) {
+    if ((!widget.hasDriver || widget.live) && !still) {
       if (!_pulse.isAnimating) _pulse.repeat(reverse: true);
     } else {
       _pulse.stop();
@@ -512,7 +570,9 @@ class _ReservationStatusPillState extends State<ReservationStatusPill>
   @override
   void didUpdateWidget(ReservationStatusPill old) {
     super.didUpdateWidget(old);
-    if (widget.hasDriver != old.hasDriver) didChangeDependencies();
+    if (widget.hasDriver != old.hasDriver || widget.live != old.live) {
+      didChangeDependencies();
+    }
   }
 
   @override
@@ -533,7 +593,17 @@ class _ReservationStatusPillState extends State<ReservationStatusPill>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (assigned)
+          if (widget.live)
+            FadeTransition(
+              opacity: Tween<double>(begin: 1, end: 0.25).animate(_pulse),
+              child: Container(
+                width: 7,
+                height: 7,
+                decoration: const BoxDecoration(
+                    color: Colors.black, shape: BoxShape.circle),
+              ),
+            )
+          else if (assigned)
             const Icon(Icons.check_rounded, size: 13, color: Colors.black)
           else
             FadeTransition(

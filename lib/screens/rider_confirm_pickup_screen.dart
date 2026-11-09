@@ -947,6 +947,71 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       );
     }
 
+    // A reservation the driver reached early (owner 2026-11-08, "como
+    // lyft"): "Llegó temprano", the minutes left to the pickup time and the
+    // pickup time itself — it said "Tu espera empieza a las 5:30", which
+    // read as if the rider had to wait.
+    final earlyUntil = _waitStartsAt;
+    if (isFreePhase &&
+        earlyUntil != null &&
+        DateTime.now().isBefore(earlyUntil)) {
+      final s = S.of(context);
+      final minsLeft =
+          (earlyUntil.difference(DateTime.now()).inSeconds / 60).ceil();
+      return Column(
+        key: const ValueKey('rider-arrived-early'),
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _AnimatedClockIcon(listenable: _particleCtrl, size: 11),
+              const SizedBox(width: 5),
+              Text(s.driverArrivedEarly.toUpperCase(), style: labelStyle),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ring(
+            fraction: 1,
+            color: _gold,
+            center: Text(
+              '$minsLeft min',
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                color: _gold,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            s.riderPickupIsAt(_format12h(earlyUntil)),
+            key: const ValueKey('rider-wait-starts-at'),
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white.withValues(alpha: 0.9),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            s.riderNoChargeBefore,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white.withValues(alpha: 0.6),
+              fontSize: 12,
+            ),
+          ),
+        ],
+      );
+    }
+
     if (isFreePhase) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -976,20 +1041,6 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
               ),
             ),
           ),
-          if (_waitStartsAt != null &&
-              DateTime.now().isBefore(_waitStartsAt!)) ...[
-            const SizedBox(height: 8),
-            Text(
-              S.of(context).riderWaitStartsAt(_format12h(_waitStartsAt!)),
-              key: const ValueKey('rider-wait-starts-at'),
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                color: Colors.white.withValues(alpha: 0.75),
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
         ],
       );
     }
@@ -1005,7 +1056,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
             const Icon(Icons.warning_rounded, color: _red, size: 12),
             const SizedBox(width: 5),
             Text(
-              'Extra wait fee active',
+              S.of(context).extraWaitFeeActive,
               style: TextStyle(
                 fontFamily: 'Poppins',
                 color: Colors.white.withValues(alpha: 0.70),

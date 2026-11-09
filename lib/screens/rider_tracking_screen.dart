@@ -40,6 +40,7 @@ import '../widgets/neu_style.dart';
 import '../widgets/glass_style.dart';
 import '../widgets/tracking/rider_trip_sheet.dart';
 import '../widgets/tracking/vehicle_identity.dart';
+import '../widgets/reservation_card.dart' show Reservation;
 import '../widgets/ota_image.dart';
 import '../widgets/cancel_reason_sheet.dart';
 import '../utils/mapbox_safe.dart';
@@ -414,6 +415,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// The 4-letter pickup code, on the sheet from the start (owner
   /// 2026-11-03) — not only on the arrival screen.
   String? _sheetPickupPin;
+
+  /// A reservation's pickup time while it is still ahead (owner
+  /// 2026-11-08, "como lyft"): the guide says "Recogida a las 5:30 AM"
+  /// so a rider whose driver set off an hour early does not rush out.
+  DateTime? _reservationAt;
   StreamSubscription<int>? _chatUnreadSub;
   // "Seguir": what is left of the leg, rebuilt a few times a second rather
   // than every frame.

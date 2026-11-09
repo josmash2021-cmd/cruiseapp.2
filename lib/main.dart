@@ -817,6 +817,19 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // Rider: a reservation's "on the way" (the driver started it from the
+  // reservation) — open that ride. On-demand trips keep their own screen.
+  if (type == 'driver_en_route') {
+    final tripId = int.tryParse(message.data['trip_id'] ?? '');
+    if (tripId != null) {
+      UserSession.getMode().then((mode) {
+        if (mode != 'rider') return;
+        _navigateToScheduledTracking(tripId, reservationsOnly: true);
+      });
+    }
+    return;
+  }
+
   // Rider: driver cancelled scheduled → refresh home card
   if (type == 'scheduled_driver_cancelled') {
     HomeScreen.scheduledRideRefresh.value++;

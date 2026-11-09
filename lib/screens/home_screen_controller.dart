@@ -1135,10 +1135,13 @@ extension _HomeScreenController on _HomeScreenState {
         return;
       }
 
-      // If trip was originally scheduled (has scheduled_at), never auto-navigate.
-      // The rider must tap the card to open the tracking screen.
+      // A reservation opens by itself only once it is under way — the
+      // driver confirmed and set off — exactly like any ride (owner
+      // 2026-11-08, "como lyft"). Before that it is a card on Inicio.
       final scheduledAt = trip['scheduled_at'];
-      if (scheduledAt != null && scheduledAt.toString().isNotEmpty) {
+      if (scheduledAt != null &&
+          scheduledAt.toString().isNotEmpty &&
+          !Reservation.isLiveTrip(trip)) {
         _didAutoResumeRide = false;
         return;
       }

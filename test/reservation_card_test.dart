@@ -293,6 +293,95 @@ void main() {
     });
   });
 
+  testWidgets('under way: who is coming and the pickup time, never "espera"',
+      (t) async {
+    Map<String, dynamic> at(String status) =>
+        trip(at: tomorrow, driver: true)..['status'] = status;
+    await pump(
+      t,
+      'es',
+      Column(children: [
+        ReservationCard(
+          reservation: Reservation.fromTrip(at('driver_en_route'))!,
+          style: ReservationCardStyle.home,
+          now: now,
+        ),
+        ReservationCard(
+          reservation: Reservation.fromTrip(at('arrived'))!,
+          now: now,
+        ),
+        ReservationCard(
+          reservation: Reservation.fromTrip(at('in_trip'))!,
+          now: now,
+        ),
+      ]),
+    );
+    expect(find.text('Jhon va en camino'), findsOneWidget);
+    expect(find.text('En camino'), findsOneWidget);
+    expect(find.text('Jhon llegó'), findsOneWidget);
+    expect(find.text('Llegó'), findsOneWidget);
+    expect(find.text('Recogida a las 5:30 AM'), findsNWidgets(2));
+    expect(find.text('En viaje'), findsNWidgets(2)); // title + pill
+    expect(find.text('Ver mapa'), findsNWidgets(3));
+    expect(find.text('TU RESERVA'), findsNWidgets(3));
+    expect(find.textContaining('espera'), findsNothing);
+  });
+
+  testWidgets('…under way in English', (t) async {
+    await pump(
+      t,
+      'en',
+      ReservationCard(
+        reservation: Reservation.fromTrip(
+            trip(at: tomorrow, driver: true)..['status'] = 'driver_en_route')!,
+        style: ReservationCardStyle.home,
+        now: now,
+      ),
+    );
+    expect(find.text('Jhon is on the way'), findsOneWidget);
+    expect(find.text('Pickup at 5:30 AM'), findsOneWidget);
+    expect(find.text('On the way'), findsOneWidget);
+    expect(find.text('See map'), findsOneWidget);
+  });
+
+  group('the reservation starting, like Lyft', () {
+    final mainSrc = File('lib/main.dart').readAsStringSync();
+    final ctrl =
+        File('lib/screens/home_screen_controller.dart').readAsStringSync();
+    final guide = File('lib/widgets/tracking/trip_phase_indicator.dart')
+        .readAsStringSync();
+    final arrival =
+        File('lib/screens/rider_confirm_pickup_screen.dart').readAsStringSync();
+    final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
+
+    test('Inicio opens a reservation by itself once it is under way', () {
+      expect(ctrl, contains('!Reservation.isLiveTrip(trip)) {'));
+    });
+
+    test('tapping "on the way" from the reservation start opens it', () {
+      final at = mainSrc.indexOf("if (type == 'driver_en_route') {");
+      expect(at, greaterThan(0));
+      expect(
+          mainSrc.indexOf(
+              '_navigateToScheduledTracking(tripId, reservationsOnly: true);',
+              at),
+          greaterThan(at));
+    });
+
+    test('the live guide carries "Recogida a las 5:30 AM"', () {
+      expect(guide, contains("ValueKey('guide-reservation-pickup')"));
+      expect(guide, contains('pickupAtClock('));
+    });
+
+    test('arrived early: the pickup time, not "Tu espera empieza"', () {
+      expect(arrival, contains("ValueKey('rider-arrived-early')"));
+      expect(arrival, contains('s.riderPickupIsAt('));
+      expect(arrival, contains('s.driverArrivedEarly'));
+      expect(l10n, isNot(contains('riderWaitStartsAt')));
+      expect(arrival, isNot(contains("'Extra wait fee active'")));
+    });
+  });
+
   group('sources', () {
     final widgets =
         File('lib/screens/home_screen_widgets.dart').readAsStringSync();

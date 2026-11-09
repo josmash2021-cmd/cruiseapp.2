@@ -5510,6 +5510,28 @@ class S {
   String get cancelReservation =>
       _es ? 'Cancelar reserva' : 'Cancel reservation';
   String get viewCancelPolicy => _es ? 'Ver política' : 'View policy';
+  // A reservation under way (owner 2026-11-08, "hazlo como lyft"): the
+  // pickup time, never "your wait starts".
+  String reservationOnTheWay(String name) =>
+      _es ? '$name va en camino' : '$name is on the way';
+  String reservationDriverHere(String name) =>
+      _es ? '$name llegó' : '$name is here';
+  String get reservationInTrip => _es ? 'En viaje' : 'On your ride';
+  String get liveOnTheWay => _es ? 'En camino' : 'On the way';
+  String get liveArrived => _es ? 'Llegó' : 'Arrived';
+  String get liveInTrip => _es ? 'En viaje' : 'In ride';
+  String pickupAtClock(String clock) =>
+      _es ? 'Recogida a las $clock' : 'Pickup at $clock';
+  String get seeMap => _es ? 'Ver mapa' : 'See map';
+  String get driverArrivedEarly =>
+      _es ? 'Llegó temprano' : 'Arrived early';
+  String riderPickupIsAt(String clock) =>
+      _es ? 'Tu recogida es a las $clock' : 'Your pickup is at $clock';
+  String get riderNoChargeBefore => _es
+      ? 'Sal a esa hora. No se cobra nada por esperarte antes.'
+      : "Head out then. Nothing is charged for waiting before that.";
+  String get extraWaitFeeActive =>
+      _es ? 'Cargo por espera activo' : 'Extra wait fee active';
   String cancelFreeUntil(String clock) =>
       _es ? 'Cancela gratis hasta las $clock' : 'Free to cancel until $clock';
   String get cancelFreeNow =>
@@ -6232,9 +6254,6 @@ class S {
       : "We let $name know you've arrived in case they're ready to go. Your "
           'wait starts counting at $time.';
   String get pickupBadgeReserved => _es ? 'Reservado' : 'Scheduled';
-  /// Rider: the free wait waits for the reservation's own time.
-  String riderWaitStartsAt(String time) =>
-      _es ? 'Tu espera empieza a las $time' : 'Your wait starts at $time';
   String get resConfirmCancelledBanner => _es
       ? 'Cancelaste tu viaje reservado'
       : 'You cancelled your reserved ride';

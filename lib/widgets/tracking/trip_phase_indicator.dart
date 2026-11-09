@@ -83,6 +83,42 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
       content = _buildOnTripContent(dotColor);
     }
 
+    // A reservation still ahead: its pickup time under the guide, gold —
+    // the driver set off an hour early and may be here well before it.
+    final resAt = _reservationAt;
+    if (resAt != null &&
+        (_phase == _TrackPhase.arriving || _phase == _TrackPhase.arrived) &&
+        DateTime.now().isBefore(resAt)) {
+      content = Column(
+        key: ValueKey('guide_reserved_${content.key}'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          content,
+          const SizedBox(height: 10),
+          Container(
+            key: const ValueKey('guide-reservation-pickup'),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8C547).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                  color: const Color(0xFFE8C547).withValues(alpha: 0.45)),
+            ),
+            child: Text(
+              S.of(context).pickupAtClock(
+                  TimeOfDay.fromDateTime(resAt).format(context)),
+              style: const TextStyle(
+                color: Color(0xFFE8C547),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     // Dark glass like the sheet below it: the map blurs behind, nothing
     // behind it reads.
     return GlassSurface(

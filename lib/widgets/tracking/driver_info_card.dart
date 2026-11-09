@@ -396,6 +396,11 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       if (pin.length == 4 && pin != _sheetPickupPin) {
         _setState(() => _sheetPickupPin = pin);
       }
+      // The same read carries a reservation's time (the poll does not).
+      final at = Reservation.parseAt(t['scheduled_at']);
+      if (at != null && at.isAfter(DateTime.now())) {
+        _setState(() => _reservationAt = at);
+      }
     } catch (e) {
       debugPrint('[RiderTracking] pickup code failed: $e');
     }

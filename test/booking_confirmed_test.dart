@@ -34,6 +34,10 @@ Future<void> pumpBooked(WidgetTester t, String lang) async {
       vehicleType: 'Comfort',
       fare: 38.40,
       isFree: false,
+      routeMinutes: 24,
+      carAsset: 'assets/images/cruisert3.png',
+      paymentLabel: 'Visa •••• 4242',
+      dropoffIsAirport: true,
     ),
   ));
   for (var i = 0; i < 30; i++) {
@@ -51,10 +55,23 @@ void main() {
   testWidgets('the booked page speaks Spanish…', (t) async {
     await pumpBooked(t, 'es');
     expect(find.text('Viaje reservado'), findsOneWidget);
-    expect(find.text('Te avisaremos cuando un conductor\nacepte tu viaje'),
+    expect(find.text('Te avisaremos cuando un conductor acepte tu viaje'),
         findsOneWidget);
     expect(find.text('Esperando conductor'), findsOneWidget);
-    expect(find.text('martes 10 nov · 5:30 AM'), findsOneWidget);
+    // The time large, the arrival beside it (5:30 + 24 min).
+    expect(find.text('MARTES 10 NOV'), findsOneWidget);
+    expect(find.text('5:30 AM'), findsOneWidget);
+    expect(find.text('Llegada aprox.'), findsOneWidget);
+    expect(find.text('5:54 AM'), findsOneWidget);
+    // Pickup → drop-off split into place + line; car, payment, price.
+    expect(find.text('3659 Lorna Rd'), findsOneWidget);
+    expect(find.text('Hoover, AL'), findsOneWidget);
+    expect(find.text('BHM · Airport'), findsOneWidget);
+    expect(find.text('Delta Air Lines'), findsOneWidget);
+    expect(find.text('Visa •••• 4242'), findsOneWidget);
+    expect(find.text('\$38.40'), findsOneWidget);
+    expect(find.text('Listo'), findsOneWidget);
+    expect(find.text('Ver mis reservas'), findsOneWidget);
     await leave(t);
   });
 
@@ -62,8 +79,41 @@ void main() {
     await pumpBooked(t, 'en');
     expect(find.text('Ride booked'), findsOneWidget);
     expect(find.text('Waiting for a driver'), findsOneWidget);
-    expect(find.text('Tuesday, Nov 10 · 5:30 AM'), findsOneWidget);
+    expect(find.text('TUESDAY, NOV 10'), findsOneWidget);
+    expect(find.text('Arrives approx.'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
     await leave(t);
+  });
+
+  testWidgets('it stays until the rider taps (no 3.5 s hop to home)',
+      (t) async {
+    await pumpBooked(t, 'es');
+    await t.pump(const Duration(seconds: 6));
+    expect(find.text('Viaje reservado'), findsOneWidget);
+    await leave(t);
+  });
+
+  test('an address splits into place and line', () {
+    expect(splitBookedAddress('3659 Lorna Rd, Hoover, AL, USA'),
+        ('3659 Lorna Rd', 'Hoover, AL'));
+    expect(
+        splitBookedAddress(
+            'BHM · Birmingham-Shuttlesworth International Airport — Delta Air Lines'),
+        ('BHM · Birmingham-Shuttlesworth International Airport', 'Delta Air Lines'));
+    expect(splitBookedAddress('Somewhere'), ('Somewhere', ''));
+  });
+
+  test('the booking passes the minutes, the car, the payment, the airport',
+      () {
+    final ctrl =
+        File('lib/screens/ride_request_controller.dart').readAsStringSync();
+    expect(ctrl, contains('carAsset: _carAssetForOption(option.name),'));
+    expect(ctrl, contains('paymentLabel: _paymentLabel(_selectedPaymentMethod),'));
+    expect(ctrl, contains('dropoffIsAirport: state.isAirportTrip || widget.isAirportTrip,'));
+    final page =
+        File('lib/screens/ride_booking_confirmed_screen.dart').readAsStringSync();
+    expect(page, isNot(contains('milliseconds: 3500')));
+    expect(page, isNot(contains('CircularPinIcon.home')));
   });
 
   test('no hand-written copy left on the booked page', () {

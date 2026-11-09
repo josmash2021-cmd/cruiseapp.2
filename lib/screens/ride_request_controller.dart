@@ -2557,6 +2557,12 @@ extension _RideRequestController on _RideRequestScreenState {
             dropoffLat: state.dropoff?.lat,
             dropoffLng: state.dropoff?.lng,
             routePoints: state.route?.points,
+            routeMinutes: (state.route?.durationSeconds ?? 0) > 0
+                ? (state.route!.durationSeconds! / 60).ceil()
+                : null,
+            carAsset: _carAssetForOption(option.name),
+            paymentLabel: _paymentLabel(_selectedPaymentMethod),
+            dropoffIsAirport: state.isAirportTrip || widget.isAirportTrip,
           ),
           transitionsBuilder: (_, anim, __, child) => FadeTransition(
             opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),

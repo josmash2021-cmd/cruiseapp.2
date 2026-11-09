@@ -5530,6 +5530,15 @@ class S {
       : "We'll let you know when a driver\naccepts your ride";
   String get bookedWaitingDriver =>
       _es ? 'Esperando conductor' : 'Waiting for a driver';
+  /// "Llegada aprox." beside the reservation time on "Viaje reservado".
+  String get bookedArrivalApprox =>
+      _es ? 'Llegada aprox.' : 'Arrives approx.';
+  String get bookedSeeReservations =>
+      _es ? 'Ver mis reservas' : 'See my reservations';
+  /// "martes 10 nov" / "Tuesday, Nov 10".
+  String bookedDay(DateTime t) => bookedWhen(t).split(' · ').first;
+  /// "5:30 AM".
+  String bookedClock(DateTime t) => bookedWhen(t).split(' · ').last;
   /// "lunes 9 nov · 3:20 PM" / "Monday, Nov 9 · 3:20 PM".
   String bookedWhen(DateTime t) {
     const wdEs = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes',

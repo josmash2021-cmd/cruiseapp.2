@@ -91,16 +91,18 @@ extension _RideRequestController on _RideRequestScreenState {
   }
 
   Future<void> _loadPinIcon() async {
-    _goldPinIcon = await renderCircularPinBytes(
+    // Standing on their ground ring (owner 2026-11-09), so they anchor at
+    // IconAnchor.CENTER — the ring's centre is the coordinate.
+    _goldPinIcon = await pinOnGround(await renderCircularPinBytes(
       icon: CircularPinIcon.person,
       isPickup: true,
       radius: 36,
-    );
-    _goldDropoffPinIcon = await renderCircularPinBytes(
+    ));
+    _goldDropoffPinIcon = await pinOnGround(await renderCircularPinBytes(
       icon: CircularPinIcon.home,
       isPickup: false,
       radius: 36,
-    );
+    ));
     if (mounted) _setState(() {});
   }
 
@@ -2776,6 +2778,17 @@ extension _RideRequestController on _RideRequestScreenState {
     });
   }
 
+  /// "$10 de descuento" / "30% de descuento" / "Gratis" — the promotion a
+  /// quoted tier carries, in the rider's words.
+  String _promoTitle(RideOption o) {
+    final s = S.of(context);
+    if (o.isFree) return s.free;
+    if (o.hasAmountDiscount) {
+      return s.amountOffTitle(discountDollarsLabel(o.discountAmountCents));
+    }
+    return s.percentOffTitle(o.discountPercent);
+  }
+
   Future<void> _showPaymentMethodPicker(AppColors c, RideOption? option) async {
     // Full-screen payment method picker (2×2 grid) — matches the
     // Shopify widget's pay overlay.
@@ -2793,6 +2806,11 @@ extension _RideRequestController on _RideRequestScreenState {
       // to be in every rider's picker — a tile that completes a ride
       // without charging anything, one tap away for anyone.
       showTestMode: _testModeAllowed,
+      // The picked tier's promotion, on top of the sheet as "Promo
+      // aplicada" (owner 2026-11-09, Lyft's payment sheet).
+      promo: option != null && optionHasPromo(option)
+          ? PaymentSheetPromo(_promoTitle(option))
+          : null,
     );
     // The sheet's Cruise Balance toggle may have changed — refresh the
     // discount preview either way before reading the result.

@@ -28,6 +28,10 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
   static const _gold = Color(0xFFE8C547);
 
   List<_PromoItem> _promos = [];
+  List<_PromoItem> get _activePromos =>
+      [for (final p in _promos) if (p.status == 'active') p];
+  List<_PromoItem> get _pastPromos =>
+      [for (final p in _promos) if (p.status != 'active') p];
   bool _loading = true;
   bool _refreshing = false;
   Object? _error;
@@ -258,7 +262,7 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                   ),
                 ],
           const SizedBox(height: 12),
-          if (_promos.isEmpty)
+          if (_activePromos.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 70),
               child: Center(
@@ -269,27 +273,46 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
       ),
             )
           else
-            for (var i = 0; i < _promos.length; i++) ...[
+            for (var i = 0; i < _activePromos.length; i++) ...[
               if (i > 0) const SizedBox(height: 10),
-              _buildPromoCard(c, _promos[i]),
+              _buildPromoCard(c, _activePromos[i]),
             ],
+          if (_pastPromos.isNotEmpty) ...[
+            const SizedBox(height: 28),
+            Text(
+              s.usedPromosHeader,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: c.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (var i = 0; i < _pastPromos.length; i++) ...[
+              if (i > 0) const SizedBox(height: 10),
+              _buildPromoCard(c, _pastPromos[i]),
+            ],
+          ],
         ],
       ),
     );
   }
 
+  /// Lyft's promo card (owner 2026-11-09): what it is in plain words
+  /// ("$10 de descuento" / "en tu primer viaje"), that it applies by
+  /// itself, and — while it can still be used — "Lista para tu próximo
+  /// viaje" instead of "Activa · 1 de 1 usos restantes".
   Widget _buildPromoCard(AppColors c, _PromoItem promo) {
     final s = S.of(context);
     final isActive = promo.status == 'active';
+    final isAmount = promo.kind == 'amount' && promo.amountCents > 0;
     final title = promo.kind == 'free'
         ? s.free
-        : promo.kind == 'amount' && promo.amountCents > 0
-            ? s.dollarOff(discountDollarsLabel(promo.amountCents))
-        : promo.percent > 0
-            ? '${promo.percent}% OFF'
-            : '${promo.fallbackPercent}% OFF';
+        : isAmount
+            ? s.amountOffTitle(discountDollarsLabel(promo.amountCents))
+            : s.percentOffTitle(
+                promo.percent > 0 ? promo.percent : promo.fallbackPercent);
     final status = switch (promo.status) {
-      'active' => s.promotionActive,
       'used' => s.used,
       'expired' => s.expired,
       'revoked' => s.promotionRevoked,
@@ -299,6 +322,10 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
         .map((tier) => tier.replaceAll('_', ' ').toUpperCase())
         .join(' · ');
     final validity = _validityText(promo);
+    // Uses left only while it can still be used, and never "1 de 1 usos"
+    // on a one-time dollars-off promo — "en tu primer viaje" says it.
+    final showUses = isActive && !(isAmount && promo.usesPerRider <= 1);
+    final detail = TextStyle(fontSize: 13, color: c.textSecondary);
     return Container(
       key: ValueKey('promotion_${promo.id}'),
       padding: const EdgeInsets.all(16),
@@ -306,10 +333,10 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
         color: c.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-                color: isActive
-                    ? _gold.withValues(alpha: 0.3)
+          color: isActive
+              ? _gold.withValues(alpha: 0.3)
               : Colors.black.withValues(alpha: 0.12),
-              ),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -342,68 +369,107 @@ class _PromoCodeScreenState extends State<PromoCodeScreen> {
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
-                          color: isActive ? _gold : c.textTertiary,
+                          color: isActive ? c.textPrimary : c.textTertiary,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        status,
-                        textAlign: TextAlign.right,
-                  style: TextStyle(
-                          fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: isActive ? c.textPrimary : c.textTertiary,
-                  ),
-                ),
-                  ),
+                    if (!isActive) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          status,
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: c.textTertiary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 7),
-                Text(
-                  s.promotionUsesRemaining(
-                    promo.remainingUses,
-                    promo.usesPerRider,
+                if (isAmount && promo.reason.isNotEmpty) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    promo.reason,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                      color: isActive ? c.textPrimary : c.textTertiary,
+                    ),
                   ),
-                  style: TextStyle(fontSize: 13, color: c.textSecondary),
-                ),
-                if (promo.maxMiles != null) ...[
+                ],
+                const SizedBox(height: 7),
+                if (isActive) ...[
+                  Text(s.promoAppliesWhenYouRide, style: detail),
                   const SizedBox(height: 3),
+                ],
+                if (showUses) ...[
+                  Text(
+                    s.promotionUsesRemaining(
+                      promo.remainingUses,
+                      promo.usesPerRider,
+                    ),
+                    style: detail,
+                  ),
+                  const SizedBox(height: 3),
+                ],
+                if (promo.maxMiles != null) ...[
                   Text(
                     s.promotionMaxMiles(_milesText(promo.maxMiles!)),
-                    style: TextStyle(fontSize: 13, color: c.textSecondary),
-                ),
-              ],
-                if (promo.kind == 'free' && promo.fallbackPercent > 0) ...[
+                    style: detail,
+                  ),
                   const SizedBox(height: 3),
+                ],
+                if (promo.kind == 'free' && promo.fallbackPercent > 0) ...[
                   Text(
                     s.promotionFallbackPercent(promo.fallbackPercent),
-                    style: TextStyle(fontSize: 13, color: c.textSecondary),
-            ),
+                    style: detail,
+                  ),
+                  const SizedBox(height: 3),
                 ],
                 if (tiers.isNotEmpty) ...[
-                  const SizedBox(height: 3),
                   Text(
                     s.promotionTiers(tiers),
                     style: TextStyle(fontSize: 12, color: c.textSecondary),
-          ),
+                  ),
+                  const SizedBox(height: 3),
                 ],
-                const SizedBox(height: 3),
                 Text(
                   validity,
                   style: TextStyle(fontSize: 12, color: c.textSecondary),
-              ),
-                if (promo.reason.isNotEmpty) ...[
+                ),
+                if (!isAmount && promo.reason.isNotEmpty) ...[
                   const SizedBox(height: 5),
                   Text(
                     promo.reason,
                     style: TextStyle(fontSize: 12, color: c.textTertiary),
-                ),
+                  ),
+                ],
+                if (isActive) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    key: const ValueKey('promoReadyChip'),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _gold.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      s.promoReadyNextRide,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _gold,
+                      ),
+                    ),
+                  ),
                 ],
               ],
-              ),
             ),
+          ),
         ],
       ),
     );

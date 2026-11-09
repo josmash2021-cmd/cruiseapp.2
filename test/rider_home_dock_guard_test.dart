@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///   1. The dock is pinned OUTSIDE the scroll view (it can never scroll
 ///      away or miss the first paint) and the active tab carries no gold
 ///      pill — brightness only. Ride tab shows the Cruise mark.
-///   2. The circular Priority / Schedule / 10%-off shortcut row is gone
-///      (UI only — the promo data load stays for the request flow).
+///   2. The circular Priority / Schedule / 10%-off shortcut row is gone,
+///      and since 2026-11-09 the local monthly "10%" too (never applied).
 ///   3. The hero is "Ride / Schedule" with two entries, and BOTH gate
 ///      through _ensureVerified (the standing rule from
 ///      rider_verification_guard_test.dart: always paint, gate on tap).
@@ -22,7 +22,11 @@ void main() {
 
   group('dock', () {
     final sheetStart = widgets.indexOf('Widget _buildSheet(');
-    final sheetBlock = widgets.substring(sheetStart, sheetStart + 8000);
+    // The whole method, up to the next one (a fixed window broke as soon as
+    // the sheet gained a card, 2026-11-09).
+    final sheetEnd = widgets.indexOf('\n  Widget ', sheetStart + 10);
+    final sheetBlock = widgets.substring(
+        sheetStart, sheetEnd > sheetStart ? sheetEnd : widgets.length);
 
     test('is pinned outside the scroll view, so it is always visible', () {
       // The dock call must live in the sheet's outer Stack AFTER the
@@ -70,10 +74,13 @@ void main() {
       expect(block, isNot(contains('Icons.settings_rounded')));
     });
 
-    test('the promo data load survives (logic, not UI)', () {
-      // The monthly promo generation + inbox notification stay; only the
-      // home chip and its dialogs left.
-      expect(home, contains('LocalDataService.generateMonthlyPromoIfNeeded()'));
+    test('no fake monthly promo in the inbox (2026-11-09)', () {
+      // The local "10% monthly discount" was never applied — fares come
+      // from the server — yet Home put "New monthly discount!" in every
+      // rider's inbox each month, in English. The real promos come from
+      // /promotions/me (the "$10 de descuento" card).
+      expect(home, isNot(contains('generateMonthlyPromoIfNeeded()')));
+      expect(home, contains('_loadWelcomePromo()'));
     });
   });
 

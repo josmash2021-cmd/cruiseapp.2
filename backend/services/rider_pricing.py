@@ -570,9 +570,12 @@ async def pricing_revision(db, rider_id: int) -> dict:
     }
 
 
+# The line under the card's title ("$10 de descuento"), Lyft-style (owner
+# 2026-11-09) — the title already says the amount. Only builds that ask
+# `?amounts=true` ever see it.
 WELCOME_REASON = {
-    "es": "Bienvenida: $10 de descuento en tu primer viaje",
-    "en": "Welcome: $10 off your first ride",
+    "es": "En tu primer viaje",
+    "en": "On your first ride",
 }
 
 

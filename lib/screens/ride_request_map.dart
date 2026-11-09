@@ -289,7 +289,9 @@ extension _RideRequestMap on _RideRequestScreenState {
     return (rawBytes, anchorOffset, rawBytes);
   }
 
-  /// Render a standalone circular pin (no label) as raw bytes.
+  /// Render a standalone circular pin (no label) as raw bytes, standing on
+  /// its ground ring (owner 2026-11-09: "debajo de los pines aparecerán
+  /// los círculos de pickup y dropoff") — anchored at IconAnchor.CENTER.
   Future<(Uint8List, Uint8List)?> _buildStandalonePin({
     _PinIcon icon = _PinIcon.none,
     bool isPickup = true,
@@ -298,13 +300,14 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (icon == _PinIcon.airplane) {
       final bytes = await _buildAirportIconBytes(100);
       if (bytes == null) return null; // raster context gone — retry next pass
-      return (bytes, bytes);
+      final grounded = await pinOnGround(bytes);
+      return (grounded, grounded);
     }
-    final bytes = await renderCircularPinBytes(
+    final bytes = await pinOnGround(await renderCircularPinBytes(
       icon: _pinIconToCircular(icon),
       isPickup: isPickup,
       radius: 32,
-    );
+    ));
     return (bytes, bytes);
   }
 
@@ -1722,7 +1725,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           geometry: pickupPoint,
           image: _goldPinIcon!,
           iconSize: 0.85,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
       }
@@ -1732,7 +1735,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           geometry: dropoffPoint,
           image: _goldDropoffPinIcon ?? _goldPinIcon!,
           iconSize: 0.85,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
       }
@@ -1746,7 +1749,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           geometry: stopPoint,
           image: _goldDropoffPinIcon ?? _goldPinIcon!,
           iconSize: 0.85,
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
       }
@@ -1834,7 +1837,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           geometry: pickupPoint,
           image: bytes,
           iconSize: pinScale(),
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
       }
@@ -1850,7 +1853,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           geometry: dropoffPoint,
           image: bytes,
           iconSize: pinScale(),
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
       }
@@ -1867,7 +1870,7 @@ extension _RideRequestMap on _RideRequestScreenState {
           geometry: stopPoint,
           image: bytes,
           iconSize: pinScale(),
-          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
         ));
       }
@@ -1891,28 +1894,52 @@ extension _RideRequestMap on _RideRequestScreenState {
     // the sheet's top edge (user report, 2026-08-04) instead of living
     // comfortably in the visible map area.
     if (_sheetHeightPx <= 0) {
+      // Not measured yet (the opening flight starts a frame before the
+      // sheet's first report): the half-height sheet is ~55 % of the screen
+      // (Lyft, 2026-11-09) — the refit after the flight is then a nudge.
       final screenH = (MediaQuery.maybeOf(context)?.size.height ?? 800.0);
-      return (screenH * 0.35).clamp(190.0, 320.0) + botSafe + 70;
+      return _withRouteBand(
+          (screenH * 0.55).clamp(300.0, 520.0) + botSafe + 70,
+          top: _routeFitTop(_tierSheet));
     }
-    return _sheetHeightPx + _sheetScreenGap + 70;
+    return _withRouteBand(_sheetHeightPx + _sheetScreenGap + 70,
+        top: _routeFitTop(_tierSheet));
   }
 
-  /// Collapse/expand of the choose-a-vehicle sheet: fly the camera to the
-  /// FINAL frame in the same instant the gesture starts, with the sheet's
-  /// own ~300 ms length — instead of waiting 450 ms for a re-measure and
-  /// then flying 1400 ms, which is what made the map trail a step behind
-  /// the sheet (2026-08-22).
+  /// Top padding of a route fit at each sheet height. All the way up the
+  /// route sits in a short band, and a pin's label (51 px above its tip)
+  /// slid under the back button at 70 — 100 keeps it below.
+  double _routeFitTop(_TierSheet size) => size == _TierSheet.full ? 100 : 70;
+
+  /// The route always keeps a band of map to sit in. With the sheet all
+  /// the way up (owner 2026-11-09: "cuando esté abierto se debe ver
+  /// completa la ruta arriba") the inset alone can leave less room than
+  /// the top padding — a fit that GL JS refuses outright and native
+  /// squeezes to nothing. Never less than 90 px under the [top] padding.
+  double _withRouteBand(double inset, {required double top}) {
+    final screenH = (MediaQuery.maybeOf(context)?.size.height ?? 800.0);
+    return math.min(inset, screenH - top - 90);
+  }
+
+  /// A change of the choose-a-vehicle sheet's height (Lyft's three, owner
+  /// 2026-11-09: half to start, up = every tier, down = only the picked
+  /// one): fly the camera to the FINAL frame in the same instant the
+  /// gesture starts, with the sheet's own ~300 ms length — instead of
+  /// waiting 450 ms for a re-measure and then flying 1400 ms, which is
+  /// what made the map trail a step behind the sheet (2026-08-22).
   ///
-  /// The target height is computed, not measured: collapsing hides
-  /// [tierCount] − 1 compact rows and expanding brings them back, and a
-  /// compact row's height is deterministic — 42 px car box + 2×12
-  /// vertical padding + 10 bottom margin = 76 (see _buildTierRow). The
-  /// measured debounce refit that would follow is suppressed once
-  /// (_skipNextSheetRefit), so the two never fight; it stays the backup
-  /// for every height change that is not this toggle.
-  void _syncCameraWithSheetToggle(
-      {required bool collapsing, required int tierCount}) {
-    const rowH = 76.0;
+  /// The target is computed, not measured: the list window is the picked
+  /// card alone (down), min(half ceiling, every row) (half) or min(full
+  /// ceiling, every row) (up). Going UP frames the whole route in the map
+  /// left above the sheet too (owner 2026-11-09: "cuando esté abierto se
+  /// debe ver completa la ruta arriba"). The measured refit that would
+  /// follow is suppressed once (_skipNextSheetRefit), so the two never
+  /// fight; it stays the backup for every height change that is not this
+  /// gesture.
+  void _syncCameraWithTierSheet(
+      {required _TierSheet from,
+      required _TierSheet to,
+      required int tierCount}) {
     final s = _ctrl.state;
     if (s.route == null || tierCount < 2) return;
     if (s.phase != RiderPhase.previewRoute &&
@@ -1925,12 +1952,13 @@ extension _RideRequestMap on _RideRequestScreenState {
     // No measured height yet (first frame): there is nothing reliable to
     // compute the target from — leave this one to the measured refit.
     if (_sheetHeightPx <= 0) return;
-    final delta = rowH * (tierCount - 1);
-    final target = (collapsing ? _sheetHeightPx - delta : _sheetHeightPx + delta)
-        .clamp(0.0, double.infinity);
+    final delta =
+        _tierListHeightFor(to, tierCount) - _tierListHeightFor(from, tierCount);
+    final target = (_sheetHeightPx + delta).clamp(0.0, double.infinity);
     // _cameraBottomInset's own recipe — sheet + gap + the 70 px of pin
     // label breathing room — evaluated at the FINAL height, not today's.
-    final inset = target + _sheetScreenGap + 70;
+    final top = _routeFitTop(to);
+    final inset = _withRouteBand(target + _sheetScreenGap + 70, top: top);
     if (kIsWeb) {
       if (DateTime.now().isBefore(_webAutoCameraUntil)) return;
       _skipNextSheetRefit = true;
@@ -1938,13 +1966,38 @@ extension _RideRequestMap on _RideRequestScreenState {
           durationMs: 300,
           pitch: _kCinematicPitch,
           bearing: _kCinematicBearing,
+          paddingTop: top,
           bottomInsetPx: inset);
       return;
     }
     if (_cinematicRunning || !_cinematicDone || _mapCtrl == null) return;
     _skipNextSheetRefit = true;
     _fitRoute(List<LatLng>.from(s.route!.points),
-        preserveCamera: true, bottomInsetOverride: inset, durationMs: 300);
+        preserveCamera: true,
+        bottomInsetOverride: inset,
+        topInset: top,
+        durationMs: 300);
+  }
+
+  /// How tall the tier list's window is at [size]: the picked card alone
+  /// (down) or every row up to that height's ceiling. Every row = the
+  /// list's own scroll extent when it is laid out with all rows, else the
+  /// picked card + a compact row (62 + 4 margin) per other tier.
+  double _tierListHeightFor(_TierSheet size, int tierCount) {
+    final pickedCtx = _pickedTierCtx;
+    final pickedH = (pickedCtx != null && pickedCtx.mounted
+            ? pickedCtx.size?.height
+            : null) ??
+        168.0;
+    if (size == _TierSheet.collapsed) return pickedH;
+    var content = pickedH + 66.0 * (tierCount - 1);
+    if (_tierSheet != _TierSheet.collapsed && _tierScrollCtrl.hasClients) {
+      final p = _tierScrollCtrl.position;
+      if (p.hasContentDimensions) {
+        content = p.maxScrollExtent + p.viewportDimension;
+      }
+    }
+    return math.min(content, _tierListMaxHeight(context, size));
   }
 
   /// The sheet reported a new height. Store it, then reframe ONCE after
@@ -1965,42 +2018,66 @@ extension _RideRequestMap on _RideRequestScreenState {
         _skipNextSheetRefit = false;
         return;
       }
-      final s = _ctrl.state;
-      if (s.route == null) return;
-      // The rider dragged or zoomed — the frame is theirs now; only the
-      // recenter button hands it back to us.
-      if (_userTookCamera) return;
-      // Searching: re-frame top-down with the card's measured height.
-      if (s.phase == RiderPhase.requesting ||
-          s.phase == RiderPhase.searchingDriver) {
-        _animateSearchCameraToAngle(0);
-        return;
-      }
-      if (s.phase != RiderPhase.previewRoute &&
-          s.phase != RiderPhase.selectingRide) {
-        return;
-      }
-      if (kIsWeb) {
-        // Same refusals as native: never fight the cinematic mid-flight
-        // (the programmatic window is exactly its duration) and never take
-        // the camera back from a rider who panned away.
-        if (_userTookCamera ||
-            DateTime.now().isBefore(_webAutoCameraUntil)) {
-          return;
-        }
-        // Tier picked: reframe for the taller sheet but HOLD the cinematic
-        // orientation — native's _fitRoute(preserveCamera: true) flies
-        // 1400 ms keeping the 55°/15°. Without these GL JS would snap the
-        // bearing back to 0.
-        _fitWebRoute(s.route!.points,
-            durationMs: 1400,
-            pitch: _kCinematicPitch,
-            bearing: _kCinematicBearing);
-        return;
-      }
-      if (_cinematicRunning || !_cinematicDone) return;
-      _fitRoute(List<LatLng>.from(s.route!.points), preserveCamera: true);
+      _refitForSheetHeight();
     });
+  }
+
+  /// The measured refit behind [_onSheetHeightChanged]. While the opening
+  /// flight still runs it WAITS for it instead of giving up (2026-11-09):
+  /// the flight framed the route above the sheet as it was when it began,
+  /// and the sheet then grew with the prices and "Promo aplicada" — the
+  /// route ended up touching the sheet's edge until the rider moved it.
+  void _refitForSheetHeight({int attempt = 0}) {
+    if (!mounted) return;
+    void retryAfter(Duration wait) {
+      if (attempt >= 8) return;
+      _sheetFitDebounce?.cancel();
+      _sheetFitDebounce =
+          Timer(wait, () => _refitForSheetHeight(attempt: attempt + 1));
+    }
+    final s = _ctrl.state;
+    if (s.route == null) return;
+    // The rider dragged or zoomed — the frame is theirs now; only the
+    // recenter button hands it back to us.
+    if (_userTookCamera) return;
+    // Searching: re-frame top-down with the card's measured height.
+    if (s.phase == RiderPhase.requesting ||
+        s.phase == RiderPhase.searchingDriver) {
+      _animateSearchCameraToAngle(0);
+      return;
+    }
+    if (s.phase != RiderPhase.previewRoute &&
+        s.phase != RiderPhase.selectingRide) {
+      return;
+    }
+    if (kIsWeb) {
+      // Never take the camera back from a rider who panned away, and
+      // never fight the cinematic mid-flight (the programmatic window is
+      // exactly its duration) — wait for it to land, then frame.
+      if (_userTookCamera) return;
+      final flying = _webAutoCameraUntil.difference(DateTime.now());
+      if (!flying.isNegative) {
+        retryAfter(flying + const Duration(milliseconds: 120));
+        return;
+      }
+      // Tier picked: reframe for the taller sheet but HOLD the cinematic
+      // orientation — native's _fitRoute(preserveCamera: true) flies
+      // 1400 ms keeping the 55°/15°. Without these GL JS would snap the
+      // bearing back to 0.
+      _fitWebRoute(s.route!.points,
+          durationMs: 1400,
+          pitch: _kCinematicPitch,
+          bearing: _kCinematicBearing,
+          paddingTop: _routeFitTop(_tierSheet));
+      return;
+    }
+    if (_cinematicRunning || !_cinematicDone) {
+      retryAfter(const Duration(milliseconds: 400));
+      return;
+    }
+    _fitRoute(List<LatLng>.from(s.route!.points),
+        preserveCamera: true,
+        topInset: _tierSheet == _TierSheet.full ? _routeFitTop(_tierSheet) : null);
   }
 
   /// Web: fit the whole route above the sheet. No-op without the browser
@@ -2085,7 +2162,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         'route',
         [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
         color: '#F0CA3E',
-        width: 5,
+        width: 2.5,
       );
       web.updateMarkerPosition('pickup', s.pickup!.lng, s.pickup!.lat);
       web.updateMarkerPosition('dropoff', s.dropoff!.lng, s.dropoff!.lat);
@@ -2107,29 +2184,43 @@ extension _RideRequestMap on _RideRequestScreenState {
     //      end of _animateWebRoute, exactly like _animateGoldRoute).
     try {
       // The SAME golden pins Android shows (person at pickup, address-type
-      // icon at dropoff), rendered by the same painter at 2x. Native's
-      // final pop scale is 0.65 of the 80×73.6 logical bitmap → 52×48 CSS
-      // px, tip on the coordinate (anchor bottom = IconAnchor.BOTTOM).
+      // icon at dropoff), rendered by the same painter at 2x, standing on
+      // the same ground ring (owner 2026-11-09). Native's final pop scale
+      // is 0.65 of the 80-wide logical pin → 52 CSS px for the pin itself;
+      // the ring's centre on the coordinate (IconAnchor.CENTER).
       final dropoffIcon = _detectDropoffType(s.dropoffLabel);
+      Future<ui.Image> decode(Uint8List b) async =>
+          (await (await ui.instantiateImageCodec(b)).getNextFrame()).image;
+      Future<(Uint8List, double, double)> grounded(Uint8List pin) async {
+        final pinW = (await decode(pin)).width.toDouble();
+        final bytes = await pinOnGround(pin);
+        final img = await decode(bytes);
+        final k = 52 / pinW;
+        return (bytes, img.width * k, img.height * k);
+      }
       final pins = await Future.wait([
         renderCircularPinBytes(
-            icon: CircularPinIcon.person, isPickup: true, radius: 32),
+                icon: CircularPinIcon.person, isPickup: true, radius: 32)
+            .then(grounded),
         renderCircularPinBytes(
-            icon: _pinIconToCircular(dropoffIcon), isPickup: false, radius: 32),
+                icon: _pinIconToCircular(dropoffIcon),
+                isPickup: false,
+                radius: 32)
+            .then(grounded),
       ]);
       if (!mounted) return;
       web.addMarker('pickup', s.pickup!.lng, s.pickup!.lat,
-          iconBytes: pins[0],
+          iconBytes: pins[0].$1,
           popIn: true,
-          widthPx: 52,
-          heightPx: 48,
-          anchor: 'bottom');
+          widthPx: pins[0].$2,
+          heightPx: pins[0].$3,
+          anchor: 'center');
       web.addMarker('dropoff', s.dropoff!.lng, s.dropoff!.lat,
-          iconBytes: pins[1],
+          iconBytes: pins[1].$1,
           popIn: true,
-          widthPx: 52,
-          heightPx: 48,
-          anchor: 'bottom');
+          widthPx: pins[1].$2,
+          heightPx: pins[1].$3,
+          anchor: 'center');
     } catch (_) {}
     if (!mounted) return;
     _fitWebRoute(pts,
@@ -2158,13 +2249,15 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Same duration rule as native: ~16 ms per point, clamped 2–4 s.
     final totalMs = (pts.length * 16).clamp(2000, 4000);
     final stopwatch = Stopwatch()..start();
-    // Width 5 — same as the native _animateGoldRoute line. Two identical
-    // seed points, not one: a 1-coordinate LineString is invalid GeoJSON
-    // that GL JS refuses to render (native seeds the same way).
+    // Width 2.5 — same as the native _animateGoldRoute line (the web drew
+    // 5, twice the phone's, until the owner asked for a thinner line on
+    // 2026-11-09). Two identical seed points, not one: a 1-coordinate
+    // LineString is invalid GeoJSON that GL JS refuses to render (native
+    // seeds the same way).
     web.setPolyline('route', [
       (lng: pts[0].longitude, lat: pts[0].latitude),
       (lng: pts[0].longitude, lat: pts[0].latitude),
-    ], color: '#F0CA3E', width: 5);
+    ], color: '#F0CA3E', width: 2.5);
     _webRouteAnimTimer =
         Timer.periodic(const Duration(milliseconds: 33), (timer) {
       if (!mounted) {
@@ -2179,7 +2272,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         'route',
         [for (final p in pts.take(count)) (lng: p.longitude, lat: p.latitude)],
         color: '#F0CA3E',
-        width: 5,
+        width: 2.5,
       );
       if (progress >= 1.0) {
         timer.cancel();
@@ -2195,6 +2288,7 @@ extension _RideRequestMap on _RideRequestScreenState {
   void _fitRoute(List<LatLng> pts,
       {bool preserveCamera = false,
       double? bottomInsetOverride,
+      double? topInset,
       int durationMs = 1400}) {
     if (pts.isEmpty || _mapCtrl == null) return;
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
@@ -2227,7 +2321,8 @@ extension _RideRequestMap on _RideRequestScreenState {
         pitch: preserveCamera ? _kCinematicPitch : null,
         bearing: preserveCamera ? _randomBearing : null,
       ),
-      mapbox.MbxEdgeInsets(top: 60, left: 40, bottom: bottomPad, right: 40),
+      mapbox.MbxEdgeInsets(
+          top: topInset ?? 60, left: 40, bottom: bottomPad, right: 40),
       null, null,
     ).then((cam) {
       // Longer cinematic fit so the reveal of pickup → dropoff feels

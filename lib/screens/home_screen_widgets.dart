@@ -159,6 +159,34 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
             ),
 
+            // ── The $10 of the first ride, until it is used (owner
+            // 2026-11-09, Lyft) ── Dimmed with the rest while a ride is on.
+            AnimatedOpacity(
+              opacity: _activeRide == null ? 1.0 : 0.35,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOut,
+              child: IgnorePointer(
+                ignoring: _activeRide != null,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, anim) => FadeTransition(
+                      opacity: anim,
+                      child: SizeTransition(sizeFactor: anim, child: child)),
+                  child: _welcomePromo != null
+                      ? Padding(
+                          key: const ValueKey('welcome_promo'),
+                          padding:
+                              const EdgeInsets.only(left: 24, right: 24, top: 16),
+                          child: _buildWelcomePromoCard(),
+                        )
+                      : const SizedBox.shrink(
+                          key: ValueKey('no_welcome_promo')),
+                ),
+              ),
+            ),
+
             // ── Everything below the hero card ──
             //
             // Dimmed and inert while a ride is active, not removed. Hiding
@@ -341,6 +369,79 @@ extension _HomeScreenWidgets on _HomeScreenState {
     if (hour < 12) return s.goodMorning;
     if (hour < 18) return s.goodAfternoon;
     return s.goodEvening;
+  }
+
+  /// "$10 de descuento · En tu primer viaje · se aplica solo" — tap opens
+  /// Promotions; it disappears once the ride that uses it is booked.
+  Widget _buildWelcomePromoCard() {
+    final s = S.of(context);
+    final promo = _welcomePromo!;
+    final cents = (promo['amount_cents'] as num?)?.toInt() ?? 0;
+    final reason = (promo['reason'] as String?)?.trim() ?? '';
+    final subtitle = reason.isEmpty
+        ? s.promoAppliesWhenYouRide
+        : '$reason · ${s.promoAppliesShort}';
+    return GestureDetector(
+      key: const ValueKey('homeWelcomePromo'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () async {
+        HapticService.selectionClick();
+        await Navigator.maybeOf(context)?.push(
+          MaterialPageRoute(builder: (_) => const PromoCodeScreen()),
+        );
+        if (!mounted) return;
+        unawaited(_loadWelcomePromo());
+      },
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+        decoration: neuBox(radius: 22),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: neuBox(radius: 14, pressed: true),
+              child: const Icon(Icons.local_offer_rounded,
+                  color: Color(0xFFE8C547), size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.amountOffTitle(discountDollarsLabel(cents)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.4), size: 22),
+          ],
+        ),
+      ),
+    );
   }
 
   // ─── Hero CTA Card — transforms between "Where to?" / searching / "Ride in progress" ───

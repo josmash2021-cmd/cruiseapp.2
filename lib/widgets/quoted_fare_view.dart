@@ -20,6 +20,7 @@ class QuotedFareView extends StatelessWidget {
   });
 
   static const gold = Color(0xFFE8C547);
+  static const green = Color(0xFF22C55E);
 
   @override
   Widget build(BuildContext context) {
@@ -45,13 +46,36 @@ class QuotedFareView extends StatelessWidget {
     );
     final original = '\$${option.originalPriceEstimate.toStringAsFixed(2)}';
     final price = '\$${option.priceEstimate.toStringAsFixed(2)}';
+    // The discounted price on top; under it the full fare struck through,
+    // and on the picked price "$10 off aplicado" beside it (owner
+    // 2026-11-09). The payment row under the list still says "Promo
+    // aplicada".
     final discounted =
         option.hasPercentageDiscount || option.hasAmountDiscount;
-    final badge = option.hasAmountDiscount
+    final applied = option.hasAmountDiscount
         ? S
             .of(context)
-            .dollarOff(discountDollarsLabel(option.discountAmountCents))
-        : '${option.discountPercent}% OFF';
+            .amountOffApplied(discountDollarsLabel(option.discountAmountCents))
+        : S.of(context).percentOffApplied(option.discountPercent);
+    // Plain green text, no box (owner 2026-11-09: "no quiero que tenga ese
+    // cuadro amarillo y quiero que esté en verde").
+    final appliedTag = Text(
+      applied,
+      key: const ValueKey('quotedFareApplied'),
+      maxLines: 1,
+      style: const TextStyle(
+        fontFamily: 'Poppins',
+        color: green,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    final struck = Text(
+      original,
+      key: const ValueKey('quotedFareOriginal'),
+      maxLines: 1,
+      style: originalStyle,
+    );
 
     final content = !known
         ? Text('—', key: const ValueKey('quotedFareUnknown'), style: priceStyle)
@@ -80,29 +104,6 @@ class QuotedFareView extends StatelessWidget {
                         ),
                       ),
                     ] else ...[
-                      if (discounted) ...[
-                        Container(
-                          key: const ValueKey('quotedFareBadge'),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: gold.withValues(alpha: 0.13),
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                          child: Text(
-                            badge,
-                            style: const TextStyle(
-                              fontFamily: 'Poppins',
-                              color: gold,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                      ],
                       Text(
                         price,
                         key: const ValueKey('quotedFarePrice'),
@@ -113,13 +114,26 @@ class QuotedFareView extends StatelessWidget {
                 ),
               ),
               if (discounted) ...[
-                const SizedBox(height: 2),
-                Text(
-                  original,
-                  key: const ValueKey('quotedFareOriginal'),
-                  maxLines: 1,
-                  style: originalStyle,
-                ),
+                const SizedBox(height: 3),
+                // The tag rides on the PICKED price only: in a list row,
+                // beside the struck fare it cut "Sin conductores cerca ·
+                // Reserva", and under it every row grew until the open
+                // list covered the route again (2026-11-09).
+                if (selected)
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        appliedTag,
+                        const SizedBox(width: 6),
+                        struck,
+                      ],
+                    ),
+                  )
+                else
+                  struck,
               ],
               if (cash > 0) ...[
                 const SizedBox(height: 2),

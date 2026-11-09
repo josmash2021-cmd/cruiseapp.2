@@ -3127,6 +3127,34 @@ class S {
   // ── Promo (extra) ─────────────────────────────────────────────────────────
   String dollarOff(String amount) => '\$$amount OFF';
   String percentOff(int percent) => '$percent% OFF';
+  // Lyft-style promo wording (owner 2026-11-09): no "OFF" badges — the
+  // price is already discounted and the payment row says it.
+  String get promoApplied => _es ? 'Promo aplicada' : 'Promo applied';
+  String get promoThisRide => _es ? ' · a este viaje' : ' · this ride';
+  String amountOffTitle(String amount) =>
+      _es ? '\$$amount de descuento' : '\$$amount off';
+  String percentOffTitle(int percent) =>
+      _es ? '$percent% de descuento' : '$percent% off';
+  /// The tag beside a discounted price's struck fare (owner 2026-11-09:
+  /// "en el precio coloca la etiqueta de $10 off applied").
+  String amountOffApplied(String amount) =>
+      _es ? '\$$amount off aplicado' : '\$$amount off applied';
+  String percentOffApplied(int percent) =>
+      _es ? '$percent% off aplicado' : '$percent% off applied';
+  String get paymentMethodsHeader =>
+      _es ? 'Métodos de pago' : 'Payment methods';
+  String get addPaymentMethodRow =>
+      _es ? 'Agregar método de pago' : 'Add payment method';
+  String get balanceHeader => _es ? 'Saldo' : 'Balance';
+  String cashAvailable(String amount) =>
+      _es ? '\$$amount disponible' : '\$$amount available';
+  String get promoAppliesWhenYouRide =>
+      _es ? 'Se aplica solo cuando pides' : 'Applies automatically when you ride';
+  String get promoReadyNextRide =>
+      _es ? 'Lista para tu próximo viaje' : 'Ready for your next ride';
+  String get promoAppliesShort =>
+      _es ? 'se aplica solo' : 'applied automatically';
+  String get usedPromosHeader => _es ? 'Usadas' : 'Past promos';
 
   // ── Credit Card (extra) ────────────────────────────────────────────────────
   String get cardCouldNotBeProcessed => _es

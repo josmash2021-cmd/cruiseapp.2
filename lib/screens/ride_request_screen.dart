@@ -4,6 +4,7 @@ import '../utils/app_platform.dart';
 import '../config/route_observers.dart';
 import '../map/map_surface_coordinator.dart';
 import '../map/flat_map_projection.dart';
+import '../map/nav_dest_markers.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart'
@@ -416,6 +417,9 @@ class _PaymentRetryDialog extends StatelessWidget {
   }
 }
 
+/// The choose-a-vehicle sheet's three heights (Lyft, owner 2026-11-09).
+enum _TierSheet { collapsed, half, full }
+
 class _RideRequestScreenState extends State<RideRequestScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
   void _setState(VoidCallback fn) {
@@ -489,16 +493,26 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _labelsRevealed = false;
   bool _placingMarkers = false; // guard against concurrent pin duplication
   // Choose-a-vehicle sheet (2026-08-22 redesign, Lyft-style vertical tier
-  // list): two snapped states — expanded (every tier listed, the selected
-  // one grown open) and collapsed (only the selected tier's card plus the
-  // action panel, so the map and the route stay in view). Driven by the
-  // drag handle's vertical gesture; the height change animates through
-  // AnimatedSize and the map refits off _sheetHeightPx as always.
-  bool _sheetCollapsed = false;
+  // list), Lyft's three heights since 2026-11-09: half to start (the picked
+  // card and a row and a half, the route framed above), up = every tier
+  // (the sheet covers the map), down = only the picked card. Driven by
+  // vertical drags on the grabber and on the list; the height change
+  // animates through AnimatedSize and the map refits off _sheetHeightPx.
+  _TierSheet _tierSheet = _TierSheet.half;
+  bool get _sheetCollapsed => _tierSheet == _TierSheet.collapsed;
   // How many tier rows the sheet is showing right now — the synced camera
   // fit needs it to compute the collapsed/expanded height delta (see
   // _syncCameraWithSheetToggle). Set on every _buildRoutePreviewSheet.
   int _displayTierCount = 0;
+  // Lyft's half-height sheet (owner 2026-11-09, "que se vea la ruta
+  // completa"): the tier list has a ceiling and scrolls inside it, so the
+  // sheet never covers the route. The picked row's context is kept (every
+  // row sits in a plain Builder, so no GlobalKey and no state moves) to
+  // scroll it into view and to measure it.
+  final ScrollController _tierScrollCtrl = ScrollController();
+  BuildContext? _pickedTierCtx;
+  String? _tierScrolledFor;
+  double _tierDragDy = 0; // travel of the drag on the sheet, for slow drags
   AnimationController? _labelPopCtrl;
   Animation<double>? _labelPopAnim;
   LatLng? _center;
@@ -1275,6 +1289,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     WidgetsBinding.instance.removeObserver(this);
     mapRouteObserver.unsubscribe(this);
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+    _tierScrollCtrl.dispose();
     _shimmerTimeoutTimer?.cancel();
     _skeletonTimer?.cancel();
     _stuckPaymentFuse?.cancel();

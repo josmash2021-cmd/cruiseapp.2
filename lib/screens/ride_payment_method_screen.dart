@@ -13,6 +13,8 @@ import '../widgets/neu_style.dart';
 import 'card_scan_screen.dart';
 import 'ride_payment_sheet.dart';
 
+export 'ride_payment_sheet.dart' show PaymentSheetPromo;
+
 // ═══════════════════════════════════════════════════════════════════
 //  Payment Method — Lyft-style list (reskin 2026-08-24, antes grid 2×2)
 //
@@ -51,11 +53,13 @@ Future<String?> showRidePaymentMethodPicker(
   BuildContext context, {
   required String currentMethod,
   bool showTestMode = false,
+  PaymentSheetPromo? promo,
 }) {
   return showCruisePaymentSheet(
     context,
     currentMethod: currentMethod,
     showTestMode: showTestMode,
+    promo: promo,
   );
 }
 

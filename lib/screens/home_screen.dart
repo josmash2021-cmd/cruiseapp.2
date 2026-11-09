@@ -50,6 +50,9 @@ import '../services/user_session.dart';
 import 'rider_permissions_screen.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/reservation_card.dart';
+import '../models/ride_quote.dart' show discountDollarsLabel;
+import 'promo_code_screen.dart';
+import '../services/haptic_service.dart';
 import '../widgets/glass_notification_banner.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/car_image_3d.dart';
@@ -118,6 +121,11 @@ class _HomeScreenState extends State<HomeScreen>
   // ("Ver las N"). The count is set by _loadNextScheduledRide.
   Map<String, dynamic>? _nextScheduledRide;
   int _scheduledRideCount = 0;
+
+  // The dollars-off promo waiting for this rider's next ride (the $10 of
+  // the first ride) — a card under "¿A dónde?" until it is used, Lyft-style
+  // (owner 2026-11-09). Null = nothing to show.
+  Map<String, dynamic>? _welcomePromo;
 
   // The card's countdown ("En 24 min") reads the clock on every rebuild;
   // this ticks the rebuild once a minute.
@@ -390,6 +398,7 @@ class _HomeScreenState extends State<HomeScreen>
           setState(() => _nextScheduledRide = ride);
           _updateImminentRide();
         });
+        unawaited(_loadWelcomePromo());
       }
     }
   }
@@ -980,17 +989,11 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _loadSavedData() async {
-    // Promo generation must finish first (it writes data read below)
-    final newPromoGenerated =
-        await LocalDataService.generateMonthlyPromoIfNeeded();
-    if (newPromoGenerated) {
-      await LocalDataService.addNotification(
-        title: '🎉 New monthly discount!',
-        message:
-            'You have a new 10% discount available for your next ride. Tap the promo banner on the home screen to apply it!',
-        type: 'promo',
-      );
-    }
+    // No more "New monthly discount!" in the inbox (2026-11-09): it promised
+    // every rider a 10% off each month, in English, that nothing ever
+    // applied — prices come from the server, which knows no such promo.
+    // The real promotions come from /promotions/me (the card below).
+    unawaited(_loadWelcomePromo());
 
     // Fire ALL independent reads in parallel — single await instead of 10+
     // Each future wrapped with .catchError() so one failure doesn't crash all
@@ -1073,6 +1076,27 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   /// Extracted so it can run in parallel with local reads.
+  /// The first active dollars-off promotion (the $10 of the first ride),
+  /// for the card under "¿A dónde?". A failed call keeps what was shown.
+  Future<void> _loadWelcomePromo() async {
+    try {
+      final res = await ApiService.getMyPromotions();
+      final list = res['promotions'];
+      Map<String, dynamic>? found;
+      if (list is List) {
+        for (final p in list) {
+          if (p is! Map) continue;
+          final cents = (p['amount_cents'] as num?)?.toInt() ?? 0;
+          if (p['kind'] == 'amount' && p['status'] == 'active' && cents > 0) {
+            found = Map<String, dynamic>.from(p);
+            break;
+          }
+        }
+      }
+      _setState(() => _welcomePromo = found);
+    } catch (_) {}
+  }
+
   Future<Map<String, dynamic>?> _loadNextScheduledRide() async {
     try {
       final userId = await ApiService.getCurrentUserId();

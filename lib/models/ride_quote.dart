@@ -241,6 +241,11 @@ class RideOption {
       originalTotalCents! > promoTotalCents!;
 }
 
+/// The quoted price carries a promotion — the payment row and the payment
+/// sheet say "Promo aplicada" (owner 2026-11-09, Lyft's "Promo applied").
+bool optionHasPromo(RideOption o) =>
+    o.isFree || o.hasPercentageDiscount || o.hasAmountDiscount;
+
 /// "10" for whole dollars, "9.50" otherwise — for "$10 OFF".
 String discountDollarsLabel(int cents) =>
     cents % 100 == 0 ? '${cents ~/ 100}' : (cents / 100).toStringAsFixed(2);

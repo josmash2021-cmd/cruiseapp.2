@@ -43,6 +43,11 @@ Widget app(PromoCodeScreen screen) => MaterialApp(
 void main() {
   testWidgets('server promotions render rules and refresh on socket',
       (tester) async {
+    // Tall enough for the available AND the past promos (the list builds
+    // lazily: a card past the viewport is not built at all).
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final updates = StreamController<Map<String, dynamic>>();
     addTearDown(updates.close);
     var loads = 0;
@@ -67,15 +72,30 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(find.text('WELCOME10'), findsNothing);
     expect(find.text('CRUISE50'), findsNothing);
-    expect(find.text('30% OFF'), findsOneWidget);
-    expect(find.text('Free'), findsOneWidget);
-    expect(find.text('Active'), findsOneWidget);
-    expect(find.text('Used'), findsOneWidget);
+    // Lyft wording (owner 2026-11-09): "30% off", no "Active" — an active
+    // promo says it is ready for the next ride; the rest sit under "Past".
+    expect(find.text('30% off'), findsOneWidget);
+    expect(find.textContaining('OFF'), findsNothing);
+    expect(find.text('Active'), findsNothing);
+    expect(find.text('Ready for your next ride'), findsOneWidget);
+    expect(find.text('Applies automatically when you ride'), findsOneWidget);
+    expect(find.text('Past promos', skipOffstage: false), findsOneWidget);
+    expect(find.text('Free', skipOffstage: false), findsOneWidget);
+    expect(find.text('Used', skipOffstage: false), findsOneWidget);
     expect(find.text('Expired', skipOffstage: false), findsOneWidget);
     expect(find.text('Revoked', skipOffstage: false), findsOneWidget);
     expect(find.text('1 of 2 uses left'), findsOneWidget);
-    expect(find.text('0 of 2 uses left'), findsOneWidget);
-    expect(find.text('Up to 5 mi'), findsOneWidget);
+    // A past promo shows no "uses left".
+    expect(find.text('0 of 2 uses left', skipOffstage: false), findsNothing);
+    expect(find.text('Up to 5 mi', skipOffstage: false), findsOneWidget);
+    // Available first, then the past ones.
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('promotion_1'))).dy,
+      lessThan(tester
+          .getTopLeft(find.byKey(const ValueKey('promotion_2'),
+              skipOffstage: false))
+          .dy),
+    );
     expect(find.textContaining('ELECTRIC PRO'), findsWidgets);
     expect(find.textContaining('Valid:'), findsWidgets);
     expect(find.text('Your assigned promotions are applied automatically.'),
@@ -125,11 +145,12 @@ void main() {
     );
   });
 
-  testWidgets(r'a dollars-off promotion is titled $10 OFF, never 0% OFF',
+  testWidgets(r'a dollars-off promotion reads "$10 off · On your first ride"',
       (tester) async {
     final ten = promotion(9, 'amount', 'active', percent: 0, fallback: 0)
       ..['amount_cents'] = 1000
-      ..['uses_per_rider'] = 1;
+      ..['uses_per_rider'] = 1
+      ..['reason'] = 'On your first ride';
     await tester.pumpWidget(app(
       PromoCodeScreen(
         promotionsLoader: () async => {
@@ -139,7 +160,20 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    expect(find.text(r'$10 OFF'), findsOneWidget);
-    expect(find.text('0% OFF'), findsNothing);
+    expect(find.text(r'$10 off'), findsOneWidget);
+    expect(find.text('On your first ride'), findsOneWidget);
+    expect(find.text('Ready for your next ride'), findsOneWidget);
+    // One use, one ride: no "1 of 1 uses left".
+    expect(find.text('1 of 1 uses left'), findsNothing);
+    expect(find.textContaining('OFF'), findsNothing);
+    expect(find.text('0% off'), findsNothing);
+  });
+
+  test('Lyft promo copy in Spanish', () {
+    final s = S(const Locale('es'));
+    expect(s.amountOffTitle('10'), r'$10 de descuento');
+    expect(s.promoApplied, 'Promo aplicada');
+    expect(s.promoReadyNextRide, 'Lista para tu próximo viaje');
+    expect(s.usedPromosHeader, 'Usadas');
   });
 }

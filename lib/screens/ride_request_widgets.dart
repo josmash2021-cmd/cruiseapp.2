@@ -391,41 +391,24 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     const SizedBox(height: 10),
                   ],
 
-                  // Grabber — also the sheet's drag handle
-                  // (2026-08-22 redesign). The sheet has two snapped states:
-                  // expanded (every tier listed) and collapsed (only the
-                  // picked tier's card plus the action panel, so the map
-                  // and the route stay in view). Pull down to collapse,
-                  // pull up — or tap — to bring the list back. Snaps on
-                  // release; the height change animates inside the list,
-                  // and the camera refits off _sheetHeightPx as always.
+                  // Grabber — also the sheet's drag handle. Lyft's three
+                  // heights (owner 2026-11-09): half to start (the route
+                  // framed above), pull up = every tier (the sheet covers
+                  // the map), pull down = only the picked card. A tap
+                  // toggles half / up. Snaps on release; the height change
+                  // animates inside the list and the camera refits off
+                  // _sheetHeightPx as always.
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () {
                       if (option == null) return;
-                      HapticService.selectionClick();
-                      _syncCameraWithSheetToggle(
-                          collapsing: !_sheetCollapsed,
-                          tierCount: _displayTierCount);
-                      _setState(() => _sheetCollapsed = !_sheetCollapsed);
+                      _setTierSheet(_tierSheet == _TierSheet.half
+                          ? _TierSheet.full
+                          : _TierSheet.half);
                     },
-                    onVerticalDragEnd: (d) {
-                      if (option == null) return;
-                      final v = d.primaryVelocity ?? 0;
-                      if (v > 120 && !_sheetCollapsed) {
-                        HapticService.selectionClick();
-                        _syncCameraWithSheetToggle(
-                                  collapsing: true,
-                                  tierCount: _displayTierCount);
-                        _setState(() => _sheetCollapsed = true);
-                      } else if (v < -120 && _sheetCollapsed) {
-                        HapticService.selectionClick();
-                        _syncCameraWithSheetToggle(
-                                  collapsing: false,
-                                  tierCount: _displayTierCount);
-                        _setState(() => _sheetCollapsed = false);
-                      }
-                    },
+                    onVerticalDragStart: (_) => _tierDragDy = 0,
+                    onVerticalDragUpdate: (d) => _tierDragDy += d.delta.dy,
+                    onVerticalDragEnd: (d) => _onTierSheetDragEnd(d, option),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -489,24 +472,39 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                   _ctrl.state.dropoff != null &&
                                   !(s.quoteFailed && s.quote == null)
                         ? _buildSkeletonTierRows()
-                        : Column(
+                        // Half-height like Lyft (owner 2026-11-09): the list
+                        // has a ceiling and scrolls inside it — the picked
+                        // card plus about a row and a half — so the sheet
+                        // stops near the middle and the map frames the whole
+                        // route above it. The action panel is never inside
+                        // the scroll: Select stays reachable.
+                        : _buildTierListViewport(
                             key: const ValueKey('tierRows'),
-                            mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                            children: [
-                              for (final o in displayOptions)
-                                _buildTierRow(
-                                  c,
-                                  o,
-                                  option != null && o.id == option.id,
-                                  // Collapsed sheet: only the picked card stays;
-                                  // the rest fold away with the same animation.
-                                  hidden: _sheetCollapsed &&
-                                      option != null &&
-                                      o.id != option.id,
-                                ),
-                            ],
+                            pickedId: option?.id,
+                            option: option,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                for (final o in displayOptions)
+                                  Builder(builder: (rowCtx) {
+                                    final picked =
+                                        option != null && o.id == option.id;
+                                    if (picked) _pickedTierCtx = rowCtx;
+                                    return _buildTierRow(
+                                      c,
+                                      o,
+                                      picked,
+                                      // Collapsed sheet: only the picked card
+                                      // stays; the rest fold away with the
+                                      // same animation.
+                                      hidden: _sheetCollapsed &&
+                                          option != null &&
+                                          o.id != option.id,
+                                    );
+                                  }),
+                              ],
+                            ),
                           ),
                   ),
 
@@ -589,17 +587,23 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // air between them, vertically centred on the head.
     //
     // The pin bitmap is 80×73.6 (GoldenPinPainter: _width = size,
-    // _height = size * 0.92, size = radius*2+16 with radius 32) drawn at
-    // iconSize 0.85 with iconAnchor BOTTOM — so the screen offset we get
-    // from pixelForCoordinate is the pin's TIP, not its head. The head
-    // centre sits at w * 0.34 from the bitmap top (GoldenPinPainter's
-    // cupCY), i.e. ~63% of the pin height above the tip. These two
-    // numbers are the ones to nudge if the pill reads high or low.
-    const double pinOnScreenHalfWidth = 28.0;
-    const double pinHeadLift = 34.0; // head centre above the tip
+    // _height = size * 0.92, size = radius*2+16 with radius 32) standing
+    // on its ground ring (pinOnGround) and anchored at the ring's CENTRE —
+    // so the screen offset we get from pixelForCoordinate is the ring, a
+    // hair under the pin's TIP, not its head. The head centre sits at
+    // w * 0.34 from the bitmap top (GoldenPinPainter's cupCY), i.e. ~63%
+    // of the pin height above the tip. These numbers are the ones to
+    // nudge if the pill reads high or low.
+    // Half the VISIBLE pin at its 0.65 rest scale (the bitmap's own half,
+    // 26, carries transparent margin — at 28 the pill sat ~22 px off the
+    // pin; owner 2026-11-09: "los label más al lado de sus pines").
+    const double pinOnScreenHalfWidth = 13.0;
+    // Head centre above the coordinate: 34 above the tip, and the tip
+    // stands ~3 px above the ground ring's centre (the coordinate).
+    const double pinHeadLift = 37.0;
     // Air between pin and pill — practically touching (user spec
     // 2026-08-04, third iteration: "al lado de los pines, no separado").
-    const double sideGap = 6.0;
+    const double sideGap = 5.0;
     // Pill height is deterministic: 5px padding top/bottom + the taller
     // of the 19px icon chip and the kind+address stack (~22px), + border.
     const double pillHeight = 34.0;
@@ -699,6 +703,128 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     return widgets;
   }
 
+  /// Ceiling for the tier list at each of the sheet's heights (Lyft, owner
+  /// 2026-11-09). Half: the picked card (~168) plus about a row and a half
+  /// on an 844-pt phone, so the sheet stops near the middle and the map
+  /// keeps the whole route above it. Up: every tier (the list scrolls only
+  /// on a short phone).
+  double _tierListMaxHeight(BuildContext context,
+      [_TierSheet size = _TierSheet.half]) {
+    final h = MediaQuery.sizeOf(context).height;
+    return size == _TierSheet.full
+        ? (h * 0.62).clamp(300.0, 700.0)
+        : (h * 0.31).clamp(210.0, 310.0);
+  }
+
+  /// Moves the sheet to [next]: camera in step, the picked tier brought
+  /// back into the new window.
+  void _setTierSheet(_TierSheet next) {
+    if (next == _tierSheet) return;
+    HapticService.selectionClick();
+    _syncCameraWithTierSheet(
+        from: _tierSheet, to: next, tierCount: _displayTierCount);
+    _tierScrolledFor = null;
+    _setState(() => _tierSheet = next);
+  }
+
+  /// A flick OR a slow drag on the grabber or the list: up = one height up
+  /// (down, half, every tier), down = one height down. Speed alone missed
+  /// every slow drag — a finger that pauses before lifting reads 0 px/s —
+  /// so 40 px of travel counts too, like Lyft's sheet.
+  void _onTierSheetDragEnd(DragEndDetails d, RideOption? option) {
+    if (option == null) return;
+    final speed = d.primaryVelocity ?? 0;
+    final v = speed.abs() > 120
+        ? speed
+        : (_tierDragDy.abs() > 40 ? _tierDragDy * 10 : 0.0);
+    if (v < -120) {
+      _setTierSheet(_tierSheet == _TierSheet.collapsed
+          ? _TierSheet.half
+          : _TierSheet.full);
+    } else if (v > 120) {
+      _setTierSheet(_tierSheet == _TierSheet.full
+          ? _TierSheet.half
+          : _TierSheet.collapsed);
+    }
+  }
+
+  /// The tier list inside its ceiling. Scrolls when the tiers don't fit;
+  /// the rows above fade under the grabber so a half row reads as "more",
+  /// never as a cut-off card. The picked tier is scrolled into view.
+  Widget _buildTierListViewport({
+    required Key key,
+    required String? pickedId,
+    required RideOption? option,
+    required Widget child,
+  }) {
+    _scrollPickedTierIntoView(pickedId);
+    final full = _tierSheet == _TierSheet.full;
+    // A drag on the list moves the sheet, like Lyft: up shows every tier,
+    // down goes back. Only all the way up (on a phone too short for every
+    // row) does the list scroll by hand; taps always reach the rows.
+    return GestureDetector(
+      key: key,
+      onVerticalDragStart: (_) => _tierDragDy = 0,
+      onVerticalDragUpdate: (d) => _tierDragDy += d.delta.dy,
+      onVerticalDragEnd: (d) => _onTierSheetDragEnd(d, option),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOutCubic,
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: _tierListMaxHeight(context, _tierSheet)),
+          child: AnimatedBuilder(
+            animation: _tierScrollCtrl,
+            child: SingleChildScrollView(
+              controller: _tierScrollCtrl,
+              physics: full
+                  ? const ClampingScrollPhysics()
+                  : const NeverScrollableScrollPhysics(),
+              child: child,
+            ),
+            builder: (context, scroller) {
+              final hasAbove =
+                  _tierScrollCtrl.hasClients && _tierScrollCtrl.offset > 1;
+              return ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (rect) => LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    hasAbove ? Colors.transparent : Colors.white,
+                    Colors.white,
+                  ],
+                  stops: [0.0, (22 / rect.height).clamp(0.0, 1.0)],
+                ).createShader(rect),
+                child: scroller,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Once per pick: after the row has grown open (280 ms), bring it to the
+  /// middle of the list's window — the default Standard sits last, so the
+  /// list opens scrolled to it.
+  void _scrollPickedTierIntoView(String? id) {
+    if (id == null || id == _tierScrolledFor) return;
+    _tierScrolledFor = id;
+    Future.delayed(const Duration(milliseconds: 320), () {
+      final ctx = _pickedTierCtx;
+      if (!mounted || ctx == null || !ctx.mounted) return;
+      if (!_tierScrollCtrl.hasClients) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOutCubic,
+      );
+    });
+  }
+
   /// One tier row in the choose-a-vehicle list (2026-08-22 redesign).
   ///
   /// Compact when not picked: small car on the left, name over its
@@ -713,6 +839,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   /// Lyft-style loading state: four grey skeleton rows standing in for the
   /// tiers while the fares are being computed (circle + two bars each).
   Widget _buildSkeletonTierRows() {
+    // A fresh list mounts after the skeleton, scrolled to the top: scroll
+    // the picked tier into view again then.
+    _tierScrolledFor = null;
     Widget bar(double w, {double h = 12, double opacity = 0.10}) => Container(
           width: w,
           height: h,
@@ -753,10 +882,24 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ],
           ),
         );
-    return Column(
-      key: const ValueKey('tierSkeletons'),
+    final rows = Column(
       mainAxisSize: MainAxisSize.min,
       children: [row(), row(), row(), row(), row()],
+    );
+    if (_tierSheet != _TierSheet.half) {
+      return KeyedSubtree(key: const ValueKey('tierSkeletons'), child: rows);
+    }
+    // Exactly the half sheet's list height, so the sheet does not change
+    // size when the prices land — the camera framed the route above THIS
+    // height, and a later refit can be dropped while the opening flight
+    // still runs (the route ended up touching the sheet, 2026-11-09).
+    return SizedBox(
+      key: const ValueKey('tierSkeletons'),
+      height: _tierListMaxHeight(context),
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        child: rows,
+      ),
     );
   }
 
@@ -812,13 +955,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   onTap: () {
                     HapticService.selectionClick();
                     if (selected) {
-                      // Collapsed sheet: tapping the lone card pulls the
-                      // full list back up.
-                      if (_sheetCollapsed) {
-                        _syncCameraWithSheetToggle(
-                            collapsing: false, tierCount: _displayTierCount);
-                        _setState(() => _sheetCollapsed = false);
-                      }
+                      // Sheet down: tapping the lone card brings the
+                      // list back to half height.
+                      if (_sheetCollapsed) _setTierSheet(_TierSheet.half);
                       return;
                     }
                     _ctrl.selectRideOption(opt);
@@ -1127,6 +1266,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     selectedMethod: _selectedPaymentMethod,
                     logoBuilder: _paymentLogoWidget,
                     labelBuilder: _paymentLabel,
+                    promoApplied: optionHasPromo(option),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -3247,11 +3387,17 @@ class _PaymentMethodButton extends StatefulWidget {
   final Widget Function(String method, double size) logoBuilder;
   final String Function(String method) labelBuilder;
 
+  /// The picked tier's price carries a promotion — the row says
+  /// "✓ Promo aplicada" under the card, like Lyft's "Promo applied"
+  /// before Select (owner 2026-11-09).
+  final bool promoApplied;
+
   const _PaymentMethodButton({
     required this.onTap,
     required this.selectedMethod,
     required this.logoBuilder,
     required this.labelBuilder,
+    this.promoApplied = false,
   });
 
   @override
@@ -3299,23 +3445,70 @@ class _PaymentMethodButtonState extends State<_PaymentMethodButton> {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                child: Align(
-                  key: ValueKey('payLabel_${widget.selectedMethod}'),
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    widget.labelBuilder(widget.selectedMethod),
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    child: Align(
+                      key: ValueKey('payLabel_${widget.selectedMethod}'),
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        widget.labelBuilder(widget.selectedMethod),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topLeft,
+                    child: widget.promoApplied
+                        ? Padding(
+                            key: const ValueKey('payPromoApplied'),
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 14,
+                                  height: 14,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFE8C547),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.check_rounded,
+                                      color: Colors.black, size: 11),
+                                ),
+                                const SizedBox(width: 5),
+                                Flexible(
+                                  child: Text(
+                                    S.of(context).promoApplied,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontFamily: 'Poppins',
+                                      color: Color(0xFFE8C547),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : const SizedBox(width: double.infinity),
+                  ),
+                ],
               ),
             ),
             // Trailing chevron — web uses a right-arrow SVG at 7×12.
@@ -3591,18 +3784,25 @@ class _SheetSizeReporter extends StatefulWidget {
 class _SheetSizeReporterState extends State<_SheetSizeReporter> {
   double? _reported;
 
+  void _measure() {
+    if (!mounted) return;
+    final h = context.size?.height;
+    if (h == null || h == _reported) return;
+    _reported = h;
+    widget.onChanged(h);
+  }
+
   @override
   Widget build(BuildContext context) {
+    // SizeChangedLayoutNotifier never fires for the FIRST layout — a sheet
+    // that opened at its final height was never reported, and the camera
+    // framed the route over a made-up 35 % sheet (the pickup ended up under
+    // the real one, 2026-11-09). Measure after every build too.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
     return NotificationListener<SizeChangedLayoutNotification>(
       onNotification: (_) {
         // The notification carries no size — read it after the frame.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          final h = context.size?.height;
-          if (h == null || h == _reported) return;
-          _reported = h;
-          widget.onChanged(h);
-        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
         return true;
       },
       child: SizeChangedLayoutNotifier(child: widget.child),

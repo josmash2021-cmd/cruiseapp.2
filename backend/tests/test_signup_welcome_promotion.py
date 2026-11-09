@@ -711,6 +711,9 @@ async def test_promotions_page_lists_the_ten_only_to_builds_that_ask(
     assert promo["percent"] == 0
     assert promo["remaining_uses"] == 1
     assert promo["status"] == "active"
+    # The line under the app's "$10 de descuento" title (Lyft, 2026-11-09):
+    # the title already says the amount.
+    assert promo["reason"] in ("En tu primer viaje", "On your first ride")
 
 
 async def test_web_create_quote_requires_the_signed_in_rider(

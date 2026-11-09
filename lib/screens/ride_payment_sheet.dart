@@ -11,21 +11,33 @@ import '../services/local_data_service.dart';
 import '../utils/app_platform.dart';
 import '../widgets/neu_style.dart';
 import 'card_scan_screen.dart';
+import 'promo_code_screen.dart';
 import 'ride_payment_method_screen.dart' show PaymentMethodId;
 
 // ═══════════════════════════════════════════════════════════════════
-//  Payment bottom sheet — Uber-style picker (user spec 2026-08-04).
+//  Payment bottom sheet — Lyft's payment sheet (owner 2026-11-09; the
+//  Uber-style picker of 2026-08-04 before it).
 //
 //  Slides up over the ride-request screen instead of pushing a full
-//  screen. Layout mirrors Uber's "Pay with" sheet minus the title:
-//  Cruise Balance (toggle) → "More options" list with a check on the
-//  selected row → Save. Save persists the choice as the default and
-//  the sheet glides back down. "Add debit/credit card" swaps to an
-//  in-sheet form (no new route), and any number of cards can be added
-//  — the backend keeps them all in rider_payment_methods.
+//  screen, as tall as what is in it: "Pago" + close, the promotion the
+//  picked tier carries ("✓ Promo aplicada", tap = Promotions), "Payment
+//  methods" with a check on the chosen one and "Add payment method", and
+//  the Cruise Cash balance on its own. No Save button: tapping a method
+//  picks it, persists it as the default and the sheet glides back down.
+//  "Add payment method" swaps to an in-sheet card form (no new route), and
+//  any number of cards can be added — the backend keeps them all in
+//  rider_payment_methods.
 // ═══════════════════════════════════════════════════════════════════
 
 const _gold = Color(0xFFE8C547);
+
+/// The promotion on the picked tier's price, shown on top of the sheet as
+/// "✓ Promo aplicada" (owner 2026-11-09, Lyft's payment sheet).
+class PaymentSheetPromo {
+  /// "$10 de descuento", "30% de descuento", "Gratis".
+  final String title;
+  const PaymentSheetPromo(this.title);
+}
 
 /// Opens the sheet and resolves with the selected method id
 /// (PaymentMethodId.*), or null if dismissed.
@@ -33,6 +45,7 @@ Future<String?> showCruisePaymentSheet(
   BuildContext context, {
   required String currentMethod,
   bool showTestMode = false,
+  PaymentSheetPromo? promo,
 }) {
   // The default modal sheet arrives in 250 ms — too abrupt for this
   // spec ("fluido sedoso, no de golpe"). A longer controller makes the
@@ -52,6 +65,7 @@ Future<String?> showCruisePaymentSheet(
     builder: (_) => _CruisePaymentSheet(
       currentMethod: currentMethod,
       showTestMode: showTestMode,
+      promo: promo,
     ),
   ).whenComplete(() {
     // The exit slide may still be running when the future completes —
@@ -71,9 +85,11 @@ class _SheetCard {
 class _CruisePaymentSheet extends StatefulWidget {
   final String currentMethod;
   final bool showTestMode;
+  final PaymentSheetPromo? promo;
   const _CruisePaymentSheet({
     required this.currentMethod,
     this.showTestMode = false,
+    this.promo,
   });
 
   @override
@@ -405,14 +421,15 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
               key: ValueKey('page$_page'),
               padding: EdgeInsets.fromLTRB(
                   20, 10, 20, 16 + mq.viewPadding.bottom),
-              // BOTH pages hold the same 72%-of-screen height (user spec
-              // 2026-08-04: switching to add-card must not collapse the
-              // sheet) — each page's flexible filler pushes its buttons
-              // to the bottom edge.
+              // The method list is as tall as what is in it (Lyft, owner
+              // 2026-11-09); the add-card form holds 72% of the screen so
+              // its buttons ride the bottom edge (its flexible filler).
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  minHeight: mq.size.height * 0.72 -
-                      (26 + 16 + mq.viewPadding.bottom),
+                  minHeight: _page == 1
+                      ? mq.size.height * 0.72 -
+                          (26 + 16 + mq.viewPadding.bottom)
+                      : 0,
                 ),
                 child: IntrinsicHeight(
                   child:
@@ -430,125 +447,208 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
 
   Widget _buildListPage() {
     final s = S.of(context);
+    final promo = widget.promo;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _grabber(),
-        const SizedBox(height: 10),
-        // Just the close button — the corner "+ Add card" pill is gone
-        // (user spec 2026-08-04); the Add Debit/Credit Card row below is
-        // the one way into the card form.
-        _roundButton(Icons.close_rounded, () => Navigator.of(context).pop()),
-        const SizedBox(height: 18),
-
-        // ── Cruise Balance ──
+        const SizedBox(height: 14),
         Row(
           children: [
             Expanded(
               child: Text(
-                s.cruiseBalance,
+                s.paymentLabel,
                 style: const TextStyle(
                   fontFamily: 'Poppins',
                   color: Colors.white,
-                  fontSize: 17,
+                  fontSize: 22,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
-            // The toggle IS a payment-method choice (user spec
-            // 2026-08-04): ON selects Cruise Cash and unmarks every row
-            // below; picking any row flips it back off. Whether the
-            // balance actually covers the fare is enforced at the
-            // Request/Reserve button, not here.
-            Switch(
-              value: _selected == PaymentMethodId.cruiseCash,
-              onChanged: (v) {
-                HapticService.selectionClick();
-                setState(() =>
-                    _selected = v ? PaymentMethodId.cruiseCash : '');
-                unawaited(LocalDataService.setUseCruiseCash(v));
-              },
-              activeThumbColor: Colors.black,
-              activeTrackColor: _gold,
-              inactiveThumbColor: Colors.white.withValues(alpha: 0.85),
-              inactiveTrackColor: Colors.white.withValues(alpha: 0.15),
-            ),
+            _roundButton(
+                Icons.close_rounded, () => Navigator.maybeOf(context)?.pop()),
           ],
         ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Image.asset('assets/images/cruise_logo.png',
-                width: 32, height: 32),
-            const SizedBox(width: 12),
-            Text(
-              '${s.cruiseCash}: \$${(_cashCents / 100.0).toStringAsFixed(2)}',
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                color: Colors.white.withValues(
-                    alpha: _selected == PaymentMethodId.cruiseCash
-                        ? 0.95
-                        : 0.4),
-                fontSize: 14.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+        if (promo != null) ...[
+          const SizedBox(height: 16),
+          _promoCard(s, promo),
+        ],
         const SizedBox(height: 22),
-
-        // ── More options ──
-        Text(
-          s.moreOptions,
-          style: TextStyle(
-            fontFamily: 'Poppins',
-            color: Colors.white.withValues(alpha: 0.55),
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.4,
-          ),
-        ),
+        _sectionLabel(s.paymentMethodsHeader),
         const SizedBox(height: 4),
         ..._methodRows(s),
         const SizedBox(height: 18),
-        // Filler so Save rides the sheet's bottom edge — the sheet is
-        // min-height'd taller than its content.
-        const Expanded(child: SizedBox.shrink()),
+        _sectionLabel(s.balanceHeader),
+        const SizedBox(height: 6),
+        _cashRow(s),
+        const SizedBox(height: 6),
+      ],
+    );
+  }
 
-        // ── Save ──
-        GestureDetector(
-          onTap: _selected.isEmpty ? null : _save,
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 200),
-            opacity: _selected.isEmpty ? 0.35 : (_saving ? 0.6 : 1.0),
-            child: Container(
-              height: 52,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: _gold,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: _gold.withValues(alpha: 0.3),
-                    offset: const Offset(0, 4),
-                    blurRadius: 12,
+  Widget _sectionLabel(String text) => Text(
+        text,
+        style: TextStyle(
+          fontFamily: 'Poppins',
+          color: Colors.white.withValues(alpha: 0.55),
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
+        ),
+      );
+
+  /// The picked tier's promotion, already applied — tap opens Promotions.
+  Widget _promoCard(S s, PaymentSheetPromo promo) {
+    return GestureDetector(
+      key: const ValueKey('paySheetPromo'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        HapticService.selectionClick();
+        Navigator.maybeOf(context)?.push(
+          MaterialPageRoute(builder: (_) => const PromoCodeScreen()),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+        decoration: BoxDecoration(
+          color: neuSurface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _gold.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: neuBox(radius: 12, pressed: true),
+              child: const Icon(Icons.local_offer_rounded,
+                  color: _gold, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    promo.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Container(
+                        width: 14,
+                        height: 14,
+                        decoration: const BoxDecoration(
+                            color: _gold, shape: BoxShape.circle),
+                        child: const Icon(Icons.check_rounded,
+                            color: Colors.black, size: 11),
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text.rich(
+                          TextSpan(children: [
+                            TextSpan(
+                              text: s.promoApplied,
+                              style: const TextStyle(
+                                  color: _gold, fontWeight: FontWeight.w600),
+                            ),
+                            TextSpan(
+                              text: s.promoThisRide,
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  fontWeight: FontWeight.w500),
+                            ),
+                          ]),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontFamily: 'Poppins', fontSize: 12.5),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              child: Text(
-                s.save,
-                style: const TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Color(0xFF1A1400),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
+            ),
+            Icon(Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.4), size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Cruise Cash on its own. The toggle IS a payment-method choice (user
+  /// spec 2026-08-04): ON picks Cruise Cash (and closes, like any method);
+  /// OFF leaves nothing picked until the rider taps a method. Whether the
+  /// balance covers the fare is enforced at the Request/Reserve button.
+  Widget _cashRow(S s) {
+    final on = _selected == PaymentMethodId.cruiseCash;
+    return SizedBox(
+      height: 56,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 40,
+            child: Image.asset('assets/images/cruise_logo.png',
+                width: 32, height: 32),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  s.cruiseCash,
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
+                Text(
+                  s.cashAvailable((_cashCents / 100.0).toStringAsFixed(2)),
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white.withValues(alpha: on ? 0.75 : 0.45),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-      ],
+          Switch(
+            value: on,
+            onChanged: (v) {
+              unawaited(LocalDataService.setUseCruiseCash(v));
+              if (v) {
+                _pick(PaymentMethodId.cruiseCash);
+              } else {
+                HapticService.selectionClick();
+                setState(() => _selected = '');
+              }
+            },
+            activeThumbColor: Colors.black,
+            activeTrackColor: _gold,
+            inactiveThumbColor: Colors.white.withValues(alpha: 0.85),
+            inactiveTrackColor: Colors.white.withValues(alpha: 0.15),
+          ),
+        ],
+      ),
     );
   }
 
@@ -592,10 +692,10 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
         leading: _brandTile(card.brand),
         label:
             '${card.brand[0].toUpperCase()}${card.brand.substring(1)} •••• ${card.last4}',
-        onTap: () => setState(() {
+        onTap: () {
           _selCardIndex = i;
           _pick(PaymentMethodId.card);
-        }),
+        },
       ));
     }
 
@@ -603,14 +703,14 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
     // supported holds anyway, so the option only led to a broken payment
     // path. Cards, wallets and Cruise Cash are the rider's methods now.
 
-    // Add card row — scan-first (camera), then this in-sheet form.
+    // Add a card — scan-first (camera), then this in-sheet form.
     rows.add(_methodRow(
       selected: false,
       leading: _logoTile(
         Colors.white.withValues(alpha: 0.07),
-        const Icon(Icons.add_card_rounded, color: Colors.white, size: 17),
+        const Icon(Icons.add_rounded, color: _gold, size: 20),
       ),
-      label: s.addDebitCreditCard,
+      label: s.addPaymentMethodRow,
       trailingChevron: true,
       onTap: _openAddCard,
     ));
@@ -642,9 +742,14 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
     return out;
   }
 
+  /// Picking a method IS the choice (Lyft, owner 2026-11-09): the check
+  /// animates in, then the sheet glides down with it — no Save button.
   void _pick(String id) {
     HapticService.selectionClick();
     setState(() => _selected = id);
+    Future.delayed(const Duration(milliseconds: 220), () {
+      if (mounted) _save();
+    });
   }
 
   Widget _methodRow({

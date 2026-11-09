@@ -5523,6 +5523,31 @@ class S {
   String schedEarliest(String time) => _es
       ? 'Lo más pronto: $time · 40 min de anticipación'
       : 'Earliest: $time · 40 min ahead';
+  /// "Viaje reservado" page, right after booking a reservation.
+  String get bookedTitle => _es ? 'Viaje reservado' : 'Ride booked';
+  String get bookedSubtitle => _es
+      ? 'Te avisaremos cuando un conductor\nacepte tu viaje'
+      : "We'll let you know when a driver\naccepts your ride";
+  String get bookedWaitingDriver =>
+      _es ? 'Esperando conductor' : 'Waiting for a driver';
+  /// "lunes 9 nov · 3:20 PM" / "Monday, Nov 9 · 3:20 PM".
+  String bookedWhen(DateTime t) {
+    const wdEs = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes',
+        'sábado', 'domingo'];
+    const wdEn = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
+        'Saturday', 'Sunday'];
+    const moEs = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago',
+        'sep', 'oct', 'nov', 'dic'];
+    const moEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
+        'Sep', 'Oct', 'Nov', 'Dec'];
+    final h12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final clock =
+        '$h12:${t.minute.toString().padLeft(2, '0')} ${t.hour < 12 ? 'AM' : 'PM'}';
+    final day = _es
+        ? '${wdEs[t.weekday - 1]} ${t.day} ${moEs[t.month - 1]}'
+        : '${wdEn[t.weekday - 1]}, ${moEn[t.month - 1]} ${t.day}';
+    return '$day · $clock';
+  }
   String get schedRouteLoading =>
       _es ? 'Calculando el tiempo del viaje…' : 'Working out the ride time…';
   String get schedArriveNeedsRoute => _es

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 import '../config/mapbox_config.dart';
@@ -151,8 +150,9 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
 
   @override
   Widget build(BuildContext context) {
-    final timeStr =
-        DateFormat('EEEE, MMM d \u00b7 h:mm a').format(widget.scheduledAt);
+    final s = S.of(context);
+    // In the rider's language (it was always English: "Monday, Nov 9").
+    final timeStr = s.bookedWhen(widget.scheduledAt);
 
     final midLat = (widget.pickupLat != null && widget.dropoffLat != null)
         ? (widget.pickupLat! + widget.dropoffLat!) / 2
@@ -268,10 +268,10 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
                       // ── Title ──
                       FadeTransition(
                         opacity: _textFade,
-                        child: const Text(
-                          'Ride Reservado',
+                        child: Text(
+                          s.bookedTitle,
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: _gold,
                             fontSize: 28,
                             fontWeight: FontWeight.w800,
@@ -285,10 +285,10 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
                       // ── Subtitle ──
                       FadeTransition(
                         opacity: _textFade,
-                        child: const Text(
-                          'Te notificaremos cuando ya tengas\nun driver asignado',
+                        child: Text(
+                          s.bookedSubtitle,
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Colors.white60,
                             fontSize: 15,
                             height: 1.5,
@@ -357,15 +357,15 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
                             border:
                                 Border.all(color: _gold.withValues(alpha: 0.3)),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.schedule_rounded,
+                              const Icon(Icons.schedule_rounded,
                                   color: _gold, size: 16),
-                              SizedBox(width: 8),
+                              const SizedBox(width: 8),
                               Text(
-                                'Pendiente de asignacion',
-                                style: TextStyle(
+                                s.bookedWaitingDriver,
+                                style: const TextStyle(
                                   color: _gold,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,

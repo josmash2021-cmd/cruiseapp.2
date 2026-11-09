@@ -172,8 +172,12 @@ extension _RideRequestController on _RideRequestScreenState {
     } else {
       // toAirport: airport = dropoff destination
       _ctrl.setDropoff(details, label);
-      // Auto-set current location as pickup if available
-      if (_userLocation != null) {
+      // Current location as pickup ONLY when the trip has none. A pickup the
+      // rider chose (an airport reservation booked from somewhere else) is
+      // theirs: this ran after the airport lookup, by when the GPS had a
+      // fix, and silently swapped the reservation's pickup for wherever the
+      // phone was (found 2026-11-08 walking the owner through the flow).
+      if (_ctrl.state.pickup == null && _userLocation != null) {
         final curLabel =
             _currentAddress.isNotEmpty ? _currentAddress : 'Current location';
         _ctrl.setPickup(

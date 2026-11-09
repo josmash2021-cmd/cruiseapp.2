@@ -237,6 +237,62 @@ void main() {
     expect(find.text('Free to cancel until 2:20 PM'), findsOneWidget);
   });
 
+  testWidgets('a reservation under way stays "Tu reserva" past its time',
+      (t) async {
+    final live = trip(at: now.subtract(const Duration(minutes: 5)), driver: true)
+      ..['status'] = 'arrived';
+    await pump(
+      t,
+      'es',
+      ReservationCard(
+        reservation: Reservation.fromTrip(live)!,
+        style: ReservationCardStyle.home,
+        now: now,
+      ),
+    );
+    expect(find.text('TU RESERVA'), findsOneWidget);
+    expect(find.text('PRÓXIMA RESERVA'), findsNothing);
+    expect(Reservation.isLiveTrip(live), isTrue);
+    expect(Reservation.isLiveTrip(trip(at: tomorrow, driver: true)), isFalse);
+  });
+
+  group('the trip goes on after its time, and the pushes open the right page',
+      () {
+    final home = File('lib/screens/home_screen.dart').readAsStringSync();
+    final hubSrc =
+        File('lib/screens/schedule_hub_screen.dart').readAsStringSync();
+    final mainSrc = File('lib/main.dart').readAsStringSync();
+
+    test('Inicio and Programar keep a reservation under way', () {
+      // The early driver is still waiting after 5:30 — it used to vanish.
+      expect(home, contains('if (Reservation.isLiveTrip(t)) return true;'));
+      expect(hubSrc, contains('if (Reservation.isLiveTrip(t)) return true;'));
+    });
+
+    test('"Conductor asignado" days ahead opens the reservation, not tracking',
+        () {
+      final fn = mainSrc.indexOf('void _navigateToScheduledTracking(');
+      final reserved = mainSrc.indexOf('reservedStatuses.contains(status)', fn);
+      final page =
+          mainSrc.indexOf('RideBookingConfirmedScreen.reservation(r)', fn);
+      final tracking = mainSrc.indexOf('RiderTrackingScreen(', fn);
+      expect(reserved, greaterThan(fn));
+      expect(page, greaterThan(reserved));
+      expect(tracking, greaterThan(page));
+    });
+
+    test('the rider push "on the way" opens the started reservation', () {
+      final fn = mainSrc.indexOf('void _handleDriverAssigned(');
+      final rider = mainSrc.indexOf("if (mode == 'rider') {", fn);
+      expect(rider, greaterThan(fn));
+      expect(
+          mainSrc.indexOf(
+              '_navigateToScheduledTracking(tripId, reservationsOnly: true);',
+              rider),
+          greaterThan(rider));
+    });
+  });
+
   group('sources', () {
     final widgets =
         File('lib/screens/home_screen_widgets.dart').readAsStringSync();

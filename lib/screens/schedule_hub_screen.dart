@@ -73,6 +73,7 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
       final rides = trips.where((t) {
         final status = (t['status'] as String? ?? '').toLowerCase();
         if (dismissed.contains(status)) return false;
+        if (Reservation.isLiveTrip(t)) return true;
         final sa = Reservation.parseAt(t['scheduled_at']);
         return sa != null && sa.isAfter(DateTime.now());
       }).toList();

@@ -1085,6 +1085,10 @@ class _HomeScreenState extends State<HomeScreen>
         final upcoming = trips.where((t) {
           final status = (t['status'] as String? ?? 'scheduled').toLowerCase();
           if (dismissedStatuses.contains(status)) return false;
+          // Under way: it stays until it ends — the driver who came early
+          // is still waiting after the booked time (it used to vanish then,
+          // and Inicio never reopens a reservation by itself).
+          if (Reservation.isLiveTrip(t)) return true;
           final dt = Reservation.parseAt(t['scheduled_at']);
           return dt != null && dt.isAfter(now);
         }).toList();

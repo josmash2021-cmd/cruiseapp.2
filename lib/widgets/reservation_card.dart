@@ -79,6 +79,21 @@ class Reservation {
   /// flow, the id does not.
   bool get hasDriver => trip['driver_id'] != null;
 
+  /// A reservation under way — the driver confirmed and is driving, waiting
+  /// or riding. It stays on Inicio and Programar until it ends, whatever
+  /// the clock says: a driver who came early is still waiting after the
+  /// booked time passes.
+  static const liveStatuses = {
+    'accepted', 'driver_assigned', 'driver_en_route', 'en_route',
+    'en_route_to_pickup', 'driver_arriving', 'arriving', 'arrived',
+    'driver_arrived', 'in_trip', 'in_progress',
+  };
+
+  static bool isLiveTrip(Map<String, dynamic> t) =>
+      liveStatuses.contains((t['status'] ?? '').toString().toLowerCase());
+
+  bool get isLive => isLiveTrip(trip);
+
   /// Compact / Standard / Electric Pro / Premium / VIP, as the booking
   /// sheet named it (trip rows keep the booking option's name).
   String get tierLabel {
@@ -180,7 +195,7 @@ class ReservationCard extends StatelessWidget {
     final String label;
     final String title;
     if (home) {
-      label = soon ? s.yourReservation : s.nextReservation;
+      label = soon || r.isLive ? s.yourReservation : s.nextReservation;
       title = '${rel ?? s.reservationDate(r.at)} · $clock';
     } else {
       label = rel != null ? '$rel · ${s.reservationDate(r.at)}' : s.reservationDate(r.at);

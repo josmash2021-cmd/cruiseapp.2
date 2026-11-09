@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'config/smooth_transitions.dart';
 import 'config/page_transitions.dart';
+import 'widgets/reservation_card.dart';
 import 'config/api_keys.dart';
 import 'config/app_theme.dart';
 import 'config/env.dart';
@@ -65,6 +66,7 @@ import 'screens/chat_screen.dart';
 import 'screens/help_screen.dart';
 import 'screens/ride_request_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/ride_booking_confirmed_screen.dart';
 import 'screens/rider_tracking_screen.dart';
 import 'models/lat_lng.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -982,6 +984,14 @@ void _handleDriverAssigned(RemoteMessage message) {
   final tripId = int.tryParse('${message.data['trip_id'] ?? ''}');
   if (tripId == null) return;
   UserSession.getMode().then((mode) {
+    // The rider gets this type too: "your driver is on the way" when a
+    // reservation starts (the driver accepted its confirm). The tap opens
+    // that ride — it used to open nothing. Reservations only: an on-demand
+    // rider is already on the screen that turns into tracking.
+    if (mode == 'rider') {
+      _navigateToScheduledTracking(tripId, reservationsOnly: true);
+      return;
+    }
     if (mode != 'driver') return;
     ApiService.getTrip(tripId).then((trip) {
       final status = (trip['status'] ?? '').toString().toLowerCase();
@@ -1056,15 +1066,26 @@ void _handleDriverAssigned(RemoteMessage message) {
 }
 
 /// Fetch scheduled trip from backend and navigate to RiderTrackingScreen.
-void _navigateToScheduledTracking(int tripId) {
+void _navigateToScheduledTracking(int tripId, {bool reservationsOnly = false}) {
   ApiService.getTrip(tripId).then((fresh) {
     final status = (fresh['status'] ?? '').toString().toLowerCase();
-    const activeStatuses = {
-      'scheduled_accepted', 'scheduled_active', 'driver_assigned',
-      'accepted', 'en_route', 'en_route_to_pickup', 'driver_en_route',
-      'arriving', 'arrived', 'driver_arrived', 'in_trip', 'in_progress',
-    };
-    if (!activeStatuses.contains(status) || fresh['driver_id'] == null) return;
+    final hasSchedule = (fresh['scheduled_at'] ?? '').toString().isNotEmpty;
+    if (reservationsOnly && !hasSchedule) return;
+    // A reservation a driver took but has not started ("Conductor
+    // asignado", maybe days ahead) is its own page, not live tracking — the
+    // tap used to open a map announcing a driver on the way.
+    const reservedStatuses = {'scheduled', 'scheduled_accepted', 'scheduled_active'};
+    if (reservedStatuses.contains(status)) {
+      final r = hasSchedule ? Reservation.fromTrip(fresh) : null;
+      final nav = _navigatorKey.currentState;
+      if (r == null || nav == null) return;
+      nav.push(slideFromRightRoute(RideBookingConfirmedScreen.reservation(r)));
+      return;
+    }
+    if (!Reservation.liveStatuses.contains(status) ||
+        fresh['driver_id'] == null) {
+      return;
+    }
 
     final pickupLat = (fresh['pickup_lat'] as num?)?.toDouble();
     final pickupLng = (fresh['pickup_lng'] as num?)?.toDouble();

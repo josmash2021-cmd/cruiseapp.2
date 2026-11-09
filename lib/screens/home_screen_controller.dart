@@ -848,7 +848,9 @@ extension _HomeScreenController on _HomeScreenState {
       final effectivePickup = pickupDetails ?? (
         _currentLatLng != null
             ? PlaceDetails(
-                address: pickupLabel.isNotEmpty ? pickupLabel : 'Current location',
+                address: pickupLabel.isNotEmpty
+                    ? pickupLabel
+                    : S.of(context).currentLocation,
                 lat: _currentLatLng!.latitude,
                 lng: _currentLatLng!.longitude,
               )

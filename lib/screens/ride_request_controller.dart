@@ -179,7 +179,9 @@ extension _RideRequestController on _RideRequestScreenState {
       // phone was (found 2026-11-08 walking the owner through the flow).
       if (_ctrl.state.pickup == null && _userLocation != null) {
         final curLabel =
-            _currentAddress.isNotEmpty ? _currentAddress : 'Current location';
+            _currentAddress.isNotEmpty
+                ? _currentAddress
+                : S.of(context).currentLocation;
         _ctrl.setPickup(
           PlaceDetails(
               address: curLabel,

@@ -59,6 +59,23 @@ void main() {
     await unmount(t);
   });
 
+  testWidgets("the pickup placeholder speaks the rider's language", (t) async {
+    // The constructor default is English: a Spanish app read "Current
+    // location" until the GPS address came back (owner capture 2026-11-08).
+    await pumpSearch(t);
+    final pickup = find.byType(TextField).first;
+    expect(t.widget<TextField>(pickup).controller!.text, 'Ubicación actual');
+    await unmount(t);
+  });
+
+  test('place details: the server signs and serves them in the browser', () {
+    final service = File('lib/services/places_service.dart').readAsStringSync();
+    expect(service, contains('if (!isKeyValid || kIsWeb) {'));
+    final i = service.indexOf('Future<PlaceDetails?> _backendDetails(');
+    expect(service.indexOf('...ApiService.jsonHeaders(),', i), greaterThan(i),
+        reason: '/places/details is behind the API-key check');
+  });
+
   testWidgets('the pickup field, once selected, gets its ✕ too', (t) async {
     await pumpSearch(t);
     final pickup = find.byType(TextField).first;

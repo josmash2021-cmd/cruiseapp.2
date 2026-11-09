@@ -864,9 +864,12 @@ class PlacesService {
       return null;
     }
 
-    // Google Place Details — include session token to bundle billing
-    // If API key is invalid, use backend proxy
-    if (!isKeyValid) {
+    // Google Place Details — include session token to bundle billing.
+    // The server's copy when the app has no key — and always in the browser,
+    // which can't call Google's web service (no CORS): a tapped Google row
+    // there died with "connection error" (found 2026-11-08 driving the web
+    // build through an airport booking).
+    if (!isKeyValid || kIsWeb) {
       try {
         return await _backendDetails(placeId);
       } catch (e) {
@@ -896,7 +899,12 @@ class PlacesService {
         );
       }
     } catch (_) {}
-    return null;
+    // The app's key failed (restricted, quota): the server's copy.
+    try {
+      return await _backendDetails(placeId);
+    } catch (_) {
+      return null;
+    }
   }
 
   // ─── Backend Proxy Place Details ───────────────────────────────────
@@ -905,7 +913,11 @@ class PlacesService {
     final uri = Uri.parse('${ApiService.publicBaseUrl}/places/details')
         .replace(queryParameters: {'place_id': placeId});
 
+    // Signed like every API call: /places/details sits behind the API-key
+    // check, and without these headers it always answered 401 — the proxy
+    // never worked.
     final res = await http.get(uri, headers: {
+      ...ApiService.jsonHeaders(),
       'Accept': 'application/json',
       if (!kIsWeb) 'ngrok-skip-browser-warning': 'true',
     }).timeout(const Duration(seconds: 8));

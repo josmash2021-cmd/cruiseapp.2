@@ -169,6 +169,36 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     _loadFavorites();
   }
 
+  /// The default pickup text is the English 'Current location' (a constructor
+  /// default can't read the localizations): in a Spanish app the field read
+  /// "Current location" until the GPS address came back — or for good when it
+  /// didn't (owner capture 2026-11-08). Swapped for the rider's language here.
+  bool _placeholderLocalized = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_placeholderLocalized) return;
+    _placeholderLocalized = true;
+    const english = 'Current location';
+    final here = S.of(context).currentLocation;
+    if (here == english) return;
+    if (_pickupCtrl.text == english) _pickupCtrl.text = here;
+    if (_pickupLabel == english) _pickupLabel = here;
+    final d = _pickupDetails;
+    if (d != null && d.address == english) {
+      _pickupDetails = PlaceDetails(address: here, lat: d.lat, lng: d.lng);
+    }
+  }
+
+  /// The pickup still shows the "Current location" placeholder, in either
+  /// language (the constructor default is English; the field shows it
+  /// translated).
+  bool _isPickupPlaceholder(String text) =>
+      text == widget.initialPickupText ||
+      text == 'Current location' ||
+      text == S.of(context).currentLocation;
+
   Future<void> _resolveGpsPickup() async {
     try {
       final pos = await Geolocator.getCurrentPosition(
@@ -788,6 +818,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     }
 
     PlaceDetails? effectivePickup = _pickupDetails;
+    final hereLabel = S.of(context).currentLocation;
     if (effectivePickup == null) {
       try {
         final pos = await Geolocator.getCurrentPosition(
@@ -795,8 +826,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
               const LocationSettings(accuracy: LocationAccuracy.high),
         ).timeout(const Duration(seconds: 3));
         effectivePickup = PlaceDetails(
-          address:
-              _pickupLabel.isNotEmpty ? _pickupLabel : 'Current location',
+          address: _pickupLabel.isNotEmpty ? _pickupLabel : hereLabel,
           lat: pos.latitude,
           lng: pos.longitude,
         );
@@ -804,8 +834,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         if (widget.initialPickupLat != null &&
             widget.initialPickupLng != null) {
           effectivePickup = PlaceDetails(
-            address:
-                _pickupLabel.isNotEmpty ? _pickupLabel : 'Current location',
+            address: _pickupLabel.isNotEmpty ? _pickupLabel : hereLabel,
             lat: widget.initialPickupLat!,
             lng: widget.initialPickupLng!,
           );
@@ -1226,7 +1255,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                             // Not right after its ✕: the rider emptied it
                             // to type, a tap must not refill it with GPS.
                             if ((txt.isEmpty && !_pickupCleared) ||
-                                txt == widget.initialPickupText) {
+                                _isPickupPlaceholder(txt)) {
                               _resolveGpsPickup();
                             } else if (txt.length >= 2) {
                               // Auto-search existing text so suggestions
@@ -1415,7 +1444,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     // text "Current location" rendered in gold; once the rider edits
     // or types, the text turns white.
     final bool textIsPlaceholder =
-        controller.text.isEmpty || controller.text == 'Current location';
+        controller.text.isEmpty || _isPickupPlaceholder(controller.text);
     final Color resolvedTextColor = isPickup
         ? (textIsPlaceholder
             ? _gold

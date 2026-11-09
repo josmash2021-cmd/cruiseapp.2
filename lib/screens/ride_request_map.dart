@@ -2701,7 +2701,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       if (s.pickup == null && pickupFix != null) {
         final curLabel = _currentAddress.isNotEmpty
             ? _currentAddress
-            : 'Current location';
+            : S.of(context).currentLocation;
         _ctrl.setPickup(
           PlaceDetails(
             address: curLabel,

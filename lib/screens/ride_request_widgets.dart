@@ -1185,13 +1185,25 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   }
 
   /// Calendar pill on the right of the payment row — opens the schedule
-  /// wheels without leaving the booking.
+  /// wheels without leaving the booking. A reservation already has its time:
+  /// the pill shows it ("Hoy 8:15 PM") instead of offering "Programar" again
+  /// (owner 2026-11-08: "no debería de salir programar porque ya se
+  /// programó"); tapping it still changes it.
   Widget _buildScheduleButton() {
+    final sched = _ctrl.state.scheduledAt ?? widget.scheduledAt;
     return GestureDetector(
       onTap: _openScheduleFromSheet,
       child: Container(
+        key: const ValueKey('booking-schedule-pill'),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: neuBox(radius: 12),
+        decoration: sched == null
+            ? neuBox(radius: 12)
+            : BoxDecoration(
+                color: const Color(0xFFE8C547).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.55)),
+              ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1202,7 +1214,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ),
             const SizedBox(width: 6),
             Text(
-              S.of(context).scheduleLabel,
+              sched == null
+                  ? S.of(context).scheduleLabel
+                  : S.of(context).schedShortWhen(sched, DateTime.now()),
               style: const TextStyle(
                 fontFamily: 'Poppins',
                 color: Colors.white,

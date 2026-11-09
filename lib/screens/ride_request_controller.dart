@@ -1441,6 +1441,9 @@ extension _RideRequestController on _RideRequestScreenState {
         dropoffLabel: state.dropoffLabel,
         tierName: TierInfo.displayTitle(option.name),
         priceText: _confirmationPriceText(option),
+        // A reservation books, it doesn't charge now: the page says
+        // "Reservar ahora" and when, not "Pagar con …".
+        scheduledAt: state.scheduledAt ?? widget.scheduledAt,
         paymentLabel: _paymentLabel(_selectedPaymentMethod),
         isApplePay: _selectedPaymentMethod == 'apple_pay',
         onConfirm: (picked, note) async {

@@ -51,6 +51,7 @@ class SetPickupLocationScreen extends StatefulWidget {
     required this.dropoffLabel,
     required this.tierName,
     required this.priceText,
+    this.scheduledAt,
     required this.paymentLabel,
     required this.isApplePay,
     required this.onConfirm,
@@ -62,6 +63,11 @@ class SetPickupLocationScreen extends StatefulWidget {
   final String dropoffLabel;
   final String tierName;
   final String priceText;
+
+  /// Set for a reservation: nothing is charged here (the booking holds no
+  /// money), so the button reserves — "Reservar ahora · $34.02" — and the
+  /// page says when. Null = a ride now, paid with the chosen method.
+  final DateTime? scheduledAt;
   final String paymentLabel;
   final bool isApplePay;
 
@@ -81,6 +87,10 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   static const _navy = Color(0xFF0A1128);
+
+  /// The white Apple Pay button only when this tap pays with Apple Pay —
+  /// a reservation pays nothing here.
+  bool get _applePayLook => widget.isApplePay && widget.scheduledAt == null;
 
   /// Snap radius to a suggested street point.
   static const _snapMeters = 25.0;
@@ -834,6 +844,26 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
             s.setPickupSub,
             style: const TextStyle(color: Colors.white54, fontSize: 13),
           ),
+          if (widget.scheduledAt != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              key: const ValueKey('pickup-reservation-when'),
+              children: [
+                const Icon(Icons.calendar_month_rounded,
+                    color: _gold, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  s.reservationAt(
+                      s.schedShortWhen(widget.scheduledAt!, DateTime.now())),
+                  style: const TextStyle(
+                    color: _gold,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 14),
           // Pickup field — live-updates as the map moves.
           Container(
@@ -939,11 +969,12 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
               onPressed: _paying ? null : _onPay,
               style: ElevatedButton.styleFrom(
                 // Apple Pay rides on a WHITE button, Apple-style (user spec
-                // 2026-08-25); every other method keeps the Cruise gold.
-                backgroundColor: widget.isApplePay ? Colors.white : _gold,
+                // 2026-08-25); every other method keeps the Cruise gold — and
+                // so does a reservation, which pays nothing here.
+                backgroundColor: _applePayLook ? Colors.white : _gold,
                 foregroundColor: Colors.black,
                 disabledBackgroundColor:
-                    (widget.isApplePay ? Colors.white : _gold)
+                    (_applePayLook ? Colors.white : _gold)
                         .withValues(alpha: 0.5),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -960,13 +991,15 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
                   : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        if (widget.isApplePay) ...[
+                        if (_applePayLook) ...[
                           const Icon(Icons.apple_rounded,
                               size: 20, color: Colors.black),
                           const SizedBox(width: 6),
                         ],
                         Text(
-                          s.payWith(widget.paymentLabel),
+                          widget.scheduledAt != null
+                              ? s.bookScheduledRidePrice(widget.priceText)
+                              : s.payWith(widget.paymentLabel),
                           style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w800),
                         ),

@@ -5614,6 +5614,29 @@ class S {
       ? 'Para una recogida sin fricción, agrega una nota.'
       : 'For a smooth pickup, add a note.';
   String get pickupNoteField => _es ? 'Nota de recogida' : 'Pickup note';
+  /// A reservation's time, short: "Hoy 8:15 PM", "Mañana 5:30 AM",
+  /// "mar 11/10 5:30 AM" (Tue 11/10 in English).
+  String schedShortWhen(DateTime t, DateTime now) {
+    final day = DateTime(t.year, t.month, t.day);
+    final today = DateTime(now.year, now.month, now.day);
+    final diff = DateTime.utc(day.year, day.month, day.day)
+        .difference(DateTime.utc(today.year, today.month, today.day))
+        .inDays;
+    const wdEs = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
+    const wdEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final h12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final clock =
+        '$h12:${t.minute.toString().padLeft(2, '0')} ${t.hour < 12 ? 'AM' : 'PM'}';
+    final label = diff == 0
+        ? schedToday
+        : diff == 1
+            ? schedTomorrow
+            : '${(_es ? wdEs : wdEn)[t.weekday - 1]} ${t.month}/${t.day}';
+    return '$label $clock';
+  }
+  /// On the pickup page of a reservation, above the button.
+  String reservationAt(String when) =>
+      _es ? 'Reserva: $when' : 'Reservation: $when';
   String payWith(String method) =>
       _es ? 'Pagar con $method' : 'Pay with $method';
   String get recommendedPin => _es ? 'Recomendado' : 'Recommended';

@@ -713,6 +713,53 @@ def user_lang(user) -> str:
     return "es" if (getattr(user, "locale", None) or "es").lower().startswith("es") else "en"
 
 
+def is_real_reservation(trip) -> bool:
+    """Booked ahead: pickup at least 3 min after it was created. A web ride
+    "for now" also carries scheduled_at and is not one (rule #57)."""
+    from datetime import timedelta as _td, timezone as _tz
+
+    def _aw(dt):
+        if dt is not None and dt.tzinfo is None:
+            return dt.replace(tzinfo=_tz.utc)
+        return dt
+
+    sched = _aw(getattr(trip, "scheduled_at", None))
+    created = _aw(getattr(trip, "created_at", None))
+    if sched is None:
+        return False
+    return created is None or sched - created >= _td(minutes=3)
+
+
+def pickup_clock(trip) -> str:
+    """"5:30 AM" — the reservation's pickup time in the PICKUP's zone
+    (rule #68), for the rider's pushes."""
+    from datetime import timezone as _tz
+    from services import local_zone
+
+    sched = trip.scheduled_at
+    if sched.tzinfo is None:
+        sched = sched.replace(tzinfo=_tz.utc)
+    local = sched.astimezone(local_zone.zone_for(
+        getattr(trip, "pickup_lat", None), getattr(trip, "pickup_lng", None)))
+    return local.strftime("%I:%M %p").lstrip("0")
+
+
+def reservation_on_the_way_copy(first_name: str, trip) -> dict:
+    """The rider's push when their reservation starts — the driver confirmed
+    and is heading to the pickup, maybe an hour early (owner 2026-11-08,
+    Lyft-style: who, and the pickup time; never "your wait starts")."""
+    who = (first_name or "").strip()
+    clock = pickup_clock(trip)
+    return {
+        "title": f"{who} va en camino a tu reserva" if who
+                 else "Tu conductor va en camino a tu reserva",
+        "body": f"Tu recogida es a las {clock}. Te avisamos cuando llegue.",
+        "title_en": f"{who} is on the way for your reservation" if who
+                    else "Your driver is on the way for your reservation",
+        "body_en": f"Your pickup is at {clock}. We'll let you know when they arrive.",
+    }
+
+
 def wait_clock_start(trip):
     """When the pickup wait starts counting: the driver's arrival — never
     before a reservation's own pickup time (2026-11-03). A driver who

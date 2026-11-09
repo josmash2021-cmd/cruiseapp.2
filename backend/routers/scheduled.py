@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import get_db, User, Trip, DispatchOffer, Vehicle
 from utils.security import _verify_api_key, _get_current_user
-from utils.helpers import utc_now, _haversine, _trip_dict, ACTIVE_ACCOUNT_STATUSES, _safe_create_task
+from utils.helpers import utc_now, _haversine, _trip_dict, ACTIVE_ACCOUNT_STATUSES, _safe_create_task, reservation_on_the_way_copy
 from services.fcm_service import _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
@@ -674,15 +674,18 @@ async def start_scheduled_trip(
         rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_r.scalar_one_or_none()
         if rider and rider.fcm_token:
+            # Who is coming and the pickup time (owner 2026-11-08, Lyft-style)
+            # — the same words as the confirm in dispatch.py.
+            _copy = reservation_on_the_way_copy(user.first_name or "", trip)
             # Fire-and-forget — the rider is a third party to this request and
             # the response makes no delivery claim.
             _safe_create_task(
                 _send_fcm_push_async(
                     token=rider.fcm_token,
-                    title="Tu conductor está en camino",
-                    body="Tu conductor inició el viaje y va en camino al punto de recogida.",
-                    title_en="Your driver is on the way",
-                    body_en="Your driver started the ride and is heading to your pickup.",
+                    title=_copy["title"],
+                    body=_copy["body"],
+                    title_en=_copy["title_en"],
+                    body_en=_copy["body_en"],
                     locale=rider.locale,
                     data={"type": "driver_en_route", "trip_id": str(trip.id)},
                 ),

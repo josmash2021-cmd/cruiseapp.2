@@ -163,6 +163,59 @@ async def test_accept_starts_the_ride_now(
     assert trip.driver_assigned_at is not None
 
 
+async def test_the_rider_hears_who_is_coming_and_the_pickup_time(
+    db, client, test_rider, test_driver, no_expiry_timer, monkeypatch
+):
+    """Owner 2026-11-08 ("hazlo como lyft"): the reservation starting is not
+    "Driver Found!" — it says who is on the way and the pickup time, in the
+    pickup's own hour."""
+    rider, _ = test_rider
+    driver, token = test_driver
+    rider.fcm_token = "tok-rider"
+    rider.locale = "es"
+    driver.first_name = "Jhon"
+    trip = await _held(db, rider, driver)
+    await _run_pass(db)
+    offer = await _confirm_offer(db, trip, driver)
+    from routers import dispatch
+    monkeypatch.setattr(dispatch, "_safe_create_task",
+                        lambda coro, **kw: (coro.close(), None)[1])
+    sent = []
+    monkeypatch.setattr(dispatch, "_send_fcm_push",
+                        lambda *a, **kw: sent.append((a, kw)))
+
+    resp = await client.post(
+        f"/dispatch/driver/accept?offer_id={offer.id}&driver_id={driver.id}",
+        headers=_driver_headers(token),
+    )
+
+    assert resp.status_code == 200, resp.text
+    pushes = [kw for a, kw in sent if (a[:1] or (kw.get("token"),))[0] == "tok-rider"]
+    assert len(pushes) == 1, sent
+    push = pushes[0]
+    from utils.helpers import pickup_clock
+    assert push["title"] == "Jhon va en camino a tu reserva"
+    assert push["body"] == f"Tu recogida es a las {pickup_clock(trip)}. Te avisamos cuando llegue."
+    assert push["title_en"] == "Jhon is on the way for your reservation"
+    assert "Encontrado" not in push["title"] and "espera" not in push["body"]
+    assert push["data"]["type"] == "driver_assigned"
+
+
+def test_pickup_clock_is_the_pickups_own_hour():
+    from types import SimpleNamespace
+    from utils.helpers import pickup_clock, is_real_reservation
+    # 11:30 UTC in Hoover, AL (central, CST in November) = 5:30 AM.
+    t = SimpleNamespace(scheduled_at=datetime(2026, 11, 9, 11, 30, tzinfo=timezone.utc),
+                        created_at=datetime(2026, 11, 8, 20, 0, tzinfo=timezone.utc),
+                        pickup_lat=33.4162, pickup_lng=-86.7946)
+    assert pickup_clock(t) == "5:30 AM"
+    assert is_real_reservation(t)
+    # A web ride "for now" carries scheduled_at a minute out: not one.
+    now = datetime(2026, 11, 9, 11, 0, tzinfo=timezone.utc)
+    assert not is_real_reservation(SimpleNamespace(
+        scheduled_at=now + timedelta(minutes=1), created_at=now))
+
+
 async def test_reject_is_cancelling_the_reservation(
     db, client, test_rider, test_driver, no_expiry_timer
 ):

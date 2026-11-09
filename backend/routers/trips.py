@@ -29,7 +29,7 @@ from services.payment_security import (
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, user_lang, _driver_cancel_copy
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, user_lang, _driver_cancel_copy, is_real_reservation, reservation_on_the_way_copy
 from services.fcm_service import _send_fcm_push_async
 from services import rating_actions, vehicle_tiers
 from services.platform_earnings import driver_fare_basis
@@ -384,12 +384,18 @@ _ACTIVE_TRIP_STATUSES = [
 @router.get("/trips/active", dependencies=[Depends(_verify_api_key)])
 async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Return the user's active (in-progress) trip, if any.
-    Works for both riders (by rider_id) and drivers (by driver_id)."""
+    Works for both riders (by rider_id) and drivers (by driver_id).
+
+    A trip under way wins over a reservation only held for later
+    (scheduled_accepted / scheduled_active): with both, the newest id used to
+    win, so a reservation booked after the one now under way hid it."""
+    _held_last = case(
+        (Trip.status.in_(["scheduled_accepted", "scheduled_active"]), 1), else_=0)
     if user.role == "driver":
         result = await db.execute(
             select(Trip, User).outerjoin(User, Trip.rider_id == User.id)
             .where(and_(Trip.driver_id == user.id, Trip.status.in_(_ACTIVE_TRIP_STATUSES)))
-            .order_by(Trip.id.desc()).limit(1)
+            .order_by(_held_last, Trip.id.desc()).limit(1)
         )
         row = result.first()
         if not row:
@@ -430,7 +436,7 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
         result = await db.execute(
             select(Trip, User).outerjoin(User, Trip.driver_id == User.id)
             .where(and_(Trip.rider_id == user.id, Trip.status.in_(_ACTIVE_TRIP_STATUSES)))
-            .order_by(Trip.id.desc()).limit(1)
+            .order_by(_held_last, Trip.id.desc()).limit(1)
         )
         row = result.first()
         if not row:
@@ -2722,7 +2728,17 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
         rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_res.scalar_one_or_none()
         if rider and rider.fcm_token:
-            if canonical_new == "driver_en_route":
+            if canonical_new == "driver_en_route" and is_real_reservation(trip):
+                # A reservation: who and the pickup time (owner 2026-11-08).
+                _drv = (await db.execute(select(User).where(User.id == trip.driver_id))).scalar_one_or_none() if trip.driver_id else None
+                _copy = reservation_on_the_way_copy(_drv.first_name if _drv else "", trip)
+                await _send_fcm_push_async(rider.fcm_token, title=_copy["title"],
+                    body=_copy["body"],
+                    title_en=_copy["title_en"],
+                    body_en=_copy["body_en"],
+                    locale=user_lang(rider),
+                    data={"type": "driver_en_route", "trip_id": str(trip_id)})
+            elif canonical_new == "driver_en_route":
                 await _send_fcm_push_async(rider.fcm_token, title="Conductor en camino",
                     body="Tu conductor se dirige a tu punto de recogida.",
                     title_en="Driver On The Way",

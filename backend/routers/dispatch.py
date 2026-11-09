@@ -20,7 +20,7 @@ from utils.security import (
     _enforce_dispatch_ip, _require_dispatch_cookie_origin, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES, _active_destination, user_lang
+from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES, _active_destination, user_lang, is_real_reservation, reservation_on_the_way_copy
 from services import dispatch_sessions
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
@@ -2360,7 +2360,29 @@ async def _announce_driver_assignment(
             # A reservation taken days early is not "on the way" — saying so
             # sends the rider to the door for a ride next week.
             _is_reservation = accepted_status == "scheduled_accepted"
-            if rider and rider.fcm_token:
+            # The reservation STARTS (its confirm accepted, an hour ahead):
+            # who is coming and the pickup time — "Driver Found!" read like a
+            # ride on demand (owner 2026-11-08). Same type, so every app
+            # build opens it the same way.
+            _starts_reservation = (not _is_reservation
+                                   and is_real_reservation(trip))
+            if rider and rider.fcm_token and _starts_reservation:
+                _copy = reservation_on_the_way_copy(
+                    drv2.first_name if drv2 else "", trip)
+                _send_fcm_push(
+                    rider.fcm_token,
+                    title=_copy["title"],
+                    body=_copy["body"],
+                    title_en=_copy["title_en"],
+                    body_en=_copy["body_en"],
+                    locale=user_lang(rider),
+                    data={
+                        "type": "driver_assigned",
+                        "trip_id": str(trip.id),
+                        "driver_id": str(driver_id),
+                    },
+                )
+            elif rider and rider.fcm_token:
                 _send_fcm_push(
                     rider.fcm_token,
                     title="Conductor asignado" if _is_reservation else "¡Conductor encontrado!",

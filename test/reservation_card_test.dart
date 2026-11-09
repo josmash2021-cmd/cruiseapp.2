@@ -244,11 +244,14 @@ void main() {
       expect(widgets, contains('style: ReservationCardStyle.home'));
     });
 
-    test('Programar: reservations first, the pitch only without them', () {
+    test('Programar: the photo always stays, the cards under the button', () {
+      // Owner 2026-11-08: "no quites la imagen de la página de scheduled".
       expect(hub, contains('ReservationCard('));
-      expect(hub, contains('if (_rides.isEmpty) ...['));
-      expect(hub.indexOf('if (_rides.isEmpty) ...['),
-          lessThan(hub.indexOf("'assets/images/schedule_hero.jpg'")));
+      expect(hub, isNot(contains('if (_rides.isEmpty) ...[')));
+      expect(hub.indexOf("'assets/images/schedule_hero.jpg'"),
+          lessThan(hub.indexOf('s.scheduleARide')));
+      expect(hub.indexOf('s.scheduleARide'),
+          lessThan(hub.indexOf('s.yourRidesTitle')));
       expect(hub, contains('RideBookingConfirmedScreen.reservation('));
       expect(hub, isNot(contains('showModalBottomSheet')),
           reason: 'the old detail sheet is the reservation page now');

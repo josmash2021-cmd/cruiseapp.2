@@ -20,9 +20,8 @@ import 'schedule_flow_entry.dart';
 /// navy/gold): "Schedule a ride" into the datetime page, the rider's
 /// reservations ("Tus reservas", the shared [ReservationCard]; a tap opens
 /// the reservation's page, where it is cancelled), then Smart planning tools
-/// with the calendars card. With reservations they come first and the hero
-/// photo + headline step aside (owner 2026-11-08) — the pitch is for a rider
-/// who has none.
+/// with the calendars card. The hero photo stays whether or not there are
+/// reservations (owner 2026-11-08: "no quites la imagen").
 /// There is intentionally no price-lock card — pricing promises need a
 /// product decision first.
 class ScheduleHubScreen extends StatefulWidget {
@@ -258,45 +257,42 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
                     ],
                   ),
                 ),
-                SizedBox(height: _rides.isEmpty ? 22 : 18),
+                const SizedBox(height: 22),
 
-                // The pitch is for a rider with no reservations.
-                if (_rides.isEmpty) ...[
-                  // ── Hero: full-bleed photo with feathered edges (the same
-                  // FeatheredImage every other hero wears — it dissolves into
-                  // the navy ground instead of ending in a hard crop).
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: -24),
-                    child: const FeatheredImage(
-                      'assets/images/schedule_hero.jpg',
-                      width: double.infinity,
-                      height: 190,
-                    ),
+                // ── Hero: full-bleed photo with feathered edges (the same
+                // FeatheredImage every other hero wears — it dissolves into
+                // the navy ground instead of ending in a hard crop).
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: -24),
+                  child: const FeatheredImage(
+                    'assets/images/schedule_hero.jpg',
+                    width: double.infinity,
+                    height: 190,
                   ),
-                  const SizedBox(height: 22),
-                  Text(
-                    s.scheduleHubHeadline,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.4,
-                      height: 1.15,
-                    ),
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  s.scheduleHubHeadline,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                    height: 1.15,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    s.scheduleHubSubtext,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 14,
-                      height: 1.5,
-                    ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  s.scheduleHubSubtext,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 14,
+                    height: 1.5,
                   ),
-                  const SizedBox(height: 20),
-                ],
+                ),
+                const SizedBox(height: 20),
 
                 // ── Schedule a ride ──
                 SizedBox(

@@ -78,3 +78,51 @@ def test_no_unaccented_or_internal_words_left():
     for bad in ("esta en camino", "volvio", "marketplace. Te asignaremos",
                 "Te notificaremos cuando este"):
         assert bad not in SRC, bad
+
+
+MAIN_SRC = (pathlib.Path(__file__).resolve().parents[1] / "main.py").read_text(
+    encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_release_push_reaches_an_english_rider_in_english(
+        db, test_rider, test_driver, monkeypatch):
+    """The reservation loop's release (driver not online an hour before, or
+    no confirm) sent its own copy — Spanish only, "volvio al marketplace" —
+    missed by the 2026-11-08 pass over routers/scheduled.py."""
+    import main
+    from main import Trip, DispatchOffer
+
+    sent = []
+    monkeypatch.setattr(main, "_send_fcm_push", lambda **kw: sent.append(kw))
+
+    rider, _ = test_rider
+    rider.fcm_token = "tok-rider-en"
+    rider.locale = "en"
+    driver, _ = test_driver
+    trip = Trip(
+        rider_id=rider.id, driver_id=driver.id,
+        pickup_address="3659 Lorna Rd", dropoff_address="BHM",
+        pickup_lat=33.40, pickup_lng=-86.80, dropoff_lat=33.56, dropoff_lng=-86.75,
+        fare=38.4, vehicle_type="standard", status="scheduled_accepted",
+        scheduled_at=datetime.now(timezone.utc) + timedelta(minutes=59),
+        created_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    db.add(trip)
+    await db.commit()
+    await db.refresh(trip)
+    db.add(DispatchOffer(trip_id=trip.id, driver_id=driver.id, status="accepted"))
+    await db.commit()
+
+    assert await main._release_reservation(
+        db, trip, datetime.now(timezone.utc), 59.0, "not online by the deadline")
+
+    push = next(p for p in sent if p.get("token") == "tok-rider-en")
+    assert push["locale"] == "en"
+    assert push["title_en"] == "Finding another driver"
+    assert "está buscando" in push["body"]
+    assert push["data"]["type"] == "scheduled_driver_dropped"
+
+
+def test_main_release_copy_is_fixed():
+    assert "volvio al marketplace" not in MAIN_SRC

@@ -2547,7 +2547,9 @@ async def _release_reservation(db, trip, now, minutes_until, why: str) -> bool:
         "— back on the board, not for that driver",
         trip.id, why, released_driver_id, minutes_until,
     )
-    # Rider: the existing "driver dropped" event — no new push type.
+    # Rider: the existing "driver dropped" event — no new push type, the
+    # same words as routers/scheduled.py's drop (in the rider's language,
+    # never "marketplace").
     try:
         rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_r.scalar_one_or_none()
@@ -2555,7 +2557,10 @@ async def _release_reservation(db, trip, now, minutes_until, why: str) -> bool:
             _send_fcm_push(
                 token=rider.fcm_token,
                 title="Buscando otro conductor",
-                body="Tu viaje reservado volvio al marketplace. Te asignaremos un nuevo conductor en breve.",
+                body="Tu viaje reservado está buscando un nuevo conductor. Te avisaremos cuando lo tenga.",
+                title_en="Finding another driver",
+                body_en="Your reserved ride is looking for a new driver. We'll let you know when it has one.",
+                locale=rider.locale,
                 data={"type": "scheduled_driver_dropped", "trip_id": str(trip.id)},
             )
     except Exception as _fcm_err:

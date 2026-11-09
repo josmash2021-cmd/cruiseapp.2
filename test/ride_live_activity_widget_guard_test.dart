@@ -84,4 +84,58 @@ void main() {
               'never goes stale mid-ride');
     });
   });
+
+  group('the card as Lyft shows it (owner 2026-11-09)', () {
+    final attrs =
+        File('ios/CruiseLiveActivity/CruiseRideActivityAttributes.swift')
+            .readAsStringSync();
+    final appDelegate =
+        File('ios/Runner/AppDelegate.swift').readAsStringSync();
+    final dart =
+        File('lib/services/live_activity_service.dart').readAsStringSync();
+    final ctrl = File('lib/controllers/rider_tracking_controller.dart')
+        .readAsStringSync();
+
+    test('how long in big, then the plate box and the car', () {
+      expect(swift.contains('"Llega en \\(mins) min"'), isTrue);
+      expect(swift.contains('"\\(name) llegó"'), isTrue);
+      expect(swift.contains('"Llegas en \\(mins) min"'), isTrue);
+      expect(swift.contains('private struct RideCarRow: View'), isTrue);
+      expect(
+          swift.contains(
+              '.background(RoundedRectangle(cornerRadius: 6).fill(Color.white))'),
+          isTrue,
+          reason: 'the plate sits in a white box');
+      expect(swift.contains('Tu driver'), isFalse,
+          reason: '"conductor" in Spanish, never "driver"');
+    });
+
+    test('the lock screen stays under its 160 pt', () {
+      expect(swift.contains('private var carW: CGFloat { compact ? 26 : 30 }'),
+          isTrue);
+      expect(swift.contains('.padding(14)'), isTrue);
+      expect(swift.contains('if !compact { Spacer(minLength: 0) }'), isFalse);
+    });
+
+    test('carLine and plate ride every hop: Dart → channel → state', () {
+      expect(dart.contains("'carLine': carLine,"), isTrue);
+      expect(dart.contains("'plate': plate,"), isTrue);
+      expect('carLine: args?["carLine"] as? String ?? ""'
+              .allMatches(appDelegate)
+              .length,
+          2);
+      expect(
+          attrs.contains(
+              'carLine = try c.decodeIfPresent(String.self, forKey: .carLine) ?? ""'),
+          isTrue,
+          reason: 'an activity from an older build still decodes');
+      expect(ctrl.contains('carLine: carLine, plate: plate,'), isTrue);
+    });
+
+    test('Android says the same, without "driver" in Spanish', () {
+      expect(ctrl.contains("'Cruise · Tu driver llegó'"), isFalse);
+      expect(ctrl.contains("es ? '\$who llega en \$etaMin min'"), isTrue);
+      expect(ctrl.contains("es ? 'Busca el \$carText'"), isTrue);
+    });
+  });
 }

@@ -36,10 +36,15 @@ struct CruiseRideActivityAttributes: ActivityAttributes {
     /// Asset catalog name of the top-down car PNG: "CarSedan" /
     /// "CarSuv" / "CarEconomy" (same art as the in-app map markers).
     var carImage: String = ""
+    /// "Toyota Camry gris" / "Gray Toyota Camry" and "ABC1234" — the car
+    /// the rider looks for on the street (Lyft-style card, owner
+    /// 2026-11-09). Empty on activities started by older builds.
+    var carLine: String = ""
+    var plate: String = ""
 
     private enum CodingKeys: String, CodingKey {
       case phase, startedAt, dropoffAt, dropoffAddress, driverName
-      case driverRating, driverPhotoUrl, carImage
+      case driverRating, driverPhotoUrl, carImage, carLine, plate
     }
 
     // Written out because declaring init(from:) below suppresses the
@@ -52,7 +57,9 @@ struct CruiseRideActivityAttributes: ActivityAttributes {
       driverName: String = "",
       driverRating: String = "",
       driverPhotoUrl: String = "",
-      carImage: String = ""
+      carImage: String = "",
+      carLine: String = "",
+      plate: String = ""
     ) {
       self.phase = phase
       self.startedAt = startedAt
@@ -62,6 +69,8 @@ struct CruiseRideActivityAttributes: ActivityAttributes {
       self.driverRating = driverRating
       self.driverPhotoUrl = driverPhotoUrl
       self.carImage = carImage
+      self.carLine = carLine
+      self.plate = plate
     }
 
     // decodeIfPresent on the display fields, never trusting the property
@@ -78,6 +87,8 @@ struct CruiseRideActivityAttributes: ActivityAttributes {
       driverRating = try c.decodeIfPresent(String.self, forKey: .driverRating) ?? ""
       driverPhotoUrl = try c.decodeIfPresent(String.self, forKey: .driverPhotoUrl) ?? ""
       carImage = try c.decodeIfPresent(String.self, forKey: .carImage) ?? ""
+      carLine = try c.decodeIfPresent(String.self, forKey: .carLine) ?? ""
+      plate = try c.decodeIfPresent(String.self, forKey: .plate) ?? ""
     }
   }
 }

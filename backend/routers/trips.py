@@ -29,7 +29,7 @@ from services.payment_security import (
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, user_lang, _driver_cancel_copy, is_real_reservation, reservation_on_the_way_copy
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, user_lang, _driver_cancel_copy, is_real_reservation, reservation_on_the_way_copy, vehicle_car_line, driver_arrived_live_alert
 from services.fcm_service import _send_fcm_push_async
 from services import rating_actions, vehicle_tiers
 from services.platform_earnings import driver_fare_basis
@@ -1503,14 +1503,24 @@ async def _push_ride_live_activity(trip_id: int, new_status: str):
                          else "CarEconomy" if tier == "compact"
                          else "CarSedan")
 
+            # Lyft-style card (owner 2026-11-09): the car and its plate, in
+            # the rider's language — the same line the app writes.
+            lang = user_lang(rider)
+            car_line, plate = "", ""
+            if trip.driver_id:
+                from routers.drivers import _get_active_vehicle
+                veh = await _get_active_vehicle(db, trip.driver_id)
+                if veh is not None:
+                    car_line = vehicle_car_line(veh.make, veh.model, veh.color, lang)
+                    plate = (veh.plate or "").strip().upper()
+
             alert = None
             if phase == "arrived":
                 # The one repaint that must be SEEN: it breaks the island
-                # out and raises the lock-screen banner.
+                # out and raises the lock-screen banner. In the rider's
+                # language (it was always "Your driver is here").
                 alert = {
-                    "title": "Your driver is here",
-                    "body": f"{driver_name} is waiting at the pickup spot."
-                            if driver_name else "Meet your car at the pickup spot.",
+                    **driver_arrived_live_alert(driver_name, car_line, plate, lang),
                     "sound": "default",
                 }
             outcome = await apns_liveactivity.update_ride_live_activity(
@@ -1523,6 +1533,8 @@ async def _push_ride_live_activity(trip_id: int, new_status: str):
                 driver_rating=f"{rating:.1f}",
                 driver_photo_url=driver_photo,
                 car_image=car_image,
+                car_line=car_line,
+                plate=plate,
                 alert=alert,
             )
             if outcome == "stale":
@@ -2661,11 +2673,11 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
                 # Fetch vehicle first so both SMS and email can include color + plate
                 _veh_arr = None
                 try:
-                    from models.database import Vehicle as _V
-                    _vr = await db.execute(
-                        select(_V).where(_V.driver_id == trip.driver_id).order_by(_V.id.desc()).limit(1)
-                    )
-                    _veh_arr = _vr.scalar_one_or_none()
+                    # Vehicle has no driver_id column: the old query raised
+                    # here and every guest got "Busca el vehículo · placa"
+                    # with neither (found 2026-11-09). The driver's ACTIVE car.
+                    from routers.drivers import _get_active_vehicle
+                    _veh_arr = await _get_active_vehicle(db, trip.driver_id)
                 except Exception:
                     _veh_arr = None
                 try:

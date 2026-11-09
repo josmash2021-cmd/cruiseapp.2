@@ -66,6 +66,49 @@ Color? vehicleSwatchColor(String name) {
   return _kVehicleSwatches[n] ?? _kVehicleSwatches[n.split(RegExp(r'\s+')).last];
 }
 
+/// The color word the driver registered (EN or ES), in the rider's
+/// language: (English, Spanish). Mirrors VEHICLE_COLOR_WORDS in
+/// backend/utils/helpers.py — the server writes the same line into the
+/// lock-screen card when the app is in the background.
+const Map<String, (String, String)> _kVehicleColorWords = {
+  'black': ('Black', 'negro'), 'negro': ('Black', 'negro'),
+  'white': ('White', 'blanco'), 'blanco': ('White', 'blanco'),
+  'silver': ('Silver', 'plateado'), 'plata': ('Silver', 'plateado'),
+  'plateado': ('Silver', 'plateado'),
+  'gray': ('Gray', 'gris'), 'grey': ('Gray', 'gris'), 'gris': ('Gray', 'gris'),
+  'red': ('Red', 'rojo'), 'rojo': ('Red', 'rojo'),
+  'blue': ('Blue', 'azul'), 'azul': ('Blue', 'azul'),
+  'navy': ('Navy', 'azul marino'), 'dark blue': ('Navy', 'azul marino'),
+  'green': ('Green', 'verde'), 'verde': ('Green', 'verde'),
+  'beige': ('Beige', 'beige'), 'champagne': ('Champagne', 'champán'),
+  'brown': ('Brown', 'marrón'), 'marrón': ('Brown', 'marrón'),
+  'marron': ('Brown', 'marrón'), 'café': ('Brown', 'marrón'),
+  'cafe': ('Brown', 'marrón'),
+  'gold': ('Gold', 'dorado'), 'dorado': ('Gold', 'dorado'),
+  'yellow': ('Yellow', 'amarillo'), 'amarillo': ('Yellow', 'amarillo'),
+  'orange': ('Orange', 'naranja'), 'naranja': ('Orange', 'naranja'),
+  'maroon': ('Maroon', 'vino'), 'burgundy': ('Maroon', 'vino'),
+  'vino': ('Maroon', 'vino'),
+  'purple': ('Purple', 'morado'), 'morado': ('Purple', 'morado'),
+};
+
+/// "Toyota Camry gris" / "Gray Toyota Camry" — the car the rider looks for
+/// on the street, as Lyft writes it (owner 2026-11-09). An unknown color
+/// word stays as the driver typed it; empty parts drop out.
+String vehicleCarLine({
+  required String make,
+  required String model,
+  required String color,
+  required bool es,
+}) {
+  final raw = color.trim();
+  final known = _kVehicleColorWords[raw.toLowerCase()];
+  final word = known == null ? raw : (es ? known.$2 : known.$1);
+  final car = [make.trim(), model.trim()].where((s) => s.isNotEmpty).join(' ');
+  final parts = es ? [car, word] : [word, car];
+  return parts.where((s) => s.isNotEmpty).join(' ');
+}
+
 /// Splits a leading color off a one-string description ("Black Chevrolet
 /// Suburban" → ("Black", "Chevrolet Suburban")); an unknown first word keeps
 /// the whole text with no color.

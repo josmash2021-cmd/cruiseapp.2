@@ -84,7 +84,7 @@ class TestTheRidePayload:
         # a rename on either side silently drops the field.
         for key in ("phase", "startedAt", "dropoffAt", "dropoffAddress",
                     "driverName", "driverRating", "driverPhotoUrl",
-                    "carImage"):
+                    "carImage", "carLine", "plate"):
             assert key in cs, f"content-state is missing {key!r}"
         assert cs["phase"] == "on_trip"
         assert cs["carImage"] == "CarSuv"
@@ -191,6 +191,52 @@ class TestTheTripStatusHook:
         assert kw["dropoff_address"] == "Canopy Dr"
         assert kw["alert"] is not None
         assert not calls["end"]
+
+    @pytest.mark.parametrize("locale,title,body,car", [
+        ("es", "Arvell llegó", "Busca el Toyota Camry gris · ABC1234",
+         "Toyota Camry gris"),
+        ("en", "Arvell is here", "Look for the Gray Toyota Camry · ABC1234",
+         "Gray Toyota Camry"),
+    ])
+    async def test_arrived_names_the_car_and_plate_in_the_riders_language(
+            self, monkeypatch, db, test_trip, test_driver, test_rider,
+            locale, title, body, car):
+        """Lyft-style card (owner 2026-11-09): the server's repaint carries
+        the car and the plate (a push REPLACES the whole state, so without
+        them it would blank what the app wrote), and the arrival banner is
+        in the rider's language — it was always "Your driver is here"."""
+        from models.database import Vehicle
+        from routers.trips import _push_ride_live_activity
+        _, rider = await self._setup(db, test_trip, test_driver, test_rider)
+        driver, _ = test_driver
+        rider.locale = locale
+        db.add(Vehicle(user_id=driver.id, make="Toyota", model="Camry",
+                       year=2021, color="Gray", plate="abc1234",
+                       is_active=True))
+        await db.commit()
+        calls = self._capture(monkeypatch)
+
+        await _push_ride_live_activity(test_trip.id, "arrived")
+
+        kw = calls["update"][0]
+        assert kw["car_line"] == car
+        assert kw["plate"] == "ABC1234"
+        assert kw["alert"]["title"] == title
+        assert kw["alert"]["body"] == body
+        assert kw["alert"]["sound"] == "default"
+
+    async def test_no_car_on_file_still_reads_right(
+            self, monkeypatch, db, test_trip, test_driver, test_rider):
+        from routers.trips import _push_ride_live_activity
+        await self._setup(db, test_trip, test_driver, test_rider)
+        calls = self._capture(monkeypatch)
+
+        await _push_ride_live_activity(test_trip.id, "arrived")
+
+        kw = calls["update"][0]
+        assert kw["car_line"] == "" and kw["plate"] == ""
+        assert kw["alert"]["title"] == "Arvell llegó"
+        assert kw["alert"]["body"] == "Te espera en la recogida."
 
     async def test_in_trip_repaints_without_alert(
             self, monkeypatch, db, test_trip, test_driver, test_rider):
@@ -416,3 +462,36 @@ class TestTheCancelEndpointsEndTheCard:
         assert resp.status_code == 200, resp.text
         await asyncio.sleep(0.2)
         assert (test_trip.id, "cancelled") in calls
+
+
+class TestTheCarLine:
+    """vehicle_car_line / driver_arrived_live_alert — the same words the app
+    writes (vehicleCarLine in lib/widgets/tracking/vehicle_identity.dart)."""
+
+    @pytest.mark.parametrize("make,model,color,lang,want", [
+        ("Toyota", "Camry", "Gray", "es", "Toyota Camry gris"),
+        ("Toyota", "Camry", "gris", "en", "Gray Toyota Camry"),
+        ("Chevrolet", "Suburban", "Negro", "es", "Chevrolet Suburban negro"),
+        ("Chevrolet", "Suburban", "Negro", "en", "Black Chevrolet Suburban"),
+        ("Honda", "Civic", "Pearl", "es", "Honda Civic Pearl"),  # unknown word kept
+        ("Honda", "Civic", "", "en", "Honda Civic"),
+        ("", "", "", "es", ""),
+    ])
+    def test_car_line(self, make, model, color, lang, want):
+        from utils.helpers import vehicle_car_line
+        assert vehicle_car_line(make, model, color, lang) == want
+
+    def test_no_name_no_car(self):
+        from utils.helpers import driver_arrived_live_alert
+        assert driver_arrived_live_alert("", "", "", "es") == {
+            "title": "Tu conductor llegó", "body": "Te espera en la recogida."}
+        assert driver_arrived_live_alert("", "", "", "en") == {
+            "title": "Your driver is here", "body": "Waiting at the pickup."}
+
+    def test_the_guest_arrival_sms_finds_the_car(self):
+        """Vehicle has no driver_id column: the old lookup raised and every
+        guest's "driver arrived" SMS went out without color and plate."""
+        src = (Path(__file__).resolve().parents[1] / "routers" / "trips.py").read_text(
+            encoding="utf-8")
+        assert "_V.driver_id" not in src
+        assert "_veh_arr = await _get_active_vehicle(db, trip.driver_id)" in src

@@ -4,9 +4,11 @@ import ActivityKit
 
 // ═══════════════════════════════════════════════════════════════════
 //  Cruise RIDE Live Activity — the rider's trip on the Lock Screen and
-//  Dynamic Island while the app is backgrounded (1:1 with the Lyft
-//  reference: drop-off time + destination left, driver photo/name/rating
-//  right, and the car sliding along the route bar).
+//  Dynamic Island while the app is backgrounded, the way Lyft shows it
+//  (owner 2026-11-09): how long in big ("Llega en 4 min" / "Carlos
+//  llegó"), the plate in a white box with the car ("Toyota Camry gris ·
+//  Carlos") until pickup and the destination after it, the driver's
+//  photo and rating, and the car sliding along the route bar.
 //
 //  The bar is time-driven: startedAt → dropoffAt with a TimelineView
 //  repaint every 1 s, so the car glides between server/app updates
@@ -21,24 +23,40 @@ private var rideIsSpanish: Bool {
 
 // ── Text lines ──────────────────────────────────────────────────────
 
-private func rideTitle(_ state: CruiseRideActivityAttributes.ContentState) -> String {
+/// Whole minutes left on the current leg, ceil-rounded like the in-app ETA
+/// (a 1.2-min wait reads "2 min"), never floored to a lie.
+private func rideMinutesLeft(_ state: CruiseRideActivityAttributes.ContentState, now: Date) -> Int {
+  max(0, Int((state.dropoffAt.timeIntervalSince(now) / 60).rounded(.up)))
+}
+
+/// The big line: how long, or who is here.
+private func rideTitle(_ state: CruiseRideActivityAttributes.ContentState, now: Date) -> String {
+  let mins = rideMinutesLeft(state, now: now)
+  let name = state.driverName
+  switch state.phase {
+  case "en_route":
+    if mins <= 0 { return rideIsSpanish ? "Llegando" : "Arriving now" }
+    return rideIsSpanish ? "Llega en \(mins) min" : "Arriving in \(mins) min"
+  case "arrived":
+    if name.isEmpty { return rideIsSpanish ? "Tu conductor llegó" : "Your driver is here" }
+    return rideIsSpanish ? "\(name) llegó" : "\(name) is here"
+  default: // on_trip
+    if mins <= 0 { return rideIsSpanish ? "Llegando a tu destino" : "Arriving now" }
+    return rideIsSpanish ? "Llegas en \(mins) min" : "Drop-off in \(mins) min"
+  }
+}
+
+/// The small line under it: the clock time, or where the driver waits.
+private func rideSubtitle(_ state: CruiseRideActivityAttributes.ContentState) -> String {
   let time = state.dropoffAt.formatted(date: .omitted, time: .shortened)
   switch state.phase {
   case "en_route":
     return rideIsSpanish ? "Recogida \(time)" : "\(time) pickup"
   case "arrived":
-    return rideIsSpanish ? "Tu driver llegó" : "Your driver is here"
+    return rideIsSpanish ? "Te espera en la recogida" : "Waiting at the pickup"
   default: // on_trip
     return rideIsSpanish ? "Destino \(time)" : "\(time) drop-off"
   }
-}
-
-private func rideSubtitle(_ state: CruiseRideActivityAttributes.ContentState) -> String {
-  if state.phase == "arrived" {
-    return rideIsSpanish ? "Encuentra tu carro en el punto de partida"
-                         : "Meet your car at the pickup spot"
-  }
-  return state.dropoffAddress
 }
 
 /// 0…1 along the current leg, time-anchored so it can be recomputed on any
@@ -96,7 +114,9 @@ private struct RideRouteBar: View {
   var state: CruiseRideActivityAttributes.ContentState
   var compact: Bool = false
 
-  private var carW: CGFloat { compact ? 26 : 34 }
+  // 30 on the lock screen (was 34): the car row took the height, and the
+  // lock screen truncates anything taller than 160 pt.
+  private var carW: CGFloat { compact ? 26 : 30 }
   private var line: CGFloat { compact ? 3 : 4 }
   private var pinW: CGFloat { compact ? 16 : 20 }
 
@@ -140,20 +160,61 @@ private struct RideRouteBar: View {
   }
 }
 
+/// The car the rider looks for on the street: the plate in a white box,
+/// then "Toyota Camry gris · Carlos".
+private struct RideCarRow: View {
+  var state: CruiseRideActivityAttributes.ContentState
+  var compact: Bool = false
+
+  private var detail: String {
+    [state.carLine, state.driverName].filter { !$0.isEmpty }.joined(separator: " · ")
+  }
+
+  var body: some View {
+    HStack(spacing: 8) {
+      if !state.plate.isEmpty {
+        Text(state.plate)
+          .kerning(0.8)
+          .font(.system(size: compact ? 13 : 15, weight: .heavy))
+          .foregroundColor(.black)
+          .lineLimit(1)
+          .fixedSize()
+          .padding(.horizontal, compact ? 6 : 8)
+          .padding(.vertical, compact ? 2 : 4)
+          .background(RoundedRectangle(cornerRadius: 6).fill(Color.white))
+      }
+      Text(detail)
+        .font(.system(size: compact ? 12 : 14, weight: .semibold))
+        .foregroundColor(.white.opacity(0.88))
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+    }
+  }
+}
+
 private struct RideCard: View {
   var state: CruiseRideActivityAttributes.ContentState
   var compact: Bool = false
 
+  /// Until pickup the car and its plate are what matter; aboard, the
+  /// destination. An activity from an older build has neither car field.
+  private var showsCar: Bool {
+    state.phase != "on_trip" && !(state.plate.isEmpty && state.carLine.isEmpty)
+  }
+
   var body: some View {
-    VStack(alignment: .leading, spacing: compact ? 8 : 12) {
+    VStack(alignment: .leading, spacing: compact ? 6 : 8) {
       HStack(alignment: .top, spacing: 10) {
         CruiseLogoView(size: compact ? 26 : 36)
         VStack(alignment: .leading, spacing: 2) {
-          Text(rideTitle(state))
-            .font(.system(size: compact ? 15 : 19, weight: .heavy))
-            .foregroundColor(.white)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+          // The minutes count down on the same 1 s tick as the bar.
+          TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            Text(rideTitle(state, now: ctx.date))
+              .font(.system(size: compact ? 16 : 21, weight: .heavy))
+              .foregroundColor(.white)
+              .lineLimit(1)
+              .minimumScaleFactor(0.7)
+          }
           Text(rideSubtitle(state))
             .font(.system(size: compact ? 11 : 13, weight: .semibold))
             .foregroundColor(.white.opacity(0.6))
@@ -167,10 +228,6 @@ private struct RideCard: View {
             name: state.driverName,
             size: compact ? 26 : 34
           )
-          Text(state.driverName)
-            .font(.system(size: compact ? 10 : 12, weight: .bold))
-            .foregroundColor(.white)
-            .lineLimit(1)
           if !state.driverRating.isEmpty {
             HStack(spacing: 2) {
               Image(systemName: "star.fill")
@@ -183,10 +240,20 @@ private struct RideCard: View {
           }
         }
       }
-      // Banner only: the lock screen centres whatever it is given, so the
-      // Spacer claims the height — title row on top, route bar below.
-      if !compact { Spacer(minLength: 0) }
-      RideRouteBar(state: state, compact: compact)
+      if showsCar {
+        RideCarRow(state: state, compact: compact)
+      } else if !state.dropoffAddress.isEmpty {
+        Text(state.dropoffAddress)
+          .font(.system(size: compact ? 11 : 13, weight: .semibold))
+          .foregroundColor(.white.opacity(0.75))
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
+      }
+      // The island's 96 pt hold the title and the car, not the bar too;
+      // the minutes stay in its compact trailing slot.
+      if !compact || !showsCar {
+        RideRouteBar(state: state, compact: compact)
+      }
     }
     .frame(maxHeight: compact ? nil : .infinity, alignment: .top)
   }
@@ -215,7 +282,7 @@ struct CruiseRideLiveActivityWidget: Widget {
     ActivityConfiguration(for: CruiseRideActivityAttributes.self) { context in
       // ── Lock Screen banner ──
       RideCard(state: context.state)
-        .padding(16)
+        .padding(14)
         .activityBackgroundTint(Color.black.opacity(0.86))
         .activitySystemActionForegroundColor(rideGold)
     } dynamicIsland: { context in

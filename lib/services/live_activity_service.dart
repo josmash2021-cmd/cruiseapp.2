@@ -124,12 +124,14 @@ class LiveActivityService {
     required String driverRating,
     required String driverPhotoUrl,
     required String carImage, // 'CarSedan' | 'CarSuv' | 'CarEconomy'
+    String carLine = '', // "Toyota Camry gris" (vehicleCarLine)
+    String plate = '',
   }) =>
       _invoke('startRide', null, extra: _rideArgs(
         phase: phase, startedAt: startedAt, dropoffAt: dropoffAt,
         dropoffAddress: dropoffAddress, driverName: driverName,
         driverRating: driverRating, driverPhotoUrl: driverPhotoUrl,
-        carImage: carImage,
+        carImage: carImage, carLine: carLine, plate: plate,
       ));
 
   /// Repaint the running ride activity (phase change or ETA shift). Silent
@@ -144,12 +146,14 @@ class LiveActivityService {
     required String driverRating,
     required String driverPhotoUrl,
     required String carImage,
+    String carLine = '',
+    String plate = '',
   }) =>
       _invoke('updateRide', null, extra: _rideArgs(
         phase: phase, startedAt: startedAt, dropoffAt: dropoffAt,
         dropoffAddress: dropoffAddress, driverName: driverName,
         driverRating: driverRating, driverPhotoUrl: driverPhotoUrl,
-        carImage: carImage,
+        carImage: carImage, carLine: carLine, plate: plate,
       ));
 
   /// Dates cross the channel as epoch SECONDS (double) — the Swift side
@@ -164,6 +168,8 @@ class LiveActivityService {
     required String driverRating,
     required String driverPhotoUrl,
     required String carImage,
+    required String carLine,
+    required String plate,
   }) =>
       {
         'phase': phase,
@@ -174,6 +180,11 @@ class LiveActivityService {
         'driverRating': driverRating,
         'driverPhotoUrl': driverPhotoUrl,
         'carImage': carImage,
+        // Lyft-style card (owner 2026-11-09): the car and its plate, what
+        // the rider looks for on the street. Binaries older than this
+        // ignore both keys.
+        'carLine': carLine,
+        'plate': plate,
       };
 
   /// Trip completed or cancelled — take the ride off the lock screen. The

@@ -1172,29 +1172,61 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     final car = _laCarImage(data);
     final driverFirst = widget.driverName.split(' ').first;
     final rating = widget.driverRating.toStringAsFixed(1);
+    final es = Localizations.localeOf(context).languageCode.startsWith('es');
+    // Lyft-style card (owner 2026-11-09): the car and its plate — what the
+    // rider looks for on the street.
+    final carLine = vehicleCarLine(
+      make: widget.vehicleMake,
+      model: widget.vehicleModel,
+      color: widget.vehicleColor,
+      es: es,
+    );
+    final plate = widget.vehiclePlate.trim().toUpperCase();
 
     if (first) {
       LiveActivityService.startRide(
         phase: phaseName, startedAt: _laLegStart, dropoffAt: dropoffAt,
         dropoffAddress: widget.dropoffLabel, driverName: driverFirst,
         driverRating: rating, driverPhotoUrl: photo, carImage: car,
+        carLine: carLine, plate: plate,
       );
     } else {
       LiveActivityService.updateRide(
         phase: phaseName, startedAt: _laLegStart, dropoffAt: dropoffAt,
         dropoffAddress: widget.dropoffLabel, driverName: driverFirst,
         driverRating: rating, driverPhotoUrl: photo, carImage: car,
+        carLine: carLine, plate: plate,
       );
     }
 
     if (AppPlatform.isAndroid) {
-      final es = Localizations.localeOf(context).languageCode.startsWith('es');
       final time = MaterialLocalizations.of(context)
           .formatTimeOfDay(TimeOfDay.fromDateTime(dropoffAt));
+      // The same lines as the iPhone card (owner 2026-11-09, "como Lyft"):
+      // who and how long, then the car and the plate to look for.
+      final who = driverFirst.isNotEmpty
+          ? driverFirst
+          : (es ? 'Tu conductor' : 'Your driver');
+      final carText = [carLine, plate].where((s) => s.isNotEmpty).join(' · ');
       final title = switch (phaseName) {
-        'en_route' => es ? 'Cruise · Recogida $time' : 'Cruise · $time pickup',
-        'arrived' => es ? 'Cruise · Tu driver llegó' : 'Cruise · Your driver is here',
-        _ => es ? 'Cruise · Destino $time' : 'Cruise · $time drop-off',
+        'en_route' => etaMin <= 0
+            ? (es ? '$who está llegando' : '$who is arriving')
+            : (es ? '$who llega en $etaMin min' : '$who arrives in $etaMin min'),
+        'arrived' => es ? '$who llegó' : '$who is here',
+        _ => etaMin <= 0
+            ? (es ? 'Llegando a tu destino' : 'Arriving at your destination')
+            : (es ? 'Llegas en $etaMin min' : 'Drop-off in $etaMin min'),
+      };
+      final body = switch (phaseName) {
+        'en_route' => carText.isNotEmpty
+            ? carText
+            : (es ? 'Recogida $time' : '$time pickup'),
+        'arrived' => carText.isNotEmpty
+            ? (es ? 'Busca el $carText' : 'Look for the $carText')
+            : (es ? 'Te espera en la recogida' : 'Waiting at the pickup'),
+        _ => es
+            ? 'Destino $time · ${widget.dropoffLabel}'
+            : '$time drop-off · ${widget.dropoffLabel}',
       };
       final total = dropoffAt.difference(_laLegStart).inSeconds;
       final pct = phaseName == 'arrived'
@@ -1206,7 +1238,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
                   .clamp(0, 100);
       NotificationService.showTripProgress(
         title: title,
-        body: '$driverFirst · ★$rating · ${widget.dropoffLabel}',
+        body: body,
         progress: pct,
       );
     }

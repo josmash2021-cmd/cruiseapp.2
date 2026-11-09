@@ -105,7 +105,9 @@ import ActivityKit
           driverName: args?["driverName"] as? String ?? "",
           driverRating: args?["driverRating"] as? String ?? "",
           driverPhotoUrl: args?["driverPhotoUrl"] as? String ?? "",
-          carImage: args?["carImage"] as? String ?? "")
+          carImage: args?["carImage"] as? String ?? "",
+          carLine: args?["carLine"] as? String ?? "",
+          plate: args?["plate"] as? String ?? "")
         result(true)
       case "updateRide":
         CruiseLiveActivityManager.shared.updateRide(
@@ -116,7 +118,9 @@ import ActivityKit
           driverName: args?["driverName"] as? String ?? "",
           driverRating: args?["driverRating"] as? String ?? "",
           driverPhotoUrl: args?["driverPhotoUrl"] as? String ?? "",
-          carImage: args?["carImage"] as? String ?? "")
+          carImage: args?["carImage"] as? String ?? "",
+          carLine: args?["carLine"] as? String ?? "",
+          plate: args?["plate"] as? String ?? "")
         result(true)
       case "endRide":
         CruiseLiveActivityManager.shared.endRide()
@@ -475,19 +479,21 @@ final class CruiseLiveActivityManager {
   private func rideState(
     phase: String, startedAt: Date, dropoffAt: Date,
     dropoffAddress: String, driverName: String, driverRating: String,
-    driverPhotoUrl: String, carImage: String
+    driverPhotoUrl: String, carImage: String,
+    carLine: String, plate: String
   ) -> CruiseRideActivityAttributes.ContentState {
     CruiseRideActivityAttributes.ContentState(
       phase: phase, startedAt: startedAt, dropoffAt: dropoffAt,
       dropoffAddress: dropoffAddress, driverName: driverName,
       driverRating: driverRating, driverPhotoUrl: driverPhotoUrl,
-      carImage: carImage)
+      carImage: carImage, carLine: carLine, plate: plate)
   }
 
   func startRide(
     phase: String, startedAt: Date, dropoffAt: Date,
     dropoffAddress: String, driverName: String, driverRating: String,
-    driverPhotoUrl: String, carImage: String
+    driverPhotoUrl: String, carImage: String,
+    carLine: String, plate: String
   ) {
     guard ActivityAuthorizationInfo().areActivitiesEnabled else {
       NSLog("[LiveActivity] startRide refused: Live Activities are disabled "
@@ -498,7 +504,7 @@ final class CruiseLiveActivityManager {
       phase: phase, startedAt: startedAt, dropoffAt: dropoffAt,
       dropoffAddress: dropoffAddress, driverName: driverName,
       driverRating: driverRating, driverPhotoUrl: driverPhotoUrl,
-      carImage: carImage)
+      carImage: carImage, carLine: carLine, plate: plate)
     enqueue {
       for stale in Activity<CruiseRideActivityAttributes>.activities {
         await stale.end(nil, dismissalPolicy: .immediate)
@@ -529,13 +535,14 @@ final class CruiseLiveActivityManager {
   func updateRide(
     phase: String, startedAt: Date, dropoffAt: Date,
     dropoffAddress: String, driverName: String, driverRating: String,
-    driverPhotoUrl: String, carImage: String
+    driverPhotoUrl: String, carImage: String,
+    carLine: String, plate: String
   ) {
     let state = rideState(
       phase: phase, startedAt: startedAt, dropoffAt: dropoffAt,
       dropoffAddress: dropoffAddress, driverName: driverName,
       driverRating: driverRating, driverPhotoUrl: driverPhotoUrl,
-      carImage: carImage)
+      carImage: carImage, carLine: carLine, plate: plate)
     enqueue {
       for a in Activity<CruiseRideActivityAttributes>.activities {
         // Silent repaint, no alert — a ringing phone on every ETA tick is

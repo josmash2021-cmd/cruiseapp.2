@@ -242,6 +242,8 @@ def _ride_content_state(
     driver_rating: str = "",
     driver_photo_url: str = "",
     car_image: str = "",
+    car_line: str = "",
+    plate: str = "",
 ) -> dict:
     return {
         "phase": phase,
@@ -252,6 +254,11 @@ def _ride_content_state(
         "driverRating": driver_rating,
         "driverPhotoUrl": driver_photo_url,
         "carImage": car_image,
+        # Lyft-style card (owner 2026-11-09): the car and its plate. A push
+        # REPLACES the whole state, so a repaint without them would blank
+        # what the app wrote; widgets older than this ignore both keys.
+        "carLine": car_line,
+        "plate": plate,
     }
 
 
@@ -297,6 +304,8 @@ async def update_ride_live_activity(
     driver_rating: str = "",
     driver_photo_url: str = "",
     car_image: str = "",
+    car_line: str = "",
+    plate: str = "",
     alert: dict | None = None,
 ) -> str | None:
     """Repaint the rider's trip card. Silent by design (no alert block):
@@ -308,7 +317,7 @@ async def update_ride_live_activity(
             phase=phase, started_at=started_at, dropoff_at=dropoff_at,
             dropoff_address=dropoff_address, driver_name=driver_name,
             driver_rating=driver_rating, driver_photo_url=driver_photo_url,
-            car_image=car_image,
+            car_image=car_image, car_line=car_line, plate=plate,
         ),
     }
     if alert:

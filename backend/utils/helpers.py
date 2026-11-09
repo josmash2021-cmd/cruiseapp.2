@@ -760,6 +760,62 @@ def reservation_on_the_way_copy(first_name: str, trip) -> dict:
     }
 
 
+# The color word a driver registered (EN or ES) → (English, Spanish).
+# Mirrors _kVehicleColorWords in lib/widgets/tracking/vehicle_identity.dart.
+VEHICLE_COLOR_WORDS = {
+    "black": ("Black", "negro"), "negro": ("Black", "negro"),
+    "white": ("White", "blanco"), "blanco": ("White", "blanco"),
+    "silver": ("Silver", "plateado"), "plata": ("Silver", "plateado"),
+    "plateado": ("Silver", "plateado"),
+    "gray": ("Gray", "gris"), "grey": ("Gray", "gris"), "gris": ("Gray", "gris"),
+    "red": ("Red", "rojo"), "rojo": ("Red", "rojo"),
+    "blue": ("Blue", "azul"), "azul": ("Blue", "azul"),
+    "navy": ("Navy", "azul marino"), "dark blue": ("Navy", "azul marino"),
+    "green": ("Green", "verde"), "verde": ("Green", "verde"),
+    "beige": ("Beige", "beige"), "champagne": ("Champagne", "champán"),
+    "brown": ("Brown", "marrón"), "marrón": ("Brown", "marrón"),
+    "marron": ("Brown", "marrón"), "café": ("Brown", "marrón"),
+    "cafe": ("Brown", "marrón"),
+    "gold": ("Gold", "dorado"), "dorado": ("Gold", "dorado"),
+    "yellow": ("Yellow", "amarillo"), "amarillo": ("Yellow", "amarillo"),
+    "orange": ("Orange", "naranja"), "naranja": ("Orange", "naranja"),
+    "maroon": ("Maroon", "vino"), "burgundy": ("Maroon", "vino"),
+    "vino": ("Maroon", "vino"),
+    "purple": ("Purple", "morado"), "morado": ("Purple", "morado"),
+}
+
+
+def vehicle_car_line(make, model, color, lang: str) -> str:
+    """"Toyota Camry gris" (es) / "Gray Toyota Camry" (en) — the car the
+    rider looks for, as Lyft writes it (owner 2026-11-09). Same output as
+    vehicleCarLine in the app, so the lock-screen card reads the same
+    whether the app or the server painted it. An unknown color word stays
+    as the driver typed it; empty parts drop out."""
+    raw = (color or "").strip()
+    known = VEHICLE_COLOR_WORDS.get(raw.lower())
+    word = raw if known is None else (known[1] if lang == "es" else known[0])
+    car = " ".join(p for p in ((make or "").strip(), (model or "").strip()) if p)
+    parts = (car, word) if lang == "es" else (word, car)
+    return " ".join(p for p in parts if p)
+
+
+def driver_arrived_live_alert(first_name: str, car_line: str, plate: str,
+                              lang: str) -> dict:
+    """The lock-screen banner when the driver arrives (the ride card's one
+    alert): who is here and the car to look for, in the rider's language —
+    it was always "Your driver is here" in English."""
+    who = (first_name or "").strip()
+    car = " · ".join(p for p in ((car_line or "").strip(),
+                                 (plate or "").strip().upper()) if p)
+    if lang == "es":
+        title = f"{who} llegó" if who else "Tu conductor llegó"
+        body = f"Busca el {car}" if car else "Te espera en la recogida."
+    else:
+        title = f"{who} is here" if who else "Your driver is here"
+        body = f"Look for the {car}" if car else "Waiting at the pickup."
+    return {"title": title, "body": body}
+
+
 def wait_clock_start(trip):
     """When the pickup wait starts counting: the driver's arrival — never
     before a reservation's own pickup time (2026-11-03). A driver who

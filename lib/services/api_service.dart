@@ -4802,6 +4802,28 @@ class ApiService {
 
   /// Fetch the current user's active (in-progress) trip, if any.
   /// Returns null if no active trip exists.
+  /// What /trips/active says, without guessing on a failure: '' when the
+  /// server answered "no active trip", the trip's status when it has one,
+  /// null when it could not be read (timeout, the 502 of a Railway
+  /// redeploy) — never take that as "no trip" (rule #21).
+  static Future<String?> activeTripStatusOrNull() async {
+    try {
+      final h = await _authHeaders();
+      final res = await _client
+          .get(Uri.parse('$_baseUrl/trips/active'), headers: h)
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return null;
+      final body = jsonDecode(res.body);
+      if (body == null || (body is String && body == 'null')) return '';
+      if (body is Map<String, dynamic>) {
+        return (body['status'] ?? '').toString().toLowerCase();
+      }
+    } catch (e) {
+      debugPrint('[ApiService] activeTripStatusOrNull error: $e');
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>?> getActiveTrip() async {
     final h = await _authHeaders();
     final res = await _client

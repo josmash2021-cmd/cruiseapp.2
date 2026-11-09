@@ -2056,6 +2056,9 @@ class _UberCloneAppState extends State<UberCloneApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Cold start after a trip that ended with the app closed: its card can
+    // still be on the lock screen (resume does not fire on a cold start).
+    unawaited(LiveActivityService.endOrphanRideCard());
     UserSession.onBeforeLogout = () async {
       SupportBubbleController.instance.clear();
       await RiderPresenceService.instance.stop();
@@ -2269,6 +2272,8 @@ class _UberCloneAppState extends State<UberCloneApp>
       // getMe marks user as online on the backend
       ApiService.getMe();
       unawaited(AccountSessionGuard.check());
+      // A trip card left on the lock screen after its trip ended.
+      unawaited(LiveActivityService.endOrphanRideCard());
       KeepAliveService.instance.start();
       _requestRiderPresenceSync();
     }

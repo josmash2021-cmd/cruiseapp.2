@@ -69,19 +69,55 @@ void main() {
       expect(body.contains('_syncRideLiveActivity(end: true)'), isTrue);
     });
 
-    test('the island self-terminates past the ETA (user report 2026-10-02)',
+    test('past the ETA the card goes stale and says so (2026-10-02/11-09)',
         () {
       final appDelegate =
           File('ios/Runner/AppDelegate.swift').readAsStringSync();
-      // Both RIDE paths must carry the bounded staleDate — with nil the
-      // finished trip's island lived for hours when every end path failed
-      // (killed app + no ride token on the server). The driver's own
-      // presence island keeps its own discipline and is out of scope here.
-      expect(appDelegate.contains('dropoffAt.addingTimeInterval(90 * 60)'),
-          isTrue,
-          reason: 'the island self-terminates 90 min past the shown ETA; '
-              'live updateRide calls re-anchor it forward so an active trip '
-              'never goes stale mid-ride');
+      // Both RIDE paths carry the bounded staleDate. It does NOT remove
+      // the card (iOS keeps an activity up to 12 h): it turns it stale,
+      // and the widget then reads "Abre Cruise para ver tu viaje" instead
+      // of a finished trip's minutes. The driver's presence island keeps
+      // its own discipline and is out of scope here.
+      expect(
+          'dropoffAt.addingTimeInterval(90 * 60)'.allMatches(appDelegate).length,
+          2);
+      expect(appDelegate.contains('self-terminates'), isFalse,
+          reason: 'staleDate never ended a card — the comment lied');
+      expect(swift.contains('if #available(iOS 16.2, *) { return context.isStale }'),
+          isTrue);
+      expect(swift.contains('"Abre Cruise para ver tu viaje"'), isTrue);
+      expect('stale: rideIsStale(context)'.allMatches(swift).length, 3,
+          reason: 'lock screen, expanded island and the minutes slot');
+    });
+
+    test('an orphan card comes down when the app opens (2026-11-09)', () {
+      final service =
+          File('lib/services/live_activity_service.dart').readAsStringSync();
+      final main = File('lib/main.dart').readAsStringSync();
+      final api = File('lib/services/api_service.dart').readAsStringSync();
+      // Cold start and every resume.
+      expect('unawaited(LiveActivityService.endOrphanRideCard());'
+              .allMatches(main)
+              .length,
+          2);
+      // Only when this phone showed a card, and only on the server's word:
+      // a failed read (redeploy 502, timeout) is null and changes nothing.
+      final body = service.substring(
+          service.indexOf('static Future<void> endOrphanRideCard()'));
+      expect(body.contains('if (!await rideCardMaybeUp()) return;'), isTrue);
+      expect(
+          body.contains(
+              'if (status == null || _kRideCardStatuses.contains(status)) return;'),
+          isTrue);
+      expect(api.contains('static Future<String?> activeTripStatusOrNull()'),
+          isTrue);
+      expect(api.contains("if (res.statusCode != 200) return null;"), isTrue);
+      // The flag goes up with the card and down with every end.
+      final ctrl = File('lib/controllers/rider_tracking_controller.dart')
+          .readAsStringSync();
+      expect(ctrl.contains('unawaited(LiveActivityService.markRideCard(true));'),
+          isTrue);
+      expect(service.contains('unawaited(markRideCard(false));'), isTrue);
     });
   });
 

@@ -1,8 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/app_platform.dart';
 import 'api_service.dart';
+import 'notification_service.dart';
+
+/// Set while this phone shows a trip card (iPhone Live Activity or the
+/// Android trip notification); cleared when it comes down.
+const _kRideCardUpKey = 'ride_card_up';
 
 /// Bridge to the iOS Live Activity (Dynamic Island) — the Cruise logo
 /// stays visible while the driver is online and switches to another app.
@@ -194,8 +202,57 @@ class LiveActivityService {
     if (AppPlatform.isIOS) {
       ApiService.registerLiveActivityToken(kind: 'ride_activity', token: '');
     }
+    unawaited(markRideCard(false));
     return _invoke('endRide', null);
   }
+
+  /// Notes that a trip card went up (or came down), so Inicio can take an
+  /// ORPHAN down — one that outlived its trip because both end paths
+  /// missed (app closed and no card token on the server) — without asking
+  /// the server on every open when no card was ever shown.
+  static Future<void> markRideCard(bool up) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool(_kRideCardUpKey, up);
+    } catch (_) {}
+  }
+
+  static Future<bool> rideCardMaybeUp() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      return p.getBool(_kRideCardUpKey) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// A trip card that outlived its trip comes down when the app opens or
+  /// comes back (owner 2026-11-09: "¿no se queda dibujada aun así termine
+  /// el viaje?"). The trip screen ends it, the server ends it by push — and
+  /// with the app closed and no card token on the server neither runs;
+  /// iOS then keeps it up to 12 h (staleDate only greys it, it never
+  /// removes it). Ended unless the server says a ride is under way; a
+  /// failed read (timeout, redeploy 502) changes nothing.
+  static Future<void> endOrphanRideCard() async {
+    if (kIsWeb) return;
+    if (!await rideCardMaybeUp()) return;
+    final status = await ApiService.activeTripStatusOrNull();
+    if (status == null || _kRideCardStatuses.contains(status)) return;
+    debugPrint('[LiveActivity] trip card outlived its trip '
+        '(status "$status") — ending');
+    await endRide();
+    await NotificationService.cancelTripProgress();
+  }
+
+  /// Statuses where a trip card legitimately shows (the driver assigned and
+  /// coming, waiting, or the ride under way).
+  static const _kRideCardStatuses = {
+    'accepted', 'driver_assigned', 'driver_en_route', 'en_route',
+    'en_route_to_pickup', 'driver_arriving', 'arriving', 'arrived',
+    'driver_arrived', 'in_trip', 'in_progress', 'on_trip',
+    // A reservation inside its last 30 min — when unsure, keep the card.
+    'scheduled_active',
+  };
 
   static Future<void> _invoke(String method, String? status,
       {Map<String, Object>? extra}) async {

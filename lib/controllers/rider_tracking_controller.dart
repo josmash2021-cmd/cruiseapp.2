@@ -1184,6 +1184,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     final plate = widget.vehiclePlate.trim().toUpperCase();
 
     if (first) {
+      // Inicio takes the card down if it outlives its trip (both end
+      // paths missed) — see HomeScreen._endOrphanRideCard.
+      unawaited(LiveActivityService.markRideCard(true));
       LiveActivityService.startRide(
         phase: phaseName, startedAt: _laLegStart, dropoffAt: dropoffAt,
         dropoffAddress: widget.dropoffLabel, driverName: driverFirst,

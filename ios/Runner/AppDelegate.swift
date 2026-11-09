@@ -515,11 +515,13 @@ final class CruiseLiveActivityManager {
           // staleDate (user report 2026-10-02, "la isla sigue activa con el
           // viaje terminado"): both end paths — the app's endRide and the
           // backend's APNs end — can fail when the rider kills the app and
-          // no ride token ever reached the server. With staleDate nil the
-          // card then lived for HOURS showing a finished trip. Now it
-          // self-terminates 90 min past the shown ETA no matter what;
-          // every live updateRide re-anchors it forward, so an active trip
-          // never goes stale mid-ride.
+          // no ride token ever reached the server. staleDate does NOT
+          // remove the card (iOS keeps an activity up to 12 h): 90 min past
+          // the shown ETA it only turns stale, and the widget then shows
+          // "Abre Cruise para ver tu viaje" instead of a finished trip; the
+          // app's next open ends it (LiveActivityService.endOrphanRideCard,
+          // 2026-11-09). Every live updateRide re-anchors it forward, so an
+          // active trip never goes stale mid-ride.
           content: .init(
             state: state,
             staleDate: dropoffAt.addingTimeInterval(90 * 60))
@@ -548,9 +550,9 @@ final class CruiseLiveActivityManager {
         // Silent repaint, no alert — a ringing phone on every ETA tick is
         // worse than a stale minute. Phase changes that must be seen
         // (driver arrived) come through as their own push/notification.
-        // Same staleDate as startRide: the island self-terminates 90 min
-        // past the shown ETA if every end path failed (user report
-        // 2026-10-02 — a finished trip's island lived for hours).
+        // Same staleDate as startRide: 90 min past the shown ETA the card
+        // turns stale ("Abre Cruise para ver tu viaje") if every end path
+        // failed — stale, not removed; the app's next open ends it.
         await a.update(.init(
           state: state,
           staleDate: dropoffAt.addingTimeInterval(90 * 60)))

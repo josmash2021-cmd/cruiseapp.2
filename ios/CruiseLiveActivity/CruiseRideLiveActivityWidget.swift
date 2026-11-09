@@ -59,6 +59,15 @@ private func rideSubtitle(_ state: CruiseRideActivityAttributes.ContentState) ->
   }
 }
 
+/// True once the card passed its staleDate (iOS 16.2+): no update came for
+/// 90 min past the time it shows, so its minutes and phase are not true any
+/// more. staleDate never REMOVES a card (iOS keeps it up to 12 h); the app
+/// ends an orphan on its next open (LiveActivityService.endOrphanRideCard).
+private func rideIsStale(_ context: ActivityViewContext<CruiseRideActivityAttributes>) -> Bool {
+  if #available(iOS 16.2, *) { return context.isStale }
+  return false
+}
+
 /// 0…1 along the current leg, time-anchored so it can be recomputed on any
 /// repaint. "arrived" pins the car at the far end — the driver is there.
 private func rideFraction(_ state: CruiseRideActivityAttributes.ContentState, now: Date) -> Double {
@@ -195,6 +204,7 @@ private struct RideCarRow: View {
 private struct RideCard: View {
   var state: CruiseRideActivityAttributes.ContentState
   var compact: Bool = false
+  var stale: Bool = false
 
   /// Until pickup the car and its plate are what matter; aboard, the
   /// destination. An activity from an older build has neither car field.
@@ -203,6 +213,18 @@ private struct RideCard: View {
   }
 
   var body: some View {
+    if stale {
+      // Never "Llega en 0 min" on a trip that is over or went silent.
+      HStack(alignment: .center, spacing: 10) {
+        CruiseLogoView(size: compact ? 26 : 36)
+        Text(rideIsSpanish ? "Abre Cruise para ver tu viaje" : "Open Cruise to see your trip")
+          .font(.system(size: compact ? 14 : 17, weight: .heavy))
+          .foregroundColor(.white)
+          .lineLimit(2)
+          .minimumScaleFactor(0.7)
+        Spacer(minLength: 0)
+      }
+    } else {
     VStack(alignment: .leading, spacing: compact ? 6 : 8) {
       HStack(alignment: .top, spacing: 10) {
         CruiseLogoView(size: compact ? 26 : 36)
@@ -256,6 +278,7 @@ private struct RideCard: View {
       }
     }
     .frame(maxHeight: compact ? nil : .infinity, alignment: .top)
+    }
   }
 }
 
@@ -265,7 +288,11 @@ private struct RideCard: View {
 /// wide, so it may shrink.
 private struct RideEtaMinutes: View {
   var state: CruiseRideActivityAttributes.ContentState
+  var stale: Bool = false
   var body: some View {
+    if stale {
+      Text("")
+    } else {
     TimelineView(.periodic(from: .now, by: 1)) { ctx in
       let mins = max(0, Int((state.dropoffAt.timeIntervalSince(ctx.date) / 60).rounded(.up)))
       Text("\(mins) min")
@@ -274,6 +301,7 @@ private struct RideEtaMinutes: View {
         .lineLimit(1)
         .minimumScaleFactor(0.6)
     }
+    }
   }
 }
 
@@ -281,14 +309,14 @@ struct CruiseRideLiveActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: CruiseRideActivityAttributes.self) { context in
       // ── Lock Screen banner ──
-      RideCard(state: context.state)
+      RideCard(state: context.state, stale: rideIsStale(context))
         .padding(14)
         .activityBackgroundTint(Color.black.opacity(0.86))
         .activitySystemActionForegroundColor(rideGold)
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.bottom) {
-          RideCard(state: context.state, compact: true)
+          RideCard(state: context.state, compact: true, stale: rideIsStale(context))
             .padding(.horizontal, 4)
             // Fixed height, top-aligned (same lesson as the offer card):
             // the region centres content vertically, which floats the
@@ -299,7 +327,7 @@ struct CruiseRideLiveActivityWidget: Widget {
       } compactLeading: {
         CruiseLogoView(size: 23)
       } compactTrailing: {
-        RideEtaMinutes(state: context.state)
+        RideEtaMinutes(state: context.state, stale: rideIsStale(context))
       } minimal: {
         CruiseLogoView(size: 22)
       }

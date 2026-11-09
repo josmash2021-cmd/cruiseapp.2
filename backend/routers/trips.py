@@ -2855,7 +2855,37 @@ async def get_rider_scheduled_trips(rider_id: int, user: User = Depends(_get_cur
                 and_(Trip.rider_id == rider_id, Trip.status.in_(["scheduled", "scheduled_accepted", "scheduled_active", "requested", "driver_assigned", "accepted", "driver_en_route", "en_route_to_pickup", "driver_arriving", "arrived", "driver_arrived", "in_trip", "in_progress"]), Trip.scheduled_at.isnot(None))
             ).order_by(Trip.scheduled_at.asc())
         )
-        return [_trip_dict_for_user(t, user) for t in result.scalars().all()]
+        trips = result.scalars().all()
+        # Who is coming (owner 2026-11-08, Lyft-style reservation cards):
+        # the driver's name, photo, rating and active car, as GET /trips/{id}
+        # gives the same rider. Never the phone — the live trip has the call.
+        driver_ids = {t.driver_id for t in trips if t.driver_id}
+        drivers: dict[int, User] = {}
+        vehicles: dict[int, Vehicle] = {}
+        if driver_ids:
+            rows = (await db.execute(select(User).where(User.id.in_(driver_ids)))).scalars().all()
+            drivers = {u.id: u for u in rows}
+            vrows = (await db.execute(
+                select(Vehicle).where(Vehicle.user_id.in_(driver_ids), Vehicle.is_active == True)
+            )).scalars().all()
+            for v in vrows:
+                vehicles.setdefault(v.user_id, v)
+        out = []
+        for t in trips:
+            d = _trip_dict_for_user(t, user)
+            drv = drivers.get(t.driver_id) if t.driver_id else None
+            if drv is not None:
+                d["driver_name"] = f"{drv.first_name or ''} {drv.last_name or ''}".strip()
+                d["driver_photo_url"] = _abs_photo_url(drv.photo_url) or ""
+                _avg = getattr(drv, "average_rating", None)
+                d["driver_rating"] = round(float(_avg), 1) if _avg is not None else None
+                veh = vehicles.get(drv.id)
+                d["vehicle_make"] = (veh.make or "") if veh else ""
+                d["vehicle_model"] = (veh.model or "") if veh else ""
+                d["vehicle_color"] = (veh.color or "") if veh else ""
+                d["vehicle_plate"] = (veh.plate or "") if veh else ""
+            out.append(d)
+        return out
     except Exception as e:
         logging.error(f"get_rider_scheduled_trips error: {e}")
         raise HTTPException(500, f"Failed to load scheduled trips: {str(e)}")

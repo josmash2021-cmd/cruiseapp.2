@@ -15,6 +15,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import '../../services/haptic_service.dart';
 import '../../services/rider_stop_voice.dart';
+import '../../services/driver_trip_island.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -772,6 +773,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       const Duration(seconds: 15),
       (_) => unawaited(_pollSupportUnread()),
     );
+    // The driver's lock-screen card follows this screen's leg.
+    _islandTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _syncIsland(),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncIsland());
     _loadComplimentaryDrinkIfVip();
 
     // If returning from nav (trip already started), skip slide-to-confirm
@@ -1016,6 +1023,71 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// server (wait_clock_start) — the nav bar stays full and "Pasajero no
   /// llegó" away until then.
   DateTime? _earlyWaitStart;
+
+  // ── The driver's lock-screen card (owner-approved drawing 2026-11-09,
+  // https://claude.ai/artifact/DoSsRsv83hW7ULJWJgoetK §5) ────────────────
+  Timer? _islandTimer;
+
+  /// When "Llegué" went in on this phone — the free wait's start when the
+  /// server's "Wait started:" note is not in this screen's data.
+  DateTime? _arrivedLocalAt;
+
+  /// Which leg the driver is on, for DriverTripIsland: "Recoge a María en
+  /// 4 min", "Esperando a María · Espera gratis 3:12", "Parada en 3 min",
+  /// "Deja a María en 12 min". Runs every 5 s and on "Llegué"; the island
+  /// itself repaints only when something changed (or every 30 s).
+  void _syncIsland() {
+    if (!mounted) return;
+    final first = widget.riderName.trim().split(' ').first;
+    final rating =
+        widget.riderRating > 0 ? widget.riderRating.toStringAsFixed(1) : '';
+    final String phase;
+    final String address;
+    final LatLng? target;
+    DateTime? freeEnd;
+    if (!_rideStarted) {
+      if (_arrivedConfirmed) {
+        _arrivedLocalAt ??= DateTime.now();
+        phase = 'waiting';
+        // A reservation's wait counts from its pickup time (rule 57).
+        final start = _earlyWaitStart ?? _waitStartedAt ?? _arrivedLocalAt;
+        freeEnd = start?.add(const Duration(minutes: 5));
+      } else {
+        phase = 'to_pickup';
+      }
+      address = _pickupAddr.isEmpty ? widget.pickupAddress : _pickupAddr;
+      target = widget.pickupLatLng;
+    } else if (_stopLegActive) {
+      final at = _stopArrivedAt;
+      phase = at == null ? 'to_stop' : 'at_stop';
+      if (at != null) freeEnd = at.add(const Duration(minutes: 5));
+      address = _stopLabel;
+      target = _stopLatLng;
+    } else {
+      phase = 'to_dropoff';
+      address = _dropoffAddr.isEmpty ? widget.dropoffAddress : _dropoffAddr;
+      target = _dropoffLL;
+    }
+    DriverTripIsland.setLeg(
+      tripId: widget.tripId,
+      phase: phase,
+      riderName: first,
+      riderRating: rating,
+      riderPhotoUrl: _riderPhotoUrl ?? '',
+      address: address,
+      targetLat: target?.latitude,
+      targetLng: target?.longitude,
+      etaSeconds: phase == 'to_pickup' && widget.etaMinutes > 0
+          ? widget.etaMinutes * 60
+          : null,
+      freeWaitEnd: freeEnd,
+      waitRate: DriverTripIsland.waitRateFor(widget.vehicleType),
+    );
+    final pos = _lastDriverPos;
+    if (pos != null) {
+      DriverTripIsland.reportPosition(pos.latitude, pos.longitude);
+    }
+  }
 
   DateTime? get _waitStartedAt {
     for (final line in widget.pickupInstructions.split('\n')) {
@@ -1591,6 +1663,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _chainedSseSub?.cancel();
     _chainedPollTimer?.cancel();
     _supportUnreadTimer?.cancel();
+    _islandTimer?.cancel();
     _queuedSub?.cancel();
     _queuedPoll?.cancel();
     _queuedCanceledTimer?.cancel();
@@ -1935,6 +2008,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Confirm arrival at pickup (Arrived slider) ──────────────────────────
   Future<void> _confirmArrival() async {
     setState(() => _arrivedConfirmed = true);
+    _arrivedLocalAt ??= DateTime.now();
+    _syncIsland();
 
     // Tell the rider FIRST. Nothing is awaited above this line, and nothing
     // may be added above it.

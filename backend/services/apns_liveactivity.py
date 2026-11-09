@@ -85,9 +85,13 @@ async def clear_live_activity_offer(
     *,
     start_token: str | None,
     activity_token: str | None,
+    status: str = "online",
 ) -> str | None:
     """The offer died (expired, rejected, or went to another driver): the
     island goes back to the plain online state — no fare left on screen.
+    Taken ([status] "on_trip", 2026-11-09): it reads "En viaje" until the
+    app paints the trip leg; "online" there sat on the island mid-trip
+    when this push landed after the app's own paint.
 
     Returns the same outcome strings as send_live_activity_offer.
     """
@@ -98,7 +102,7 @@ async def clear_live_activity_offer(
         return None
 
     content_state = {
-        "status": "online",
+        "status": status,
         "since": int(time.time()),
         "fare": "",
         "perHour": "",

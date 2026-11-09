@@ -132,9 +132,10 @@ void main() {
           ctrl.indexOf('void _showOnlinePresence() {'),
           ctrl.indexOf('LiveActivityService.startOnline();'));
       expect(presence, contains('if (!_driverOnline) return;'));
+      final start =
+          ctrl.indexOf('void _syncOfferLiveActivity({bool force = false}) {');
       final sync = ctrl.substring(
-          ctrl.indexOf('void _syncOfferLiveActivity({bool force = false}) {'),
-          ctrl.indexOf('LiveActivityService.updateStatus(next)'));
+          start, ctrl.indexOf('_sendShiftIsland(done: false', start));
       expect(sync, contains('if (!_driverOnline) return;'));
     });
 

@@ -161,12 +161,359 @@ private struct OfferCard: View {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  Driver card (owner-approved drawing 2026-11-09,
+//  https://claude.ai/artifact/DoSsRsv83hW7ULJWJgoetK §5): Lyft's idea —
+//  in big, what the driver does next and how long; under it the address
+//  (or the pickup code to ask for); the leg's bar; and the closed island
+//  with the one number that matters now.
+//    online      Buscando viajes · En línea 1 h 12 min · $84.50 hoy
+//    to_pickup   Recoge a María en 4 min · Recogida 3:42 PM · address
+//    waiting     Esperando a María · Espera gratis 3:12 · luego $0.40/min
+//    to_stop     Parada en 3 min        at_stop  Esperando a María en la parada
+//    to_dropoff  Deja a María en 12 min · Llegada 3:58 PM · address
+//    done        Ganaste $14.20 · Viaje con María · Hoy $98.70 · 5 viajes
+// ═══════════════════════════════════════════════════════════════════
+
+private typealias DriverState = CruiseActivityAttributes.ContentState
+
+/// Whole minutes left on the leg, ceil-rounded like every ETA in the app.
+private func driverMinutesLeft(_ end: Date?, now: Date) -> Int? {
+  guard let end = end else { return nil }
+  return max(0, Int((end.timeIntervalSince(now) / 60).rounded(.up)))
+}
+
+/// "1 h 12 min" / "45 min" online.
+private func driverOnlineFor(_ since: Date?, now: Date) -> String {
+  guard let since = since else { return "" }
+  let mins = max(0, Int(now.timeIntervalSince(since) / 60))
+  let h = mins / 60
+  let m = mins % 60
+  return h == 0 ? "\(m) min" : "\(h) h \(m) min"
+}
+
+/// "3:12" — the free wait left, or the paid wait so far.
+private func driverClock(_ seconds: Int) -> String {
+  let v = max(0, seconds)
+  return String(format: "%d:%02d", v / 60, v % 60)
+}
+
+private func driverIsMoving(_ s: DriverState) -> Bool {
+  s.phase == "to_pickup" || s.phase == "to_stop" || s.phase == "to_dropoff"
+}
+
+private func driverIsWaiting(_ s: DriverState) -> Bool {
+  s.phase == "waiting" || s.phase == "at_stop"
+}
+
+/// The big line: what the driver does next.
+private func driverTitle(_ s: DriverState, now: Date) -> String {
+  let who = s.riderName
+  // nil = no time yet (the leg just began): say what to do, never
+  // "Llegando" — that is for 0 min, at the door.
+  let known = driverMinutesLeft(s.legEnd, now: now)
+  let mins = known ?? 0
+  switch s.phase {
+  case "to_pickup":
+    if known == nil {
+      if who.isEmpty { return isSpanish ? "Ve a la recogida" : "Head to the pickup" }
+      return isSpanish ? "Recoge a \(who)" : "Pick up \(who)"
+    }
+    if mins > 0 {
+      if who.isEmpty { return isSpanish ? "Recogida en \(mins) min" : "Pickup in \(mins) min" }
+      return isSpanish ? "Recoge a \(who) en \(mins) min" : "Pick up \(who) in \(mins) min"
+    }
+    return isSpanish ? "Llegando a la recogida" : "Arriving at pickup"
+  case "waiting":
+    if who.isEmpty { return isSpanish ? "Esperando al pasajero" : "Waiting for your rider" }
+    return isSpanish ? "Esperando a \(who)" : "Waiting for \(who)"
+  case "to_stop":
+    if known == nil { return isSpanish ? "Ve a la parada" : "Head to the stop" }
+    if mins > 0 { return isSpanish ? "Parada en \(mins) min" : "Stop in \(mins) min" }
+    return isSpanish ? "Llegando a la parada" : "Arriving at the stop"
+  case "at_stop":
+    if who.isEmpty { return isSpanish ? "Esperando en la parada" : "Waiting at the stop" }
+    return isSpanish ? "Esperando a \(who) en la parada" : "Waiting for \(who) at the stop"
+  case "to_dropoff":
+    if known == nil {
+      if who.isEmpty { return isSpanish ? "Ve al destino" : "Head to the drop-off" }
+      return isSpanish ? "Deja a \(who) en su destino" : "Drop off \(who)"
+    }
+    if mins > 0 {
+      if who.isEmpty { return isSpanish ? "Destino en \(mins) min" : "Drop-off in \(mins) min" }
+      return isSpanish ? "Deja a \(who) en \(mins) min" : "Drop off \(who) in \(mins) min"
+    }
+    return isSpanish ? "Llegando al destino" : "Arriving at drop-off"
+  case "done":
+    if s.tripEarned.isEmpty { return isSpanish ? "Viaje terminado" : "Ride complete" }
+    return isSpanish ? "Ganaste \(s.tripEarned)" : "You earned \(s.tripEarned)"
+  default:
+    if s.status == "on_trip" { return isSpanish ? "En viaje" : "On a trip" }
+    return isSpanish ? "Buscando viajes" : "Looking for rides"
+  }
+}
+
+/// The small line under it. The waits draw their own (a live clock).
+private func driverSubtitle(_ s: DriverState, now: Date) -> String {
+  let time = s.legEnd?.formatted(date: .omitted, time: .shortened) ?? ""
+  switch s.phase {
+  case "to_pickup":
+    return time.isEmpty ? "" : (isSpanish ? "Recogida \(time)" : "\(time) pickup")
+  case "to_stop", "to_dropoff":
+    return time.isEmpty ? "" : (isSpanish ? "Llegada \(time)" : "Arrive \(time)")
+  case "done":
+    if s.riderName.isEmpty { return "" }
+    return isSpanish ? "Viaje con \(s.riderName)" : "Ride with \(s.riderName)"
+  case "waiting", "at_stop":
+    return ""
+  default:
+    if s.status == "on_trip" { return "" }
+    let dur = driverOnlineFor(s.onlineSince, now: now)
+    if dur.isEmpty { return statusLine(s.status) }
+    return isSpanish ? "En línea · \(dur)" : "Online · \(dur)"
+  }
+}
+
+/// "$84.50 hoy · 4 viajes" (online) / "Hoy $98.70 · 5 viajes" (done).
+private func driverEarningsText(_ s: DriverState, compact: Bool) -> Text {
+  let n = s.tripsToday
+  let rides = isSpanish ? (n == "1" ? "viaje" : "viajes") : (n == "1" ? "ride" : "rides")
+  let tail = n.isEmpty ? "" : " · \(n) \(rides)"
+  let money = Text(s.earnedToday).bold().foregroundColor(cruiseGold)
+  if s.phase == "done" {
+    return Text(isSpanish ? "Hoy " : "Today ") + money + Text(tail)
+  }
+  return money + Text(isSpanish ? " hoy" : " today") + Text(tail)
+}
+
+/// The free wait, ticking: "Espera gratis 3:12 · luego $0.40/min", then
+/// "Cobrando espera · $0.40/min".
+private struct DriverWaitLine: View {
+  var state: DriverState
+  var compact: Bool
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+      if let end = state.freeWaitEnd, end > ctx.date {
+        let left = driverClock(Int(end.timeIntervalSince(ctx.date).rounded(.up)))
+        let rate = state.waitRate.isEmpty ? ""
+          : (isSpanish ? " · luego \(state.waitRate)" : " · then \(state.waitRate)")
+        Text((isSpanish ? "Espera gratis " : "Free wait ") + left + rate)
+      } else if state.freeWaitEnd != nil {
+        Text(isSpanish ? "Cobrando espera · \(state.waitRate)" : "Wait fee · \(state.waitRate)")
+      } else {
+        Text(isSpanish ? "En la recogida" : "At the pickup")
+      }
+    }
+    .font(.system(size: compact ? 11 : 13, weight: .semibold))
+    .foregroundColor(.white.opacity(0.6))
+    .lineLimit(1)
+    .minimumScaleFactor(0.7)
+  }
+}
+
+/// The rider's face (or a gold initial) and rating.
+private struct DriverRiderBadge: View {
+  var state: DriverState
+  var size: CGFloat
+
+  private var placeholder: some View {
+    ZStack {
+      Circle().fill(cruiseGold)
+      Text(String(state.riderName.prefix(1)).uppercased())
+        .font(.system(size: size * 0.45, weight: .heavy))
+        .foregroundColor(.black)
+    }
+  }
+
+  var body: some View {
+    VStack(alignment: .trailing, spacing: 2) {
+      if let u = URL(string: state.riderPhotoUrl), !state.riderPhotoUrl.isEmpty {
+        AsyncImage(url: u) { phase in
+          if case .success(let img) = phase {
+            img.resizable().scaledToFill()
+          } else {
+            placeholder
+          }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+      } else {
+        placeholder.frame(width: size, height: size)
+      }
+      if !state.riderRating.isEmpty {
+        HStack(spacing: 2) {
+          Image(systemName: "star.fill")
+            .font(.system(size: size * 0.28))
+            .foregroundColor(cruiseGold)
+          Text(state.riderRating)
+            .font(.system(size: size * 0.32, weight: .semibold))
+            .foregroundColor(.white.opacity(0.7))
+        }
+      }
+    }
+  }
+}
+
+/// Car ── leg ── end: the car glides with the clock between updates;
+/// waiting pins it at the end.
+private struct DriverLegBar: View {
+  var state: DriverState
+  var compact: Bool = false
+
+  private var carW: CGFloat { compact ? 26 : 30 }
+  private var line: CGFloat { compact ? 3 : 4 }
+  private var pinW: CGFloat { compact ? 16 : 18 }
+
+  private func fraction(_ now: Date) -> Double {
+    if driverIsWaiting(state) { return 1 }
+    guard let start = state.legStart, let end = state.legEnd else { return 0 }
+    let total = end.timeIntervalSince(start)
+    guard total > 0 else { return 1 }
+    return min(max(now.timeIntervalSince(start) / total, 0), 1)
+  }
+
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+      let f = fraction(ctx.date)
+      GeometryReader { geo in
+        let w = geo.size.width
+        let carX = f * (w - carW)
+        ZStack(alignment: .leading) {
+          Capsule()
+            .fill(Color.white.opacity(0.18))
+            .frame(height: line)
+            .padding(.horizontal, carW / 2)
+          Capsule()
+            .fill(cruiseGold)
+            .frame(width: carX + carW / 2, height: line)
+            .padding(.leading, carW / 2)
+          Image(systemName: state.phase == "to_pickup" || state.phase == "waiting"
+                ? "person.circle.fill" : "mappin.circle.fill")
+            .font(.system(size: pinW, weight: .bold))
+            .foregroundColor(cruiseGold)
+            .offset(x: w - pinW)
+          ZStack {
+            Circle().fill(cruiseGold)
+            Image(systemName: "car.fill")
+              .font(.system(size: carW * 0.5, weight: .bold))
+              .foregroundColor(.black)
+          }
+          .frame(width: carW, height: carW)
+          .offset(x: carX)
+        }
+      }
+      .frame(height: carW)
+    }
+  }
+}
+
+private struct DriverCard: View {
+  var state: DriverState
+  var compact: Bool = false
+
+  private var onTrip: Bool { driverIsMoving(state) || driverIsWaiting(state) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: compact ? 6 : 8) {
+      HStack(alignment: .top, spacing: 10) {
+        CruiseLogoView(size: compact ? 26 : 36)
+        VStack(alignment: .leading, spacing: 2) {
+          // The minutes and the time online count on a 1 s tick.
+          TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            Text(driverTitle(state, now: ctx.date))
+              .font(.system(size: compact ? 16 : 21, weight: .heavy))
+              .foregroundColor(.white)
+              .lineLimit(1)
+              .minimumScaleFactor(0.7)
+          }
+          if driverIsWaiting(state) {
+            DriverWaitLine(state: state, compact: compact)
+          } else {
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+              Text(driverSubtitle(state, now: ctx.date))
+                .font(.system(size: compact ? 11 : 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.6))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            }
+          }
+        }
+        Spacer(minLength: 4)
+        if onTrip {
+          DriverRiderBadge(state: state, size: compact ? 26 : 34)
+        } else {
+          Circle()
+            .fill(cruiseGold)
+            .frame(width: 10, height: 10)
+            .padding(.top, compact ? 8 : 12)
+        }
+      }
+      if state.phase == "waiting" {
+        // The code is the only unlock for "Desliza para recoger" (rule 58).
+        (Text(isSpanish ? "Pídele el " : "Ask for the ")
+          + Text(isSpanish ? "código de recogida" : "pickup code").bold().foregroundColor(cruiseGold))
+          .font(.system(size: compact ? 12 : 14, weight: .semibold))
+          .foregroundColor(.white.opacity(0.88))
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
+          .padding(.horizontal, 10)
+          .padding(.vertical, compact ? 3 : 6)
+          .background(
+            RoundedRectangle(cornerRadius: 10)
+              .fill(cruiseGold.opacity(0.12)))
+          .overlay(
+            RoundedRectangle(cornerRadius: 10)
+              .stroke(cruiseGold.opacity(0.45), lineWidth: 1))
+      } else if onTrip && !state.address.isEmpty {
+        HStack(spacing: 8) {
+          Image(systemName: state.phase == "to_pickup" ? "circle.fill" : "square.fill")
+            .font(.system(size: compact ? 7 : 9))
+            .foregroundColor(cruiseGold)
+          Text(state.address)
+            .font(.system(size: compact ? 12 : 14, weight: .semibold))
+            .foregroundColor(.white.opacity(0.88))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+        }
+      } else if !onTrip && !state.earnedToday.isEmpty {
+        driverEarningsText(state, compact: compact)
+          .font(.system(size: compact ? 12 : 14, weight: .regular))
+          .foregroundColor(.white.opacity(0.75))
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
+      }
+      // The island's 96 pt hold the title and the row; its closed slot
+      // already carries the minutes.
+      if onTrip && !compact {
+        DriverLegBar(state: state, compact: compact)
+      }
+    }
+    .frame(maxHeight: compact ? nil : .infinity, alignment: .top)
+  }
+}
+
 // Collapsed, the island has room for one fact. During an offer that fact
 // is the money; otherwise it is the "you are online" dot. The slot is
 // only a few characters wide, so the fare has to be allowed to shrink —
 // at a fixed 15 pt heavy, "$24.50" truncates to "$24…".
 private struct IslandCompactTrailing: View {
   var state: CruiseActivityAttributes.ContentState
+
+  /// Minutes on a leg, the free wait's clock (then the paid wait counting
+  /// up), "+$14.20" after a ride, today's money while online.
+  private func label(_ now: Date) -> String? {
+    if driverIsMoving(state), let m = driverMinutesLeft(state.legEnd, now: now) {
+      return "\(m) min"
+    }
+    if driverIsWaiting(state), let end = state.freeWaitEnd {
+      let left = Int(end.timeIntervalSince(now).rounded(.up))
+      return left > 0 ? driverClock(left) : "+" + driverClock(-left)
+    }
+    if state.phase == "done" && !state.tripEarned.isEmpty { return "+" + state.tripEarned }
+    if state.status == "online" && !state.earnedToday.isEmpty { return state.earnedToday }
+    return nil
+  }
+
   var body: some View {
     if state.status == "offer" && !state.fare.isEmpty {
       Text(state.fare)
@@ -175,9 +522,19 @@ private struct IslandCompactTrailing: View {
         .lineLimit(1)
         .minimumScaleFactor(0.7)
     } else {
-      Circle()
-        .fill(cruiseGold)
-        .frame(width: 8, height: 8)
+      TimelineView(.periodic(from: .now, by: 1)) { ctx in
+        if let text = label(ctx.date) {
+          Text(text)
+            .font(.system(size: 15, weight: .heavy))
+            .foregroundColor(cruiseGold)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+        } else {
+          Circle()
+            .fill(cruiseGold)
+            .frame(width: 8, height: 8)
+        }
+      }
     }
   }
 }
@@ -190,24 +547,10 @@ struct CruiseLiveActivityWidget: Widget {
         if context.state.status == "offer" {
           OfferCard(state: context.state)
         } else {
-          HStack(spacing: 12) {
-            CruiseLogoView(size: 42)
-            VStack(alignment: .leading, spacing: 2) {
-              Text("Cruise")
-                .font(.system(size: 16, weight: .heavy))
-                .foregroundColor(.white)
-              Text(statusLine(context.state.status))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(cruiseGold)
-            }
-            Spacer()
-            Circle()
-              .fill(cruiseGold)
-              .frame(width: 10, height: 10)
-          }
+          DriverCard(state: context.state)
         }
       }
-      .padding(16)
+      .padding(14)
       .activityBackgroundTint(Color.black.opacity(0.86))
       .activitySystemActionForegroundColor(cruiseGold)
     } dynamicIsland: { context in
@@ -244,27 +587,15 @@ struct CruiseLiveActivityWidget: Widget {
         }
         .keylineTint(cruiseGold)
       }
-      // Online / on a trip: the three-column layout that already ships.
-      // Keeping this content in .bottom left the expanded island with an
-      // empty top row and everything shoved under it.
+      // Online, on a trip, just finished: the driver card, compact, as one
+      // piece in the bottom region — fixed height, top-aligned, like the
+      // offer (the region centres content vertically otherwise).
       return DynamicIsland {
-        DynamicIslandExpandedRegion(.leading) {
-          CruiseLogoView(size: 36)
-        }
-        DynamicIslandExpandedRegion(.center) {
-          VStack(alignment: .leading, spacing: 2) {
-            Text("Cruise")
-              .font(.system(size: 15, weight: .heavy))
-              .foregroundColor(.white)
-            Text(statusLine(state.status))
-              .font(.system(size: 12, weight: .semibold))
-              .foregroundColor(cruiseGold)
-          }
-        }
-        DynamicIslandExpandedRegion(.trailing) {
-          Circle()
-            .fill(cruiseGold)
-            .frame(width: 10, height: 10)
+        DynamicIslandExpandedRegion(.bottom) {
+          DriverCard(state: state, compact: true)
+            .padding(.horizontal, 4)
+            .frame(height: 96, alignment: .top)
+            .padding(.top, 2)
         }
       } compactLeading: {
         CruiseLogoView(size: 23)

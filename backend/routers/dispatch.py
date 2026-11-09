@@ -1069,8 +1069,9 @@ async def send_reservation_confirm_offer(
     return offer
 
 
-async def _clear_live_activity_offer(driver_id: int) -> None:
-    """The offer died — take the fare off the driver's Live Activity."""
+async def _clear_live_activity_offer(driver_id: int, status: str = "online") -> None:
+    """The offer died — take the fare off the driver's Live Activity.
+    [status] "on_trip" when it died because THIS driver took it."""
     try:
         async with SessionLocal() as db:
             d = await db.get(User, driver_id)
@@ -1089,6 +1090,7 @@ async def _clear_live_activity_offer(driver_id: int) -> None:
         outcome = await clear_live_activity_offer(
             start_token=d.apns_la_start_token,
             activity_token=d.apns_la_activity_token,
+            status=status,
         )
         if outcome in ("stale_activity", "stale_start"):
             async with SessionLocal() as db:
@@ -2508,8 +2510,9 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     _pending_cache.pop(driver_id, None)  # L3: invalidate cache so next poll is fresh
     _dispatch_status_cache.pop(offer.trip_id, None)  # invalidate status cache on accept
     # An island started by push-to-start with the app killed is still showing
-    # the offer — the accept happened inside the app, so take it down.
-    _safe_create_task(_clear_live_activity_offer(driver_id))
+    # the offer — the accept happened inside the app, so take it down. As
+    # "on_trip": the app paints the leg on its next tick (2026-11-09).
+    _safe_create_task(_clear_live_activity_offer(driver_id, status="on_trip"))
 
     # Cancel any running auto-cascade for this trip -- a driver accepted
     cascade_task = _cascade_tasks.pop(offer.trip_id, None)

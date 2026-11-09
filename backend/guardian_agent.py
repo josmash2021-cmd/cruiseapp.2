@@ -1516,37 +1516,18 @@ class UnmatchedTripRetryAgent:
                 except Exception:
                     pass
 
-                # Push — same one-place rule as dispatch: an iPhone with its
-                # Live Activity channels registered gets the island card and
-                # NO banner; everyone else gets the FCM heads-up. The banner
-                # copy is a bare "Open Cruise to accept." (user spec
-                # 2026-08-09) — miles/minutes ride in the data payload and on
-                # the island, never in the banner text.
-                minutes = int(trip.duration) if trip.duration else 0
-                miles = float(trip.distance) if trip.distance else 0.0
-                miles_str = f"{miles:.1f} mi" if miles > 0 else None
-                minutes_str = f"{minutes} min" if minutes > 0 else None
-                # No price outside the app (2026-08-08): the fare is decided
-                # on the offer card inside Cruise, so neither the island nor
-                # a banner may carry it.
+                # Push: the banner copy is a bare "Abre Cruise para aceptar."
+                # (user spec 2026-08-09) — the offer rides in the data
+                # payload. No price outside the app (2026-08-08): the fare
+                # is decided on the offer card inside Cruise.
                 #
-                # Same fallback as dispatch: a registered channel is not
-                # enough — with APNs unconfigured the liveactivity push is a
-                # silent no-op and suppressing the banner leaves the driver
-                # with NOTHING outside the app.
-                from services.apns_liveactivity import apns_configured
-                if (assigned.apns_la_activity_token or assigned.apns_la_start_token) \
-                        and apns_configured():
-                    from routers.dispatch import _send_live_activity_offer
-                    from utils.helpers import _safe_create_task
-                    _safe_create_task(_send_live_activity_offer(
-                        assigned,
-                        fare="",
-                        per_hour="",
-                        miles=miles_str,
-                        minutes=minutes_str,
-                    ))
-                elif assigned.fcm_token:
+                # Offer = the FCM banner, ALWAYS (product call 2026-10-02,
+                # same as dispatch). This used to send iPhones with a Live
+                # Activity token through routers.dispatch._send_live_activity_
+                # offer, which no longer exists: the import raised and those
+                # drivers got NOTHING for a guardian re-offer (found
+                # 2026-11-09).
+                if assigned.fcm_token:
                     try:
                         # Same instant-card payload as dispatch's offer push:
                         # the tap draws the card from this data, the server
@@ -1558,11 +1539,14 @@ class UnmatchedTripRetryAgent:
                         # loop — every re-dispatch froze every other request
                         # for the duration of that call.
                         from services.fcm_service import _send_fcm_push_async
-                        from utils.helpers import _safe_create_task
+                        from utils.helpers import _safe_create_task, user_lang
                         _safe_create_task(_send_fcm_push_async(
                             assigned.fcm_token,
-                            title="New Ride Offer",
-                            body="Open Cruise to accept.",
+                            title="Nueva oferta de viaje",
+                            body="Abre Cruise para aceptar.",
+                            title_en="New Ride Offer",
+                            body_en="Open Cruise to accept.",
+                            locale=user_lang(assigned),
                             data={
                                 "type": "new_offer",
                                 "trip_id": str(trip.id),

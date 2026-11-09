@@ -27,8 +27,38 @@ struct CruiseActivityAttributes: ActivityAttributes {
     var miles: String = ""
     var minutes: String = ""
 
+    // ── Trip and shift fields (owner-approved drawing 2026-11-09) ──
+    // What the driver does next, in big, the way Lyft writes its rider
+    // card. `status` keeps its old values so a card painted by a newer app
+    // on an older widget still reads "En viaje"; `phase` refines it:
+    // "to_pickup" · "waiting" · "to_stop" · "at_stop" · "to_dropoff" while
+    // on_trip, "done" (just finished) while online.
+    var phase: String = ""
+    var riderName: String = ""
+    var riderRating: String = ""
+    var riderPhotoUrl: String = ""
+    /// The address of the current leg (pickup, stop or dropoff).
+    var address: String = ""
+    /// The current leg, start → arrival: the minutes and the bar.
+    var legStart: Date? = nil
+    var legEnd: Date? = nil
+    /// When the free wait ends at the pickup or the stop.
+    var freeWaitEnd: Date? = nil
+    /// "$0.40/min" — the wait fee after the free minutes.
+    var waitRate: String = ""
+    /// Today's money and rides: "$84.50", "4".
+    var earnedToday: String = ""
+    var tripsToday: String = ""
+    /// What the ride that just ended paid: "$14.20".
+    var tripEarned: String = ""
+    /// The shift's real start (`since` is reset on every update).
+    var onlineSince: Date? = nil
+
     private enum CodingKeys: String, CodingKey {
       case status, since, fare, perHour, miles, minutes
+      case phase, riderName, riderRating, riderPhotoUrl, address
+      case legStart, legEnd, freeWaitEnd, waitRate
+      case earnedToday, tripsToday, tripEarned, onlineSince
     }
 
     // Written out because declaring init(from:) below suppresses the
@@ -39,7 +69,20 @@ struct CruiseActivityAttributes: ActivityAttributes {
       fare: String = "",
       perHour: String = "",
       miles: String = "",
-      minutes: String = ""
+      minutes: String = "",
+      phase: String = "",
+      riderName: String = "",
+      riderRating: String = "",
+      riderPhotoUrl: String = "",
+      address: String = "",
+      legStart: Date? = nil,
+      legEnd: Date? = nil,
+      freeWaitEnd: Date? = nil,
+      waitRate: String = "",
+      earnedToday: String = "",
+      tripsToday: String = "",
+      tripEarned: String = "",
+      onlineSince: Date? = nil
     ) {
       self.status = status
       self.since = since
@@ -47,14 +90,27 @@ struct CruiseActivityAttributes: ActivityAttributes {
       self.perHour = perHour
       self.miles = miles
       self.minutes = minutes
+      self.phase = phase
+      self.riderName = riderName
+      self.riderRating = riderRating
+      self.riderPhotoUrl = riderPhotoUrl
+      self.address = address
+      self.legStart = legStart
+      self.legEnd = legEnd
+      self.freeWaitEnd = freeWaitEnd
+      self.waitRate = waitRate
+      self.earnedToday = earnedToday
+      self.tripsToday = tripsToday
+      self.tripEarned = tripEarned
+      self.onlineSince = onlineSince
     }
 
     // The property defaults above are NOT a decoding fallback: Swift's
     // synthesised init(from:) throws .keyNotFound on a missing key and
-    // never consults them. Only decodeIfPresent gives the four offer
-    // fields backwards compatibility, so an activity that the previous
-    // two-field build left running still decodes after the app updates
-    // instead of vanishing from the island.
+    // never consults them. Only decodeIfPresent gives the newer fields
+    // backwards compatibility, so an activity that an older build left
+    // running — or a server push that carries only the offer fields —
+    // still decodes instead of vanishing from the island.
     //
     // public because it witnesses a requirement of Decodable on a public
     // type; the memberwise init above stays internal, the way the
@@ -67,6 +123,19 @@ struct CruiseActivityAttributes: ActivityAttributes {
       perHour = try c.decodeIfPresent(String.self, forKey: .perHour) ?? ""
       miles = try c.decodeIfPresent(String.self, forKey: .miles) ?? ""
       minutes = try c.decodeIfPresent(String.self, forKey: .minutes) ?? ""
+      phase = try c.decodeIfPresent(String.self, forKey: .phase) ?? ""
+      riderName = try c.decodeIfPresent(String.self, forKey: .riderName) ?? ""
+      riderRating = try c.decodeIfPresent(String.self, forKey: .riderRating) ?? ""
+      riderPhotoUrl = try c.decodeIfPresent(String.self, forKey: .riderPhotoUrl) ?? ""
+      address = try c.decodeIfPresent(String.self, forKey: .address) ?? ""
+      legStart = try c.decodeIfPresent(Date.self, forKey: .legStart)
+      legEnd = try c.decodeIfPresent(Date.self, forKey: .legEnd)
+      freeWaitEnd = try c.decodeIfPresent(Date.self, forKey: .freeWaitEnd)
+      waitRate = try c.decodeIfPresent(String.self, forKey: .waitRate) ?? ""
+      earnedToday = try c.decodeIfPresent(String.self, forKey: .earnedToday) ?? ""
+      tripsToday = try c.decodeIfPresent(String.self, forKey: .tripsToday) ?? ""
+      tripEarned = try c.decodeIfPresent(String.self, forKey: .tripEarned) ?? ""
+      onlineSince = try c.decodeIfPresent(Date.self, forKey: .onlineSince)
     }
   }
 }

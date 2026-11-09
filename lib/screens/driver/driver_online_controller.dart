@@ -235,13 +235,66 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // the stop had just ended, and a cold start landing offline sent the
     // same update for nothing (owner spec 2026-10-29).
     if (!_driverOnline) return;
-    // Offers no longer paint the island (product call 2026-10-02, user
-    // spec): the ride offer arrives as the FCM banner — the island keeps
-    // only the online-presence state.
-    final next = _phase == _Phase.searching ? 'online' : 'on_trip';
-    if (next == _islandState && !force) return;
-    _islandState = next;
-    unawaited(LiveActivityService.updateStatus(next));
+    // Offers no longer paint the island from here (product call
+    // 2026-10-02, user spec): the ride offer arrives as the FCM banner /
+    // the server's push. The rest is the owner-approved drawing
+    // (2026-11-09, https://claude.ai/artifact/DoSsRsv83hW7ULJWJgoetK §5).
+    if (_phase == _Phase.searching || _phase == _Phase.rideRequest) {
+      _islandDoneAt = null;
+      DriverTripIsland.clear();
+      _sendShiftIsland(done: false, force: force);
+      return;
+    }
+    if (_phase == _Phase.completed) {
+      DriverTripIsland.clear();
+      // "Ganaste $14.20" a few seconds, then back to the shift card.
+      final at = _islandDoneAt ??= DateTime.now();
+      _sendShiftIsland(
+          done: DateTime.now().difference(at) < const Duration(seconds: 15),
+          force: force);
+      return;
+    }
+    _islandDoneAt = null;
+    // On a trip the trip screen paints the leg (DriverTripIsland); this
+    // clock re-sends it, so a server repaint (the offer cleared at accept)
+    // never sticks.
+    if (DriverTripIsland.active) {
+      _islandState = 'on_trip';
+      DriverTripIsland.push(force: force);
+      return;
+    }
+    if (_islandState == 'on_trip' && !force) return;
+    _islandState = 'on_trip';
+    unawaited(LiveActivityService.updateStatus('on_trip'));
+  }
+
+  /// "Buscando viajes · En línea 1 h 12 min · $84.50 hoy · 4 viajes", or
+  /// right after a ride "Ganaste $14.20 · Viaje con María". Re-sent at
+  /// least every minute: a server push can blank it (an offer's clear).
+  void _sendShiftIsland({required bool done, bool force = false}) {
+    final earned = '\$${_earnings.toStringAsFixed(2)}';
+    final tripEarned = '\$${_lastTripEarnings.toStringAsFixed(2)}';
+    final key = [
+      done ? 'done' : 'online', earned, _trips, tripEarned,
+      _shiftStartedAt?.millisecondsSinceEpoch,
+    ].join('|');
+    final now = DateTime.now();
+    if (!force &&
+        key == _islandState &&
+        now.difference(_islandSentAt) < const Duration(seconds: 60)) {
+      return;
+    }
+    _islandState = key;
+    _islandSentAt = now;
+    unawaited(LiveActivityService.updateDriver(
+      status: 'online',
+      phase: done ? 'done' : '',
+      earnedToday: earned,
+      tripsToday: '$_trips',
+      tripEarned: done ? tripEarned : '',
+      riderName: done ? DriverTripIsland.lastRiderName : '',
+      onlineSince: _shiftStartedAt,
+    ));
   }
 
   /// Start a periodic timer to refresh earnings every 45 seconds.

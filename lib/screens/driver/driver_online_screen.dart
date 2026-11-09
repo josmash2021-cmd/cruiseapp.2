@@ -98,6 +98,7 @@ import '../../services/prefs_cache.dart';
 import 'driver_trip_accept_screen.dart';
 import 'trip_accepted_overlay.dart';
 import 'scheduled_rides_map_screen.dart';
+import '../../services/driver_trip_island.dart';
 import '../../services/live_activity_service.dart';
 import '../../services/network_service.dart';
 import '../../services/notification_service.dart';
@@ -542,6 +543,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// [_pendingOffers] and [_phase], so the island follows from those two
   /// rather than from each path remembering to update it.
   String? _islandState;
+
+  /// When "Ganaste $X" went up (the island goes back to the shift card
+  /// 15 s later) and when the shift card was last sent (re-sent every
+  /// minute — a server push can blank it).
+  DateTime? _islandDoneAt;
+  DateTime _islandSentAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// True when iOS reports Live Activities OFF for Cruise (Settings >
   /// Cruise > Live Activities): the island and its token pipeline silently

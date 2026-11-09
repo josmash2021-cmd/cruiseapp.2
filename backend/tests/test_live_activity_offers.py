@@ -286,3 +286,52 @@ class TestTheStartTokenIsSacred:
         assert driver.apns_la_start_token == "healthy-start", (
             "the start token is the seed for the NEXT offer's start push — "
             "a card that was never up must never cost it")
+
+
+class TestTheDriverCard:
+    """The driver's lock-screen card (owner-approved drawing 2026-11-09):
+    the app paints the trip leg; the server must not leave "online" on it
+    when the offer it clears was taken by this very driver."""
+
+    async def test_a_taken_offer_clears_to_on_trip(self, captured):
+        await apns_liveactivity.clear_live_activity_offer(
+            start_token=None, activity_token="act-1", status="on_trip")
+        (post,) = captured
+        assert post["json"]["content-state"]["status"] == "on_trip"
+        assert "alert" not in post["json"]
+
+    async def test_a_dead_offer_still_clears_to_online(self, captured):
+        await apns_liveactivity.clear_live_activity_offer(
+            start_token=None, activity_token="act-1")
+        (post,) = captured
+        assert post["json"]["content-state"]["status"] == "online"
+
+    async def test_accept_clears_as_on_trip(self, monkeypatch, db, test_driver):
+        from routers import dispatch
+        driver, _ = test_driver
+        driver.apns_la_activity_token = "act-1"
+        await db.commit()
+        calls = []
+
+        async def _fake_clear(**kwargs):
+            calls.append(kwargs)
+            return None
+        monkeypatch.setattr(
+            apns_liveactivity, "clear_live_activity_offer", _fake_clear)
+
+        await dispatch._clear_live_activity_offer(driver.id, status="on_trip")
+
+        assert calls and calls[0]["status"] == "on_trip"
+        src = (Path(__file__).resolve().parents[1] / "routers" / "dispatch.py"
+               ).read_text(encoding="utf-8")
+        assert '_clear_live_activity_offer(driver_id, status="on_trip")' in src
+
+    def test_the_guardian_reoffer_is_the_banner_in_the_drivers_language(self):
+        """The guardian imported routers.dispatch._send_live_activity_offer,
+        which no longer exists — an iPhone with a Live Activity token got
+        NOTHING for a re-offer (found 2026-11-09)."""
+        src = (Path(__file__).resolve().parents[1] / "guardian_agent.py"
+               ).read_text(encoding="utf-8")
+        assert "_send_live_activity_offer" not in src
+        assert 'title="Nueva oferta de viaje"' in src
+        assert "locale=user_lang(assigned)" in src

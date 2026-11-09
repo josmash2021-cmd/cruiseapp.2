@@ -23,6 +23,7 @@ import '../../map/web_map_view.dart';
 import '../../models/lat_lng.dart';
 import '../../services/chat_service.dart';
 import '../../services/directions_service.dart';
+import '../../services/driver_trip_island.dart';
 import '../../services/haptic_service.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../services/socket_service.dart';
@@ -1729,6 +1730,11 @@ class DriverNavViewState extends State<DriverNavView>
       _remainSecs = secs;
       _remainMeters = meters;
     });
+    // The driver's lock-screen card counts the same minutes as this panel
+    // (a heat-zone drive is not a trip leg).
+    if (widget.zoneName == null && secs > 0) {
+      DriverTripIsland.reportEtaSeconds(secs);
+    }
   }
 
   /// Maneuver distance — imperial ALWAYS (user spec 2026-09-19, "en vez de

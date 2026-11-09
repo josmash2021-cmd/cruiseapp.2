@@ -81,6 +81,57 @@ class LiveActivityService {
     return _invoke('start', 'online');
   }
 
+  /// The driver's card as the owner-approved drawing (2026-11-09,
+  /// https://claude.ai/artifact/DoSsRsv83hW7ULJWJgoetK §5): the shift,
+  /// the trip leg or "Ganaste $X". Every text is pre-formatted here; the
+  /// widget only counts the minutes and the wait clock. [status] keeps its
+  /// old values ('online' / 'on_trip') so an older widget still reads
+  /// right; a binary without "driverState" gets the plain status instead.
+  static Future<void> updateDriver({
+    required String status,
+    String phase = '',
+    String riderName = '',
+    String riderRating = '',
+    String riderPhotoUrl = '',
+    String address = '',
+    DateTime? legStart,
+    DateTime? legEnd,
+    DateTime? freeWaitEnd,
+    String waitRate = '',
+    String earnedToday = '',
+    String tripsToday = '',
+    String tripEarned = '',
+    DateTime? onlineSince,
+  }) async {
+    if (!AppPlatform.isIOS) return;
+    double? secs(DateTime? d) =>
+        d == null ? null : d.millisecondsSinceEpoch / 1000;
+    try {
+      await _channel.invokeMethod('driverState', {
+        'status': status,
+        'phase': phase,
+        'riderName': riderName,
+        'riderRating': riderRating,
+        'riderPhotoUrl': riderPhotoUrl,
+        'address': address,
+        if (legStart != null) 'legStart': secs(legStart),
+        if (legEnd != null) 'legEnd': secs(legEnd),
+        if (freeWaitEnd != null) 'freeWaitEnd': secs(freeWaitEnd),
+        'waitRate': waitRate,
+        'earnedToday': earnedToday,
+        'tripsToday': tripsToday,
+        'tripEarned': tripEarned,
+        if (onlineSince != null) 'onlineSince': secs(onlineSince),
+      });
+    } on MissingPluginException {
+      await _invoke('update', status);
+    } on PlatformException {
+      await _invoke('update', status);
+    } catch (e) {
+      debugPrint('[LiveActivity] driverState failed (non-fatal): $e');
+    }
+  }
+
   /// Refresh the island's status line: 'online' while waiting for offers,
   /// 'on_trip' while driving someone. Also how an offer is cleared — going
   /// back to a plain status is what takes the ride off the lock screen, and

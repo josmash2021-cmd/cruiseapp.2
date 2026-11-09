@@ -55,11 +55,15 @@ void main() {
         .readAsStringSync();
     final syncStart = ctrl.indexOf('void _syncOfferLiveActivity');
     expect(syncStart, greaterThan(-1));
-    final block = ctrl.substring(syncStart, syncStart + 1200);
+    final block = ctrl.substring(
+        syncStart, ctrl.indexOf('void _sendShiftIsland(', syncStart));
     expect(block.contains('showOffer('), isFalse,
         reason: 'the offer must never paint the island again — banner only');
-    expect(block.contains("updateStatus(next)"), isTrue,
-        reason: 'the island stays presence-only (online / on_trip)');
+    // Since 2026-11-09 (owner-approved drawing) the island is the shift
+    // card and the trip leg — still never the offer.
+    expect(block.contains('_sendShiftIsland(done: false, force: force);'),
+        isTrue);
+    expect(block.contains('DriverTripIsland.push(force: force);'), isTrue);
     expect(ctrl.contains('_offerLiveActivityFields'), isFalse,
         reason: 'the offer-card formatter is dead with the island offer');
   });

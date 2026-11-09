@@ -70,6 +70,30 @@ import ActivityKit
       case "update":
         CruiseLiveActivityManager.shared.update(status: status)
         result(true)
+      case "driverState":
+        // The driver's card as the owner-approved drawing (2026-11-09):
+        // the shift (earnings, time online), the trip leg (rider, address,
+        // minutes, the free wait) and "Ganaste $X" after a ride. Older
+        // binaries answer NotImplemented here and Dart falls back to
+        // "update" with the plain status.
+        CruiseLiveActivityManager.shared.driverState(
+          CruiseActivityAttributes.ContentState(
+            status: status,
+            since: Date(),
+            phase: args?["phase"] as? String ?? "",
+            riderName: args?["riderName"] as? String ?? "",
+            riderRating: args?["riderRating"] as? String ?? "",
+            riderPhotoUrl: args?["riderPhotoUrl"] as? String ?? "",
+            address: args?["address"] as? String ?? "",
+            legStart: optionalEpochSeconds(args?["legStart"]),
+            legEnd: optionalEpochSeconds(args?["legEnd"]),
+            freeWaitEnd: optionalEpochSeconds(args?["freeWaitEnd"]),
+            waitRate: args?["waitRate"] as? String ?? "",
+            earnedToday: args?["earnedToday"] as? String ?? "",
+            tripsToday: args?["tripsToday"] as? String ?? "",
+            tripEarned: args?["tripEarned"] as? String ?? "",
+            onlineSince: optionalEpochSeconds(args?["onlineSince"])))
+        result(true)
       case "offer":
         // A ride offer came in — put it on the running activity. `true`
         // here means the call was accepted, not that the island changed:
@@ -237,6 +261,13 @@ private func epochSeconds(_ v: Any?) -> Date {
   return Date()
 }
 
+/// Same, but nil when Dart sent nothing — "no free wait", "no leg yet".
+private func optionalEpochSeconds(_ v: Any?) -> Date? {
+  if let d = v as? Double { return Date(timeIntervalSince1970: d) }
+  if let i = v as? Int { return Date(timeIntervalSince1970: TimeInterval(i)) }
+  return nil
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  ActivityKit manager — one activity at a time. start() ends any
 //  stale activities first (the handle is lost across app restarts, so
@@ -381,6 +412,17 @@ final class CruiseLiveActivityManager {
     }
   }
 
+  /// The full driver card (shift / trip leg / just finished). Silent, like
+  /// update(status:): the driver is driving — a sound on every minute
+  /// would be noise; the offer is the one card that rings.
+  func driverState(_ state: CruiseActivityAttributes.ContentState) {
+    enqueue {
+      for a in Activity<CruiseActivityAttributes>.activities {
+        await a.update(.init(state: state, staleDate: nil))
+      }
+    }
+  }
+
   /// A ride offer came in — show it on the Live Activity the shift
   /// already started.
   ///
@@ -435,8 +477,10 @@ final class CruiseLiveActivityManager {
         // expanded form, raises the banner on the lock screen, and makes the
         // handset sound. Without one there is no notification, only a
         // repaint nobody is looking at.
+        let es = Locale.preferredLanguages.first?.hasPrefix("es") ?? false
         let alert = AlertConfiguration(
-          title: "New ride offer",
+          title: LocalizedStringResource(stringLiteral:
+            es ? "Nueva oferta de viaje" : "New ride offer"),
           body: "\(fare) · \(perHour)",
           sound: .named("cruise_online.wav"))
         await a.update(

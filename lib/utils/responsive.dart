@@ -15,14 +15,21 @@ class Responsive {
     _pixelRatio = mq.devicePixelRatio;
   }
 
+  // A tablet scales like the biggest phone (430 × 932), never past it.
+  // Scaling by the iPad's own width drew text at twice its size and, in
+  // landscape, ran the "¿A dónde?" card over the promo card (2026-11-09).
+  // No phone is past those numbers, so phones are unchanged.
+  static double get _wScale => (_width < 430 ? _width : 430) / 390;
+  static double get _hScale => (_height < 932 ? _height : 932) / 844;
+
   /// Scale a width-axis value proportionally.
-  static double w(double px) => px * (_width / 390);
+  static double w(double px) => px * _wScale;
 
   /// Scale a height-axis value proportionally.
-  static double h(double px) => px * (_height / 844);
+  static double h(double px) => px * _hScale;
 
   /// Scale font size (width-based so text stays readable).
-  static double sp(double px) => px * (_width / 390);
+  static double sp(double px) => px * _wScale;
 
   /// Responsive horizontal padding (~5 % of screen width).
   static double get horizontalPad => _width * 0.05;

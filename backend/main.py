@@ -172,19 +172,25 @@ _PAYOUT_WEEKDAY = 0
 _PAYOUT_TZ = ZoneInfo("America/Chicago")
 
 
-def _next_payout_run() -> datetime:
+def _next_payout_run(grace: bool = True) -> datetime:
     """Return the next payday: Monday 00:00 America/Chicago.
 
     A process that boots on payday within the grace window just after
     midnight still runs today (a redeploy landing at 00:00:xx must not push
     the payout a whole week out).
+
+    The grace is for BOOT only. The loop asks again 60 s after a run, still
+    inside the window, and got "now" back every minute: on 2026-11-09 the
+    run fired ten times in ten minutes, each one claiming and failing the
+    same balances (cashouts #76-#95). After a run the loop passes
+    grace=False and the answer is next Monday.
     """
     now_local = datetime.now(_PAYOUT_TZ)
     days_ahead = (_PAYOUT_WEEKDAY - now_local.weekday()) % 7
     target = (now_local + timedelta(days=days_ahead)).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-    if days_ahead == 0 and now_local < target + timedelta(minutes=10):
+    if grace and days_ahead == 0 and now_local < target + timedelta(minutes=10):
         return datetime.now(timezone.utc)
     if target <= now_local:
         target += timedelta(days=7)
@@ -803,8 +809,10 @@ async def _schedule_weekly_payouts():
         await _report_stuck_payouts()
     except Exception as e:
         logging.error("[AutoPayout] boot-time stuck scan failed: %s", e)
+    just_ran = False
     while True:
-        target = _next_payout_run()
+        # Boot may still catch today's run; after a run, next Monday.
+        target = _next_payout_run(grace=not just_ran)
         wait_secs = (target - datetime.now(timezone.utc)).total_seconds()
         logging.info(
             "[AutoPayout] Next run scheduled at %s (in %.0f s)",
@@ -812,6 +820,7 @@ async def _schedule_weekly_payouts():
         )
         await asyncio.sleep(max(wait_secs, 0))
         await _auto_payout_all_drivers()
+        just_ran = True
         await asyncio.sleep(60)  # prevent tight re-entry at the same second
 
 

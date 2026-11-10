@@ -312,3 +312,63 @@ def test_the_payout_date_endpoint_and_the_scheduler_agree_on_the_day():
     from main import _PAYOUT_WEEKDAY
 
     assert _PAYOUT_WEEKDAY == 0, "Monday is 0"
+
+
+def _frozen_clock(monkeypatch, local_wall: datetime):
+    """Pin main.datetime.now() to one instant (given in Chicago wall time)."""
+    import main
+    instant = local_wall.replace(tzinfo=main._PAYOUT_TZ)
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+    monkeypatch.setattr(main, "datetime", _Clock)
+    return instant
+
+
+def test_the_boot_grace_still_runs_a_payday_that_just_started(monkeypatch):
+    import main
+    now = _frozen_clock(monkeypatch, datetime(2026, 11, 9, 0, 3))
+    assert main._next_payout_run() == now.astimezone(timezone.utc)
+
+
+def test_after_a_run_the_next_one_is_next_monday_not_now(monkeypatch):
+    """2026-11-09: the loop asked again 60 s after the run, still inside
+    the 10-min boot grace, and ran ten times (cashouts #76-#95)."""
+    import main
+    _frozen_clock(monkeypatch, datetime(2026, 11, 9, 0, 3))
+    nxt = main._next_payout_run(grace=False).astimezone(main._PAYOUT_TZ)
+    assert (nxt.year, nxt.month, nxt.day, nxt.hour, nxt.minute) == (2026, 11, 16, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_the_weekly_loop_runs_once_per_payday(monkeypatch):
+    import main
+    _frozen_clock(monkeypatch, datetime(2026, 11, 9, 0, 1))
+    runs, waits = [], []
+
+    class _Stop(Exception):
+        pass
+
+    async def _noop():
+        return None
+
+    async def _run():
+        runs.append(1)
+
+    async def _sleep(secs):
+        waits.append(secs)
+        if len(waits) >= 3:
+            raise _Stop()
+
+    monkeypatch.setattr(main, "_report_stuck_payouts", _noop)
+    monkeypatch.setattr(main, "_auto_payout_all_drivers", _run)
+    monkeypatch.setattr(main.asyncio, "sleep", _sleep)
+    with pytest.raises(_Stop):
+        await main._schedule_weekly_payouts()
+    assert len(runs) == 1
+    # boot wait (0) → run → 60 s re-entry guard → a week, not another run
+    assert waits[0] == 0 and waits[1] == 60
+    assert waits[2] > 6 * 24 * 3600

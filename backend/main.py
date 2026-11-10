@@ -958,6 +958,9 @@ async def _start_scheduler_agents() -> None:
 
     # Re-enabled agents with longer intervals to reduce PgBouncer churn
     _spawn_background(_schedule_weekly_payouts(), "weekly_payouts")
+    # Only Cruise's share goes to the bank; the drivers' stays for Monday.
+    from services.platform_reserve import platform_reserve_loop
+    _spawn_background(platform_reserve_loop(lambda: _is_scheduler_leader), "platform_reserve")
     _spawn_background(_backup_scheduler(), "backup_scheduler")
     # Proactive support agent DISABLED (2026-08-17): it opened support chats
     # automatically (first-trip congrats to drivers, bad-trip outreach to

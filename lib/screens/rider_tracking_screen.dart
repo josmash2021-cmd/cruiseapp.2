@@ -939,6 +939,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
+        // Android back (iPhone has none): an open sheet closes first, and
+        // nothing leaves the trip while an overlay is up — it used to drop
+        // the rider to Inicio from the support page or mid-cancel
+        // (2026-11-09).
+        if (_tripSheet.isOpen) {
+          _tripSheet.close();
+          return;
+        }
+        if (_showPickupOverlay || _cancelOverlayPhase > 0) return;
         _navigateToHome();
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -990,7 +999,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   right: 0,
                   child: KeyedSubtree(
                     key: _bottomCardKey,
-                    child: _buildSearchingDriverCard(),
+                    // Clear the system bar: on Android its 48 dp hid the
+                    // card's lower half (2026-11-09).
+                    child: Padding(
+                      padding: EdgeInsets.only(bottom: bottomPad),
+                      child: _buildSearchingDriverCard(),
+                    ),
                   ),
                 )
               else

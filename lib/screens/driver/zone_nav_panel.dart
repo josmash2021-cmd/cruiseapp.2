@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../services/haptic_service.dart';
+import '../../utils/app_platform.dart';
 import '../../widgets/glass_style.dart';
 import '../../widgets/map/heat_flame.dart';
 
@@ -61,7 +62,9 @@ class ZoneNavPanel extends StatelessWidget {
     final panel = Padding(
       // NavTripPanel's closed margins: the Mapbox wordmark is centred in the
       // strip under them (DriverNavView._showMapBrand).
-      padding: EdgeInsets.fromLTRB(8, 0, 8, 8 + bottomPad * 0.5),
+      // Android: clear the whole nav bar (see NavTripPanel).
+      padding: EdgeInsets.fromLTRB(
+          8, 0, 8, 8 + (AppPlatform.isAndroid ? bottomPad : bottomPad * 0.5)),
       child: GlassSurface(
         blur: kGlassSheetBlurOpen,
         tint: glassNavRestTint,

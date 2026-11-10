@@ -5531,9 +5531,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// volver — esta pantalla ES la raíz del driver. Online, back no hace
   /// nada (salir del turno es GO OFFLINE, con sus guards); offline, el OS
   /// minimiza. El FAB de home murió con la pantalla vieja.
-  void _goBack() {
-    if (_driverOnline) unawaited(_exitOnlineMode());
-  }
+  /// Android back on the driver's map (iPhone has no system back). It used
+  /// to END THE SHIFT with one press or an edge swipe — no confirmation, an
+  /// offer on screen dropped with it (found 2026-11-09). Going offline is
+  /// the sheet's button; back leaves the shift as it is.
+  void _goBack() {}
 
   /// Driver pressed back from the active trip screen.
   /// Stays on this screen (it IS the home now), keeps the shift online and

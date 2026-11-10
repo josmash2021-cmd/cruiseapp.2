@@ -125,7 +125,7 @@
         <!-- FCM default notification icon -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher" />
+            android:resource="@drawable/ic_stat_cruise" />
         <!-- Meta/Facebook App Events — the SDK auto-initializes from these.
              Client Token comes from the META_CLIENT_TOKEN manifest
              placeholder (local.properties / CI env), never committed. -->

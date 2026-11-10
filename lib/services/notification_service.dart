@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color;
 import 'haptic_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'api_service.dart';
 import 'prefs_cache.dart';
@@ -195,16 +196,15 @@ class NotificationService {
     tz.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation(_guessTimezone()));
 
-    const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
-    );
+    final androidSettings =
+        AndroidInitializationSettings(await notificationSmallIcon());
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
     );
 
-    const settings = InitializationSettings(
+    final settings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
     );
@@ -441,7 +441,7 @@ class NotificationService {
       vibrationPattern: vibrateEnabled
           ? Int64List.fromList([0, 150, 100, 150, 100, 150])
           : null,
-      icon: '@mipmap/ic_launcher',
+      icon: notificationSmallIconSync,
       color: const Color(0xFFE8C547),
     );
 
@@ -504,7 +504,7 @@ class NotificationService {
       vibrationPattern: vibrateEnabled
           ? Int64List.fromList([0, 150, 100, 150, 100, 150])
           : null,
-      icon: '@mipmap/ic_launcher',
+      icon: notificationSmallIconSync,
       color: const Color(0xFFE8C547),
       // NEEDS A FULL BUILD, NOT A SHOREBIRD PATCH. This flag only does
       // anything with USE_FULL_SCREEN_INTENT in AndroidManifest.xml, and a
@@ -591,7 +591,7 @@ class NotificationService {
           showProgress: true,
           maxProgress: 100,
           progress: pct,
-          icon: '@mipmap/ic_launcher',
+          icon: notificationSmallIconSync,
           color: const Color(0xFFE8C547),
           category: AndroidNotificationCategory.progress,
         ),
@@ -787,7 +787,7 @@ class NotificationService {
       vibrationPattern: vibrateEnabled
           ? Int64List.fromList([0, 150, 100, 150, 100, 150])
           : null,
-      icon: '@mipmap/ic_launcher',
+      icon: notificationSmallIconSync,
       color: const Color(0xFFE8C547),
     );
 
@@ -845,3 +845,32 @@ class NotificationService {
     await cancel(tripId);
   }
 }
+
+/// First Android build that carries res/drawable/ic_stat_cruise, the white
+/// status-bar silhouette (2026-11-09: the launcher icon showed as a solid
+/// white square). A Shorebird patch ships Dart only — on an older binary
+/// that resource does not exist and the plugin would refuse the
+/// notification — so those keep the launcher icon.
+const int kFirstStatIconAndroidBuild = 760;
+
+String? _smallIconMemo;
+
+/// The small icon for local notifications, resolved once per process.
+Future<String> notificationSmallIcon() async {
+  final memo = _smallIconMemo;
+  if (memo != null) return memo;
+  var icon = '@mipmap/ic_launcher';
+  try {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      final info = await PackageInfo.fromPlatform();
+      final build = int.tryParse(info.buildNumber) ?? 0;
+      if (build >= kFirstStatIconAndroidBuild) icon = '@drawable/ic_stat_cruise';
+    }
+  } catch (_) {}
+  return _smallIconMemo = icon;
+}
+
+/// The same, for code that cannot await — resolved by [notificationSmallIcon]
+/// in NotificationService.init and the background handler before any
+/// notification is shown; the launcher icon until then.
+String get notificationSmallIconSync => _smallIconMemo ?? '@mipmap/ic_launcher';

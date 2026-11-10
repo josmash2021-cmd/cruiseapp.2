@@ -265,9 +265,10 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (type == 'trip_offer' || type == 'new_offer') return;
 
   final plugin = FlutterLocalNotificationsPlugin();
-  const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+  final androidSettings =
+      AndroidInitializationSettings(await notificationSmallIcon());
   await plugin.initialize(
-    settings: const InitializationSettings(android: androidSettings),
+    settings: InitializationSettings(android: androidSettings),
   );
 
   // System push notifications for rider + driver (show even when app is killed)
@@ -315,7 +316,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           enableVibration: true,
           vibrationPattern: Int64List.fromList([0, 150, 100, 150, 100, 150]),
           color: const Color(0xFFE8C547),
-          icon: '@mipmap/ic_launcher',
+          icon: notificationSmallIconSync,
         ),
         iOS: const DarwinNotificationDetails(
           presentAlert: true,

@@ -229,10 +229,16 @@ final ThemeData darkTheme = ThemeData.dark().copyWith(
   colorScheme: const ColorScheme.dark(
     primary: Color(0xFFE8C547),
     surface: Color(0xFF101114),
+    // The off switch's ring on Android (Material 3 switch): unset, it fell
+    // back to pure white — a stark ring the iPhone never shows (2026-11-09).
+    outline: Color(0x33FFFFFF),
   ),
   textTheme: _cinzelHeadlines(
     GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
   ),
+  // The plain ripple on every platform: ThemeData picks the noisy
+  // InkSparkle on Android only (2026-11-09).
+  splashFactory: InkRipple.splashFactory,
   pageTransitionsTheme: _pageTransitions,
   elevatedButtonTheme: _elevatedButtonTheme,
   textButtonTheme: _textButtonTheme,
@@ -249,6 +255,7 @@ final ThemeData lightTheme = ThemeData.light().copyWith(
   textTheme: _cinzelHeadlines(
     GoogleFonts.interTextTheme(ThemeData.light().textTheme),
   ),
+  splashFactory: InkRipple.splashFactory,
   pageTransitionsTheme: _pageTransitions,
   elevatedButtonTheme: _elevatedButtonTheme,
   textButtonTheme: _textButtonTheme,

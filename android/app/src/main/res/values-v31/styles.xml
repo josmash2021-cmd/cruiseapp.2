@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Android 12+ splash screen: black background, no icon -->
-    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+    <!-- Android 12+ (API 31+). These files WIN over values/ there, and Stripe
+         refuses to start unless the activity theme is AppCompat or
+         MaterialComponents (StripeAndroidPlugin: "Your theme isn't set to use
+         Theme.AppCompat or Theme.MaterialComponents") — with the old
+         Theme.Light.NoTitleBar parent, adding a card failed on every Android
+         12+ phone (found 2026-11-09). Same parent as values/styles.xml.
+         Black splash, no icon; black bars until Flutter draws. -->
+    <style name="LaunchTheme" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowSplashScreenBackground">#FF000000</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon_blank</item>
         <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
     </style>
-    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+    <style name="NormalTheme" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
     </style>
 </resources>

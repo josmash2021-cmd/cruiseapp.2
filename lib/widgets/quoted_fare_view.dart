@@ -115,25 +115,22 @@ class QuotedFareView extends StatelessWidget {
               ),
               if (discounted) ...[
                 const SizedBox(height: 3),
+                struck,
                 // The tag rides on the PICKED price only: in a list row,
                 // beside the struck fare it cut "Sin conductores cerca ·
                 // Reserva", and under it every row grew until the open
-                // list covered the route again (2026-11-09).
-                if (selected)
+                // list covered the route again. On the picked card it sits
+                // UNDER the struck fare: beside it the price column pushed
+                // the tier's name off the card, worst on a 360-wide
+                // Android (2026-11-09).
+                if (selected) ...[
+                  const SizedBox(height: 2),
                   FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        appliedTag,
-                        const SizedBox(width: 6),
-                        struck,
-                      ],
-                    ),
-                  )
-                else
-                  struck,
+                    child: appliedTag,
+                  ),
+                ],
               ],
               if (cash > 0) ...[
                 const SizedBox(height: 2),

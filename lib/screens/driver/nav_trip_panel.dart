@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/haptic_service.dart';
+import '../../utils/app_platform.dart';
 import '../../widgets/glass_style.dart';
 import '../../widgets/morph_box.dart';
 import '../../widgets/smooth_reveal.dart';
@@ -566,6 +567,11 @@ class _NavTripPanelState extends State<NavTripPanel>
   Widget build(BuildContext context) {
     final s = S.of(context);
     final bottomPad = MediaQuery.maybeOf(context)?.padding.bottom ?? 0;
+    // Android draws a real, touch-blocking nav bar under the app (48 dp
+    // with 3 buttons): there the panel clears ALL of it — half left the
+    // slider's end and the panel's corners behind it (2026-11-09; same
+    // fix as the offer card). iPhone keeps half the home indicator.
+    final dockInset = AppPlatform.isAndroid ? bottomPad : bottomPad * 0.5;
     final open = _open;
 
     // The open body: sized by what it carries; a switch between options,
@@ -639,7 +645,7 @@ class _NavTripPanelState extends State<NavTripPanel>
           // edge, square at the bottom, when open — every step in between.
           child: Padding(
             padding:
-                EdgeInsets.fromLTRB(8 * k, 0, 8 * k, (8 + bottomPad * 0.5) * k),
+                EdgeInsets.fromLTRB(8 * k, 0, 8 * k, (8 + dockInset) * k),
             // Closed: see-through frost with real round corners (owner
             // 2026-11-04, "semi transparente borroso pero sin esquinas");
             // it darkens to the open tint as it grows.
@@ -663,7 +669,7 @@ class _NavTripPanelState extends State<NavTripPanel>
                   _faceH = face;
                   _bodyH = grown;
                   // The face plus the margins it floats on when closed.
-                  final rest = face + 8 + bottomPad * 0.5;
+                  final rest = face + 8 + dockInset;
                   if ((rest - _restH).abs() > 0.5) {
                     _restH = rest;
                     widget.onRestHeightChanged?.call(rest);

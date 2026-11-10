@@ -757,7 +757,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     required RideOption? option,
     required Widget child,
   }) {
-    _scrollPickedTierIntoView(pickedId);
+    // Keyed by the picked tier AND its price: the promo lines land with the
+    // quote and grow the card — scrolled once before that, its bottom stayed
+    // under the panel on a 360-wide Android (2026-11-09).
+    _scrollPickedTierIntoView(pickedId == null
+        ? null
+        : '$pickedId|${option?.promoTotalCents}|${option?.originalTotalCents}');
     final full = _tierSheet == _TierSheet.full;
     // A drag on the list moves the sheet, like Lyft: up shows every tier,
     // down goes back. Only all the way up (on a phone too short for every
@@ -821,6 +826,21 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         alignment: 0.5,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOutCubic,
+      );
+    });
+    // Second pass once the card has finished opening (its detail box and
+    // the promo lines animate in): bring its bottom edge into the window if
+    // it is still under it — on a 360-wide Android the card's border sat
+    // cut under the panel (2026-11-09). A no-op when it already shows.
+    Future.delayed(const Duration(milliseconds: 950), () {
+      final ctx = _pickedTierCtx;
+      if (!mounted || ctx == null || !ctx.mounted) return;
+      if (!_tierScrollCtrl.hasClients) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
       );
     });
   }
@@ -926,6 +946,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   Widget _buildTierRow(AppColors c, RideOption opt, bool selected,
       {bool hidden = false}) {
     final String displayName = _tierDisplayName(opt);
+    // A 360-wide Android (the common small one) — see the car box.
+    final narrowCard = (MediaQuery.maybeOf(context)?.size.width ?? 390) < 380;
 
     // Compact line under the name: "in 5 min". Placeholder tiers carry no
     // ETA (0), so they fall back to the cached per-tier wait range.
@@ -990,8 +1012,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             AnimatedContainer(
                               duration: const Duration(milliseconds: 280),
                               curve: Curves.easeInOutCubic,
-                              width: selected ? 108 : 60,
-                              height: selected ? 72 : 42,
+                              // 88 on a narrow phone (360-wide Android):
+                              // at 108 the picked card had no room left
+                              // for the name (2026-11-09).
+                              width: selected ? (narrowCard ? 88 : 108) : 60,
+                              height: selected ? (narrowCard ? 60 : 72) : 42,
                               child: CarImage3D(
                                 assetPath: _carAssetForOption(opt.name),
                                 cacheWidth: 640,
@@ -1055,8 +1080,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                         ElectricBoltBadge(
                                             size: selected ? 22 : 20),
                                       ],
-                                      if (selected) ...[
-                                        const SizedBox(width: 8),
+                                    ],
+                                  ),
+                                  // The seats under the name on the picked
+                                  // card — beside it they took the room the
+                                  // name needed (2026-11-09).
+                                  if (selected) ...[
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
                                         Icon(
                                           Icons.person_rounded,
                                           size: 14,
@@ -1075,8 +1108,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                           ),
                                         ),
                                       ],
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                   // Compact rows carry the wait under the
                                   // name; once the card opens, the clock
                                   // line moves under the price, right-aligned
@@ -1113,30 +1146,35 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                   freeLabel: S.of(context).free,
                                   cruiseCashLabel: S.of(context).cruiseCash,
                                 ),
-                                // Lyft layout: the "in X min · H:MM" line
-                                // sits right under the price, plain grey —
-                                // no icon chip (2026-08-24).
-                                if (selected &&
-                                    _tierEtaLine(opt).isNotEmpty) ...[
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    _tierEtaLine(opt),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.right,
-                                    style: TextStyle(
-                                      fontFamily: 'Poppins',
-                                      color:
-                                          Colors.white.withValues(alpha: 0.55),
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
                               ],
                             ),
                           ],
                         ),
+                        // Lyft layout: the "in X min · H:MM" line under the
+                        // price, plain grey, right-aligned (2026-08-24) — on
+                        // its own full-width line: inside the price column
+                        // "Sin conductores cerca · elige día y hora" pushed
+                        // the price off the card and the name out of it on
+                        // every phone (2026-11-09).
+                        if (selected && _tierEtaLine(opt).isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              _tierEtaLine(opt),
+                              key: const ValueKey('tierEtaLine'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                color: Colors.white.withValues(alpha: 0.55),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
                         // Expanded-only section: arrival clock + description
                         // sub-box. AnimatedSize grows it open; the opacity
                         // keeps the texts from popping in mid-travel.
@@ -1331,6 +1369,30 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   /// programó"); tapping it still changes it.
   Widget _buildScheduleButton() {
     final sched = _ctrl.state.scheduledAt ?? widget.scheduledAt;
+    // On a narrow phone (360-wide Android) the word took the room the
+    // payment method needed ("Promo aplica…", 2026-11-09): the calendar
+    // alone, unless a time is picked — then the time IS the information.
+    final iconOnly = sched == null &&
+        (MediaQuery.maybeOf(context)?.size.width ?? 390) < 380;
+    if (iconOnly) {
+      return Semantics(
+        button: true,
+        label: S.of(context).scheduleLabel,
+        child: GestureDetector(
+          onTap: _openScheduleFromSheet,
+          child: Container(
+            key: const ValueKey('booking-schedule-pill'),
+            padding: const EdgeInsets.all(11),
+            decoration: neuBox(radius: 12),
+            child: Icon(
+              Icons.calendar_month_rounded,
+              size: 20,
+              color: const Color(0xFFE8C547).withValues(alpha: 0.9),
+            ),
+          ),
+        ),
+      );
+    }
     return GestureDetector(
       onTap: _openScheduleFromSheet,
       child: Container(
@@ -3039,7 +3101,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final midLng = (pickup != null && dropoff != null)
         ? (pickup.lng + dropoff.lng) / 2
         : pickup?.lng ?? 0;
-    final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Positioned.fill(
       child: IgnorePointer(
@@ -3090,8 +3151,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   )),
                   child: SafeArea(
                     top: false,
+                    // SafeArea already clears the system bar; adding
+                    // bottomPad on top counted it twice — 112 dp of empty
+                    // space under the button on a 3-button Android
+                    // (2026-11-09).
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomPad),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [

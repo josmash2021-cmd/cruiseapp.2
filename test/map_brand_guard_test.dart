@@ -44,10 +44,17 @@ void main() {
       expect(src, isNot(contains('_syncMapBrand')), reason: f.path);
     }
     final nav = read('lib/screens/driver/driver_nav_view.dart');
-    expect(nav, contains('final strip = 8 + inset * 0.5;'));
+    // The panel's margin and the marks' strip are the same number: half
+    // the home indicator on iPhone, the whole nav bar on Android (it is
+    // real, touch-blocking chrome there — 2026-11-09).
+    expect(nav,
+        contains('final strip = 8 + (AppPlatform.isAndroid ? inset : inset * 0.5);'));
     expect(nav, contains('bottom: math.max(0.0, (strip - 21) / 2).roundToDouble());'));
-    expect(read('lib/screens/driver/nav_trip_panel.dart'),
-        contains('EdgeInsets.fromLTRB(8 * k, 0, 8 * k, (8 + bottomPad * 0.5) * k),'),
+    final panel = read('lib/screens/driver/nav_trip_panel.dart');
+    expect(panel,
+        contains('final dockInset = AppPlatform.isAndroid ? bottomPad : bottomPad * 0.5;'));
+    expect(panel,
+        contains('EdgeInsets.fromLTRB(8 * k, 0, 8 * k, (8 + dockInset) * k),'),
         reason: 'the strip the marks sit in is this margin');
   });
 

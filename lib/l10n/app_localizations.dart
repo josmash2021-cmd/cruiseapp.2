@@ -5513,6 +5513,7 @@ class S {
       ? 'Recibe recordatorios personalizados'
       : 'Get personalized reminders';
   String get calendarConnectButton => 'Apple Calendar';
+  String get calendarConnectButtonAndroid => 'Google Calendar';
   String get calendarDeniedBody => _es
       ? 'Sin acceso al calendario. Actívalo en Ajustes para ver tus próximos eventos aquí.'
       : 'Calendar access is off. Enable it in Settings to see your upcoming events here.';
@@ -6403,7 +6404,7 @@ class S {
   }
 
   // Driver offer card — rider quality labels.
-  String get newRiderLabel => _es ? 'Nuevo rider' : 'New rider';
+  String get newRiderLabel => _es ? 'Nuevo pasajero' : 'New rider';
 
   String get findingYouAnotherDriver =>
       _es ? 'Buscando otro conductor…' : 'Finding you another driver…';

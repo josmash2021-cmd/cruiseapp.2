@@ -24,6 +24,7 @@ import '../../models/lat_lng.dart';
 import '../../services/chat_service.dart';
 import '../../services/directions_service.dart';
 import '../../services/driver_trip_island.dart';
+import '../../utils/app_platform.dart';
 import '../../services/haptic_service.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../services/socket_service.dart';
@@ -4040,7 +4041,8 @@ class DriverNavViewState extends State<DriverNavView>
   Future<void> _showMapBrand(mapbox.MapboxMap m) {
     if (!mounted) return Future<void>.value();
     final inset = MediaQuery.maybeOf(context)?.padding.bottom ?? 0;
-    final strip = 8 + inset * 0.5;
+    // The panel's own bottom margin (NavTripPanel: all of it on Android).
+    final strip = 8 + (AppPlatform.isAndroid ? inset : inset * 0.5);
     return MapBrand.show(m,
         bottom: math.max(0.0, (strip - 21) / 2).roundToDouble());
   }

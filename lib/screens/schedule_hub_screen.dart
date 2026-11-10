@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 
 import '../config/page_transitions.dart';
+import '../utils/app_platform.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/calendar_service.dart';
@@ -462,9 +463,18 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
               height: 46,
               child: ElevatedButton.icon(
                 onPressed: _calendarBusy ? null : _connectCalendar,
-                icon: const Icon(Icons.apple_rounded, size: 20),
+                // The phone's own calendar: Apple on iPhone, Google on
+                // Android — "Apple Calendar" with the apple was showing on
+                // Android phones (2026-11-09).
+                icon: Icon(
+                    AppPlatform.isIOS
+                        ? Icons.apple_rounded
+                        : Icons.calendar_month_rounded,
+                    size: 20),
                 label: Text(
-                  s.calendarConnectButton,
+                  AppPlatform.isIOS
+                      ? s.calendarConnectButton
+                      : s.calendarConnectButtonAndroid,
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: ElevatedButton.styleFrom(

@@ -5844,6 +5844,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           RepaintBoundary(
                             child: mapbox.MapWidget(
                               styleUri: MapboxConfig.styleDark,
+                              // Like every other map: the default
+                              // SurfaceView is the one that goes black or
+                              // stale on some Android phones (2026-11-09).
+                              textureView: true,
                               cameraOptions: mapbox.CameraOptions(
                                 center: mapbox.Point(coordinates: mapbox.Position(
                                   widget.pickupLatLng.longitude,

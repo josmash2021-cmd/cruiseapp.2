@@ -66,7 +66,7 @@ void main() {
     expect(tester.widget<Text>(original).style?.decoration, TextDecoration.lineThrough);
   });
 
-  testWidgets('the picked card: the tag beside the struck fare', (tester) async {
+  testWidgets('the picked card: the tag under the struck fare', (tester) async {
     await pumpFare(tester, option(promo: 1400, discount: 30), selected: true);
     final applied = find.byKey(const ValueKey('quotedFareApplied'));
     final original = find.byKey(const ValueKey('quotedFareOriginal'));
@@ -79,9 +79,9 @@ void main() {
             matching: find.byWidgetPredicate(
                 (w) => w is Container && w.decoration != null)),
         findsNothing);
-    expect(tester.getCenter(applied).dx, lessThan(tester.getCenter(original).dx));
-    expect((tester.getCenter(applied).dy - tester.getCenter(original).dy).abs(),
-        lessThan(2));
+    // Under the struck fare: beside it the price column pushed the tier's
+    // name off the card on a 360-wide Android (2026-11-09).
+    expect(tester.getCenter(applied).dy, greaterThan(tester.getCenter(original).dy));
   });
 
   testWidgets('Free is gold beside the real struck fare, never a normal zero',

@@ -714,8 +714,10 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   Widget _statsRail() {
     final s = S.of(context);
     final perHour = _onlineHours > 0 ? _total / _onlineHours : 0.0;
+    // 60 pt of padding and header; the rest grows with the text size. A
+    // fixed 118 cut the last line of Ganancias and Conducción off.
     return SizedBox(
-      height: 118,
+      height: 60 + MediaQuery.textScalerOf(context).scale(68),
       child: ListView(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
@@ -1186,7 +1188,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Next Auto-Payout',
+                  S.of(context).nextAutoPayout,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.55),
                     fontSize: 12,

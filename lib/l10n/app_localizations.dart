@@ -2297,6 +2297,10 @@ class S {
       : (n == 1 ? '1 item' : '$n items');
   String get approved => _es ? 'Aprobado' : 'Approved';
   String get pending => _es ? 'Pendiente' : 'Pending';
+  String get driverMapLoading => _es ? 'Cargando el mapa…' : 'Loading map…';
+  String get driverMapLocating =>
+      _es ? 'Buscando tu ubicación' : 'Getting your location';
+  String get nextAutoPayout => _es ? 'Próximo pago automático' : 'Next auto-payout';
   String get uploadBtn => _es ? 'Subir' : 'Upload';
   String get rejected => _es ? 'Rechazado' : 'Rejected';
   String get notUploadedYet => _es ? 'Aún no subido' : 'Not uploaded yet';

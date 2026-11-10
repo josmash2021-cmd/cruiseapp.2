@@ -49,30 +49,31 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // Show a rich skeleton loader when position isn't ready yet.
     // Never show a blank dark blue screen — always have visible feedback.
     if (_pos == null) {
+      final s = S.of(context);
       return Container(
         color: const Color(0xFF0A1128),
-        child: const Center(
+        child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(
+              const CircularProgressIndicator(
                 color: Color(0xFFE8C547),
                 strokeWidth: 2,
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(
-                'Loading map...',
-                style: TextStyle(
+                s.driverMapLoading,
+                style: const TextStyle(
                   color: Color(0xFFE8C547),
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
                 ),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
-                'Getting your location',
-                style: TextStyle(
+                s.driverMapLocating,
+                style: const TextStyle(
                   color: Colors.white38,
                   fontSize: 12,
                   fontWeight: FontWeight.w400,

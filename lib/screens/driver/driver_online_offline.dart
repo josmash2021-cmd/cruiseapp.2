@@ -3132,6 +3132,9 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       color: dc.textSecondary,
       fontSize: Responsive.sp(9),
       fontWeight: FontWeight.w600,
+      // The chart reserves sp(11) for this line. The theme's body line
+      // height (1.43) made it sp(12.9) and cut 2 pt off the bottom.
+      height: 1.2,
     );
     // Week: one label per bar. Today: every sixth hour — 24 labels on a phone
     // is a grey smear.

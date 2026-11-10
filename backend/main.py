@@ -279,6 +279,8 @@ async def _report_stuck_payouts() -> None:
         # decision below.
         if (c.method or "") == "instant":
             idem = f"cashout-fund-{c.id}"
+        elif (c.method or "") == "panel":
+            idem = f"panel_payout_{c.id}"
         elif created:
             idem = f"auto_payout_{c.user_id}_{_iso_week_stamp(created)}"
         else:
@@ -338,8 +340,13 @@ async def _release_payout_claim(driver_id: int, cashout_id: int, amount: float) 
 async def _transfer_and_settle(
     driver_id: int, cashout_id: int, amount: float,
     connect_id: str, idem_key: str, fcm_token, _s,
-) -> None:
-    """Steps 2 and 3: send the money, then record what happened."""
+    description: str = "Cruise weekly auto-payout",
+) -> tuple[str, Optional[str]]:
+    """Steps 2 and 3: send the money, then record what happened.
+
+    Returns ("completed" | "failed" | "uncertain", Stripe's error text) so a
+    payout started from the panel can tell the operator what happened.
+    """
 
     def _create_transfer():
         return _s.Transfer.create(
@@ -349,7 +356,7 @@ async def _transfer_and_settle(
             amount=max(int(round(amount * 100)), 50),
             currency="usd",
             destination=connect_id,
-            description=f"Cruise weekly auto-payout — cashout #{cashout_id}",
+            description=f"{description} — cashout #{cashout_id}",
             metadata={"cashout_id": str(cashout_id), "driver_id": str(driver_id)},
             idempotency_key=idem_key,
         )
@@ -368,6 +375,7 @@ async def _transfer_and_settle(
                 driver_id, cashout_id, http_status, e,
             )
             await _release_payout_claim(driver_id, cashout_id, amount)
+            return "failed", str(getattr(e, "user_message", None) or e)
         else:
             logging.error(
                 "[AutoPayout] Stripe call for driver %s cashout #%s ($%.2f) failed with NO "
@@ -376,7 +384,7 @@ async def _transfer_and_settle(
                 "idempotency_key=%s.",
                 driver_id, cashout_id, amount, e, idem_key,
             )
-        return
+        return "uncertain", str(e)
 
     try:
         transfer_id = transfer["id"]
@@ -432,10 +440,17 @@ async def _transfer_and_settle(
             )
         except Exception as e:
             logging.warning("[AutoPayout] payout push failed for driver %s: %s", driver_id, e)
+    return "completed", None
 
 
-async def _payout_one_driver(driver_id: int, _s) -> None:
-    """Claim → transfer → settle for exactly one driver."""
+async def _payout_one_driver(driver_id: int, _s, source: str = "auto") -> Optional[dict]:
+    """Claim → transfer → settle for exactly one driver.
+
+    source="panel" is the panel's "Pagar ahora": same claim/transfer/settle,
+    its own idempotency key per row (a week key would collide with that
+    Monday's run), method "panel" on the row. Returns None when nothing was
+    claimed, else {"status", "amount", "cashout_id", "error"}.
+    """
     global _payout_in_flight
 
     # ── 0. HEAL the Connect id BEFORE claiming (2026-10-16, driver 54): the
@@ -479,6 +494,8 @@ async def _payout_one_driver(driver_id: int, _s) -> None:
         if amount <= 1.0 or not drv.stripe_connect_id:
             return
         cashout = Cashout(user_id=drv.id, amount=amount, status="processing")
+        if source == "panel":
+            cashout.method = "panel"
         db.add(cashout)
         drv.pending_balance = 0.0
         await db.commit()
@@ -510,6 +527,12 @@ async def _payout_one_driver(driver_id: int, _s) -> None:
     # later on its own. The committed claim above is what actually guarantees
     # the balance is never claimed twice.
     idem_key = f"auto_payout_{driver_id}_{_iso_week_stamp(claimed_at)}"
+    description = "Cruise weekly auto-payout"
+    if source == "panel":
+        # The claim row above is what stops a double payment; this key only
+        # makes a retry of THIS row return the same transfer.
+        idem_key = f"panel_payout_{cashout_id}"
+        description = "Cruise payout"
 
     # ── 2+3. TRANSFER and SETTLE, shielded ────────────────────────────────
     # Shutdown must not sever this in half. If SIGTERM arrives while Stripe is
@@ -517,10 +540,13 @@ async def _payout_one_driver(driver_id: int, _s) -> None:
     # to write down what happened.
     _payout_in_flight = True
     inner = asyncio.ensure_future(
-        _transfer_and_settle(driver_id, cashout_id, amount, connect_id, idem_key, fcm_token, _s)
+        _transfer_and_settle(
+            driver_id, cashout_id, amount, connect_id, idem_key, fcm_token, _s,
+            description=description,
+        )
     )
     try:
-        await asyncio.shield(inner)
+        status, error = await asyncio.shield(inner)
     except asyncio.CancelledError:
         try:
             await asyncio.wait_for(asyncio.shield(inner), _PAYOUT_SETTLE_GRACE)
@@ -535,6 +561,7 @@ async def _payout_one_driver(driver_id: int, _s) -> None:
         raise
     finally:
         _payout_in_flight = False
+    return {"status": status, "amount": amount, "cashout_id": cashout_id, "error": error}
 
 
 async def _auto_payout_all_drivers():

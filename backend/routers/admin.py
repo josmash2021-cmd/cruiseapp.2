@@ -3472,6 +3472,133 @@ async def admin_get_driver_earnings(
     }
 
 
+def _payout_row(c: Cashout, drv: Optional[User]) -> dict:
+    name = f"{drv.first_name or ''} {drv.last_name or ''}".strip() if drv else ""
+    done = c.status == "completed"
+    return {
+        "id": c.id,
+        "driverId": c.user_id,
+        "driverName": name or f"Driver #{c.user_id}",
+        "amount": round(float(c.amount or 0.0), 2),
+        "fee": round(float(c.fee or 0.0), 2),
+        "status": c.status,
+        "method": c.method or "standard",
+        "createdAt": c.created_at.isoformat() if c.created_at else None,
+        # No completed_at column: a row settles seconds after its claim.
+        "completedAt": c.created_at.isoformat() if done and c.created_at else None,
+    }
+
+
+@router.get("/admin/payouts", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_list_payouts(
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+):
+    """The Pagos page: who is owed and every payout, from Postgres.
+
+    The page read Firestore `drivers.balance` and `payouts`, which nothing
+    on the server writes (2026-11-09): it never showed a real balance or a
+    real payout, and its "Pagar ahora" only wrote a Firestore doc.
+    """
+    owed = (
+        await db.execute(
+            select(User)
+            .where(User.role == "driver", User.pending_balance > 0)
+            .order_by(User.pending_balance.desc())
+            .limit(500)
+        )
+    ).scalars().all()
+    rows = (
+        await db.execute(
+            select(Cashout, User)
+            .outerjoin(User, User.id == Cashout.user_id)
+            .order_by(Cashout.created_at.desc(), Cashout.id.desc())
+            .limit(limit)
+        )
+    ).all()
+    return {
+        "pending": [
+            {
+                "driverId": d.id,
+                "driverName": f"{d.first_name or ''} {d.last_name or ''}".strip()
+                or f"Driver #{d.id}",
+                "balance": round(float(d.pending_balance or 0.0), 2),
+                "phone": d.phone or "",
+                "photoUrl": d.photo_url,
+                "hasBank": bool(d.stripe_connect_id),
+            }
+            for d in owed
+        ],
+        "payouts": [_payout_row(c, drv) for c, drv in rows],
+    }
+
+
+def _payout_failure_es(err: Optional[str]) -> str:
+    t = (err or "").lower()
+    if "insufficient" in t:
+        return ("Stripe rechazó la transferencia: la cuenta de Stripe de Cruise no "
+                "tiene saldo disponible. El saldo del conductor quedó como estaba.")
+    return (f"Stripe rechazó la transferencia ({(err or '')[:160]}). "
+            "El saldo del conductor quedó como estaba.")
+
+
+@router.post("/admin/drivers/{driver_id}/payout", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_pay_driver_now(
+    driver_id: int,
+    body: dict = Body(default={}),
+    db: AsyncSession = Depends(get_db),
+):
+    """The panel's "Pagar ahora": the driver's whole balance to their bank.
+
+    Same claim -> transfer -> settle as the Monday run (main.py), so a click
+    can never pay a balance twice. Instant payouts stay the driver's own
+    request from the app: they need the driver's debit card.
+    """
+    method = str((body or {}).get("method") or "bank_transfer")
+    if method not in ("bank_transfer", "standard"):
+        raise HTTPException(
+            400, "Desde el panel solo se paga por transferencia bancaria; "
+                 "el pago instantáneo lo pide el conductor desde su app.")
+    from config import STRIPE_SECRET
+    if not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe no está configurado en el servidor.")
+    drv = await db.get(User, driver_id)
+    if drv is None or drv.role != "driver":
+        raise HTTPException(404, "Conductor no encontrado.")
+    if not drv.stripe_connect_id:
+        raise HTTPException(
+            409, "Este conductor no tiene cuenta bancaria conectada en Stripe.")
+    if float(drv.pending_balance or 0.0) <= 1.0:
+        raise HTTPException(409, "Saldo de $1 o menos: no hay nada que pagar.")
+    # End this read before the payout opens its own sessions and locks.
+    await db.rollback()
+
+    import stripe as _s
+    _s.api_key = STRIPE_SECRET
+    from main import _payout_one_driver
+    out = await _payout_one_driver(driver_id, _s, source="panel")
+    if out is None:
+        raise HTTPException(
+            409, "No se pudo tomar el saldo (otro pago en curso o ya pagado). "
+                 "Recarga y revisa el historial.")
+    _security_audit_log(
+        "ADMIN_DRIVER_PAYOUT", "admin",
+        f"driver_id={driver_id} cashout_id={out['cashout_id']} "
+        f"amount={out['amount']:.2f} status={out['status']}",
+    )
+    if out["status"] == "failed":
+        raise HTTPException(409, _payout_failure_es(out.get("error")))
+    if out["status"] == "uncertain":
+        return {
+            "status": "processing",
+            "amount": out["amount"],
+            "cashoutId": out["cashout_id"],
+            "message": "Stripe no respondió. El saldo queda reservado y no se "
+                       "vuelve a pagar solo; revisa el historial antes de reintentar.",
+        }
+    return {"status": "completed", "amount": out["amount"], "cashoutId": out["cashout_id"]}
+
+
 @router.patch("/admin/vehicles/{vehicle_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_update_vehicle(
     vehicle_id: int, body: AdminVehicleUpdateIn,

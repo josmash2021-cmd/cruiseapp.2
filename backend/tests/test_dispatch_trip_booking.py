@@ -230,9 +230,12 @@ async def test_admin_quote_contract(client, db, test_rider, monkeypatch):
     assert body["driver_estimate_cents"] == round(1090 * 0.9)
     assert body["platform_credit_cents"] == 0
     assert body["cruise_cash_balance_cents"] == 500
-    assert body["payment_methods"] == [
+    methods = body["payment_methods"]
+    assert [{k: v for k, v in m.items() if k != "id"} for m in methods] == [
         {"method_type": "stripe_card", "display_name": "Visa ···· 4242", "is_default": True}
     ]
+    # The row id (2026-11-15) lets the panel pick a card — never a Stripe id.
+    assert isinstance(methods[0]["id"], int)
     # Never leak the Stripe id to the panel.
     assert "stripe_pm_id" not in resp.text
 

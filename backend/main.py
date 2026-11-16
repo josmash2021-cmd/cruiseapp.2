@@ -1543,6 +1543,7 @@ from routers.legal import router as legal_router
 from routers.store import router as store_router
 from routers.zero_tolerance import router as zero_tolerance_router
 from routers.heat_zones import router as heat_zones_router
+from routers.admin_rider_cards import router as admin_rider_cards_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -1569,6 +1570,7 @@ app.include_router(legal_router)
 app.include_router(store_router)
 app.include_router(zero_tolerance_router)
 app.include_router(heat_zones_router)
+app.include_router(admin_rider_cards_router)
 
 # Load-test auth exists only on staging: mounted AND self-gated by
 # LOAD_TEST=1 — production never includes it (the 404 double-check inside
@@ -1680,9 +1682,12 @@ def _security_headers_for(path: str, method: str) -> list[tuple[bytes, bytes]]:
         # a white page. api.mapbox.com: the web fleet map's GL JS bundle.
         # worker-src blob: Mapbox GL spins its workers up from blob URLs.
         # fonts.googleapis/gstatic: the panel's Google Fonts (Inter).
+        # js.stripe.com + its frames: the panel's "Agregar tarjeta" mounts
+        # Stripe's own card field (2026-11-15) — the number never touches us.
         csp = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com https://api.mapbox.com; "
+            "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com https://api.mapbox.com https://js.stripe.com; "
+            "frame-src https://js.stripe.com https://hooks.stripe.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.mapbox.com; "
             "font-src 'self' data: https://fonts.gstatic.com; "
             "worker-src 'self' blob:; "

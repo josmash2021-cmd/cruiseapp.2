@@ -73,6 +73,7 @@ allow_courtesy_when_unpaid:input.fundingMode==="platform",
 };
 if(input.scheduledAt!==null)body.scheduled_at=input.scheduledAt;
 if(input.targetDriverId!==null)body.target_driver_id=input.targetDriverId;
+if(input.fundingMode==="rider"&&typeof input.paymentMethodId==="number")body.payment_method_id=input.paymentMethodId;
 if(input.tipAmount>0){body.tip_amount=input.tipAmount;body.tip_funding=input.fundingMode==="platform"?"platform":input.tipFunding}
 if(input.notes.trim()!=="")body.notes=input.notes.trim();
 return body;
@@ -82,7 +83,7 @@ const payload=await gs("/admin/trips",buildDispatchTripPayload(s));
 const id=payload===null||typeof payload!=="object"?null:payload.id??payload.trip_id??payload.tripId;
 if(typeof id!=="number"||!Number.isFinite(id))throw new Ce(500,"El backend no devolvió el id del viaje creado");
 return`sql_${Math.trunc(id)}`;
-}function rs({label:s,hint:l,dotClass:i,address:n,onAddressChange:o,lat:c,lng:t,onLatChange:h,onLngChange:m,suggestions:r,onPickSuggestion:u,error:p}){return e.jsxs("div",{children:[e.jsxs("div",{className:"flex items-start gap-2.5",children:[e.jsx("span",{className:A("mt-4 h-2 w-2 shrink-0 rounded-full",i)}),e.jsx("div",{className:"min-w-0 flex-1",children:e.jsx(q,{label:s,placeholder:l,value:n,onChange:x=>o(x.target.value),error:p})})]}),r.length>0&&e.jsx("div",{className:"ml-[18px] mt-1 rounded-[10px] border border-cardBorder bg-surface",children:r.map(x=>e.jsxs("button",{type:"button",onClick:()=>u(x),className:"flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surfaceHigh",children:[e.jsx(ze,{className:"h-4 w-4 shrink-0 text-textSecondary",strokeWidth:2}),e.jsx("span",{className:"line-clamp-2 text-[13px] text-textPrimary",children:x.placeName})]},`${x.lat},${x.lng}:${x.placeName}`))})]})}/*! guard-pin panel_booking_now_guard_test: "Nuevo viaje" sin Lat/Lng y con la ruta en el mapa (owner 2026-11-07) - el punto sale SOLO de elegir una dirección de la lista; escribir borra el punto de ese campo - re-aplicar tras rebuild */const TripRouteMapLazy=a.lazy(()=>import("./trip-route-map-Cruise2026.js").then(m=>({default:m.TripRouteMap})));function Ra(){
+}function rs({label:s,hint:l,dotClass:i,address:n,onAddressChange:o,lat:c,lng:t,onLatChange:h,onLngChange:m,suggestions:r,onPickSuggestion:u,error:p}){return e.jsxs("div",{children:[e.jsxs("div",{className:"flex items-start gap-2.5",children:[e.jsx("span",{className:A("mt-4 h-2 w-2 shrink-0 rounded-full",i)}),e.jsx("div",{className:"min-w-0 flex-1",children:e.jsx(q,{label:s,placeholder:l,value:n,onChange:x=>o(x.target.value),error:p})})]}),r.length>0&&e.jsx("div",{className:"ml-[18px] mt-1 rounded-[10px] border border-cardBorder bg-surface",children:r.map(x=>e.jsxs("button",{type:"button",onClick:()=>u(x),className:"flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surfaceHigh",children:[e.jsx(ze,{className:"h-4 w-4 shrink-0 text-textSecondary",strokeWidth:2}),e.jsx("span",{className:"line-clamp-2 text-[13px] text-textPrimary",children:x.placeName})]},`${x.lat},${x.lng}:${x.placeName}`))})]})}/*! guard-pin panel_booking_now_guard_test: "Nuevo viaje" sin Lat/Lng y con la ruta en el mapa (owner 2026-11-07) - el punto sale SOLO de elegir una dirección de la lista; escribir borra el punto de ese campo - re-aplicar tras rebuild */const TripRouteMapLazy=a.lazy(()=>import("./trip-route-map-Cruise2026.js").then(m=>({default:m.TripRouteMap})));/*! guard-pin panel_rider_cards: Nuevo viaje elige la tarjeta del pasajero (payment_method_id) y le agrega una si no tiene (rider-cards-Cruise2026.js, dueño 2026-11-15) - re-aplicar en rebuild */const RiderCardPickerLazy=a.lazy(()=>import("./rider-cards-Cruise2026.js").then(m=>({default:m.RiderCardPicker})));function Ra(){
 /*! guard-pin panel_booking_now_guard_test: "Crear viaje" desde Pidiendo ahora llega con el pasajero y sus direcciones (location.state.bookingPrefill, 2026-11-07) - re-aplicar tras rebuild */const nav=te(),loc=Ae(),bookingPrefill=(loc.state&&loc.state.bookingPrefill)||null,bookingFix=v=>typeof v==="number"&&Number.isFinite(v)?v.toFixed(6):"";
 const[riderQuery,setRiderQuery]=a.useState(""),[riderResults,setRiderResults]=a.useState([]),[riderSearching,setRiderSearching]=a.useState(false),[rider,setRider]=a.useState(()=>bookingPrefill&&bookingPrefill.rider&&typeof bookingPrefill.rider.id==="number"?bookingPrefill.rider:null);
 const riderSeq=a.useRef(0);
@@ -95,6 +96,8 @@ const driverSeq=a.useRef(0);
 const[quote,setQuote]=a.useState(null),[quoteSig,setQuoteSig]=a.useState(""),[quoting,setQuoting]=a.useState(false),[quoteError,setQuoteError]=a.useState(null),[quoteRetry,bumpQuoteRetry]=a.useState(0);
 const quoteSeq=a.useRef(0);
 const[fundingMode,setFundingMode]=a.useState("rider"),[tipAmount,setTipAmount]=a.useState(""),[tipFunding,setTipFunding]=a.useState("rider");
+const[pmChoice,setPmChoice]=a.useState(null);
+a.useEffect(()=>{if(quote===null)return;const ids=(quote.methods||[]).filter(x=>typeof x.id==="number").map(x=>x.id);if(pmChoice===null||!ids.includes(pmChoice)){const d=quote.defaultMethod;setPmChoice(d&&typeof d.id==="number"?d.id:(ids[0]??null))}},[quote]);
 const[saving,setSaving]=a.useState(false),[showErrors,setShowErrors]=a.useState(false),[confirmOpen,setConfirmOpen]=a.useState(false),[createError,setCreateError]=a.useState(null);
 a.useEffect(()=>{
 const query=riderQuery.trim();
@@ -182,6 +185,7 @@ riderId:rider.id,
 pickupAddress:pickupAddress.trim(),pickupLat:coords.pLat,pickupLng:coords.pLng,
 dropoffAddress:dropoffAddress.trim(),dropoffLat:coords.dLat,dropoffLng:coords.dLng,
 tier,quoteId:quote.quoteId,fundingMode,
+paymentMethodId:fundingMode==="rider"&&typeof pmChoice==="number"?pmChoice:null,
 scheduledAt:isScheduled?scheduledIso:null,
 targetDriverId:isScheduled&&targetMode==="driver"&&targetDriver!==null?targetDriver.id:null,
 tipAmount:tipValue,tipFunding:fundingMode==="platform"?"platform":tipFunding,
@@ -336,6 +340,7 @@ chip({value:"rider",label:"Se le cobra al pasajero"},fundingMode,setFundingMode)
 chip({value:"platform",label:"Gratis (lo paga Cruise)"},fundingMode,setFundingMode),
 ]}),
 ]}),
+fundingMode==="rider"&&quote!==null&&rider!==null&&e.jsx(a.Suspense,{fallback:null,children:e.jsx(RiderCardPickerLazy,{methods:quote.methods,value:pmChoice,onChange:setPmChoice,riderId:rider.id,person:rider,scheduled:isScheduled,chargeCents:payment!==null?payment.riderChargeCents:null,onAdded:()=>{setQuote(null);setQuoteSig("");bumpQuoteRetry(v=>v+1)}})}),
 fundingMode==="platform"&&e.jsxs("div",{className:"rounded-xl border border-primary/25 bg-primary/5 px-3.5 py-3",children:[
 e.jsx("p",{className:"text-[13px] font-semibold text-primary",children:"Cortesía — el rider no paga nada"}),
 e.jsxs("p",{className:"mt-0.5 text-xs text-textSecondary",children:["La plataforma cubre el viaje",quote!==null&&(quote.platformCreditCents??quote.driverEstimateCents??0)>0?` (costo estimado ${ie(((quote.platformCreditCents??quote.driverEstimateCents??0))/100)})`:"","."]}),

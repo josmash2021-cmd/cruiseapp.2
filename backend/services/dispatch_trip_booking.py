@@ -108,6 +108,7 @@ async def _chargeable_methods(db, rider_id: int) -> list:
     )
     return [
         {
+            "id": row.id,
             "method_type": row.method_type,
             "display_name": row.display_name,
             "is_default": bool(row.is_default),
@@ -267,7 +268,7 @@ async def create_dispatch_trip(db, body: AdminCreateTripIn) -> Trip:
 
     data = body.model_dump(exclude={
         "funding_mode", "allow_courtesy_when_unpaid",
-        "tip_amount", "tip_funding", "target_driver_id",
+        "tip_amount", "tip_funding", "target_driver_id", "payment_method_id",
     })
     data = {k: v for k, v in data.items() if v is not None}
     if is_scheduled:
@@ -292,6 +293,11 @@ async def create_dispatch_trip(db, body: AdminCreateTripIn) -> Trip:
 
     # ── Funding ───────────────────────────────────────────────────────
     courtesy = body.funding_mode == "platform"
+    if not courtesy and body.payment_method_id is not None:
+        # Dispatch picked the card: it becomes the rider's default so the
+        # hold now (or the reservation's later hold and charge) uses it.
+        from routers.admin_rider_cards import make_default_for_trip
+        await make_default_for_trip(db, rider.id, body.payment_method_id)
     tip_amount = round(float(body.tip_amount or 0.0), 2)
     if 0 < tip_amount * 100 < DISPATCH_TIP_MIN_CENTS:
         raise HTTPException(400, "The tip must be at least $0.50.")

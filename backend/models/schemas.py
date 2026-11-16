@@ -479,6 +479,9 @@ class AdminCreateTripIn(BaseModel):
     tip_amount: float = Field(default=0.0, ge=0, le=100)
     tip_funding: Optional[Literal["rider", "platform"]] = None
     target_driver_id: Optional[int] = Field(default=None, gt=0)
+    # The rider's card dispatch picked (rider_payment_methods.id, 2026-11-15).
+    # It becomes the rider's default: every later charge uses the default.
+    payment_method_id: Optional[int] = Field(default=None, gt=0)
 
 
 class AdminNotificationIn(BaseModel):

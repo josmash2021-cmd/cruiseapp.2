@@ -1546,6 +1546,7 @@ from routers.heat_zones import router as heat_zones_router
 from routers.admin_rider_cards import router as admin_rider_cards_router
 from routers.admin_user_profile import router as admin_user_profile_router
 from routers.admin_trip_page import router as admin_trip_page_router
+from routers.admin_home import router as admin_home_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -1575,6 +1576,7 @@ app.include_router(heat_zones_router)
 app.include_router(admin_rider_cards_router)
 app.include_router(admin_user_profile_router)
 app.include_router(admin_trip_page_router)
+app.include_router(admin_home_router)
 
 # Load-test auth exists only on staging: mounted AND self-gated by
 # LOAD_TEST=1 — production never includes it (the 404 double-check inside
@@ -1741,6 +1743,8 @@ def _is_read_poll_path(path: str) -> bool:
         # Each reservation card in the panel asks its pickup's time zone
         # once (cached per point in the browser, 2026-11-07).
         or path == "/admin/geo/time-zone"
+        # Panel Inicio (every 10 s while open and visible, 2026-11-16).
+        or path == "/admin/home"
         or (path.startswith("/trips/") and (path.endswith("/poll") or path.endswith("/chat")))
         or (path.startswith("/support/chats/") and (path.endswith("/messages") or path.endswith("/typing")))
     )

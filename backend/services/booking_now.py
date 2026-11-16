@@ -164,7 +164,10 @@ async def _fill_missing_addresses(riders: list[dict]) -> None:
         pass
 
 
-async def snapshot(db: AsyncSession, now: float, *, counts_only: bool = False) -> dict:
+async def snapshot(db: AsyncSession, now: float, *, counts_only: bool = False,
+                   market_of=None) -> dict:
+    """[market_of] (lat, lng) -> code|None: also splits `building` by market
+    (the panel's Inicio, 2026-11-16) — a count per state, never a point."""
     heat_rows = await rider_heat.load_rows()
     booking_rows = await rider_heat.load_booking_rows()
 
@@ -221,6 +224,15 @@ async def snapshot(db: AsyncSession, now: float, *, counts_only: bool = False) -
         "app_open": app_open,
         "recent_requests": int(recent_requests),
     }
+    if market_of is not None:
+        by_market: dict[str, int] = {}
+        for rid in shown:
+            if rid in trips:
+                continue
+            spot = booking[rid]["pickup"] or heat_rows.get(rid)
+            code = market_of(spot["lat"], spot["lng"]) if spot else None
+            by_market[code or "other"] = by_market.get(code or "other", 0) + 1
+        out["building_by_market"] = by_market
     if counts_only:
         return out
 

@@ -1,4 +1,5 @@
-/*! guard-pin panel_trip_page: página del viaje estilo Lyft (dueño 2026-11-16, dibujo https://claude.ai/artifact/1AXDLBTjRMz3PLXZHcXeZW) - chunk escrito a mano, sin fuente React (CLAUDE.md #30). Lo monta TripDetailScreen (index-B68rRA9U.js) ALREDEDOR de lo de siempre: el encabezado, las tarjetas y los botones viejos son los mismos elementos (mismos handlers y ventanas), solo cambian de lugar. Nuevo: mapa con la ruta y el conductor en vivo (GET /admin/trips/{id}/live) y la barra de progreso con la hora de cada paso. */
+/*! guard-pin panel_trip_page: página del viaje estilo Lyft (dueño 2026-11-16, dibujo https://claude.ai/artifact/1AXDLBTjRMz3PLXZHcXeZW) - chunk escrito a mano, sin fuente React (CLAUDE.md #30). Lo monta TripDetailScreen (index-B68rRA9U.js) ALREDEDOR de lo de siempre: el encabezado, las tarjetas y los botones viejos son los mismos elementos (mismos handlers y ventanas), solo cambian de lugar. Las tarjetas son las del dibujo (Ruta, Línea de tiempo, Pasajera, Conductor, Dinero) con GET /admin/trips/{id}/page; si eso falla se ven las tarjetas viejas. Mapa con la ruta y el conductor en vivo (GET /admin/trips/{id}/live) y barra de progreso con la hora de cada paso. */
+import{y as useNavigate}from"./vendor-react-DprhJQz-.js";
 import{r as React,j as J}from"./vendor-react-DprhJQz-.js";
 import{m as mapboxgl}from"./vendor-mapbox-ComAnvan.js";
 import{N as navyStyle,a as applyNavyGold,r as refineRoads,h as hideTraffic}from"./mapNavyGold-CiIxy5Vj.js";
@@ -62,6 +63,59 @@ const CSS=`
 .tp-car svg{width:22px;height:22px;transition:transform .6s ease;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
 .tp-car.stale{background:rgba(255,255,255,.08)}
 .tp-car.stale svg path{fill:#9a9aa4}
+.tp-top{display:flex;flex-wrap:wrap;align-items:center;gap:14px;min-width:0}
+.tp-back{width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.16);background:transparent;color:#fff;font-size:18px;cursor:pointer;flex:none}
+.tp-back:hover{background:#23232D}
+.tp-titlebox{display:flex;flex-direction:column;gap:8px;flex:1 1 320px;min-width:0}
+.tp-tline{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.tp-h1{margin:0;font:700 24px Inter,system-ui,sans-serif;color:#fff}
+.tp-chip.plain{background:#23232D;color:#fff}
+.tp-chip.dim{background:#23232D;color:rgba(255,255,255,.55)}
+.tp-card{background:#1C1C24;border:1px solid rgba(255,255,255,.06);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.tp-h3{margin:0;font:700 15px Inter,system-ui,sans-serif;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.tp-link{border:0;background:transparent;color:${GOLD};font:600 13px Inter,system-ui,sans-serif;cursor:pointer;padding:0}
+.tp-link:hover{text-decoration:underline}
+.tp-muted{color:rgba(255,255,255,.55);font:500 12.5px Inter,system-ui,sans-serif}
+.tp-small{font:500 12px Inter,system-ui,sans-serif;color:rgba(255,255,255,.5)}
+.tp-kv{display:flex;justify-content:space-between;gap:12px;font:13.5px Inter,system-ui,sans-serif;padding:8px 0;border-top:1px solid rgba(255,255,255,.06)}
+.tp-kv:first-child{border-top:0}
+.tp-kv span{color:rgba(255,255,255,.55)}
+.tp-kv b{font-weight:600;color:#fff;text-align:right}
+.tp-kv.tot{border-top:1px solid rgba(255,255,255,.2)}
+.tp-kv.tot span,.tp-kv.tot b{color:#fff;font-weight:700}
+.tp-kv.gold b{color:${GOLD}}
+.tp-note{background:#14141A;border-radius:12px;padding:10px 12px;font:12.5px/1.45 Inter,system-ui,sans-serif;color:rgba(255,255,255,.72);white-space:pre-wrap;overflow-wrap:anywhere}
+.tp-person{display:flex;gap:12px;align-items:center;min-width:0}
+.tp-av{width:44px;height:44px;border-radius:50%;flex:none;display:grid;place-items:center;font:800 14px Inter,system-ui,sans-serif;background:rgba(232,197,71,.16);color:${GOLD};object-fit:cover}
+.tp-pinfo{display:flex;flex-direction:column;gap:2px;min-width:0}
+.tp-pinfo b{font:700 15px Inter,system-ui,sans-serif;color:#fff}
+.tp-pinfo span{font:500 12.5px Inter,system-ui,sans-serif;color:rgba(255,255,255,.55)}
+.tp-pinfo .tp-live{color:${GOLD};font-weight:600}
+.tp-row{display:flex;flex-wrap:wrap;gap:8px}
+.tp-row-end{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.tp-btn{height:40px;padding:0 14px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:transparent;color:#fff;font:600 13.5px Inter,system-ui,sans-serif;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.tp-btn:hover{background:#23232D}
+.tp-btn.sm{height:32px;padding:0 12px;font-size:12.5px}
+.tp-btn.gold{background:${GOLD};border-color:${GOLD};color:#14141A}
+.tp-rail{display:flex;flex-direction:column;gap:16px;position:relative;padding-left:24px}
+.tp-stop{position:relative;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tp-stop::before{content:"";position:absolute;left:-24px;top:16px;width:12px;height:12px;border-radius:50%;border:3px solid ${GOLD};background:#1C1C24;box-sizing:border-box}
+.tp-stop.end::before{border-color:#fff}
+.tp-stop:not(.end)::after{content:"";position:absolute;left:-19px;top:28px;bottom:-32px;width:2px;background:linear-gradient(${GOLD},#fff)}
+.tp-stop b{font:600 14px Inter,system-ui,sans-serif;color:#fff;overflow-wrap:anywhere}
+.tp-tl{display:flex;gap:12px;align-items:flex-start;font:13.5px Inter,system-ui,sans-serif}
+.tp-dot{width:10px;height:10px;border-radius:50%;margin-top:4px;flex:none;border:2px solid #4B4B57;box-sizing:border-box}
+.tp-dot.on{border-color:${GOLD};background:${GOLD}}
+.tp-tlw{flex:1;color:#fff;min-width:0}
+.tp-tlt{color:rgba(255,255,255,.5);white-space:nowrap}
+.tp-ov{position:fixed;inset:0;background:rgba(5,5,8,.72);display:flex;justify-content:center;align-items:flex-start;padding:80px 16px 16px;box-sizing:border-box;z-index:60}
+.tp-dlg{width:100%;max-width:420px;background:#1C1C24;border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:14px;box-sizing:border-box}
+.tp-dh{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.tp-dh h2{margin:0;font:700 18px Inter,system-ui,sans-serif;color:#fff}
+.tp-x{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.16);background:transparent;color:#fff;font-size:16px;cursor:pointer;flex:none}
+.tp-phone{font:700 26px Inter,system-ui,sans-serif;color:#fff;user-select:all}
+.tp-skel{height:120px;border-radius:18px;background:linear-gradient(90deg,#1C1C24,#23232D,#1C1C24);background-size:200% 100%;animation:tpsk 1.2s infinite}
+@keyframes tpsk{to{background-position:-200% 0}}
 `;
 function ensureCss(){
  if(typeof document==="undefined")return;
@@ -121,7 +175,7 @@ function useLive(id,terminal){
 function carEl(){const d=document.createElement("div");d.className="tp-car";d.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 L19 20.5 L12 16.6 L5 20.5 Z" fill="#E8C547" stroke="#14141A" stroke-width="1.6" stroke-linejoin="round"/></svg>';return d}
 function ringEl(kind){const d=document.createElement("div");d.className=`tp-ring ${kind}`;return d}
 
-function LiveTripMap({t,live}){
+function LiveTripMap({t,live,onLead,onRoute}){
  const token=getMapboxToken();
  const box=React.useRef(null),mapRef=React.useRef(null),mk=React.useRef({}),leadAt=React.useRef({t:0,p:null,target:""}),carPos=React.useRef(null),carHeading=React.useRef(0),anim=React.useRef(0),fitted=React.useRef(false);
  const[ready,setReady]=React.useState(false),[route,setRoute]=React.useState(null),[lead,setLead]=React.useState(null),[follow,setFollow]=React.useState(false);
@@ -135,7 +189,8 @@ function LiveTripMap({t,live}){
  const cancelled=at===-1;
 
  React.useEffect(()=>{const node=box.current;if(!node||!token)return;mapboxgl.accessToken=token;
-  const map=new mapboxgl.Map({container:node,style:navyStyle,center:pickup?[pickup.lng,pickup.lat]:[-86.8,33.45],zoom:11,maxPitch:0,dragRotate:false,pitchWithRotate:false,touchPitch:false,attributionControl:true});
+  // Scrolling the page over the map must not zoom it out (owner 2026-11-16: the route "disappeared" while scrolling): Ctrl/⌘ + wheel zooms.
+  const map=new mapboxgl.Map({container:node,style:navyStyle,center:pickup?[pickup.lng,pickup.lat]:[-86.8,33.45],zoom:11,maxPitch:0,dragRotate:false,pitchWithRotate:false,touchPitch:false,attributionControl:true,cooperativeGestures:true});
   mapRef.current=map;map.addControl(new mapboxgl.NavigationControl({showCompass:false}),"top-right");
   map.on("dragstart",()=>setFollow(false));
   map.on("load",()=>{if(mapRef.current!==map)return;map.resize();applyNavyGold(map);refineRoads(map);hideTraffic(map);
@@ -155,11 +210,11 @@ function LiveTripMap({t,live}){
   put("pick","pick",pickup);put("drop","drop",dropoff);
   if(!pickup||!dropoff){setRoute(null);return}
   const ctrl=new AbortController();
-  fetchStreetRoute(pickup,dropoff,token,ctrl.signal).then(r=>setRoute(r)).catch(()=>{if(!ctrl.signal.aborted)setRoute({coords:[[pickup.lng,pickup.lat],[dropoff.lng,dropoff.lat]],meters:0,seconds:0})});
+  fetchStreetRoute(pickup,dropoff,token,ctrl.signal).then(r=>{setRoute(r);onRoute&&onRoute(r.meters>0?{miles:r.meters/1609.34,minutes:Math.max(1,Math.round(r.seconds/60))}:null)}).catch(()=>{if(!ctrl.signal.aborted)setRoute({coords:[[pickup.lng,pickup.lat],[dropoff.lng,dropoff.lat]],meters:0,seconds:0})});
   return()=>ctrl.abort()},[ready,pKey,dKey]);
  React.useEffect(()=>{const map=mapRef.current;if(!map||!ready)return;const src=map.getSource("tp-route");if(!src)return;
   src.setData(route?{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:route.coords}}:EMPTY);
-  map.setPaintProperty("tp-route-line","line-opacity",cancelled?0.3:target?0.4:1)},[ready,route,cancelled,!!target]);
+  map.setPaintProperty("tp-route-line","line-opacity",cancelled?0.3:target&&drv?0.4:1)},[ready,route,cancelled,!!(target&&drv)]);
 
  // The driver's arrow glides to each new reading and turns to where it went.
  const dKey2=drv?`${drv.lat},${drv.lng}`:"";
@@ -178,13 +233,13 @@ function LiveTripMap({t,live}){
  // Driver → where they are going now (pickup, or the destination once on board).
  const tKey=target?`${target.lat},${target.lng}`:"";
  React.useEffect(()=>{const map=mapRef.current;if(!map||!ready)return;const src=map.getSource("tp-lead");
-  if(!drv||!target){src?.setData(EMPTY);setLead(null);return}
+  if(!drv||!target){src?.setData(EMPTY);setLead(null);onLead&&onLead(null);return}
   const here={lat:drv.lat,lng:drv.lng},last=leadAt.current;
   const due=last.target!==tKey||!last.p||Date.now()-last.t>LEAD_REFRESH_MS||metersBetween(last.p,here)>LEAD_MOVE_M;
   if(!due)return;
   leadAt.current={t:Date.now(),p:here,target:tKey};
   const ctrl=new AbortController();
-  fetchStreetRoute(here,target,token,ctrl.signal).then(r=>{src?.setData({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:r.coords}});setLead({miles:r.meters/1609.34,minutes:Math.max(1,Math.round(r.seconds/60))})}).catch(()=>{});
+  fetchStreetRoute(here,target,token,ctrl.signal).then(r=>{src?.setData({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:r.coords}});const l={miles:r.meters/1609.34,minutes:Math.max(1,Math.round(r.seconds/60))};setLead(l);onLead&&onLead(l)}).catch(()=>{});
   return()=>ctrl.abort()},[ready,dKey2,tKey]);
 
  const frameAll=React.useCallback((animate)=>{const map=mapRef.current;if(!map)return;const pts=[];if(route)route.coords.forEach(c=>pts.push(c));else{if(pickup)pts.push([pickup.lng,pickup.lat]);if(dropoff)pts.push([dropoff.lng,dropoff.lat])}if(drv)pts.push([drv.lng,drv.lat]);if(!pts.length)return;
@@ -199,20 +254,20 @@ function LiveTripMap({t,live}){
  else if(at===4){title=lead?`Llega al destino en ${lead.minutes} min`:"En viaje";sub=lead?`${lead.miles.toFixed(1)} mi para llegar`:null}
  else if(at===3){title=`${who} llegó a la recogida`;sub="Esperando a la pasajera"}
  else if(at===2||(at===1&&!isReservation(t))){title=drv?(lead?`${who} llega en ${lead.minutes} min`:`${who} va en camino`):"Esperando la ubicación del conductor";sub=lead?`${lead.miles.toFixed(1)} mi de la recogida`:null}
- else if(isReservation(t)){title=el("span",null,"Recogida ",el(ZoneTime,{date:t.scheduledAtDate,lat:t.pickupLat,lng:t.pickupLng}));sub=t.driverName?`Conductor: ${t.driverName} · confirma 1 hora antes`:"Sin conductor todavía"}
+ else if(isReservation(t)){title=["Recogida ",el(ZoneTime,{date:t.scheduledAtDate,lat:t.pickupLat,lng:t.pickupLng,key:"z"})];sub=t.driverName?`Conductor: ${t.driverName} · confirma 1 hora antes`:"Sin conductor todavía"}
  else{title="Buscando conductor";sub=route&&route.meters>0?`${Math.round(route.seconds/60)} min · ${(route.meters/1609.34).toFixed(1)} mi de viaje`:null}
  if(drv&&stale&&at>=1&&at<=4)sub=`Última ubicación ${when(drv.seen_at)||""}`;
 
  return el("section",{className:"tp-map","aria-label":"Mapa del viaje"},
   el("div",{ref:box,className:"tp-canvas"}),
-  el("div",{className:"tp-pill"},el("b",null,title),sub?el("span",null,sub):null),
+  el("div",{className:"tp-pill"},Array.isArray(title)?el("b",null,...title):el("b",null,title),sub?el("span",null,sub):null),
   token?el("div",{className:"tp-mapbtns"},
    drv?el("button",{type:"button",className:follow?"tp-mapbtn on":"tp-mapbtn",onClick:()=>{setFollow(true);const m=mapRef.current;if(m&&drv)m.easeTo({center:[drv.lng,drv.lat],zoom:Math.max(m.getZoom(),15),duration:800})}},"Seguir"):null,
    el("button",{type:"button",className:"tp-mapbtn",onClick:()=>{setFollow(false);frameAll(true)}},"Ruta completa")):null,
   !token?el("div",{className:"tp-hint"},el("span",null,"Mapa no disponible")):null);
 }
 
-// ── The page ──────────────────────────────────────────────────────────
+// ── "Más" menu ───────────────────────────────────────────────────────
 function MoreMenu({items}){
  const[open,setOpen]=React.useState(false),ref=React.useRef(null);
  React.useEffect(()=>{if(!open)return;const off=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener("mousedown",off);return()=>document.removeEventListener("mousedown",off)},[open]);
@@ -222,43 +277,165 @@ function MoreMenu({items}){
   open?el("div",{className:"tp-menu",onClick:()=>setOpen(false)},items.map((c,i)=>J.jsx(React.Fragment,{children:c},i))):null);
 }
 
+// ── The page ──────────────────────────────────────────────────────────
+const RAW_LABEL={requested:["Buscando conductor","gold"],scheduled:["Reserva sin conductor","gold"],scheduled_accepted:["Conductor asignado","gold"],scheduled_active:["Por empezar","gold"],accepted:["Aceptado","gold"],driver_en_route:["En camino a la recogida","gold"],arrived:["Llegó a la recogida","gold"],in_trip:["En viaje","gold"],completed:["Terminado",""],cancelled:["Cancelado","dim"]};
+const PAY_LABEL={paid:"Cobrado",captured:"Cobrado",held:"Retenido",authorized:"Retenido",requires_capture:"Retenido",unpaid:"Pendiente",partial:"Cobrado en parte",failed:"Falló el cobro",not_required:"No se cobra",refunded:"Reembolsado",cancelled:"Sin cobro"};
+const COURTESY=["platform_courtesy","dispatch_courtesy","review_test"];
+const LANG={es:"Español",en:"Inglés"};
+const money=v=>v==null||!isFinite(Number(v))?"—":"$"+Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const initials=n=>String(n||"").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase()||"?";
+const phoneFmt=p=>{const d=String(p||"").replace(/\D/g,"");return d.length===11&&d[0]==="1"?`+1 (${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`:d.length===10?`(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`:String(p||"")};
+
+function usePage(id,raw){
+ const[page,setPage]=React.useState(null),[err,setErr]=React.useState(null);
+ React.useEffect(()=>{if(!(id>0))return;let off=false;
+  apiGet(`/admin/trips/${id}/page`,{retry:{maxAttempts:2}}).then(d=>{if(!off){setPage(d);setErr(null)}}).catch(e=>{if(!off)setErr(e instanceof Error?e.message:String(e))});
+  return()=>{off=true}},[id,raw]);
+ return{page,err};
+}
+
+const Card=({title,right,children})=>el("section",{className:"tp-card"},title?el("h3",{className:"tp-h3"},title,right||null):null,children);
+const Row=(k,v,cls)=>el("div",{className:"tp-kv"+(cls?" "+cls:""),key:k},el("span",null,k),el("b",null,v));
+
+function Avatar({p}){return p&&p.photo_url?el("img",{className:"tp-av",src:p.photo_url,alt:""}):el("span",{className:"tp-av"},initials(p&&p.name))}
+
+function CallDialog({name,phone,onClose}){
+ const[copied,setCopied]=React.useState(false);
+ React.useEffect(()=>{const k=e=>{if(e.key==="Escape")onClose()};window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k)},[onClose]);
+ const copy=()=>{try{navigator.clipboard.writeText(phone).then(()=>setCopied(true),()=>{})}catch{}};
+ return el("div",{className:"tp-ov",onMouseDown:e=>{if(e.target===e.currentTarget)onClose()}},
+  el("div",{className:"tp-dlg",role:"dialog","aria-modal":"true","aria-label":`Llamar a ${name}`},
+   el("div",{className:"tp-dh"},el("h2",null,`Llamar a ${name}`),el("button",{type:"button",className:"tp-x","aria-label":"Cerrar",onClick:onClose},"×")),
+   el("div",{className:"tp-phone"},phoneFmt(phone)),
+   el("div",{className:"tp-muted"},"Márcalo desde tu teléfono. «Llamar» abre tu app de llamadas si la computadora tiene una."),
+   el("div",{className:"tp-row-end"},el("button",{type:"button",className:"tp-btn",onClick:copy},copied?"Copiado":"Copiar"),el("a",{className:"tp-btn gold",href:`tel:${phone}`},"Llamar"))));
+}
+
+function PersonCard({title,p,line,live,onCall,onChat,onProfile,empty}){
+ return el(Card,{title,right:p&&p.id&&onProfile?el("button",{type:"button",className:"tp-link",onClick:onProfile},"Ver ficha"):null},
+  p?el("div",{className:"tp-person"},el(Avatar,{p}),el("div",{className:"tp-pinfo"},el("b",null,p.name||"—"),line?el("span",null,line):null,live?el("span",{className:"tp-live"},live):null)):el("div",{className:"tp-muted"},empty),
+  p?el("div",{className:"tp-row"},p.phone?el("button",{type:"button",className:"tp-btn sm",onClick:onCall},"Llamar"):null,onChat?el("button",{type:"button",className:"tp-btn sm",onClick:onChat},"Chat"):null):null);
+}
+
+function MoneyCard({page}){
+ const m=page.money,tier=tierName(page.vehicle_type),rider=page.rider,driver=page.driver;
+ const rFirst=firstName(rider&&rider.name)||"el pasajero",dFirst=firstName(driver&&driver.name)||"el conductor";
+ const cancelled=page.status==="cancelled",done=page.status==="completed";
+ const courtesy=COURTESY.includes(m.funding);
+ const rows=[Row(`Tarifa${tier?" "+tier:""}`,money(m.original))];
+ if(m.discount>0)rows.push(Row("Descuento",`−${money(m.discount)}`));
+ if(m.cruise_cash>0)rows.push(Row("Cruise Cash",`−${money(m.cruise_cash)}`));
+ rows.push(Row(`Paga ${rFirst}`,money(m.rider_pays),"tot"));
+ if(driver||m.driver_gets)rows.push(Row(`Gana ${dFirst}${m.driver_rate&&!cancelled?` (${Math.round(m.driver_rate*100)}%)`:""}${!m.driver_final&&!cancelled?" · aprox.":""}`,money(m.driver_gets),"gold"));
+ if(m.cruise_puts>0)rows.push(Row("Pone Cruise",money(m.cruise_puts)));
+ if(m.cruise_keeps>0)rows.push(Row("Queda a Cruise",money(m.cruise_keeps)));
+ if(m.tip>0)rows.push(Row("Propina (toda para el conductor)",money(m.tip)));
+ if(m.cancellation_fee>0)rows.push(Row("Cargo de cancelación",money(m.cancellation_fee)));
+ if(m.refund_amount>0)rows.push(Row("Reembolsado",money(m.refund_amount)));
+ rows.push(Row("Cobro",courtesy&&m.rider_pays===0?"Lo paga Cruise":(PAY_LABEL[m.payment_status]||m.payment_status)));
+ const card=page.card;
+ const note=courtesy&&m.rider_pays===0?`A ${rFirst} no se le cobra: Cruise paga el viaje.`:
+  cancelled?(m.cancellation_fee>0?`Se cobró el cargo de cancelación${card?" a la "+card:""}.`:"No se cobró el viaje."):
+  done?`Cobrado${card?" a la "+card:""}.${m.tip>0?" La propina va completa al conductor.":""}`:
+  `Se cobra${card?" a la "+card:""} al terminar el viaje${page.reservation?"; se retiene 1 hora antes de la recogida":""}.`;
+ return el(Card,{title:"Dinero"},el("div",null,...rows),el("div",{className:"tp-note"},note));
+}
+
+function RouteCard({page,summary}){
+ const facts=summary?`${summary.minutes} min · ${summary.miles.toFixed(1)} mi`:[page.minutes?`${Math.round(page.minutes)} min`:null,page.miles?`${Number(page.miles).toFixed(1)} mi`:null].filter(Boolean).join(" · ");
+ const pickLabel=page.reservation&&page.scheduled_at&&okPoint(page.pickup)?["Recogida · ",el(ZoneTime,{date:page.scheduled_at,lat:page.pickup.lat,lng:page.pickup.lng,key:"z"})]:["Recogida"];
+ return el(Card,{title:"Ruta",right:facts?el("span",{className:"tp-muted"},facts):null},
+  el("div",{className:"tp-rail"},
+   el("div",{className:"tp-stop"},el("span",{className:"tp-small"},...pickLabel),el("b",null,page.pickup.address||"—")),
+   el("div",{className:"tp-stop end"},el("span",{className:"tp-small"},page.is_airport&&page.airport_code?`Destino · Aeropuerto ${page.airport_code}`:"Destino"),el("b",null,page.dropoff.address||"—"))));
+}
+
+function TimelineCard({page,raw}){
+ const st=raw||page.status;
+ const rows=[["Pedido",page.created_at,true],["Conductor asignado",page.driver_assigned_at,!!page.driver_assigned_at]];
+ if(page.reservation&&page.scheduled_at){
+  const confirm=new Date(new Date(page.scheduled_at).getTime()-3600e3).toISOString();
+  rows.push(["Oferta para confirmar (1 hora antes)",confirm,["driver_en_route","arrived","in_trip","completed"].includes(st)]);
+ }
+ rows.push(["Llegó a la recogida",page.arrived_at,!!page.arrived_at]);
+ rows.push(["Empezó el viaje",page.started_at,!!page.started_at]);
+ rows.push(["Terminó",page.completed_at,!!page.completed_at]);
+ const list=st==="cancelled"?rows.filter(r=>r[2]).concat([[page.cancel_reason?`Cancelado · ${page.cancel_reason}`:"Cancelado",page.updated_at,true]]):rows;
+ return el(Card,{title:"Línea de tiempo"},list.map(([what,at,on],i)=>el("div",{className:"tp-tl",key:i},el("span",{className:on?"tp-dot on":"tp-dot"}),el("span",{className:"tp-tlw"},what),el("span",{className:"tp-tlt"},on?(when(at)||"—"):"pendiente"))));
+}
+
 function TripPageShell(props){
  ensureCss();
  const{cruiseTrip:t,cruiseBackendId:id}=props;
+ const navigate=useNavigate();
  const kids=Array.isArray(props.children)?props.children:[props.children];
  const[header,stepper,grid,mainBar,moreBar,...rest]=kids;
  const terminal=t.status==="completed"||t.status==="cancelled";
  const live=useLive(id,terminal);
  const raw=live?live.status:null;
+ const{page,err}=usePage(id,raw);
+ const[lead,setLead]=React.useState(null),[summary,setSummary]=React.useState(null),[call,setCall]=React.useState(null);
 
  // Old buttons, same elements: the contextual ones stay in sight, the rest
  // go behind "Más". A refund is in sight once the trip is over.
  const main=kidsOf(mainBar),more=[],inline=[];
  kidsOf(moreBar).forEach(b=>{(textOf(b).includes("Reembolso")?inline:more).push(b)});
-
- const cols=kidsOf(grid);
- const left=cols.length===2?kidsOf(cols[0]):null,right=cols.length===2?kidsOf(cols[1]):null;
-
- const chips=[];
- const tier=tierName(t.vehicleType);if(tier)chips.push(el("span",{className:"tp-chip",key:"tier"},tier));
- if(isReservation(t))chips.push(el("span",{className:"tp-chip gold",key:"res"},"Reserva · ",el(ZoneTime,{date:t.scheduledAtDate,lat:t.pickupLat,lng:t.pickupLng})));
- if(t.createdAt)chips.push(el("span",{className:"tp-chip",key:"created"},`Pedido ${when(t.createdAt)}`));
- if(t.driverName)chips.push(el("span",{className:"tp-chip",key:"drv"},`Conductor: ${t.driverName}`));
-
  const actions=[...main,...inline];
- const map=el(LiveTripMap,{t,live});
- const cancelledCard=t.status==="cancelled"?stepper:null;
+ const backBtn=kidsOf(header)[0];
+ const goBack=backBtn&&backBtn.props&&typeof backBtn.props.onClick==="function"?backBtn.props.onClick:()=>navigate(-1);
+
+ const map=el(LiveTripMap,{t,live,onLead:setLead,onRoute:setSummary});
+ const buttons=actions.length||more.length?el("div",{className:"tp-actions"},actions.map((c,i)=>J.jsx(React.Fragment,{children:c},i)),el(MoreMenu,{items:more})):null;
+
+ // Without the page data (an error, an older server) the old cards stay.
+ if(!page){
+  const cols=kidsOf(grid);
+  const left=cols.length===2?kidsOf(cols[0]):null,right=cols.length===2?kidsOf(cols[1]):null;
+  const body=!err?el("div",{className:"tp-grid"},el("div",{className:"tp-col"},map,el("div",{className:"tp-skel"})),el("div",{className:"tp-col"},el("div",{className:"tp-skel"}),el("div",{className:"tp-skel"}))):
+   left&&right?el("div",{className:"tp-grid"},el("div",{className:"tp-col"},map,left.map((c,i)=>J.jsx(React.Fragment,{children:c},i))),el("div",{className:"tp-col"},right.map((c,i)=>J.jsx(React.Fragment,{children:c},i)))):
+   J.jsxs(React.Fragment,{children:[map,grid]});
+  return el("div",{className:"tp-page"},el("div",{className:"tp-head"},header,buttons),el(Steps,{t,raw}),t.status==="cancelled"?stepper:null,body,...rest);
+ }
+
+ const st=raw||page.status;
+ const[label,tone]=RAW_LABEL[st]||[st,""];
+ const at=v=>v?new Date(v):null;
+ const stepsT=Object.assign({},t,{createdAt:at(page.created_at)||t.createdAt,acceptedAt:at(page.driver_assigned_at)||t.acceptedAt,driverArrivedAt:at(page.arrived_at)||t.driverArrivedAt,startedAt:at(page.started_at)||t.startedAt,completedAt:at(page.completed_at)||t.completedAt,cancelledAt:st==="cancelled"?(at(page.updated_at)||t.cancelledAt):t.cancelledAt});
+ const rider=page.rider,driver=page.driver;
+ const chips=[];
+ const tier=tierName(page.vehicle_type);if(tier)chips.push(el("span",{className:"tp-chip",key:"tier"},tier));
+ if(page.is_airport)chips.push(el("span",{className:"tp-chip",key:"apt"},page.airport_code?`Aeropuerto ${page.airport_code}`:"Aeropuerto"));
+ if(page.reservation&&page.scheduled_at&&okPoint(page.pickup))chips.push(el("span",{className:"tp-chip gold",key:"res"},"Reserva · ",el(ZoneTime,{date:page.scheduled_at,lat:page.pickup.lat,lng:page.pickup.lng})));
+ chips.push(el("span",{className:"tp-chip",key:"created"},`Pedido ${when(page.created_at)||"—"}`));
+ if(page.card)chips.push(el("span",{className:"tp-chip",key:"card"},page.card));
+ else if(COURTESY.includes(page.money.funding))chips.push(el("span",{className:"tp-chip",key:"card"},"Lo paga Cruise"));
+
+ const v=driver&&driver.vehicle;
+ const veh=v?[v.make,v.model,v.color?String(v.color).toLowerCase():null].filter(Boolean).join(" ")+(v.plate?` · ${v.plate}`:""):null;
+ const confirmAt=page.scheduled_at?when(new Date(new Date(page.scheduled_at).getTime()-3600e3)):null;
+ const driverLive=st==="driver_en_route"||(st==="accepted"&&!page.reservation)?(lead?`En camino · llega en ${lead.minutes} min`:"En camino"):
+  st==="arrived"?"Llegó a la recogida":
+  st==="in_trip"?(lead?`En viaje · llega al destino en ${lead.minutes} min`:"En viaje"):
+  (st==="scheduled_accepted"||st==="scheduled_active")&&confirmAt?`Confirma la reserva ${confirmAt}`:null;
+ const riderLine=rider?[rider.rating?`★ ${Number(rider.rating).toFixed(1)}`:null,rider.trips!=null?`${rider.trips} ${rider.trips===1?"viaje":"viajes"}`:null,rider.locale&&LANG[String(rider.locale).slice(0,2)]].filter(Boolean).join(" · "):null;
+ const driverLine=driver?[driver.rating?`★ ${Number(driver.rating).toFixed(2)}`:null,veh].filter(Boolean).join(" · "):null;
 
  return el("div",{className:"tp-page"},
-  el("div",{className:"tp-head"},header,
-   chips.length?el("div",{className:"tp-chips"},chips):null,
-   actions.length||more.length?el("div",{className:"tp-actions"},actions.map((c,i)=>J.jsx(React.Fragment,{children:c},i)),el(MoreMenu,{items:more})):null),
-  el(Steps,{t,raw}),
-  cancelledCard,
-  left&&right?el("div",{className:"tp-grid"},
-   el("div",{className:"tp-col"},map,left.map((c,i)=>J.jsx(React.Fragment,{children:c},i))),
-   el("div",{className:"tp-col"},right.map((c,i)=>J.jsx(React.Fragment,{children:c},i)))):
-  J.jsxs(React.Fragment,{children:[map,grid]}),
+  el("header",{className:"tp-top"},
+   el("button",{type:"button",className:"tp-back","aria-label":"Volver",onClick:goBack},"←"),
+   el("div",{className:"tp-titlebox"},
+    el("div",{className:"tp-tline"},el("h1",{className:"tp-h1"},`${page.reservation?"Reserva":"Viaje"} #${page.id}`),el("span",{className:`tp-chip ${tone==="gold"?"gold":tone==="dim"?"dim":"plain"}`},label)),
+    el("div",{className:"tp-chips"},chips)),
+   buttons),
+  el(Steps,{t:stepsT,raw:st}),
+  el("div",{className:"tp-grid"},
+   el("div",{className:"tp-col"},map,el(RouteCard,{page,summary}),el(TimelineCard,{page,raw:st})),
+   el("div",{className:"tp-col"},
+    el(PersonCard,{title:"Pasajero",p:rider,line:riderLine,onCall:()=>setCall({name:rider.name,phone:rider.phone}),onChat:()=>navigate("/soporte",{state:{tripId:t.tripId}}),onProfile:rider&&rider.id?()=>navigate(`/personas/rider/sql_${rider.id}`):null,empty:"Sin datos del pasajero"}),
+    el(PersonCard,{title:"Conductor",p:driver,line:driverLine,live:driverLive,onCall:()=>setCall({name:driver.name,phone:driver.phone}),onChat:driver?()=>navigate("/soporte",{state:{tripId:t.tripId,driverId:t.driverId}}):null,onProfile:driver?()=>navigate(`/personas/driver/sql_${driver.id}`):null,empty:"Sin conductor todavía"}),
+    el(MoneyCard,{page}),
+    page.notes?el(Card,{title:"Nota del viaje"},el("div",{className:"tp-note"},page.notes)):null)),
+  call?el(CallDialog,{name:call.name,phone:call.phone,onClose:()=>setCall(null)}):null,
   ...rest);
 }
 

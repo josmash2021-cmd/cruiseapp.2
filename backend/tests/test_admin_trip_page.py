@@ -117,3 +117,82 @@ def test_chunks_parse(tmp_path):
         copy.write_text((ASSETS / name).read_text(encoding="utf-8"), encoding="utf-8")
         r = subprocess.run(["node", "--check", str(copy)], capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.asyncio
+async def test_page_brings_people_and_the_money(client, db, test_rider, test_driver):
+    rider, _ = test_rider
+    driver, _ = test_driver
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    # Like reservation #833: $48.59 Premium, the rider pays $30.00, Cruise
+    # covers the gap so the driver still gets 90% of the full price.
+    t = _trip(rider.id, driver.id, "scheduled_accepted")
+    t.vehicle_type = "premium"
+    t.fare = 30.0
+    t.original_fare_cents = 4859
+    t.rider_promo_total_cents = 3000
+    t.platform_credit_cents = 1673
+    t.driver_share_rate = 0.9
+    t.created_at = now - timedelta(hours=10)
+    t.scheduled_at = now + timedelta(days=1)
+    db.add(t)
+    await db.commit()
+    r = await client.get(f"/admin/trips/{t.id}/page", headers=_dispatch_headers())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["reservation"] is True
+    assert body["rider"]["id"] == rider.id and body["driver"]["id"] == driver.id
+    m = body["money"]
+    assert m["original"] == 48.59
+    assert m["discount"] == 18.59
+    assert m["rider_pays"] == 30.0
+    assert m["driver_gets"] == 43.73      # 30.00 x 0.9 + 16.73
+    assert m["cruise_puts"] == 13.73
+    assert m["driver_final"] is False
+    assert "pickup_pin" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_page_uses_real_earnings_once_completed(client, db, test_rider, test_driver):
+    rider, _ = test_rider
+    driver, _ = test_driver
+    t = _trip(rider.id, driver.id, "completed")
+    t.fare = 20.0
+    t.driver_earnings = 18.0
+    t.tip_amount = 4.0
+    t.driver_share_rate = 0.9
+    db.add(t)
+    await db.commit()
+    m = (await client.get(f"/admin/trips/{t.id}/page", headers=_dispatch_headers())).json()["money"]
+    assert m["driver_final"] is True
+    assert m["driver_gets"] == 18.0
+    assert m["tip"] == 4.0
+    assert m["cruise_keeps"] == 2.0
+
+
+@pytest.mark.asyncio
+async def test_page_web_booking_shows_the_booker_not_the_system_user(client, db, test_rider):
+    rider, _ = test_rider
+    t = _trip(rider.id, None, "requested")
+    t.guest_first_name, t.guest_last_name, t.guest_phone = "Ana", "Pérez", "+13055550199"
+    db.add(t)
+    await db.commit()
+    body = (await client.get(f"/admin/trips/{t.id}/page", headers=_dispatch_headers())).json()
+    assert body["rider"]["name"] == "Ana Pérez"
+    assert body["rider"]["phone"] == "+13055550199"
+    # The shared web user's id, trips and card are everyone's: never shown.
+    assert body["rider"]["id"] is None
+    assert "trips" not in body["rider"]
+    assert body["card"] is None
+    assert body["driver"] is None
+
+
+def test_page_matches_the_drawing():
+    # The drawing's cards, built from /page; the old ones only as a fallback.
+    for name in ("function RouteCard(", "function TimelineCard(", "function PersonCard(", "function MoneyCard("):
+        assert name in CHUNK, name
+    assert "/admin/trips/${id}/page" in CHUNK
+    assert "// Without the page data (an error, an older server) the old cards stay." in CHUNK
+    # Scrolling the page over the map never zooms it out.
+    assert "cooperativeGestures:true" in CHUNK

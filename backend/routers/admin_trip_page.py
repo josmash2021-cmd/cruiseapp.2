@@ -2,6 +2,8 @@
 https://claude.ai/artifact/1AXDLBTjRMz3PLXZHcXeZW): the map follows the
 driver while the trip is live.
 
+  GET /admin/trips/{id}/page → everything the page draws: the trip, the
+                               rider and driver cards and the money
   GET /admin/trips/{id}/live → the trip's status and its driver's last
                                saved position (users.lat/lng, written at
                                most every 3 s by the location heartbeat)
@@ -16,10 +18,12 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.database import Trip, User, get_db
+from models.database import RiderPaymentMethod, Trip, User, Vehicle, get_db
+from services import vehicle_tiers
+from utils.helpers import _resolve_rider_display, is_real_reservation
 from utils.security import _require_dispatch_auth
 
 router = APIRouter()
@@ -63,3 +67,145 @@ async def admin_trip_live(trip_id: int, db: AsyncSession = Depends(get_db)):
                 "seen_at": _iso(user.last_active_at),
             }
     return {"id": trip.id, "status": trip.status, "live": trip.status in _LIVE, "driver": driver}
+
+
+def _money(v) -> Optional[float]:
+    try:
+        return round(float(v), 2) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _card_label(display: str) -> str:
+    """'Amex ending in 9004' -> 'Amex •••• 9004' (bank + last 4 only)."""
+    text = (display or "").split("[ext:")[0].strip()
+    if " ending in " in text:
+        brand, last4 = text.rsplit(" ending in ", 1)
+        return f"{brand.strip()} •••• {last4.strip()}"
+    return text
+
+
+def _money_block(trip: Trip) -> dict:
+    """The page's Dinero card. Same rule as the close of a trip: the driver
+    gets the collected fare x their rate + what Cruise puts in
+    (platform_credit_cents); once the trip closed, trip.driver_earnings is
+    the real number."""
+    fare = _money(trip.fare) or 0.0
+    cash = (trip.cruise_cash_cents or 0) / 100.0
+    original = (trip.original_fare_cents / 100.0) if trip.original_fare_cents else fare + cash
+    rider_pays = fare
+    discount = round(max(0.0, original - rider_pays - cash), 2)
+    try:
+        rate = vehicle_tiers.commission_for_trip(trip)[1]
+    except ValueError:
+        rate = None
+    credit = (trip.platform_credit_cents or 0) / 100.0
+    final = trip.status == "completed" and trip.driver_earnings is not None
+    if final:
+        driver = _money(trip.driver_earnings)
+    elif trip.status == "cancelled":
+        driver = _money(trip.driver_earnings) or 0.0
+    elif rate is not None:
+        driver = round(round((fare + cash) * rate, 2) + credit, 2)
+    else:
+        driver = None
+    collected = round(rider_pays + cash, 2)
+    gap = round((driver or 0.0) - collected, 2) if driver is not None else None
+    return {
+        "original": round(original, 2),
+        "discount": discount,
+        "cruise_cash": round(cash, 2),
+        "rider_pays": round(rider_pays, 2),
+        "tip": _money(trip.tip_amount) or 0.0,
+        "driver_gets": driver,
+        "driver_final": final,
+        "driver_rate": rate,
+        "cruise_puts": gap if gap is not None and gap > 0 else 0.0,
+        "cruise_keeps": -gap if gap is not None and gap < 0 else 0.0,
+        "funding": trip.funding_source or "rider",
+        "payment_status": trip.payment_status or "unpaid",
+        "refund_amount": _money(trip.refund_amount),
+        "cancellation_fee": _money(trip.cancellation_fee),
+    }
+
+
+def _person(user: Optional[User], name: str = "", phone: str = "") -> Optional[dict]:
+    if user is None and not name:
+        return None
+    return {
+        "id": user.id if user else None,
+        "name": name or (f"{user.first_name or ''} {user.last_name or ''}".strip() if user else ""),
+        "phone": phone or (user.phone if user else "") or "",
+        "photo_url": user.photo_url if user else None,
+        "rating": _money(user.average_rating) if user else None,
+        "locale": user.locale if user else None,
+    }
+
+
+@router.get("/admin/trips/{trip_id}/page", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_trip_page(trip_id: int, db: AsyncSession = Depends(get_db)):
+    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one_or_none()
+    if trip is None:
+        raise HTTPException(404, "Trip not found")
+    ids = [x for x in (trip.rider_id, trip.driver_id) if x]
+    users = {}
+    if ids:
+        for u in (await db.execute(select(User).where(User.id.in_(ids)))).scalars().all():
+            users[u.id] = u
+    rider_user = users.get(trip.rider_id) if trip.rider_id else None
+    rider_name, rider_phone = _resolve_rider_display(trip, rider_user)
+    # A web booking shares one system user: its numbers would be everyone's.
+    is_guest = bool(trip.guest_first_name or trip.guest_last_name or trip.guest_phone)
+    rider = _person(None if is_guest else rider_user, rider_name, rider_phone)
+    if rider is not None and not is_guest and rider_user is not None:
+        rider["trips"] = int((await db.execute(
+            select(func.count()).select_from(Trip).where(
+                Trip.rider_id == rider_user.id, Trip.status == "completed")
+        )).scalar() or 0)
+
+    driver = None
+    driver_user = users.get(trip.driver_id) if trip.driver_id else None
+    if driver_user is not None:
+        driver = _person(driver_user)
+        v = (await db.execute(
+            select(Vehicle).where(Vehicle.user_id == driver_user.id, Vehicle.archived_at.is_(None))
+            .order_by(Vehicle.created_at.asc()).limit(1)
+        )).scalar_one_or_none()
+        driver["vehicle"] = ({k: getattr(v, k, None) for k in ("make", "model", "year", "color", "plate")}
+                             if v is not None else None)
+
+    card = None
+    if rider_user is not None and not is_guest and (trip.funding_source or "rider") == "rider":
+        pm = (await db.execute(
+            select(RiderPaymentMethod).where(
+                RiderPaymentMethod.user_id == rider_user.id,
+                RiderPaymentMethod.method_type == "stripe_card",
+            ).order_by(RiderPaymentMethod.is_default.desc(), RiderPaymentMethod.id.desc()).limit(1)
+        )).scalar_one_or_none()
+        card = _card_label(pm.display_name) if pm is not None else None
+
+    return {
+        "id": trip.id,
+        "status": trip.status,
+        "reservation": bool(is_real_reservation(trip)),
+        "vehicle_type": trip.vehicle_type,
+        "is_airport": bool(trip.is_airport),
+        "airport_code": trip.airport_code,
+        "notes": trip.notes,
+        "created_at": _iso(trip.created_at),
+        "scheduled_at": _iso(trip.scheduled_at),
+        "driver_assigned_at": _iso(trip.driver_assigned_at),
+        "arrived_at": _iso(trip.arrived_at),
+        "started_at": _iso(trip.started_at),
+        "completed_at": _iso(trip.completed_at),
+        "updated_at": _iso(trip.updated_at),
+        "cancel_reason": trip.cancel_reason,
+        "pickup": {"address": trip.pickup_address or "", "lat": trip.pickup_lat, "lng": trip.pickup_lng},
+        "dropoff": {"address": trip.dropoff_address or "", "lat": trip.dropoff_lat, "lng": trip.dropoff_lng},
+        "miles": _money(trip.quoted_distance_miles if trip.quoted_distance_miles is not None else trip.distance),
+        "minutes": _money(trip.duration),
+        "rider": rider,
+        "driver": driver,
+        "card": card,
+        "money": _money_block(trip),
+    }

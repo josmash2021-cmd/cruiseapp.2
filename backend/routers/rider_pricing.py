@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import time
+
 from models.database import User, get_db
+from services import rider_heat
 from services.rider_pricing import (
     create_ride_quote,
     pricing_revision,
@@ -50,6 +53,10 @@ async def create_quote(
     _require_rider(user)
     quote = await create_ride_quote(db, user.id, body.model_dump())
     await db.commit()
+    # Panel "Pidiendo ahora": now or reservation for builds that don't say
+    # it with the booking signal (2026-11-15). Never raises.
+    await rider_heat.record_booking(user.id, time.time(),
+                                    quote_scheduled=body.is_scheduled)
     return public_quote(quote)
 
 

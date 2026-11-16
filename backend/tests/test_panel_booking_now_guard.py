@@ -101,4 +101,6 @@ def test_booking_now_card_shows_minutes_miles_and_now_or_reservation():
     assert "trip?null:h(TripFacts,{rider})" in page
     assert '"Viaje para ahora"' in page
     assert "h(ZoneTime,{date:rider.scheduled_at,lat:rider.pickup.lat,lng:rider.pickup.lng})" in page
-    assert '"eligiendo la hora"' in page
+    # Older builds: now / reservation from the price quote, no time.
+    assert '["Reserva · eligiendo la hora"]:["Reserva"]' in page
+    assert 'rider.when_from==="app"' in page

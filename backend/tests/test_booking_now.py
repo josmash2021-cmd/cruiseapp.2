@@ -474,3 +474,45 @@ def test_a_stored_row_from_before_reads_as_unknown():
     assert (row["when"], row["scheduled_ts"]) == (None, None)
     bad = json.dumps({"ts": 100.0, "when": "soon", "scheduled_ts": 5})
     assert rider_heat.parse_booking(bad)["when"] is None
+
+
+@pytest.mark.asyncio
+async def test_builds_without_when_still_show_it_from_the_price_quote(client, test_rider, heat_redis):
+    # Every build sends is_scheduled with its price quote: an app that does
+    # not say `when` with the booking signal still shows now / reservation
+    # (no time — the quote doesn't carry it).
+    rider, token = test_rider
+    r = await client.post("/demand/intent", headers=_headers(token), json={
+        "lat": 26.2459, "lng": -80.224, "step": "dropoff",
+        "dropoff_lat": 26.0726, "dropoff_lng": -80.1527})
+    assert r.status_code == 200, r.text
+    quote = {"pickup_lat": 26.2459, "pickup_lng": -80.224,
+             "dropoff_lat": 26.0726, "dropoff_lng": -80.1527}
+
+    r = await client.post("/pricing/quote", headers=_headers(token), json={**quote, "is_scheduled": True})
+    assert r.status_code == 200, r.text
+    card = {x["id"]: x for x in (await client.get(PANEL, headers=_panel())).json()["riders"]}[rider.id]
+    assert (card["when"], card["when_from"], card["scheduled_at"]) == ("scheduled", "quote", None)
+
+    r = await client.post("/pricing/quote", headers=_headers(token), json={**quote, "is_scheduled": False})
+    assert r.status_code == 200, r.text
+    card = {x["id"]: x for x in (await client.get(PANEL, headers=_panel())).json()["riders"]}[rider.id]
+    assert (card["when"], card["when_from"]) == ("now", "quote")
+
+    # What the app says (with the time) wins over the quote.
+    r = await client.post("/demand/intent", headers=_headers(token), json={
+        "lat": 26.2459, "lng": -80.224, "step": "dropoff",
+        "dropoff_lat": 26.0726, "dropoff_lng": -80.1527,
+        "when": "scheduled", "scheduled_at": "2026-11-20T14:30:00Z"})
+    card = {x["id"]: x for x in (await client.get(PANEL, headers=_panel())).json()["riders"]}[rider.id]
+    assert (card["when"], card["when_from"]) == ("scheduled", "app")
+    assert card["scheduled_at"] is not None
+
+
+def test_merge_booking_keeps_the_quote_answer_apart():
+    row = rider_heat.merge_booking(None, 100.0, quote_scheduled=True)
+    assert (row["quote_when"], row["when"]) == ("scheduled", None)
+    row = rider_heat.merge_booking(row, 110.0, step=2, when="now")
+    assert (row["quote_when"], row["when"]) == ("scheduled", "now")
+    parsed = rider_heat.parse_booking(json.dumps(row))
+    assert parsed["quote_when"] == "scheduled"

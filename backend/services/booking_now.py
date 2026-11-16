@@ -76,8 +76,13 @@ def classify(heat: Optional[dict], booking: Optional[dict], now: float) -> Optio
         "typing": booking["typing_field"] if typing else None,
         "pickup": None,
         "dropoff": None,
-        # Now or a reservation (2026-11-15); None = a build that doesn't say.
-        "when": booking.get("when") if fresh_booking else None,
+        # Now or a reservation (2026-11-15): what the app says (with the time),
+        # else what its last price quote said (no time); None = not known.
+        "when": ((booking.get("when") or booking.get("quote_when"))
+                 if fresh_booking else None),
+        "when_from": (("app" if booking.get("when") else
+                       "quote" if booking.get("quote_when") else None)
+                      if fresh_booking else None),
         "scheduled_ts": booking.get("scheduled_ts") if fresh_booking else None,
         "started_ts": min(
             [t for t in (booking["started_ts"] if fresh_booking else None,
@@ -251,6 +256,7 @@ async def snapshot(db: AsyncSession, now: float, *, counts_only: bool = False) -
             "pickup": state["pickup"],
             "dropoff": state["dropoff"],
             "when": state.get("when"),
+            "when_from": state.get("when_from"),
             "scheduled_at": _iso(state.get("scheduled_ts")),
             "started_at": _iso(state["started_ts"]),
             "last_at": _iso(state["last_ts"]),

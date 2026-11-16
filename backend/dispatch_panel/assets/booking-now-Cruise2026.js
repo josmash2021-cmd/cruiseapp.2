@@ -190,7 +190,7 @@ function TripFacts({rider}){const token=getMapboxToken(),[,bump]=React.useState(
  const route=hit&&Number.isFinite(hit.seconds)&&hit.meters>0?`${fmtMinutes(hit.seconds)} · ${fmtMiles(hit.meters)}`:null;
  let when=null;
  if(rider.when==="now")when=h("span",{className:"bn-when now",children:"Viaje para ahora"});
- else if(rider.when==="scheduled")when=hs("span",{className:"bn-when res",children:["Reserva · ",rider.scheduled_at&&hasPoint(rider.pickup)?h(ZoneTime,{date:rider.scheduled_at,lat:rider.pickup.lat,lng:rider.pickup.lng}):"eligiendo la hora"]});
+ else if(rider.when==="scheduled")when=hs("span",{className:"bn-when res",children:rider.scheduled_at&&hasPoint(rider.pickup)?["Reserva · ",h(ZoneTime,{date:rider.scheduled_at,lat:rider.pickup.lat,lng:rider.pickup.lng})]:rider.when_from==="app"?["Reserva · eligiendo la hora"]:["Reserva"]});
  if(!route&&!when)return null;
  return hs("div",{className:"bn-facts",children:[route?h("span",{className:"bn-fact",title:"Ruta por las calles, sin tráfico",children:route}):null,when]});
 }

@@ -33,3 +33,13 @@ def test_live_badges_keep_their_own_source():
     # Activo / En Proceso open the live list, which reads the same hook.
     assert 'count:o("active")' in HUB
     assert 'count:o("inProgress")' in HUB
+
+
+def test_home_number_badges_ping_like_the_menu():
+    # Owner 2026-11-15: every number badge on Inicio gets the gold ring the
+    # "Pidiendo ahora" menu badge has.
+    home = (ASSETS / "index-CuQT_62K.js").read_text(encoding="utf-8")
+    assert "guard-pin panel_home_badge_ping" in home
+    assert 'className:"cruise-home-ping rounded-lg bg-primary' in home
+    assert "animation:cruise-bn-ping 2s ease-out infinite" in home
+    assert "s!==null&&cruiseHomePingCss()" in home

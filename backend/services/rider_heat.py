@@ -229,6 +229,8 @@ def parse_booking(raw: Any) -> Optional[dict]:
         "when": data.get("when") if data.get("when") in ("now", "scheduled") else None,
         "scheduled_ts": (_finite(data.get("scheduled_ts"))
                          if data.get("when") == "scheduled" else None),
+        "quote_when": (data.get("quote_when")
+                       if data.get("quote_when") in ("now", "scheduled") else None),
     }
 
 
@@ -239,7 +241,8 @@ def merge_booking(current: Optional[dict], now: float, *,
                   dropoff_address: Optional[str] = None,
                   typing_field: Optional[str] = None,
                   when: Optional[str] = None,
-                  scheduled_ts: Optional[float] = None) -> dict:
+                  scheduled_ts: Optional[float] = None,
+                  quote_scheduled: Optional[bool] = None) -> dict:
     """One booking report on top of the stored row, kept pure for the tests.
 
     A row quiet for longer than a typed address lives (15 min) is a new
@@ -250,11 +253,17 @@ def merge_booking(current: Optional[dict], now: float, *,
         current = {"started_ts": now, "pickup_address": None,
                    "dropoff_lat": None, "dropoff_lng": None,
                    "dropoff_address": None, "typing_ts": None,
-                   "typing_field": None, "when": None, "scheduled_ts": None}
+                   "typing_field": None, "when": None, "scheduled_ts": None,
+                   "quote_when": None}
     row = {**current, "ts": now}
     if typing_field is not None:
         row["typing_ts"] = now
         row["typing_field"] = typing_field
+    if quote_scheduled is not None:
+        # The price quote says it too — every build sends is_scheduled with
+        # it, so builds that don't send `when` still show now / reservation
+        # (2026-11-15). No time: the quote doesn't carry it.
+        row["quote_when"] = "scheduled" if quote_scheduled else "now"
     if step is not None:
         row["typing_ts"] = None
         row["typing_field"] = None

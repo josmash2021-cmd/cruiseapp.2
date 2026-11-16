@@ -13,6 +13,8 @@ typedef RiderIntentSender = Future<bool> Function({
   double? dropoffLat,
   double? dropoffLng,
   String? dropoffAddress,
+  String? when,
+  DateTime? scheduledAt,
 });
 
 typedef RiderTypingSender = Future<bool> Function({required String field});
@@ -34,6 +36,8 @@ typedef RiderTypingSender = Future<bool> Function({required String field});
 /// server keeps it (it forgets after 3 min), for at most [planningWindow]
 /// after the rider last did something. The beat carries the same full
 /// payload as the last report.
+///
+/// [setWhen] says whether it is for now or a reservation (and its time).
 ///
 /// [typing] tells the panel the rider is typing an address — at most once
 /// every [typingGap] per field, nothing between keystrokes.
@@ -71,6 +75,8 @@ class RiderHeatReporter {
   double? _dropoffLat;
   double? _dropoffLng;
   String? _dropoffAddress;
+  String? _when;
+  DateTime? _scheduledAt;
   DateTime? _actedAt;
   DateTime? _sentAt;
   Timer? _beat;
@@ -109,6 +115,19 @@ class RiderHeatReporter {
         withDropoff: true,
       );
 
+  /// The rider is booking for now ([scheduledAt] null and not [later]) or a
+  /// reservation: a pickup time, or [later] while they have not picked one
+  /// yet (owner 2026-11-15: the panel shows "Ahora" or "Reserva · hora").
+  /// A change reaches the panel at once while a booking is reported.
+  void setWhen({DateTime? scheduledAt, bool later = false}) {
+    final when = (scheduledAt != null || later) ? 'scheduled' : 'now';
+    final at = scheduledAt?.toUtc();
+    if (when == _when && at == _scheduledAt) return;
+    _when = when;
+    _scheduledAt = at;
+    if (_step >= 2) _send(_clock());
+  }
+
   /// The rider changed the text of the pickup (`'pickup'`) or the dropoff
   /// (`'dropoff'`) search field. The first change is sent at once, then at
   /// most one per [typingGap] per field while they keep typing.
@@ -139,6 +158,8 @@ class RiderHeatReporter {
     _dropoffLat = null;
     _dropoffLng = null;
     _dropoffAddress = null;
+    _when = null;
+    _scheduledAt = null;
     _actedAt = null;
     _sentAt = null;
     _typedAt.clear();
@@ -234,6 +255,8 @@ class RiderHeatReporter {
       dropoffLat: atDropoff ? _dropoffLat : null,
       dropoffLng: atDropoff ? _dropoffLng : null,
       dropoffAddress: atDropoff ? _dropoffAddress : null,
+      when: _when,
+      scheduledAt: _when == 'scheduled' ? _scheduledAt : null,
     ).catchError((Object _) => false));
   }
 

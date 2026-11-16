@@ -159,7 +159,7 @@ void main() {
       // platform-view recreation booted at the handoff seed — the picker
       // snapped back to the seed address mid-drag.
       final start = src.indexOf('void initState() {');
-      final body = src.substring(start, start + 8000);
+      final body = src.substring(start, start + 12000);
       final handoffSeed = RegExp(r'handoffCenter\s*=\s*LatLng\('
           r'widget\.handoffLat!,\s*widget\.handoffLng!\)');
       expect(handoffSeed.hasMatch(body), isTrue,
@@ -175,7 +175,7 @@ void main() {
 
     test('initState seeds _center to the handoff in picker mode', () {
       final start = src.indexOf('void initState() {');
-      final body = src.substring(start, start + 8000);
+      final body = src.substring(start, start + 12000);
       final seedCenter = RegExp(r'if\s*\(\s*widget\.pickerMode\s*\)\s*'
           r'_center\s*=\s*handoffCenter;');
       expect(seedCenter.hasMatch(body), isTrue,

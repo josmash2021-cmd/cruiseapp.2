@@ -20,6 +20,8 @@ void main() {
           dropoffLat,
           dropoffLng,
           dropoffAddress,
+          when,
+          scheduledAt,
         }) async {
           sent.add('$step@${lat.toStringAsFixed(4)},${lng.toStringAsFixed(4)}');
           payloads.add({
@@ -30,6 +32,9 @@ void main() {
             'dropoff_lat': dropoffLat,
             'dropoff_lng': dropoffLng,
             'dropoff_address': dropoffAddress,
+            // Like the real call: a null key is left out.
+            if (when != null) 'when': when,
+            if (scheduledAt != null) 'scheduled_at': scheduledAt,
           });
           return true;
         },
@@ -228,5 +233,63 @@ void main() {
     r.typingDone();
     r.typing('dropoff', 'Air');
     expect(typed, ['dropoff', 'dropoff']);
+  });
+
+  // Owner 2026-11-15: the panel shows "Ahora" or "Reserva · hora".
+  group('now or reservation', () {
+    test('unknown until a page says it; then every report carries it', () {
+      final r = make();
+      r.pickup(33.4, -86.8);
+      expect(payloads.last['when'], isNull, reason: 'nothing said yet');
+      r.setWhen();
+      expect(payloads.last['when'], 'now', reason: 'a change is sent at once');
+      expect(payloads.last['scheduled_at'], isNull);
+      r.reset();
+    });
+
+    test('a reservation sends its time in UTC; going back to now drops it', () {
+      final r = make();
+      r.pickup(33.4, -86.8);
+      final at = DateTime(2026, 11, 20, 9, 30);
+      r.setWhen(scheduledAt: at);
+      expect(payloads.last['when'], 'scheduled');
+      expect(payloads.last['scheduled_at'], at.toUtc());
+      r.setWhen();
+      expect(payloads.last['when'], 'now');
+      expect(payloads.last['scheduled_at'], isNull);
+      r.reset();
+    });
+
+    test('Programado before the time is chosen is still a reservation', () {
+      final r = make();
+      r.pickup(33.4, -86.8);
+      r.setWhen(later: true);
+      expect(payloads.last['when'], 'scheduled');
+      expect(payloads.last['scheduled_at'], isNull);
+      r.reset();
+    });
+
+    test('the same answer twice sends nothing; nothing before a booking', () {
+      final r = make();
+      r.setWhen();
+      expect(payloads, isEmpty, reason: 'no booking reported yet');
+      r.pickup(33.4, -86.8);
+      final n = payloads.length;
+      r.setWhen();
+      expect(payloads.length, n);
+      expect(payloads.last['when'], 'now', reason: 'the pickup report carried it');
+      r.reset();
+    });
+
+    test('the heartbeat repeats it and reset forgets it', () {
+      final r = make();
+      r.setWhen(later: true);
+      r.pickup(33.4, -86.8);
+      expect(payloads.last['when'], 'scheduled');
+      r.reset();
+      r.pickup(33.4, -86.8);
+      expect(payloads.last['when'], isNull);
+      r.reset();
+    });
   });
 }

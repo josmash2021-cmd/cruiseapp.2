@@ -1769,7 +1769,9 @@ class ApiService {
   /// [address] is the pickup text the rider sees; with `step: 'dropoff'`
   /// the chosen dropoff rides along ([dropoffLat]/[dropoffLng] both or
   /// neither, [dropoffAddress]) so the live "booking now" list on the panel
-  /// shows where they are going. Null keys are left out, never sent as null.
+  /// shows where they are going. [when] ('now' / 'scheduled') and the
+  /// reservation's [scheduledAt] tell the panel which one it is.
+  /// Null keys are left out, never sent as null.
   static Future<bool> reportTripIntent({
     required String step,
     required double lat,
@@ -1778,10 +1780,14 @@ class ApiService {
     double? dropoffLat,
     double? dropoffLng,
     String? dropoffAddress,
+    String? when,
+    DateTime? scheduledAt,
   }) async {
     final headers = await _authHeaders();
     if (!headers.containsKey('Authorization')) return false;
     final withDropoff = step == 'dropoff';
+    // Now or a reservation (owner 2026-11-15); the time only with 'scheduled'.
+    final whenValue = (when == 'now' || when == 'scheduled') ? when : null;
     final hasDropoffPoint = withDropoff &&
         dropoffLat != null &&
         dropoffLng != null &&
@@ -1804,6 +1810,9 @@ class ApiService {
                 'dropoff_lng': dropoffLng,
               },
               if (dropoffText != null) 'dropoff_address': dropoffText,
+              if (whenValue != null) 'when': whenValue,
+              if (whenValue == 'scheduled' && scheduledAt != null)
+                'scheduled_at': scheduledAt.toUtc().toIso8601String(),
             }),
           )
           .timeout(const Duration(seconds: 5));

@@ -146,6 +146,9 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   void initState() {
     super.initState();
     _scheduleChainLive = widget.scheduleChain;
+    // Now or reservation for the panel's "Pidiendo ahora" (2026-11-15).
+    RiderHeatReporter.instance
+        .setWhen(scheduledAt: widget.scheduledAt, later: _scheduleChainLive);
 
     _pickupCtrl.text = widget.initialPickupText;
     _pickupLabel = widget.initialPickupText;
@@ -1174,6 +1177,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       _whenMenuOpen = false;
       _scheduleChainLive = later;
     });
+    RiderHeatReporter.instance
+        .setWhen(scheduledAt: later ? widget.scheduledAt : null, later: later);
     if (later && _pickupDetails != null && _dropoffDetails != null) {
       _continueScheduleChain();
     }

@@ -34,6 +34,7 @@ import '../services/driver_wait_estimate.dart';
 import '../services/feature_flags.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
+import '../services/rider_heat_reporter.dart';
 import '../services/user_session.dart';
 import '../services/local_cache.dart';
 import '../services/payment_service.dart';
@@ -1040,6 +1041,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     if (widget.isAirportTrip) {
       _ctrl.setAirportTrip(true);
     }
+    // Panel "Pidiendo ahora": now or reservation, told on every open.
+    RiderHeatReporter.instance.setWhen(scheduledAt: widget.scheduledAt);
     if (widget.scheduledAt != null) {
       _ctrl.setSchedule(widget.scheduledAt);
     }

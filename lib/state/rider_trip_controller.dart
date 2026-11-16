@@ -563,6 +563,9 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void setSchedule(DateTime? dateTime) {
+    // The panel's "Pidiendo ahora" shows now or reservation (2026-11-15) —
+    // told even when unchanged: the ride page opens with it.
+    RiderHeatReporter.instance.setWhen(scheduledAt: dateTime);
     if (_state.scheduledAt == dateTime) return;
     _state = _state.copyWith(scheduledAt: dateTime);
     _restartQuoteForInputs();

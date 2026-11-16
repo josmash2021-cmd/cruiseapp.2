@@ -205,6 +205,11 @@ class DemandIntentIn(BaseModel):
     dropoff_lat: Optional[float] = Field(default=None, ge=-90, le=90)
     dropoff_lng: Optional[float] = Field(default=None, ge=-180, le=180)
     dropoff_address: Optional[str] = Field(default=None, max_length=300)
+    # Para ahora o reserva (owner 2026-11-15, "ver si es reserva o book
+    # instantáneo"). Optional: builds before it don't say. scheduled_at is
+    # the reservation's pickup time when the rider already chose it.
+    when: Optional[Literal["now", "scheduled"]] = None
+    scheduled_at: Optional[datetime] = None
 
     @model_validator(mode="after")
     def dropoff_point_whole_and_only_with_dropoff(self):
@@ -213,6 +218,8 @@ class DemandIntentIn(BaseModel):
         if self.step != "dropoff" and (
                 self.dropoff_lat is not None or self.dropoff_address):
             raise ValueError("dropoff fields need step 'dropoff'")
+        if self.scheduled_at is not None and self.when != "scheduled":
+            raise ValueError("scheduled_at needs when 'scheduled'")
         return self
 
 

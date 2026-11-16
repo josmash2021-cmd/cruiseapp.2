@@ -76,6 +76,9 @@ def classify(heat: Optional[dict], booking: Optional[dict], now: float) -> Optio
         "typing": booking["typing_field"] if typing else None,
         "pickup": None,
         "dropoff": None,
+        # Now or a reservation (2026-11-15); None = a build that doesn't say.
+        "when": booking.get("when") if fresh_booking else None,
+        "scheduled_ts": booking.get("scheduled_ts") if fresh_booking else None,
         "started_ts": min(
             [t for t in (booking["started_ts"] if fresh_booking else None,
                          heat["step_ts"] if intent else None) if t is not None]),
@@ -247,6 +250,8 @@ async def snapshot(db: AsyncSession, now: float, *, counts_only: bool = False) -
             "typing": state["typing"],
             "pickup": state["pickup"],
             "dropoff": state["dropoff"],
+            "when": state.get("when"),
+            "scheduled_at": _iso(state.get("scheduled_ts")),
             "started_at": _iso(state["started_ts"]),
             "last_at": _iso(state["last_ts"]),
             "trip": None if trip is None else {

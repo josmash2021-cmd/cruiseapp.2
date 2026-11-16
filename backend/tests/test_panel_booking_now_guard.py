@@ -88,3 +88,17 @@ def test_booking_now_line_follows_the_streets():
     assert "fetchStreetRoute(p,d,token).then(" in page
     assert "ROUTE_CACHE.set(key,{pending:true})" in page
     assert "[riders,selectedId,ready,routeTick]" in page
+
+
+def test_booking_now_card_shows_minutes_miles_and_now_or_reservation():
+    # Owner 2026-11-15: "quiero ver cuántos minutos y millas es y ver si es
+    # reserva o book instantáneo". Minutes/miles come from the same cached
+    # street route as the map line; the reservation time is the pickup's.
+    page = (ASSETS / "booking-now-Cruise2026.js").read_text(encoding="utf-8")
+    assert "guard-pin panel_booking_now_trip_facts" in page
+    assert 'import{ZoneTime}from"./local-zone-Cruise2026.js";' in page
+    assert "coords:x.coords,meters:x.meters,seconds:x.seconds" in page
+    assert "trip?null:h(TripFacts,{rider})" in page
+    assert '"Viaje para ahora"' in page
+    assert "h(ZoneTime,{date:rider.scheduled_at,lat:rider.pickup.lat,lng:rider.pickup.lng})" in page
+    assert '"eligiendo la hora"' in page

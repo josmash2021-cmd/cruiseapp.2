@@ -349,7 +349,10 @@ async def test_presence_records_the_raw_point_and_clears(client, db, test_rider,
     assert r.status_code == 200 and r.json() == {"ok": True}
     row = heat_redis.rows()[rider.id]
     assert (row["lat"], row["lng"], row["step"]) == (25.761234, -80.191876, 1)
-    assert before <= row["ts"] <= time.time()
+    # Presence stamps datetime.now() (whole microseconds), `before` is
+    # time.time(): inside one Windows clock tick the truncated stamp can land
+    # up to 1 µs "earlier" (same tolerance as test_presence_keeps_a_typed_pickup).
+    assert before - 1e-6 <= row["ts"] <= time.time()
 
     r = await client.post("/riders/presence", headers=_headers(token), json={"active": False})
     assert r.status_code == 200 and r.json() == {"ok": True}

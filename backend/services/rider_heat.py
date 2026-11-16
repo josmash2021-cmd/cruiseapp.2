@@ -226,6 +226,9 @@ def parse_booking(raw: Any) -> Optional[dict]:
         "dropoff_address": _clean_address(data.get("dropoff_address")),
         "typing_ts": _finite(data.get("typing_ts")),
         "typing_field": field if field in ("pickup", "dropoff") else None,
+        "when": data.get("when") if data.get("when") in ("now", "scheduled") else None,
+        "scheduled_ts": (_finite(data.get("scheduled_ts"))
+                         if data.get("when") == "scheduled" else None),
     }
 
 
@@ -234,7 +237,9 @@ def merge_booking(current: Optional[dict], now: float, *,
                   address: Optional[str] = None,
                   dropoff: Optional[tuple[float, float]] = None,
                   dropoff_address: Optional[str] = None,
-                  typing_field: Optional[str] = None) -> dict:
+                  typing_field: Optional[str] = None,
+                  when: Optional[str] = None,
+                  scheduled_ts: Optional[float] = None) -> dict:
     """One booking report on top of the stored row, kept pure for the tests.
 
     A row quiet for longer than a typed address lives (15 min) is a new
@@ -245,7 +250,7 @@ def merge_booking(current: Optional[dict], now: float, *,
         current = {"started_ts": now, "pickup_address": None,
                    "dropoff_lat": None, "dropoff_lng": None,
                    "dropoff_address": None, "typing_ts": None,
-                   "typing_field": None}
+                   "typing_field": None, "when": None, "scheduled_ts": None}
     row = {**current, "ts": now}
     if typing_field is not None:
         row["typing_ts"] = now
@@ -260,6 +265,11 @@ def merge_booking(current: Optional[dict], now: float, *,
         else:
             row["dropoff_lat"] = row["dropoff_lng"] = None
             row["dropoff_address"] = None
+        # Now or a reservation (2026-11-15): every step report says it from
+        # builds that know; an older build's report leaves it unknown.
+        row["when"] = when if when in ("now", "scheduled") else None
+        row["scheduled_ts"] = (_finite(scheduled_ts)
+                               if row["when"] == "scheduled" else None)
     return row
 
 

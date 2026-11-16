@@ -5,6 +5,7 @@ import{W as apiGet,L as apiPost}from"./index-CuQT_62K.js";
 import{N as navyStyle,a as applyNavyGold,r as refineRoads,h as hideTraffic}from"./mapNavyGold-CiIxy5Vj.js";
 import{m as getMapboxToken}from"./mapboxToken-DDoCRQix.js";
 import{fetchStreetRoute}from"./trip-route-map-Cruise2026.js";
+import{ZoneTime}from"./local-zone-Cruise2026.js";
 
 const h=jsxRuntime.jsx,hs=jsxRuntime.jsxs;
 const GOLD="#E8C547",GREEN="#22C55E";
@@ -63,6 +64,10 @@ const CSS=`
 .bn-typing i{width:4px;height:4px;border-radius:50%;background:${GOLD};animation:bn-dot 1.2s infinite}
 .bn-typing i:nth-child(2){animation-delay:.15s}.bn-typing i:nth-child(3){animation-delay:.3s}
 .bn-acts{display:flex;flex-wrap:wrap;gap:6px}
+.bn-facts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bn-fact,.bn-when{display:inline-flex;align-items:center;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;line-height:1.35;border:1px solid rgba(255,255,255,.12);color:#e6e6ea;background:rgba(255,255,255,.04)}
+.bn-when.now{border-color:rgba(34,197,94,.45);color:${GREEN};background:rgba(34,197,94,.08)}
+.bn-when.res{border-color:rgba(232,197,71,.5);color:${GOLD};background:rgba(232,197,71,.08)}
 .bn-b{height:30px;padding:0 12px;border-radius:9px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.1);color:#e6e6ea;background:transparent;cursor:pointer;text-decoration:none;font-family:inherit}
 .bn-b:hover{background:rgba(255,255,255,.05)}
 .bn-b.p{background:${GOLD};border-color:${GOLD};color:#111}
@@ -119,7 +124,10 @@ function arc(a,b,n=24){const[x1,y1]=[a.lng,a.lat],[x2,y2]=[b.lng,b.lat];const mx
 /*! guard-pin panel_booking_now_street_route: la linea recogida->destino es la ruta por las calles (Mapbox Directions via fetchStreetRoute), una vez por par y en cache; nunca la curva arc() - dueño 2026-11-15 */
 const ROUTE_CACHE=new Map(),ROUTE_RETRY_MS=30000,ROUTE_CACHE_MAX=300;
 function routeKey(p,d){return[p.lng,p.lat,d.lng,d.lat].map(v=>Number(v).toFixed(5)).join(",")}
-function streetRoute(p,d,token,onReady){const key=routeKey(p,d),hit=ROUTE_CACHE.get(key);if(hit&&hit.coords)return hit.coords;if(!token||(hit&&(hit.pending||Date.now()-hit.failedAt<ROUTE_RETRY_MS)))return null;if(ROUTE_CACHE.size>=ROUTE_CACHE_MAX)ROUTE_CACHE.delete(ROUTE_CACHE.keys().next().value);ROUTE_CACHE.set(key,{pending:true});fetchStreetRoute(p,d,token).then(x=>{ROUTE_CACHE.set(key,{coords:x.coords});onReady()}).catch(()=>{ROUTE_CACHE.set(key,{failedAt:Date.now()})});return null}
+const ROUTE_LISTENERS=new Set();
+function useRouteListener(f){React.useEffect(()=>{ROUTE_LISTENERS.add(f);return()=>{ROUTE_LISTENERS.delete(f)}},[f])}
+function streetRoute(p,d,token){const hit=streetRouteHit(p,d,token);return hit?hit.coords:null}
+function streetRouteHit(p,d,token){const key=routeKey(p,d),hit=ROUTE_CACHE.get(key);if(hit&&hit.coords)return hit;if(!token||(hit&&(hit.pending||Date.now()-hit.failedAt<ROUTE_RETRY_MS)))return null;if(ROUTE_CACHE.size>=ROUTE_CACHE_MAX)ROUTE_CACHE.delete(ROUTE_CACHE.keys().next().value);ROUTE_CACHE.set(key,{pending:true});fetchStreetRoute(p,d,token).then(x=>{ROUTE_CACHE.set(key,{coords:x.coords,meters:x.meters,seconds:x.seconds});for(const f of ROUTE_LISTENERS)f()}).catch(()=>{ROUTE_CACHE.set(key,{failedAt:Date.now()})});return null}
 
 function useBookingNow(){
  const[state,setState]=React.useState({loading:true,error:null,data:null,offset:0});
@@ -173,6 +181,20 @@ function Route({rider}){
  return hs("div",{className:"bn-rt",children:[h("span",{className:"bn-rg"}),h("span",{children:pick}),h("span",{className:`bn-vl${stage==="dropoff"?"":" off"}`}),h("span",{}),h("span",{className:stage==="dropoff"?"bn-rw":"bn-rn"}),second]});
 }
 
+/*! guard-pin panel_booking_now_trip_facts: minutos y millas de la ruta por las calles + Ahora / Reserva (hora en la zona de la recogida) - dueño 2026-11-15 */
+function fmtMinutes(sec){const m=Math.max(1,Math.round(sec/60));return m<60?`${m} min`:`${Math.floor(m/60)} h ${m%60} min`}
+function fmtMiles(meters){const mi=meters/1609.344;return`${mi<10?mi.toFixed(1):Math.round(mi)} mi`}
+function TripFacts({rider}){const token=getMapboxToken(),[,bump]=React.useState(0);
+ useRouteListener(React.useCallback(()=>bump(t=>t+1),[]));
+ const hit=rider.stage==="dropoff"&&hasPoint(rider.pickup)&&hasPoint(rider.dropoff)?streetRouteHit(rider.pickup,rider.dropoff,token):null;
+ const route=hit&&Number.isFinite(hit.seconds)&&hit.meters>0?`${fmtMinutes(hit.seconds)} · ${fmtMiles(hit.meters)}`:null;
+ let when=null;
+ if(rider.when==="now")when=h("span",{className:"bn-when now",children:"Viaje para ahora"});
+ else if(rider.when==="scheduled")when=hs("span",{className:"bn-when res",children:["Reserva · ",rider.scheduled_at&&hasPoint(rider.pickup)?h(ZoneTime,{date:rider.scheduled_at,lat:rider.pickup.lat,lng:rider.pickup.lng}):"eligiendo la hora"]});
+ if(!route&&!when)return null;
+ return hs("div",{className:"bn-facts",children:[route?h("span",{className:"bn-fact",title:"Ruta por las calles, sin tráfico",children:route}):null,when]});
+}
+
 function Card({rider,leaving,selected,nowMs,onSelect,onCreate,onChat,onProfile,onTrip}){
  const trip=rider.trip;
  const cls=`bn-card${selected?" sel":""}${trip?" won":""}${leaving?" leaving":""}`;
@@ -187,6 +209,7 @@ function Card({rider,leaving,selected,nowMs,onSelect,onCreate,onChat,onProfile,o
    hs("div",{className:"bn-ago",children:[ago(secondsSince(trip?trip.created_at:rider.last_at,nowMs)),trip?null:h("br",{}),trip?null:building(secondsSince(rider.started_at,nowMs))]})]}),
   trip?h("div",{className:"bn-won",children:reserved?`✓ Reservó el viaje #${trip.id}`:`✓ Pidió el viaje #${trip.id} · buscando conductor`}):h(Steps,{rider}),
   trip?null:h(Route,{rider}),
+  trip?null:h(TripFacts,{rider}),
   h("div",{className:"bn-acts",children:trip?[h("button",{type:"button",className:"bn-b",onClick:stop(()=>onTrip(trip.id)),children:`Abrir viaje #${trip.id}`},"t")]:[
    rider.stage!=="typing"?h("button",{type:"button",className:"bn-b p",onClick:stop(()=>onCreate(rider)),children:"Crear viaje"},"c"):null,
    h("button",{type:"button",className:`bn-b${rider.stage==="typing"?" p":""}`,onClick:stop(()=>onChat(rider)),children:"Chatear"},"m"),
@@ -215,6 +238,7 @@ function BookingMap({riders,selectedId,onSelect}){
  const box=React.useRef(null),mapRef=React.useRef(null),markers=React.useRef(new Map()),known=React.useRef(new Set()),touched=React.useRef(0);
  const[ready,setReady]=React.useState(false),[routeTick,setRouteTick]=React.useState(0);
  const token=getMapboxToken();
+ useRouteListener(React.useCallback(()=>setRouteTick(t=>t+1),[]));
  React.useEffect(()=>{const el=box.current;if(!el||!token)return;mapboxgl.accessToken=token;
   const map=new mapboxgl.Map({container:el,style:navyStyle,center:DEFAULT_CENTER,zoom:9,bearing:0,pitch:0,maxPitch:0,dragRotate:false,pitchWithRotate:false,touchPitch:false,attributionControl:true});
   mapRef.current=map;map.addControl(new mapboxgl.NavigationControl({showCompass:false}),"top-right");
@@ -237,7 +261,7 @@ function BookingMap({riders,selectedId,onSelect}){
    m.pin.setLngLat([r.pickup.lng,r.pickup.lat]);m.av.textContent=initials(r);m.nm.textContent=shortName(r);
    m.el.classList.toggle("sel",r.id===selectedId);m.el.classList.toggle("won",!!r.trip);m.el.style.zIndex=r.id===selectedId?"3":"1";
    if(hasPoint(r.dropoff)){if(!m.dest){const d=document.createElement("div");d.className="bn-dest";m.dest=new mapboxgl.Marker({element:d,anchor:"center"}).setLngLat([r.dropoff.lng,r.dropoff.lat]).addTo(map)}m.dest.setLngLat([r.dropoff.lng,r.dropoff.lat]);
-    {const rc=streetRoute(r.pickup,r.dropoff,token,()=>setRouteTick(t=>t+1));if(rc)features.push({type:"Feature",properties:{sel:r.id===selectedId?1:0},geometry:{type:"LineString",coordinates:rc}})}}
+    {const rc=streetRoute(r.pickup,r.dropoff,token);if(rc)features.push({type:"Feature",properties:{sel:r.id===selectedId?1:0},geometry:{type:"LineString",coordinates:rc}})}}
    else if(m.dest){m.dest.remove();m.dest=null}}
   for(const[id,m]of markers.current)if(!live.has(id)){m.pin.remove();m.dest?.remove();markers.current.delete(id)}
   map.getSource("bn-routes")?.setData({type:"FeatureCollection",features:features.sort((a,b)=>a.properties.sel-b.properties.sel)});

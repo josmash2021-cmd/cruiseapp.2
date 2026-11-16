@@ -409,3 +409,68 @@ async def test_bubble_shows_only_for_a_real_conversation(client, db, test_rider,
     chat.status = "closed"
     await db.commit()
     assert (await client.get("/support/active", headers=_headers(token))).json()["chat_id"] is None
+
+
+# ── ahora o reserva (owner 2026-11-15) ────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_panel_says_now_or_reservation(client, db, test_rider, heat_redis):
+    rider, token = test_rider
+    at = "2026-11-20T15:30:00Z"
+    r = await client.post("/demand/intent", headers=_headers(token), json={
+        "lat": 26.2459, "lng": -80.224, "step": "dropoff", "address": "Margate",
+        "dropoff_lat": 26.0726, "dropoff_lng": -80.1527, "dropoff_address": "FLL",
+        "when": "scheduled", "scheduled_at": at})
+    assert r.status_code == 200, r.text
+    row = _booking(heat_redis, rider.id)
+    assert row["when"] == "scheduled"
+    assert row["scheduled_ts"] == datetime(2026, 11, 20, 15, 30, tzinfo=timezone.utc).timestamp()
+
+    card = {x["id"]: x for x in (await client.get(PANEL, headers=_panel())).json()["riders"]}[rider.id]
+    assert card["when"] == "scheduled"
+    assert datetime.fromisoformat(card["scheduled_at"]) == datetime(2026, 11, 20, 15, 30, tzinfo=timezone.utc)
+
+    # Back to "Recoger ahora": the time goes with it.
+    r = await client.post("/demand/intent", headers=_headers(token), json={
+        "lat": 26.2459, "lng": -80.224, "step": "pickup", "address": "Margate", "when": "now"})
+    assert r.status_code == 200, r.text
+    card = {x["id"]: x for x in (await client.get(PANEL, headers=_panel())).json()["riders"]}[rider.id]
+    assert (card["when"], card["scheduled_at"]) == ("now", None)
+
+    # Programado without a time yet is still a reservation.
+    r = await client.post("/demand/intent", headers=_headers(token), json={
+        "lat": 26.2459, "lng": -80.224, "step": "pickup", "when": "scheduled"})
+    card = {x["id"]: x for x in (await client.get(PANEL, headers=_panel())).json()["riders"]}[rider.id]
+    assert (card["when"], card["scheduled_at"]) == ("scheduled", None)
+
+
+@pytest.mark.asyncio
+async def test_old_builds_leave_now_or_reservation_unknown(client, test_rider, heat_redis):
+    rider, token = test_rider
+    r = await client.post("/demand/intent", headers=_headers(token),
+                          json={"lat": 25.8, "lng": -80.25, "step": "pickup", "address": "x"})
+    assert r.status_code == 200
+    row = _booking(heat_redis, rider.id)
+    assert (row["when"], row["scheduled_ts"]) == (None, None)
+    card = {x["id"]: x for x in (await client.get(PANEL, headers=_panel())).json()["riders"]}[rider.id]
+    assert (card["when"], card["scheduled_at"]) == (None, None)
+
+
+@pytest.mark.parametrize("payload", [
+    {"lat": 25.8, "lng": -80.25, "step": "pickup", "when": "later"},
+    {"lat": 25.8, "lng": -80.25, "step": "pickup", "when": "now", "scheduled_at": "2026-11-20T15:30:00Z"},
+    {"lat": 25.8, "lng": -80.25, "step": "pickup", "scheduled_at": "2026-11-20T15:30:00Z"},
+])
+@pytest.mark.asyncio
+async def test_now_or_reservation_rejects_bad_detail(client, test_rider, heat_redis, payload):
+    _rider_user, token = test_rider
+    r = await client.post("/demand/intent", headers=_headers(token), json=payload)
+    assert r.status_code == 422
+
+
+def test_a_stored_row_from_before_reads_as_unknown():
+    old = json.dumps({"ts": 100.0, "started_ts": 90.0, "pickup_address": "x"})
+    row = rider_heat.parse_booking(old)
+    assert (row["when"], row["scheduled_ts"]) == (None, None)
+    bad = json.dumps({"ts": 100.0, "when": "soon", "scheduled_ts": 5})
+    assert rider_heat.parse_booking(bad)["when"] is None

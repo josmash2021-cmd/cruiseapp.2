@@ -13,6 +13,7 @@ read fallback.
 
 import logging
 import time
+from datetime import timezone
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -72,8 +73,17 @@ async def record_demand_intent(
         user.id, now, step=step, address=body.address,
         dropoff=(None if body.dropoff_lat is None
                  else (body.dropoff_lat, body.dropoff_lng)),
-        dropoff_address=body.dropoff_address)
+        dropoff_address=body.dropoff_address,
+        when=body.when,
+        scheduled_ts=_epoch(body.scheduled_at))
     return OkOut()
+
+
+def _epoch(dt) -> Optional[float]:
+    """A request datetime as epoch seconds; one without a zone is UTC."""
+    if dt is None:
+        return None
+    return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).timestamp()
 
 
 @router.post("/demand/typing", response_model=OkOut,

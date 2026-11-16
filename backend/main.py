@@ -1544,6 +1544,7 @@ from routers.store import router as store_router
 from routers.zero_tolerance import router as zero_tolerance_router
 from routers.heat_zones import router as heat_zones_router
 from routers.admin_rider_cards import router as admin_rider_cards_router
+from routers.admin_user_profile import router as admin_user_profile_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -1571,6 +1572,7 @@ app.include_router(store_router)
 app.include_router(zero_tolerance_router)
 app.include_router(heat_zones_router)
 app.include_router(admin_rider_cards_router)
+app.include_router(admin_user_profile_router)
 
 # Load-test auth exists only on staging: mounted AND self-gated by
 # LOAD_TEST=1 — production never includes it (the 404 double-check inside

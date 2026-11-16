@@ -4,6 +4,7 @@ import{m as mapboxgl}from"./vendor-mapbox-ComAnvan.js";
 import{W as apiGet,L as apiPost}from"./index-CuQT_62K.js";
 import{N as navyStyle,a as applyNavyGold,r as refineRoads,h as hideTraffic}from"./mapNavyGold-CiIxy5Vj.js";
 import{m as getMapboxToken}from"./mapboxToken-DDoCRQix.js";
+import{fetchStreetRoute}from"./trip-route-map-Cruise2026.js";
 
 const h=jsxRuntime.jsx,hs=jsxRuntime.jsxs;
 const GOLD="#E8C547",GREEN="#22C55E";
@@ -115,6 +116,11 @@ function hasPoint(p){return p!=null&&Number.isFinite(p.lat)&&Number.isFinite(p.l
 
 function arc(a,b,n=24){const[x1,y1]=[a.lng,a.lat],[x2,y2]=[b.lng,b.lat];const mx=(x1+x2)/2,my=(y1+y2)/2,dx=x2-x1,dy=y2-y1;const cx=mx-dy*.18,cy=my+dx*.18;const pts=[];for(let i=0;i<=n;i++){const t=i/n,u=1-t;pts.push([u*u*x1+2*u*t*cx+t*t*x2,u*u*y1+2*u*t*cy+t*t*y2])}return pts}
 
+/*! guard-pin panel_booking_now_street_route: la linea recogida->destino es la ruta por las calles (Mapbox Directions via fetchStreetRoute), una vez por par y en cache; nunca la curva arc() - dueño 2026-11-15 */
+const ROUTE_CACHE=new Map(),ROUTE_RETRY_MS=30000,ROUTE_CACHE_MAX=300;
+function routeKey(p,d){return[p.lng,p.lat,d.lng,d.lat].map(v=>Number(v).toFixed(5)).join(",")}
+function streetRoute(p,d,token,onReady){const key=routeKey(p,d),hit=ROUTE_CACHE.get(key);if(hit&&hit.coords)return hit.coords;if(!token||(hit&&(hit.pending||Date.now()-hit.failedAt<ROUTE_RETRY_MS)))return null;if(ROUTE_CACHE.size>=ROUTE_CACHE_MAX)ROUTE_CACHE.delete(ROUTE_CACHE.keys().next().value);ROUTE_CACHE.set(key,{pending:true});fetchStreetRoute(p,d,token).then(x=>{ROUTE_CACHE.set(key,{coords:x.coords});onReady()}).catch(()=>{ROUTE_CACHE.set(key,{failedAt:Date.now()})});return null}
+
 function useBookingNow(){
  const[state,setState]=React.useState({loading:true,error:null,data:null,offset:0});
  React.useEffect(()=>{let alive=true,timer=null,inflight=false;
@@ -207,7 +213,7 @@ function ChatModal({rider,onClose,onOpenChat}){
 
 function BookingMap({riders,selectedId,onSelect}){
  const box=React.useRef(null),mapRef=React.useRef(null),markers=React.useRef(new Map()),known=React.useRef(new Set()),touched=React.useRef(0);
- const[ready,setReady]=React.useState(false);
+ const[ready,setReady]=React.useState(false),[routeTick,setRouteTick]=React.useState(0);
  const token=getMapboxToken();
  React.useEffect(()=>{const el=box.current;if(!el||!token)return;mapboxgl.accessToken=token;
   const map=new mapboxgl.Map({container:el,style:navyStyle,center:DEFAULT_CENTER,zoom:9,bearing:0,pitch:0,maxPitch:0,dragRotate:false,pitchWithRotate:false,touchPitch:false,attributionControl:true});
@@ -231,16 +237,16 @@ function BookingMap({riders,selectedId,onSelect}){
    m.pin.setLngLat([r.pickup.lng,r.pickup.lat]);m.av.textContent=initials(r);m.nm.textContent=shortName(r);
    m.el.classList.toggle("sel",r.id===selectedId);m.el.classList.toggle("won",!!r.trip);m.el.style.zIndex=r.id===selectedId?"3":"1";
    if(hasPoint(r.dropoff)){if(!m.dest){const d=document.createElement("div");d.className="bn-dest";m.dest=new mapboxgl.Marker({element:d,anchor:"center"}).setLngLat([r.dropoff.lng,r.dropoff.lat]).addTo(map)}m.dest.setLngLat([r.dropoff.lng,r.dropoff.lat]);
-    features.push({type:"Feature",properties:{sel:r.id===selectedId?1:0},geometry:{type:"LineString",coordinates:arc(r.pickup,r.dropoff)}})}
+    {const rc=streetRoute(r.pickup,r.dropoff,token,()=>setRouteTick(t=>t+1));if(rc)features.push({type:"Feature",properties:{sel:r.id===selectedId?1:0},geometry:{type:"LineString",coordinates:rc}})}}
    else if(m.dest){m.dest.remove();m.dest=null}}
   for(const[id,m]of markers.current)if(!live.has(id)){m.pin.remove();m.dest?.remove();markers.current.delete(id)}
   map.getSource("bn-routes")?.setData({type:"FeatureCollection",features:features.sort((a,b)=>a.properties.sel-b.properties.sel)});
   const fresh=[...live].filter(id=>!known.current.has(id));known.current=live;
   if(fresh.length&&selectedId==null&&Date.now()-touched.current>20000){const b=new mapboxgl.LngLatBounds();for(const r of riders){if(hasPoint(r.pickup))b.extend([r.pickup.lng,r.pickup.lat]);if(hasPoint(r.dropoff))b.extend([r.dropoff.lng,r.dropoff.lat])}
-   if(!b.isEmpty())map.fitBounds(b,{padding:{top:80,bottom:80,left:80,right:80},maxZoom:13.5,duration:900})}},[riders,selectedId,ready]);
+   if(!b.isEmpty())map.fitBounds(b,{padding:{top:80,bottom:80,left:80,right:80},maxZoom:13.5,duration:900})}},[riders,selectedId,ready,routeTick]);
 
  React.useEffect(()=>{const map=mapRef.current;if(!map||!ready||selectedId==null)return;const r=riders.find(x=>x.id===selectedId);if(!r||!hasPoint(r.pickup))return;
-  if(hasPoint(r.dropoff)){const b=new mapboxgl.LngLatBounds([r.pickup.lng,r.pickup.lat],[r.pickup.lng,r.pickup.lat]);b.extend([r.dropoff.lng,r.dropoff.lat]);map.fitBounds(b,{padding:{top:90,bottom:90,left:90,right:90},maxZoom:14,duration:900})}
+  if(hasPoint(r.dropoff)){const b=new mapboxgl.LngLatBounds([r.pickup.lng,r.pickup.lat],[r.pickup.lng,r.pickup.lat]);b.extend([r.dropoff.lng,r.dropoff.lat]);const hit=ROUTE_CACHE.get(routeKey(r.pickup,r.dropoff));if(hit&&hit.coords)for(const c of hit.coords)b.extend(c);map.fitBounds(b,{padding:{top:90,bottom:90,left:90,right:90},maxZoom:14,duration:900})}
   else map.easeTo({center:[r.pickup.lng,r.pickup.lat],zoom:Math.max(map.getZoom(),13.5),duration:900})},[selectedId,ready]);
 
  return hs("div",{className:"bn-map",children:[h("div",{ref:box,className:"bn-canvas"}),token?null:h("div",{className:"bn-empty",style:{position:"absolute",inset:0,border:0},children:"Mapa no disponible"}),

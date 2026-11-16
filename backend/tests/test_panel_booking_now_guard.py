@@ -75,3 +75,16 @@ def test_new_trip_form_has_the_route_map_and_no_lat_lng():
 def test_payment_choice_reads_charged_or_free():
     assert 'chip({value:"rider",label:"Se le cobra al pasajero"}' in TRIPS
     assert 'chip({value:"platform",label:"Gratis (lo paga Cruise)"}' in TRIPS
+
+
+def test_booking_now_line_follows_the_streets():
+    # Owner 2026-11-15 ("debe aparecer la línea de la ruta dibujada bien"):
+    # the pickup→destination line is the street route, once per pair and
+    # cached (the page polls every 3 s), never the hand-drawn curve.
+    page = (ASSETS / "booking-now-Cruise2026.js").read_text(encoding="utf-8")
+    assert 'import{fetchStreetRoute}from"./trip-route-map-Cruise2026.js";' in page
+    assert "guard-pin panel_booking_now_street_route" in page
+    assert "coordinates:arc(" not in page
+    assert "fetchStreetRoute(p,d,token).then(" in page
+    assert "ROUTE_CACHE.set(key,{pending:true})" in page
+    assert "[riders,selectedId,ready,routeTick]" in page

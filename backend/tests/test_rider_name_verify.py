@@ -129,3 +129,40 @@ async def test_verification_reason_visible_in_status_endpoint(client, db, test_r
     data = resp.json()
     assert data["verification_status"] == "rejected"
     assert data["verification_reason"] == "name_mismatch"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("locale,title,body_start", [
+    ("es", "¡Cuenta verificada! ✓", "Hola Ana, tu cuenta está aprobada"),
+    ("en", "You're Verified!", "Hi Ana, your account is approved"),
+])
+async def test_auto_verify_push_speaks_the_riders_language(
+        db, test_rider, instant_auto_verify, monkeypatch, locale, title, body_start):
+    # 2026-11-15: the automatic approval push went out in English to every
+    # rider; it now uses the rider's language like the panel's approval.
+    rider, _ = test_rider
+    rider.first_name = "Ana"
+    rider.locale = locale
+    rider.fcm_token = "tok-ana"
+    rider.verification_status = "pending"
+    rider.is_verified = False
+    await db.commit()
+    sent, notified = [], []
+
+    async def _push(token, t, b, data=None, **kw):
+        sent.append((token, t, b, data))
+
+    async def _notify(uid, event, payload):
+        notified.append(payload)
+
+    monkeypatch.setattr(auth_router, "_send_fcm_push_async", _push)
+    monkeypatch.setattr(auth_router, "notify_user", _notify)
+    await auth_router._auto_verify_rider(rider.id)
+
+    assert len(sent) == 1
+    token, t, b, data = sent[0]
+    assert (token, t) == ("tok-ana", title)
+    assert b.startswith(body_start)
+    assert data["type"] == "rider_approved"
+    expected_msg = "¡Tu cuenta fue verificada!" if locale == "es" else "Your account has been verified!"
+    assert notified and notified[0]["message"] == expected_msg

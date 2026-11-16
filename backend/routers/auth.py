@@ -3266,6 +3266,9 @@ async def _auto_verify_rider(user_id: int):
         # Capture primitives before the session closes.
         fcm_token = db_user.fcm_token
         first_name = db_user.first_name or ""
+        # The rider's language (2026-11-15): this push went out in English
+        # to everyone; the panel's approval already spoke the rider's language.
+        es = user_lang(db_user) == "es"
         await db.commit()
     # Invalidate any cached User object so the next HTTP call sees approved.
     try:
@@ -3289,7 +3292,8 @@ async def _auto_verify_rider(user_id: int):
                 "role": "rider",
                 "verification_status": "approved",
                 "is_verified": True,
-                "message": "Your account has been verified!",
+                "message": ("¡Tu cuenta fue verificada!" if es
+                            else "Your account has been verified!"),
             },
         )
         logging.info("[Verify] Socket.IO approval push sent to rider %d", user_id)
@@ -3300,8 +3304,10 @@ async def _auto_verify_rider(user_id: int):
         try:
             await _send_fcm_push_async(
                 fcm_token,
-                "You're Verified!",
-                f"Hi {first_name}, your account is approved and ready to ride.",
+                "¡Cuenta verificada! ✓" if es else "You're Verified!",
+                (f"Hola {first_name}, tu cuenta está aprobada. Ya puedes pedir viajes."
+                 if es else
+                 f"Hi {first_name}, your account is approved and ready to ride."),
                 {"type": "rider_approved", "user_id": str(user_id), "status": "approved"},
             )
             logging.info("[Verify] FCM approval push sent to rider %d", user_id)

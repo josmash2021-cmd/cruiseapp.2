@@ -86,3 +86,40 @@ async def test_dispatch_poll_marks_user_messages_read_and_mirrors(
     # operador cuenta con eso), pero NO va al espejo — azul en el panel =
     # "el usuario lo leyó", y eso solo lo flipa el poll de la app.
     assert body[bot.id] is True
+
+
+async def test_web_poll_mirrors_read_receipts(client, db, test_rider, monkeypatch):
+    """A rider on cruiseinride.com reads the chat → the panel's ✓✓ turn blue
+    too. The web GET flipped SQL but never told the mirror, so every message
+    a web rider read stayed grey in the panel (2026-11-15)."""
+    from routers import support as _support
+
+    rider, token = test_rider
+    chat = await _chat(rider, db)
+    human = await _msg(chat, 999, "dispatch", "te escucho", db)
+    own = await _msg(chat, rider.id, "rider", "gracias", db)
+
+    seen = []
+    monkeypatch.setattr(_support, "_HAS_FIRESTORE", True)
+    monkeypatch.setattr(firestore_sync, "mark_support_messages_read",
+                        lambda chat_id, ids: seen.append((chat_id, list(ids))))
+
+    res = await client.get(
+        f"/auth/web/support/chat/{chat.id}/messages",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}",
+                 "Origin": "https://www.cruiseinride.com"})
+    assert res.status_code == 200, res.text
+    assert seen == [(chat.id, [human.id])], "el propio mensaje no va al espejo"
+    await db.refresh(human)
+    await db.refresh(own)
+    assert human.is_read is True
+    assert own.is_read is False
+
+    # Un segundo poll no vuelve a mandar nada: ya estaba leído.
+    seen.clear()
+    res = await client.get(
+        f"/auth/web/support/chat/{chat.id}/messages",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}",
+                 "Origin": "https://www.cruiseinride.com"})
+    assert res.status_code == 200, res.text
+    assert seen == []

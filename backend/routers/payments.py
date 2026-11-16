@@ -3846,10 +3846,22 @@ async def web_support_messages(chat_id: int, request: Request, db: AsyncSession 
         .order_by(SupportMessage.created_at.asc())
     )
     messages = r.scalars().all()
+    _flipped = []
     for m in messages:
         if m.sender_id != user.id and not m.is_read:
             m.is_read = True
+            _flipped.append(m.id)
     await db.commit()
+    # Read receipts: the panel's blue ✓✓ read the Firestore mirror, not SQL.
+    # The app's GET mirrors its flips; this one didn't, so every message a
+    # web rider read stayed grey in the panel (2026-11-15, chat 247).
+    if _flipped:
+        from routers import support as _support
+        if _support._HAS_FIRESTORE:
+            try:
+                _support.firestore_sync.mark_support_messages_read(chat_id, _flipped)
+            except Exception as e:
+                logging.warning("[web-support] mirror read-mark failed: %s", e)
     from routers.support import _ATTACH_PREFIX, support_attachment_key
     from services.storage import get_signed_url
     out_messages = []

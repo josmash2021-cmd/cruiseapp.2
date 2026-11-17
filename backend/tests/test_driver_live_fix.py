@@ -111,3 +111,35 @@ def test_the_socket_relay_feeds_it():
     i = src.index("async def driver_location(")
     body = src[i:src.index("@sio.event", i)]
     assert "note_trip_fix(" in body
+
+
+async def test_the_rtdb_fix_of_a_driver_on_a_trip_is_followed(monkeypatch):
+    """Driver 54 (#833) never used the socket relay: his app writes the live
+    fix to RTDB driver_locations/{id}. The leader reads it and feeds it on,
+    once per NEW fix."""
+    from services import driver_live_fix as dlf, rtdb_live_fix as rlf
+    got = []
+
+    async def spy(*a, **k):
+        got.append(a)
+
+    async def ids():
+        return [54]
+
+    stamp = [time.time() * 1000]
+    monkeypatch.setattr(dlf, "note_trip_fix", spy)
+    monkeypatch.setattr(rlf, "_rtdb_app", lambda: object())
+    monkeypatch.setattr(rlf, "_active_driver_ids", ids)
+    monkeypatch.setattr(rlf, "_read", lambda app, d: {"lat": 26.2, "lng": -80.2, "heading": 10, "speed": 9, "captured_at": stamp[0]})
+    monkeypatch.setattr(rlf, "_START_DELAY_S", 0)
+    monkeypatch.setattr(rlf, "_EVERY_S", 0.01)
+    task = asyncio.create_task(rlf.rtdb_live_fix_loop(lambda: True))
+    await asyncio.sleep(0.1)
+    assert got and got[0][:3] == (54, 26.2, -80.2)
+    n = len(got)
+    await asyncio.sleep(0.1)
+    assert len(got) == n                       # the same fix is not fed twice
+    stamp[0] += 1000
+    await asyncio.sleep(0.1)
+    assert len(got) == n + 1
+    task.cancel()

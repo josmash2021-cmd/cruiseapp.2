@@ -1031,6 +1031,9 @@ async def _start_scheduler_agents() -> None:
     # Notices on the operators' phones (2026-11-16): leader only, same pulse.
     from services.panel_push import panel_push_loop
     _spawn_background(panel_push_loop(lambda: _is_scheduler_leader), "panel_push")
+    # Drivers on a trip, live from RTDB to the panel (2026-11-17, #833).
+    from services.rtdb_live_fix import rtdb_live_fix_loop
+    _spawn_background(rtdb_live_fix_loop(lambda: _is_scheduler_leader), "rtdb_live_fix")
 
     # Driving-time dispatch learns from real pickups (owner 2026-11-01): every
     # worker reloads its own correction factors; the leader prunes old rows.

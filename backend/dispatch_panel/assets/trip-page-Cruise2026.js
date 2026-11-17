@@ -193,7 +193,24 @@ function LiveTripMap({t,live,onLead,onRoute}){
  const dropoff=okPoint({lat:t.dropoffLat,lng:t.dropoffLng})?{lat:t.dropoffLat,lng:t.dropoffLng}:null;
  const raw=live?String(live.status||""):"";
  const at=stage(raw,t.status);
- const drv=live&&live.driver&&okPoint(live.driver)?live.driver:null;
+ const polled=live&&live.driver&&okPoint(live.driver)?live.driver:null;
+ // guard-pin trip_page_live_stream: the driver's own fixes from /admin/drivers/live (every ~5 s, as the Inicio) move the arrow; the 6 s poll is the fallback (dueño 2026-11-17: "dónde está, por dónde va y cuánto le falta, en tiempo real y fluido")
+ const[fix,setFix]=React.useState(null);
+ const driverId=polled&&polled.id!=null?Number(polled.id):Number(String(t.driverId||"").replace(/^sql_/,""))||null;
+ const tracking=at>=1&&at<=4&&!!driverId;
+ React.useEffect(()=>{if(!tracking||typeof EventSource==="undefined")return;let es=null,retry=null,off=false;
+  const connect=()=>{if(off||document.visibilityState!=="visible")return;es?.close();es=new EventSource("/admin/drivers/live");
+   es.addEventListener("driver_location",ev=>{let d;try{d=JSON.parse(ev.data)}catch{return}
+    if(!d||Number(d.id)!==driverId)return;const lat=Number(d.lat),lng=Number(d.lng);if(!okPoint({lat,lng}))return;
+    const sp=d.speed!=null&&isFinite(Number(d.speed))?Number(d.speed):null;
+    setFix({lat,lng,at:Date.now(),heading:sp!=null&&sp>1.5&&d.heading!=null&&isFinite(Number(d.heading))?Number(d.heading):null})});
+   es.onerror=()=>{es?.close();es=null;if(!off){clearTimeout(retry);retry=setTimeout(connect,3000)}}};
+  const vis=()=>{if(document.visibilityState==="visible"){if(!es)connect()}else{es?.close();es=null}};
+  connect();document.addEventListener("visibilitychange",vis);
+  return()=>{off=true;clearTimeout(retry);es?.close();document.removeEventListener("visibilitychange",vis)}},[tracking,driverId]);
+ const fresh=fix&&Date.now()-fix.at<20000;
+ const drv=fresh&&polled?{...polled,lat:fix.lat,lng:fix.lng,seen_at:new Date(fix.at).toISOString()}:fresh&&tracking?{id:driverId,first_name:"",lat:fix.lat,lng:fix.lng,seen_at:new Date(fix.at).toISOString()}:polled;
+ const lastFix=React.useRef(0),gap=React.useRef(5000),leadRoute=React.useRef(null),leadTrimAt=React.useRef(0);
  const stale=drv&&drv.seen_at?Date.now()-new Date(drv.seen_at).getTime()>STALE_MS:false;
  const target=at===4?dropoff:(at===1||at===2)?pickup:null;
  const cancelled=at===-1;
@@ -220,7 +237,7 @@ function LiveTripMap({t,live,onLead,onRoute}){
   put("pick","pick",pickup);put("drop","drop",dropoff);
   if(!pickup||!dropoff){setRoute(null);return}
   const ctrl=new AbortController();
-  fetchStreetRoute(pickup,dropoff,token,ctrl.signal).then(r=>{setRoute(r);onRoute&&onRoute(r.meters>0?{miles:r.meters/1609.34,minutes:Math.max(1,Math.round(r.seconds/60))}:null)}).catch(()=>{if(!ctrl.signal.aborted)setRoute({coords:[[pickup.lng,pickup.lat],[dropoff.lng,dropoff.lat]],meters:0,seconds:0})});
+  fetchStreetRoute(pickup,dropoff,token,ctrl.signal).then(r=>{setRoute(r);onRoute&&onRoute(r.meters>0?{miles:r.meters/1609.34,minutes:Math.max(1,Math.round(r.seconds/60))}:null)}).catch(()=>{});
   return()=>ctrl.abort()},[ready,pKey,dKey]);
  React.useEffect(()=>{const map=mapRef.current;if(!map||!ready)return;const src=map.getSource("tp-route");if(!src)return;
   src.setData(route?{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:route.coords}}:EMPTY);
@@ -232,25 +249,43 @@ function LiveTripMap({t,live,onLead,onRoute}){
   if(!drv){mk.current.car?.remove();mk.current.car=null;carPos.current=null;return}
   const to={lat:drv.lat,lng:drv.lng};
   if(!mk.current.car){mk.current.car=new mapboxgl.Marker({element:carEl(),anchor:"center"}).setLngLat([to.lng,to.lat]).addTo(map);carPos.current=to;return}
-  const from=carPos.current||to;if(metersBetween(from,to)>8)carHeading.current=bearing(from,to);
+  const from=carPos.current||to;
+  const hd=fix&&fix.heading!=null&&Date.now()-fix.at<3000?fix.heading:null;
+  if(hd!=null)carHeading.current=hd;else if(metersBetween(from,to)>8)carHeading.current=bearing(from,to);
   const svg=mk.current.car.getElement().querySelector("svg");if(svg)svg.style.transform=`rotate(${carHeading.current}deg)`;
-  cancelAnimationFrame(anim.current);const t0=performance.now(),dur=1200;
-  const step=now=>{const k=Math.min(1,(now-t0)/dur);const p={lat:from.lat+(to.lat-from.lat)*k,lng:from.lng+(to.lng-from.lng)*k};carPos.current=p;mk.current.car?.setLngLat([p.lng,p.lat]);if(k<1)anim.current=requestAnimationFrame(step)};
+  // Glide over the time fixes take to arrive (~5 s): it reaches this one as the next lands - always moving, never jump-and-stop. A jump over 3 km is a teleport.
+  const nowMs=performance.now();if(lastFix.current){const g=nowMs-lastFix.current;if(g>300&&g<20000)gap.current=gap.current*0.6+g*0.4}lastFix.current=nowMs;
+  cancelAnimationFrame(anim.current);const t0=nowMs,dur=metersBetween(from,to)>3000?0:Math.min(8000,Math.max(900,gap.current*1.05));
+  const step=now=>{const k=dur?Math.min(1,(now-t0)/dur):1;const p={lat:from.lat+(to.lat-from.lat)*k,lng:from.lng+(to.lng-from.lng)*k};carPos.current=p;mk.current.car?.setLngLat([p.lng,p.lat]);
+   if(now-leadTrimAt.current>120){leadTrimAt.current=now;trimLead(p,false)}
+   if(k<1)anim.current=requestAnimationFrame(step)};
   anim.current=requestAnimationFrame(step);
   if(follow)map.easeTo({center:[to.lng,to.lat],duration:1000})},[ready,dKey2]);
  React.useEffect(()=>{const c=mk.current.car;if(c)c.getElement().classList.toggle("stale",!!stale)},[stale,dKey2,ready]);
 
- // Driver → where they are going now (pickup, or the destination once on board).
+ // Driver -> where they are going now (pickup, or the destination once on board),
+ // drawn from where the car is right now: it shortens as he drives, and the
+ // minutes / miles left count down with it (the route's own pace).
+ const trimLead=React.useCallback((p,report)=>{const r=leadRoute.current,map=mapRef.current;if(!r||!map||!p)return null;const c=r.coords;let best=-1,bd=Infinity,bt=0;
+  for(let i=0;i<c.length-1;i++){const a={lng:c[i][0],lat:c[i][1]},b={lng:c[i+1][0],lat:c[i+1][1]};const kx=Math.cos(a.lat*Math.PI/180);const ax=(b.lng-a.lng)*kx,ay=b.lat-a.lat,px=(p.lng-a.lng)*kx,py=p.lat-a.lat;const L=ax*ax+ay*ay;let u=L?(px*ax+py*ay)/L:0;u=Math.max(0,Math.min(1,u));const q={lng:a.lng+(b.lng-a.lng)*u,lat:a.lat+(b.lat-a.lat)*u};const dd=metersBetween(p,q);if(dd<bd){bd=dd;best=i;bt=u}}
+  if(best<0)return null;
+  const done=r.cum[best]+(r.cum[best+1]-r.cum[best])*bt,left=Math.max(0,r.total-done);
+  map.getSource("tp-lead")?.setData({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:[[p.lng,p.lat],...c.slice(best+1)]}});
+  if(report){const l={miles:left/1609.34,minutes:Math.max(1,Math.round(r.seconds*(r.total?left/r.total:1)/60))};setLead(l);onLead&&onLead(l)}
+  return bd},[onLead]);
  const tKey=target?`${target.lat},${target.lng}`:"";
  React.useEffect(()=>{const map=mapRef.current;if(!map||!ready)return;const src=map.getSource("tp-lead");
-  if(!drv||!target){src?.setData(EMPTY);setLead(null);onLead&&onLead(null);return}
+  if(!drv||!target){src?.setData(EMPTY);leadRoute.current=null;setLead(null);onLead&&onLead(null);return}
   const here={lat:drv.lat,lng:drv.lng},last=leadAt.current;
-  const due=last.target!==tKey||!last.p||Date.now()-last.t>LEAD_REFRESH_MS||metersBetween(last.p,here)>LEAD_MOVE_M;
+  // Between asks the route stays and only shortens; 60 m off it, ask again.
+  const off=last.target===tKey&&leadRoute.current?trimLead(here,true):null;
+  const due=last.target!==tKey||!last.p||!leadRoute.current||(off!=null&&off>60)||(Date.now()-last.t>LEAD_REFRESH_MS&&metersBetween(last.p,here)>LEAD_MOVE_M);
   if(!due)return;
   leadAt.current={t:Date.now(),p:here,target:tKey};
-  const ctrl=new AbortController();
-  fetchStreetRoute(here,target,token,ctrl.signal).then(r=>{src?.setData({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:r.coords}});const l={miles:r.meters/1609.34,minutes:Math.max(1,Math.round(r.seconds/60))};setLead(l);onLead&&onLead(l)}).catch(()=>{});
-  return()=>ctrl.abort()},[ready,dKey2,tKey]);
+  // Never a straight line (owner 2026-11-17): no route = no line until one comes.
+  fetchStreetRoute(here,target,token).then(r=>{if(leadAt.current.target!==tKey)return;const cum=[0];for(let i=1;i<r.coords.length;i++)cum.push(cum[i-1]+metersBetween({lng:r.coords[i-1][0],lat:r.coords[i-1][1]},{lng:r.coords[i][0],lat:r.coords[i][1]}));
+   leadRoute.current={coords:r.coords,cum,total:cum[cum.length-1]||r.meters||0,seconds:r.seconds};trimLead(carPos.current||here,true)}).catch(()=>{leadAt.current={t:0,p:null,target:""}});
+ },[ready,dKey2,tKey]);
 
  const frameAll=React.useCallback((animate)=>{const map=mapRef.current;if(!map)return;const pts=[];if(route)route.coords.forEach(c=>pts.push(c));else{if(pickup)pts.push([pickup.lng,pickup.lat]);if(dropoff)pts.push([dropoff.lng,dropoff.lat])}if(drv)pts.push([drv.lng,drv.lat]);if(!pts.length)return;
   const b=new mapboxgl.LngLatBounds(pts[0],pts[0]);pts.forEach(p=>b.extend(p));map.fitBounds(b,{padding:{top:90,bottom:60,left:50,right:60},maxZoom:15.5,duration:animate?900:0})},[route,dKey2,pKey,dKey]);
@@ -263,7 +298,7 @@ function LiveTripMap({t,live,onLead,onRoute}){
  else if(at===5){title="Viaje terminado";const mi=t.distance>0?`${(t.distance*0.621371).toFixed(1)} mi`:null;sub=[t.duration>0?`${t.duration} min`:null,mi].filter(Boolean).join(" · ")||null}
  else if(at===4){title=lead?`Llega al destino en ${lead.minutes} min`:"En viaje";sub=lead?`${lead.miles.toFixed(1)} mi para llegar`:null}
  else if(at===3){title=`${who} llegó a la recogida`;sub="Esperando a la pasajera"}
- else if(at===2||(at===1&&!isReservation(t))){title=drv?(lead?`${who} llega en ${lead.minutes} min`:`${who} va en camino`):"Esperando la ubicación del conductor";sub=lead?`${lead.miles.toFixed(1)} mi de la recogida`:null}
+ else if(at===2||(at===1&&(!isReservation(t)||lead))){title=drv?(lead?`${who} llega en ${lead.minutes} min`:`${who} va en camino`):"Esperando la ubicación del conductor";sub=lead?`${lead.miles.toFixed(1)} mi de la recogida`:null}
  else if(isReservation(t)){title=["Recogida ",el(ZoneTime,{date:t.scheduledAtDate,lat:t.pickupLat,lng:t.pickupLng,key:"z"})];sub=t.driverName?`Conductor: ${t.driverName} · confirma 1 hora antes`:"Sin conductor todavía"}
  else{title="Buscando conductor";sub=route&&route.meters>0?`${Math.round(route.seconds/60)} min · ${(route.meters/1609.34).toFixed(1)} mi de viaje`:null}
  if(drv&&stale&&at>=1&&at<=4)sub=`Última ubicación ${when(drv.seen_at)||""}`;

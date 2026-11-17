@@ -1942,6 +1942,11 @@ async def stream_live_drivers(
         raise
 
     async def _generate():
+        # How much this stream actually carried (owner 2026-11-17: "no me
+        # aparecen en tiempo real"): one line when it closes, to tell a
+        # stream that delivered fixes from one that only pinged.
+        opened = time.time()
+        sent = {"driver_location": 0, "ping": 0, "other": 0}
         try:
             yield f"event: snapshot\ndata: {json.dumps(snapshot)}\n\n"
             while True:
@@ -1958,10 +1963,16 @@ async def stream_live_drivers(
                     evt_type = event.get("type", "message")
                     evt_data = event.get("data", event)
                     yield f"event: {evt_type}\ndata: {json.dumps(evt_data)}\n\n"
+                    sent["driver_location" if evt_type == "driver_location" else "other"] += 1
                 except asyncio.TimeoutError:
                     yield f"event: ping\ndata: {{\"ts\": {time.time()}}}\n\n"
+                    sent["ping"] += 1
         finally:
             event_bus.unsubscribe_dispatch(queue)
+            lasted = time.time() - opened
+            if lasted > 5:
+                logging.info("[LiveStream] closed after %.0f s: %d positions, %d other, %d pings",
+                             lasted, sent["driver_location"], sent["other"], sent["ping"])
 
     return StreamingResponse(
         _generate(),

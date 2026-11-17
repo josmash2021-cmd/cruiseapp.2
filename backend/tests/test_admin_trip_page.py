@@ -247,3 +247,14 @@ def test_map_cleanup_only_removes_markers():
     assert "guard-pin trip_page_marker_cleanup" in CHUNK
     assert "Object.values(mk.current).forEach(m=>m&&m.remove())" not in CHUNK
     assert 'if(m&&typeof m.remove==="function")m.remove()' in CHUNK
+
+
+def test_driver_moves_live_and_the_route_counts_down():
+    """Owner 2026-11-17: "dónde está el driver, por dónde va y cuánto le
+    falta, todo en tiempo real y fluido" — the trip map listens to the live
+    stream for its driver, glides over the real gap, draws the lead from the
+    car by the streets (never a straight line) and counts the minutes down."""
+    assert "guard-pin trip_page_live_stream" in CHUNK
+    assert 'new EventSource("/admin/drivers/live")' in CHUNK and "Number(d.id)!==driverId" in CHUNK
+    assert "gap.current*1.05" in CHUNK and "const trimLead=React.useCallback" in CHUNK
+    assert "coordinates:[[pickup.lng,pickup.lat],[dropoff.lng,dropoff.lat]]" not in CHUNK

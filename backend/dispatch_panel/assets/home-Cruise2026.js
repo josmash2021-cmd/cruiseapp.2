@@ -211,10 +211,11 @@ const KIND_ORDER={search:0,wait:1,pickup:2,ontrip:3};
 
 // ── Street routes, fetched once per trip while the panel is open ───────────
 const routeCache=new Map();
+const leadCache=new Map();
 function routeFor(t,token){
  if(routeCache.has(t.id))return routeCache.get(t.id);
- const straight=[[t.pickup.lng,t.pickup.lat],[t.dropoff.lng,t.dropoff.lat]];
- const p=fetchStreetRoute(t.pickup,t.dropoff,token).then(r=>r.coords).catch(()=>straight);
+ // Never a straight line (owner 2026-11-17): no route = no line; a failed ask is tried again later.
+ const p=fetchStreetRoute(t.pickup,t.dropoff,token).then(r=>r.coords).catch(()=>{routeCache.delete(t.id);return null});
  routeCache.set(t.id,p);
  if(routeCache.size>200){const first=routeCache.keys().next().value;routeCache.delete(first)}
  return p;
@@ -326,9 +327,14 @@ const HomeMap=React.memo(function HomeMap({area,drivers,live,heat,layers,skewRef
  React.useEffect(()=>{const map=mapRef.current;if(!map||!ready)return;let alive=true;
   const trips=here.live.filter(t=>t.kind!=="search"&&okPt(t.pickup)&&okPt(t.dropoff));
   Promise.all(trips.map(t=>routeFor(t,token))).then(lines=>{if(!alive)return;
-   map.getSource("ch-routes")?.setData({type:"FeatureCollection",features:lines.map(coords=>({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:coords}}))})});
+   map.getSource("ch-routes")?.setData({type:"FeatureCollection",features:lines.filter(Boolean).map(coords=>({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:coords}}))})});
+  // guard-pin home_lead_streets: driver -> pickup by the streets from where his arrow is (owner 2026-11-17: "no puede verse así línea recta"); asked again after 30 s once he moved 150 m
   const pos=new Map(here.drivers.map(d=>[d.id,d]));
-  map.getSource("ch-leads")?.setData({type:"FeatureCollection",features:here.live.filter(t=>t.kind==="pickup"&&pos.has(t.driver_id)&&okPt(t.pickup)).map(t=>{const d=pos.get(t.driver_id);return{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:[[d.lng,d.lat],[t.pickup.lng,t.pickup.lat]]}}})});
+  const leads=here.live.filter(t=>t.kind==="pickup"&&pos.has(t.driver_id)&&okPt(t.pickup));
+  Promise.all(leads.map(async t=>{const d=pos.get(t.driver_id),m=mk.current.drv.get(d.id),from=m&&m.pos?m.pos:{lat:d.lat,lng:d.lng};const c=leadCache.get(t.id);
+   if(c&&(Date.now()-c.at<30000||metersBetween(c.from,from)<150))return c.coords;
+   try{const x=await fetchStreetRoute(from,t.pickup,token);leadCache.set(t.id,{from,at:Date.now(),coords:x.coords});if(leadCache.size>100)leadCache.delete(leadCache.keys().next().value);return x.coords}catch{return c?c.coords:null}}))
+   .then(lines=>{if(!alive)return;map.getSource("ch-leads")?.setData({type:"FeatureCollection",features:lines.filter(Boolean).map(coords=>({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:coords}}))})});
   return()=>{alive=false}},[ready,here.live,here.drivers]);
 
  // Frame the state once per state; later polls never move a map the operator moved.

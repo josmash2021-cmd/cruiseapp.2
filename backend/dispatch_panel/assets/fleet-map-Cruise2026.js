@@ -354,7 +354,7 @@ const FleetMap=React.memo(function FleetMap({area,drivers,states,waiting,heat,la
   if(r.key!==key)leg?.setData(EMPTY);
   if(r.key!==key||!r.from||(Date.now()-r.at>ROUTE_REFRESH_MS&&metersBetween(r.from,from)>ROUTE_MOVE_M)){
    route.current={...r,key,at:Date.now(),from};
-   if(target&&okPt(target)&&token)fetchStreetRoute(from,target,token).then(x=>draw(x.coords)).catch(()=>draw([[from.lng,from.lat],[target.lng,target.lat]]));
+   if(target&&okPt(target)&&token)fetchStreetRoute(from,target,token).then(x=>draw(x.coords)).catch(()=>{if(route.current.key===key)route.current={...route.current,from:null}});
    else leg?.setData(EMPTY)}
   const nextKey=t.kind!=="ontrip"&&okPt(t.pickup)&&okPt(t.dropoff)?`${t.id}`:"";
   if(nextKey!==route.current.next){route.current.next=nextKey;next?.setData(EMPTY);

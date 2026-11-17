@@ -269,3 +269,10 @@ def test_inicio_drivers_move_live():
     assert 'new EventSource("/admin/drivers/live")' in home
     assert "function glideTo(m,to,heading)" in home
     assert "dur=1200" not in home
+
+
+def test_lead_line_goes_by_the_streets():
+    chunk = (ASSETS / "home-Cruise2026.js").read_text(encoding="utf-8")
+    assert "guard-pin home_lead_streets" in chunk
+    assert "coordinates:[[d.lng,d.lat],[t.pickup.lng,t.pickup.lat]]" not in chunk
+    assert "const straight=" not in chunk

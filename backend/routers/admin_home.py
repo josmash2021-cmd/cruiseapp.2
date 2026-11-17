@@ -364,6 +364,7 @@ async def admin_home(db: AsyncSession = Depends(get_db)):
             "busy": u.id in busy,
             "trip_id": busy.get(u.id),
             "stale": last is None or (now - last).total_seconds() > _STALE_DRIVER_S,
+            "last_seen": last.isoformat() if last else None,
         })
 
     # Support chats a person owes an answer to.

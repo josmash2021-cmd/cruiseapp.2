@@ -104,7 +104,8 @@ const CSS=`
 .ch-drv .ch-halo{position:absolute;inset:-4px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid ${GOLD};display:none}
 .ch-drv.busy .ch-halo{display:block}
 .ch-drv.busy path{fill:#fff}
-.ch-drv.stale path{fill:#8A8A94}
+/* guard-pin home_stale_driver: sin señal = SU color apagado, nunca gris (el gris se leía como En viaje; dueño 2026-11-16) */
+.ch-drv.stale svg,.ch-drv.stale .ch-halo{opacity:.38}
 .ch-pill{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);white-space:nowrap;background:rgba(20,20,26,.92);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 9px;font:700 11.5px Inter,system-ui,sans-serif;color:#fff;pointer-events:none}
 .ch-drv:not(.busy) .ch-pill{display:none}
 .ch-ring{width:22px;height:22px;border-radius:50%;border:3px solid ${CORAL};background:#0E1424;cursor:pointer;position:absolute;top:0;left:0;box-sizing:border-box}
@@ -221,6 +222,8 @@ function routeFor(t,token){
 
 // ── The live map ───────────────────────────────────────────────────────────
 function arrowEl(){const d=document.createElement("div");d.className="ch-drv";d.innerHTML=`<span class="ch-halo"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ARROW}"/></svg><span class="ch-pill"></span>`;return d}
+// "sin señal hace 12 min": how long since his app last reported.
+function quietFor(iso){const t=iso?Date.parse(iso):NaN;if(!isFinite(t))return"sin señal";const m=Math.max(1,Math.round((Date.now()-t)/6e4));return m<60?`sin señal hace ${m} min`:m<1440?`sin señal hace ${Math.round(m/60)} h`:`sin señal hace ${Math.round(m/1440)} d`}
 function ringEl(){const d=document.createElement("div");d.className="ch-ring";d.innerHTML='<span class="ch-pill"></span>';return d}
 
 const HomeMap=React.memo(function HomeMap({area,drivers,live,heat,layers,skewRef,title,sub,onTrip,onDriver}){
@@ -275,7 +278,7 @@ const HomeMap=React.memo(function HomeMap({area,drivers,live,heat,layers,skewRef
    const trip=d.trip_id?byTrip.get(d.trip_id):null;m.tripId=d.busy?d.trip_id:null;
    if(m.heading==null&&trip){const target=trip.kind==="ontrip"?trip.dropoff:trip.pickup;if(okPt(target)&&metersBetween(to,target)>30)m.heading=bearing(to,target)}
    const node=m.marker.getElement();node.classList.toggle("busy",!!d.busy);node.classList.toggle("stale",!!d.stale);
-   node.title=d.busy?`${d.name||"Conductor"} · viaje #${d.trip_id}`:`${d.name||"Conductor"} · libre`;
+   node.title=(d.busy?`${d.name||"Conductor"} · viaje #${d.trip_id}`:`${d.name||"Conductor"} · libre`)+(d.stale?` · ${quietFor(d.last_seen)}`:"");
    const svg=node.querySelector("svg");if(svg)svg.style.transform=`rotate(${m.heading||0}deg)`;
    const pill=node.querySelector(".ch-pill");if(pill)pill.textContent=pillText(trip)}
   for(const[id,m]of mk.current.drv){if(!keep.has(id)){cancelAnimationFrame(m.raf);m.marker.remove();mk.current.drv.delete(id)}}},[ready,here.drivers,here.live]);
@@ -371,14 +374,14 @@ function HomeShell({fallback}){
  const search=live.filter(t=>t.kind==="search");
  const toPick=live.filter(t=>t.kind==="pickup"||t.kind==="wait").length,onBoard=live.filter(t=>t.kind==="ontrip").length;
  const longest=search.length?Math.max(...search.map(t=>nowMs-Date.parse(t.since))):0;
- const free=drivers.filter(d=>!d.busy).length,busyN=drivers.length-free;
+ const free=drivers.filter(d=>!d.busy).length,busyN=drivers.length-free,quietN=drivers.filter(d=>d.stale).length;
  const pid=data.pidiendo?(market==="todos"?data.pidiendo.total:(data.pidiendo.by_market||{})[market]||0):null;
  const resNo=res.filter(r=>!r.driver).length;
 
  const kpis=[
   {k:"viaje",label:"En viaje",icon:I.car,value:String(toPick+onBoard),sub:`${toPick} por recoger · ${onBoard} con pasajero`,cls:"ch-kpi",go:()=>navigate("/viajes/categoria/inProgress")},
   {k:"busca",label:"Buscando conductor",icon:I.radar,value:String(search.length),sub:search.length?`El que más lleva: ${clock(longest/1000)}`:"Nadie esperando",cls:search.length?"ch-kpi hot":"ch-kpi",go:()=>navigate("/viajes/categoria/active")},
-  {k:"cond",label:"Conductores en línea",icon:I.wheel,value:String(drivers.length),sub:`${free} ${plural(free,"libre","libres")} · ${busyN} ${plural(busyN,"ocupado","ocupados")}`,cls:"ch-kpi",go:()=>navigate("/mapa")},
+  {k:"cond",label:"Conductores en línea",icon:I.wheel,value:String(drivers.length),sub:`${free} ${plural(free,"libre","libres")} · ${busyN} ${plural(busyN,"ocupado","ocupados")}`+(quietN?` · ${quietN} sin señal`:""),cls:"ch-kpi",go:()=>navigate("/mapa")},
   {k:"pide",label:"Pidiendo ahora",icon:I.user,value:pid==null?"—":String(pid),sub:pid==null?"No disponible ahora":plural(pid,"1 pasajero armando un viaje",`${pid} pasajeros armando un viaje`),cls:"ch-kpi",go:()=>navigate("/pidiendo-ahora")},
   {k:"res",label:"Reservas · 24 h",icon:I.cal,value:String(res.length),sub:resNo?`${resNo} sin conductor`:res.length?"Todas con conductor":"Ninguna por ahora",cls:resNo?"ch-kpi warn":"ch-kpi",go:()=>navigate("/reservas")},
  ];
@@ -417,7 +420,8 @@ function HomeShell({fallback}){
  const count=m=>(data.drivers||[]).filter(d=>d.market===m).length+(data.live||[]).filter(t=>t.market===m).length;
  const area=market==="AL"||market==="FL"?market:(mapPick||(count("FL")>count("AL")?"FL":"AL"));
  const aDrivers=(data.drivers||[]).filter(d=>d.market===area),aLive=(data.live||[]).filter(t=>t.market===area&&t.kind!=="search");
- const mapSub=`${aDrivers.length} ${plural(aDrivers.length,"conductor","conductores")} en línea · ${aLive.length} en viaje`;
+ const aQuiet=aDrivers.filter(d=>d.stale).length;
+ const mapSub=`${aDrivers.length} ${plural(aDrivers.length,"conductor","conductores")} en línea · ${aLive.length} en viaje`+(aQuiet?` · ${aQuiet} sin señal`:"");
 
  return el("div",{className:"ch-page"},
   el("header",{className:"ch-head"},
@@ -443,6 +447,7 @@ function HomeShell({fallback}){
      el("div",{className:"ch-legend"},
       el("span",null,el("svg",{width:14,height:14,viewBox:"0 0 24 24","aria-hidden":"true"},el("path",{d:ARROW,fill:GOLD})),"Libre"),
       el("span",null,el("svg",{width:14,height:14,viewBox:"0 0 24 24","aria-hidden":"true"},el("path",{d:ARROW,fill:"#FFFFFF"})),"En viaje"),
+      el("span",{title:"Su app no manda ubicación hace más de 3 min (teléfono bloqueado, app cerrada o sin conexión)"},el("svg",{width:14,height:14,viewBox:"0 0 24 24","aria-hidden":"true",style:{opacity:.38}},el("path",{d:ARROW,fill:GOLD})),"Sin señal"),
       el("span",null,el("span",{className:"ch-lg",style:{border:`2px solid ${CORAL}`}}),"Buscando conductor"),
       el("span",null,el("span",{className:"ch-lg",style:{background:"rgba(232,197,71,.45)"}}),"Pasajeros armando un viaje")),
      el("button",{type:"button",className:"ch-link",onClick:()=>navigate("/mapa")},"Abrir el mapa completo →"))),

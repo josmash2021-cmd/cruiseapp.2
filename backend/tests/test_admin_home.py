@@ -114,6 +114,8 @@ async def test_live_trips_drivers_and_reservations(client, db, test_rider, test_
     drv = {d["id"]: d for d in body["drivers"]}
     assert drv[driver.id]["busy"] is True and drv[driver.id]["trip_id"] == en_route.id
     assert drv[driver.id]["market"] == "AL" and drv[driver.id]["stale"] is False
+    # When it last reported, for "sin señal hace 12 min" (2026-11-16).
+    assert drv[driver.id]["last_seen"]
     # Only what the page needs about a driver: never a phone.
     assert "phone" not in drv[driver.id]
 
@@ -245,3 +247,13 @@ def test_chunks_parse(tmp_path):
         copy.write_text((ASSETS / name).read_text(encoding="utf-8"), encoding="utf-8")
         r = subprocess.run(["node", "--check", str(copy)], capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
+
+
+def test_quiet_driver_is_faded_not_grey():
+    """Grey read as "En viaje" (owner 2026-11-16): a driver whose app stopped
+    reporting keeps his own colour, faded, and the legend says "Sin señal"."""
+    from pathlib import Path
+    home = (Path(__file__).resolve().parents[1] / "dispatch_panel" / "assets" / "home-Cruise2026.js").read_text(encoding="utf-8")
+    assert ".ch-drv.stale path{fill:#8A8A94}" not in home
+    assert ".ch-drv.stale svg,.ch-drv.stale .ch-halo{opacity:.38}" in home
+    assert '"Sin señal")' in home and "function quietFor(iso)" in home

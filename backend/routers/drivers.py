@@ -290,6 +290,9 @@ _driver_active_trip = TTLCache[int, tuple](ttl_seconds=30, max_size=5000, name="
 _driver_last_db_write = BoundedDict[int, float](max_size=5000, name="driver_last_db_write")
 _DB_WRITE_THROTTLE = 3.0  # seconds — DB write at most every 3s per driver
 
+_stale_fix_logged: dict[int, float] = {}
+
+
 @router.patch("/drivers/{driver_id}/location", dependencies=[Depends(_verify_api_key)])
 async def update_driver_location(driver_id: int, body: DriverLocationIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Ownership check: only the driver themselves can update their location
@@ -391,6 +394,19 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         if await sector_is_off(db, body.lat, body.lng):
             _driver_locations.pop(driver_id, None)
             raise HTTPException(403, "zone_disabled")
+
+    # A phone that keeps sending the SAME old reading (GPS paused in the
+    # background, Google Maps in front...) looks "fresh" to every map because
+    # the heartbeat itself is fresh (owner 2026-11-17: "Yohender me sigue
+    # apareciendo en el mismo lugar y realmente no está ahí"). Say so in the
+    # log, at most once a minute per driver.
+    if body.is_online and body.captured_at is not None:
+        _cap = body.captured_at if body.captured_at.tzinfo else body.captured_at.replace(tzinfo=timezone.utc)
+        _fix_age = (utc_now() - _cap).total_seconds()
+        if _fix_age > 120 and time.monotonic() - _stale_fix_logged.get(driver_id, 0.0) > 60:
+            _stale_fix_logged[driver_id] = time.monotonic()
+            logging.warning("[GpsStale] driver %d sends a reading %.0f s old (%.4f, %.4f)",
+                            driver_id, _fix_age, body.lat, body.lng)
 
     # Update in-memory location cache FIRST (instant for nearby reads)
     _now = time.monotonic()

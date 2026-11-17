@@ -33,3 +33,6 @@ Pillow>=10.0.0
 fpdf2>=2.7.9
 # Time zone of a pickup from its coordinates, offline (services/local_zone.py).
 tzfpy==2.1.1
+# Faces in profile photos for the panel avatars (services/photo_face.py).
+# 4.10: YuNet FaceDetectorYN, headless (no GUI libs needed on slim).
+opencv-python-headless==4.10.0.84

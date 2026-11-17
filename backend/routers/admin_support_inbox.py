@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import AppConfig, SupportChat, SupportMessage, User, get_db
 from routers.admin_user_profile import admin_user_profile
+from services import photo_face
 from utils.security import _require_dispatch_auth, _security_audit_log
 
 router = APIRouter()
@@ -151,6 +152,17 @@ async def support_inbox(db: AsyncSession = Depends(get_db)):
             "updated_at": _iso(chat.updated_at),
         })
 
+    # Where the face is in each photo, so the circle shows it (open chats
+    # first: they are the ones on screen).
+    photos: dict[int, Optional[str]] = {}
+    for open_first in (True, False):
+        for chat, user in rows:
+            if user is not None and (chat.status != "closed") == open_first:
+                photos.setdefault(user.id, user.photo_url)
+    faces = await photo_face.faces_for(db, photos)
+    for row in out:
+        row["user_photo_face"] = faces.get(row["user_id"])
+
     # How long each waiting person has waited: since their first message
     # after the last reply (not their last one — three messages in 10 min
     # is a 10-min wait).
@@ -231,6 +243,7 @@ async def support_chat_context(chat_id: int, db: AsyncSession = Depends(get_db))
     else:
         place = next((c for c in (city_of(t.get("pickup_address")) for t in trips) if c), None)
     person["place"] = place
+    person["photo_face"] = (await photo_face.faces_for(db, {person["id"]: person.get("photo_url")})).get(person["id"])
     upcoming = profile.get("upcoming") or []
     return {
         **base,

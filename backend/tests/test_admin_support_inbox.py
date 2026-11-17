@@ -249,3 +249,75 @@ def test_inicio_map_markers_are_absolute():
     for sel in (".ch-drv{", ".ch-ring{"):
         rule = next(line for line in home.splitlines() if line.startswith(sel))
         assert "position:absolute" in rule and "position:relative" not in rule, rule
+
+
+# ── Faces in the avatars ─────────────────────────────────────────────────
+
+REPO = Path(__file__).resolve().parents[2]
+
+
+def test_face_found_in_a_car_selfie_turned_a_little():
+    """The old Haar cascade marked the temple of this selfie; YuNet finds
+    the face (centre a bit left of the middle, upper half)."""
+    from services import photo_face
+    pytest.importorskip("cv2")
+    data = (REPO / "assets" / "images" / "onboarding" / "guide_selfie_vip_f.png").read_bytes()
+    face = photo_face.detect(data)
+    assert face is not None
+    assert 0.4 < face["cx"] < 0.52 and 0.3 < face["cy"] < 0.45 and 0.3 < face["s"] < 0.45
+    assert photo_face.detect(b"not an image") is None
+
+
+def test_only_our_own_storage_is_downloaded():
+    from services import photo_face
+    for ok in ("https://firebasestorage.googleapis.com/v0/b/x/o/photos%2Fuser_1.jpg?alt=media&token=t",
+               "https://storage.googleapis.com/bucket/p.jpg",
+               "https://lh3.googleusercontent.com/a/abc=s96-c",
+               "https://t3.storageapi.dev/cruiseapp-storage/photos/1.jpg"):
+        assert photo_face.url_ok(ok), ok
+    for bad in ("http://firebasestorage.googleapis.com/x.jpg", "https://169.254.169.254/latest/meta-data",
+                "https://evil.example/googleapis.com.jpg", "https://firebasestorage.googleapis.com.evil.io/x",
+                "https://localhost/x.jpg", "", None, "file:///etc/passwd"):
+        assert not photo_face.url_ok(bad), bad
+
+
+@pytest.mark.asyncio
+async def test_inbox_sends_the_face_of_the_current_photo(client, db, monkeypatch):
+    import json as _json
+    from services import photo_face
+    url = "https://firebasestorage.googleapis.com/v0/b/x/o/photos%2Fuser.jpg?alt=media&token=t"
+    driver = await _user(db, "face@test.com", role="driver", photo_url=url)
+    other = await _user(db, "face2@test.com", photo_url="https://example.com/me.jpg")
+    await _chat(db, driver)
+    await _chat(db, other)
+    face = {"cx": 0.47, "cy": 0.37, "s": 0.43, "ar": 1.234}
+    db.add(AppConfig(key=f"photo_face:{driver.id}", value=_json.dumps({"url": photo_face._hash(url), "face": face})))
+    await db.commit()
+    queued = []
+    monkeypatch.setattr(photo_face, "_schedule", lambda uid, u: queued.append((uid, u)))
+
+    rows = {c["user_id"]: c for c in (await client.get("/admin/support/inbox", headers=_panel())).json()["chats"]}
+    assert rows[driver.id]["user_photo_face"] == face
+    assert rows[other.id]["user_photo_face"] is None
+    assert queued == [], "a stored face and a foreign host queue nothing"
+
+    # A new photo is looked at again; until then the circle stays centred.
+    driver.photo_url = url.replace("token=t", "token=new")
+    await db.commit()
+    rows = {c["user_id"]: c for c in (await client.get("/admin/support/inbox", headers=_panel())).json()["chats"]}
+    assert rows[driver.id]["user_photo_face"] is None
+    assert queued == [(driver.id, driver.photo_url)]
+
+
+def test_panel_avatar_and_layout():
+    page = (ASSETS / "support-inbox-Cruise2026.js").read_text(encoding="utf-8")
+    assert "function faceBox(f)" in page and "face:c.user_photo_face" in page
+    # Riders and drivers apart.
+    assert 'const ROLES=[["all","Todos"],["rider","Pasajeros"],["driver","Conductores"]]' in page
+    # Edge to edge: the panel's 1400 px column steps aside on this page only.
+    assert "html.si-full main>.max-w-" in page and 'root.classList.remove("si-full")' in page
+    main = (ASSETS / "index-CuQT_62K.js").read_text(encoding="utf-8")
+    assert '"mx-auto w-full max-w-[1400px] p-4 md:p-6"' in main
+    req = (REPO / "backend" / "requirements.txt").read_text(encoding="utf-8")
+    assert "opencv-python-headless==4." in req
+    assert (REPO / "backend" / "services" / "models" / "face_detection_yunet_2023mar.onnx").stat().st_size > 200_000

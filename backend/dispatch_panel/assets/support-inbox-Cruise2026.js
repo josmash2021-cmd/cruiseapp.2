@@ -13,6 +13,8 @@ function el(type,props,...kids){
 
 const CSS=`
 .si-wrap{container-type:inline-size;container-name:si;width:100%}
+html.si-full main>.max-w-\\[1400px\\]{max-width:none;padding:0}
+html.si-full .si-page{border:0;border-radius:0}
 .si-page{position:relative;display:flex;height:calc(100dvh - 5.5rem);min-height:520px;background:#14141A;color:#F4F4F5;border:1px solid rgba(255,255,255,.06);border-radius:18px;overflow:hidden;font-family:inherit}
 @media(min-width:768px){.si-page{height:calc(100dvh - 3rem)}}
 .si-col{display:flex;flex-direction:column;min-width:0;min-height:0}
@@ -24,6 +26,10 @@ const CSS=`
 .si-search input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:#F4F4F5;font-family:inherit;font-size:13px;font-weight:500}
 .si-search input::placeholder{color:rgba(255,255,255,.55)}
 .si-chips{display:flex;flex-wrap:wrap;gap:6px}
+.si-seg{display:flex;gap:2px;padding:4px;border-radius:999px;background:#1C1C24;border:1px solid rgba(255,255,255,.08)}
+.si-seg button{flex:1 1 auto;height:32px;padding:0 8px;border:0;border-radius:999px;background:transparent;color:rgba(255,255,255,.62);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:0;white-space:nowrap}
+.si-seg button.on{background:#2A2A35;color:#fff}
+.si-seg b{font-weight:800;color:#E8C547}
 .si-chip{height:30px;padding:0 11px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:transparent;color:rgba(255,255,255,.7);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .si-chip.on{background:#E8C547;border-color:#E8C547;color:#14141A}
 .si-chip b{font-weight:800}
@@ -31,9 +37,10 @@ const CSS=`
 .si-item{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:8px;align-items:start;padding:10px 8px;border-radius:14px;border:0;background:transparent;color:#F4F4F5;text-align:left;cursor:pointer;font-family:inherit;width:100%}
 .si-item:hover{background:rgba(255,255,255,.04)}
 .si-item.on{background:#1C1C24}
-.si-av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;background:rgba(232,197,71,.16);color:#E8C547;flex:none;overflow:hidden}
+.si-av{position:relative;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;background:rgba(232,197,71,.16);color:#E8C547;flex:none;overflow:hidden}
 .si-av.drv{background:rgba(127,209,255,.14);color:#7FD1FF}
-.si-av img{width:100%;height:100%;object-fit:cover}
+.si-av img{width:100%;height:100%;object-fit:cover;max-width:none}
+.si-av img.face{position:absolute;height:auto;object-fit:fill}
 .si-nm{font-size:14px;font-weight:700;color:#fff;display:flex;gap:6px;align-items:center;min-width:0}
 .si-nm>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .si-role{font-size:10px;font-weight:800;letter-spacing:.3px;padding:1px 5px;border-radius:5px;background:#2A2A35;color:rgba(255,255,255,.75);flex:none}
@@ -173,7 +180,7 @@ function initials(n){const p=String(n||"").trim().split(/\s+/).filter(Boolean);r
 function firstOf(n){return String(n||"").trim().split(/\s+/)[0]||""}
 function shortName(n){const p=String(n||"").trim().split(/\s+/).filter(Boolean);return p.length>1?`${p[0]} ${p[1][0]}.`:(p[0]||"")}
 const TIERS={sedan:"Standard",standard:"Standard",comfort:"Comfort",premium:"Premium",vip:"VIP",suv:"SUV",suv_xl:"SUV XL",xl:"XL",electric:"Electric",black:"Black"};
-const tier=v=>v?TIERS[String(v).toLowerCase()]||String(v):"";
+const tier=v=>v?TIERS[String(v).toLowerCase()]||String(v).replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase()):"";
 const TRIP_ST={requested:"Buscando conductor",accepted:"Conductor asignado",driver_en_route:"Yendo a recoger",arrived:"En la recogida",in_trip:"En viaje",completed:"Terminado",cancelled:"Cancelado",canceled:"Cancelado",scheduled:"Reserva sin conductor",scheduled_accepted:"Reserva confirmada",scheduled_active:"Reserva por empezar"};
 const tripSt=s=>TRIP_ST[s]||String(s||"—");
 const LANG={es:"Español",en:"Inglés"};
@@ -186,7 +193,9 @@ function inFilter(c,f){const open=c.status!=="closed";if(f==="closed")return!ope
 const QUICK={es:["Ya lo reviso y te escribo","¿Me pasas el número de viaje?","Te llamo ahora mismo"],en:["I'm checking and will write back","Can you send me the trip number?","I'll call you right now"]};
 
 // Kept across route changes (/soporte ↔ /soporte/chat/:id): no flash, same filter.
-const memo={inbox:null,filter:null,search:""};
+const memo={inbox:null,filter:null,search:"",role:null};
+const ROLES=[["all","Todos"],["rider","Pasajeros"],["driver","Conductores"]];
+const inRole=(c,r)=>r==="all"||(r==="driver"?c.user_role==="driver":c.user_role!=="driver");
 
 // ── Data ──────────────────────────────────────────────────────────────────
 function useInbox(){
@@ -232,7 +241,11 @@ function signedUrl(chatId,key){const k=`${chatId}:${key}`;if(!signed.has(k))sign
 async function uploadAttachment(chatId,file){const h=await authHeaders();delete h["Content-Type"];const fd=new FormData();fd.append("file",file);const res=await fetch(`${apiBase}/support/chats/${chatId}/attachments/dispatch`,{credentials:"same-origin",method:"POST",headers:h,body:fd});const txt=await res.text();let body=null;try{body=txt?JSON.parse(txt):null}catch{}if(res.status>=200&&res.status<300)return body;throw new Error(body&&typeof body.detail==="string"?body.detail:`No se pudo subir (${res.status})`)}
 
 // ── Small pieces ──────────────────────────────────────────────────────────
-function Avatar({name,role,photo,size}){const[bad,setBad]=React.useState(false);const st=size?{width:size,height:size}:undefined;return el("span",{className:role==="driver"?"si-av drv":"si-av",style:st},photo&&!bad?el("img",{src:photo,alt:"",onError:()=>setBad(true)}):initials(name))}
+// Where to put the photo so its face fills the circle (face about 45 % of
+// the circle, a little above the middle). face = {cx, cy, s, ar} from the
+// server (services/photo_face.py, YuNet); without it the photo stays centred.
+function faceBox(f){if(!f||!(f.s>0)||!(f.ar>0))return null;let k=1/(f.s*2.2);k=Math.min(8,Math.max(k,1,1/f.ar));const H=k*f.ar;const left=Math.min(0,Math.max(1-k,0.5-f.cx*k)),top=Math.min(0,Math.max(1-H,0.46-f.cy*H));return{width:`${k*100}%`,left:`${left*100}%`,top:`${top*100}%`}}
+function Avatar({name,role,photo,face,size}){const[bad,setBad]=React.useState(false);React.useEffect(()=>setBad(false),[photo]);const st=size?{width:size,height:size}:undefined;const box=faceBox(face);return el("span",{className:role==="driver"?"si-av drv":"si-av",style:st},photo&&!bad?el("img",{src:photo,alt:"",className:box?"face":undefined,style:box||undefined,onError:()=>setBad(true)}):initials(name))}
 const Ico={
  search:()=>el("svg",{width:15,height:15,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2,strokeLinecap:"round","aria-hidden":"true"},el("path",{d:"M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"})),
  clip:()=>el("svg",{width:18,height:18,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2,strokeLinecap:"round",strokeLinejoin:"round","aria-hidden":"true"},el("path",{d:"M21 12.5 12.6 21a6 6 0 0 1-8.5-8.5l8.5-8.5a4 4 0 0 1 5.7 5.7l-8.5 8.5a2 2 0 0 1-2.8-2.8l7.8-7.8"})),
@@ -251,9 +264,11 @@ function Attachment({chatId,raw}){
 }
 
 // ── Inbox ─────────────────────────────────────────────────────────────────
-function Inbox({data,err,chatId,filter,setFilter,search,setSearch,onPick,onWrite,onDeleteClosed,bot,onBot}){
+function Inbox({data,err,chatId,filter,setFilter,role,setRole,search,setSearch,onPick,onWrite,onDeleteClosed,bot,onBot}){
  useTick(3e4);
- const chats=data?data.chats:[];
+ const all=data?data.chats:[];
+ const roleCount=r=>all.filter(c=>c.status!=="closed"&&inRole(c,r)).length;
+ const chats=all.filter(c=>inRole(c,role));
  const[tripUsers,setTripUsers]=React.useState(null);
  React.useEffect(()=>{const q=search.trim().replace(/^#/,"");if(!/^\d{2,9}$/.test(q)){setTripUsers(null);return}let off=false;const t=setTimeout(()=>{apiGet("/admin/home/search",{query:{q},retry:{maxAttempts:1}}).then(d=>{if(off)return;const ids=new Set();for(const r of(d&&d.results)||[])if(r.kind==="trip"){if(r.rider_id)ids.add(r.rider_id);if(r.driver_id)ids.add(r.driver_id)}setTripUsers(ids)}).catch(()=>{})},350);return()=>{off=true;clearTimeout(t)}},[search]);
  const match=c=>{const q=search.trim();if(!q)return true;const n=q.replace(/^#/,"");if(/^\d+$/.test(n)){if(String(c.id)===n||String(c.user_id)===n)return true;if(n.length>=3&&String(c.user_phone||"").replace(/\D/g,"").includes(n))return true;return!!(tripUsers&&tripUsers.has(c.user_id))}return fold(c.user_name).includes(fold(q))};
@@ -264,14 +279,15 @@ function Inbox({data,err,chatId,filter,setFilter,search,setSearch,onPick,onWrite
  const botWaiting=bot&&Array.isArray(bot.waiting_on_answer)?bot.waiting_on_answer.length:0;
  return el("div",{className:"si-col si-inbox"},
   el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},el("h1",{className:"si-h2"},"Soporte"),el("button",{type:"button",className:"si-btn",onClick:onWrite},"+ Escribir")),
+  el("div",{className:"si-seg",role:"tablist","aria-label":"Pasajeros o conductores"},ROLES.map(([r,label])=>el("button",{type:"button",key:r,role:"tab","aria-selected":r===role,className:r===role?"on":"",onClick:()=>setRole(r)},label,el("b",null,String(roleCount(r)))))),
   el("label",{className:"si-search"},el(Ico.search),el("input",{type:"search",value:search,placeholder:"Buscar nombre, teléfono o viaje #","aria-label":"Buscar",onChange:e=>setSearch(e.target.value)})),
   el("div",{className:"si-chips"},FILTERS.map(([f,label])=>el("button",{type:"button",key:f,className:f===filter?"si-chip on":"si-chip",onClick:()=>setFilter(f)},label,el("b",null,String(counts[f]||0))))),
   botWaiting>0?el("div",{className:"si-banner"},`El robot no ha contestado ${botWaiting} chat${botWaiting===1?"":"s"}.`,el("button",{type:"button",className:"si-btn sm",onClick:onBot},"Reactivar robot")):null,
   el("div",{className:"si-list"},
    data===null?(err?el("div",{className:"si-empty"},`No se pudo cargar la bandeja: ${err}`):[0,1,2,3].map(i=>el("div",{key:i,className:"si-skel",style:{height:58,margin:"2px 0"}}))):
-   list.length===0?el("div",{className:"si-empty"},search.trim()?"Nada coincide con la búsqueda.":filter==="wait"?"Nadie espera respuesta ahora.":filter==="closed"?"No hay chats cerrados en los últimos 30 días.":"No hay chats aquí."):
+   list.length===0?el("div",{className:"si-empty"},search.trim()?"Nada coincide con la búsqueda.":filter==="wait"?(role==="rider"?"Ningún pasajero espera respuesta ahora.":role==="driver"?"Ningún conductor espera respuesta ahora.":"Nadie espera respuesta ahora."):filter==="closed"?"No hay chats cerrados en los últimos 30 días.":"No hay chats aquí."):
    list.map(c=>el("button",{type:"button",key:c.id,className:c.id===chatId?"si-item on":"si-item",onClick:()=>onPick(c.id)},
-    el(Avatar,{name:c.user_name,role:c.user_role,photo:c.user_photo}),
+    el(Avatar,{name:c.user_name,role:c.user_role,photo:c.user_photo,face:c.user_photo_face}),
     el("span",{style:{display:"flex",flexDirection:"column",gap:3,minWidth:0}},
      el("span",{className:"si-nm"},el("span",null,c.user_name),el("span",{className:"si-role"},roleLabel(c.user_role))),
      el("span",{className:"si-prev"},previewOf(c))),
@@ -337,7 +353,7 @@ function Conversation({chatId,row,ctx,setCtx,reloadCtx,navigate,toast,onClosed,o
   el("div",{className:"si-chead"},
    el("div",{className:"si-ident"},
     el("button",{type:"button",className:"si-btn icon si-back","aria-label":"Volver a la bandeja",onClick:onBack},el(Ico.back)),
-    el(Avatar,{name,role,photo:(row&&row.user_photo)||(person&&person.photo_url)}),
+    el(Avatar,{name,role,photo:(row&&row.user_photo)||(person&&person.photo_url),face:(row&&row.user_photo_face)||(person&&person.photo_face)}),
     el("div",{style:{display:"flex",flexDirection:"column",gap:2,flex:1,minWidth:0}},
      el("div",{style:{display:"flex",gap:8,alignItems:"center",minWidth:0}},el("b",{style:{fontSize:16,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}},name),el("span",{className:stCls},stText)),
      el("span",{style:{fontSize:12.5,color:"rgba(255,255,255,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},sub))),
@@ -398,7 +414,7 @@ function ContextPanel({ctx,row,navigate,openModal}){
  const PAST_ST={open:"Abierto",closed:"Cerrado"};
  return el("div",{className:"si-col si-ctx"},
   el("div",{className:"si-card"},
-   el("div",{style:{display:"flex",gap:10,alignItems:"center"}},el(Avatar,{name,role:p.role,photo:p.photo_url}),el("div",{style:{display:"flex",flexDirection:"column",minWidth:0}},el("b",{style:{fontSize:15}},name),el("span",{style:{fontSize:12,color:"rgba(255,255,255,.55)"}},roleLong))),
+   el("div",{style:{display:"flex",gap:10,alignItems:"center"}},el(Avatar,{name,role:p.role,photo:p.photo_url,face:p.photo_face}),el("div",{style:{display:"flex",flexDirection:"column",minWidth:0}},el("b",{style:{fontSize:15}},name),el("span",{style:{fontSize:12,color:"rgba(255,255,255,.55)"}},roleLong))),
    el("div",{className:"si-kv"},el("span",null,"Calificación"),el("b",null,p.rating!=null?`★ ${Number(p.rating).toFixed(1)}`:"—")),
    el("div",{className:"si-kv"},el("span",null,"Teléfono"),el("b",null,p.phone?phoneFmt(p.phone):"—")),
    el("div",{className:"si-kv"},el("span",null,"App"),el("b",null,appLabel(p))),
@@ -446,7 +462,13 @@ function SupportInboxScreen({chatId,category}){
  const navigate=useNavigate();
  const{data,err,reload}=useInbox();
  const[bot,reloadBot]=useBotStatus();
- const[filter,setFilterState]=React.useState(()=>memo.filter||(category==="closed"?"closed":null));
+ const[filter,setFilterState]=React.useState(()=>category==="closed"?"closed":memo.filter);
+ const[role,setRoleState]=React.useState(()=>category==="riders"?"rider":category==="drivers"?"driver":memo.role||"all");
+ const setRole=r=>{memo.role=r;setRoleState(r)};
+ // The whole content area, edge to edge (the panel's 1400 px column and its
+ // padding step aside while Soporte is open).
+ const wrapRef=React.useRef(null);const[height,setHeight]=React.useState(null);
+ React.useLayoutEffect(()=>{const root=document.documentElement;root.classList.add("si-full");const fit=()=>{const w=wrapRef.current;if(!w)return;const top=w.getBoundingClientRect().top;setHeight(Math.max(520,Math.round(window.innerHeight-Math.max(0,top))))};fit();window.addEventListener("resize",fit);return()=>{window.removeEventListener("resize",fit);root.classList.remove("si-full")}},[]);
  const[search,setSearchState]=React.useState(memo.search);
  const[showCtx,setShowCtx]=React.useState(false);
  const[modal,setModal]=React.useState(null);
@@ -457,7 +479,7 @@ function SupportInboxScreen({chatId,category}){
  const setFilter=f=>{memo.filter=f;setFilterState(f)};
  const setSearch=s=>{memo.search=s;setSearchState(s)};
  // First look: start on "Esperan respuesta" when someone waits, else Todos.
- React.useEffect(()=>{if(filter===null&&data){const f=data.chats.some(c=>inFilter(c,"wait"))?"wait":"all";setFilter(f)}},[data,filter]);// eslint-disable-line
+ React.useEffect(()=>{if(!filter&&data){const f=data.chats.some(c=>inRole(c,role)&&inFilter(c,"wait"))?"wait":"all";setFilter(f)}},[data,filter,role]);// eslint-disable-line
  const row=data&&chatId?data.chats.find(c=>c.id===chatId)||null:null;
  const[ctx,setCtx,reloadCtx]=useContext(chatId||0);
  React.useEffect(()=>{setShowCtx(false);setModal(null)},[chatId]);
@@ -467,8 +489,8 @@ function SupportInboxScreen({chatId,category}){
  const deleteClosed=async()=>{try{const r=await apiDelete("/support/chats/closed",{retry:{maxAttempts:1}});toast(`${(r&&r.deleted)||0} chats cerrados borrados.`);reload()}catch(e){toast(`No se pudieron borrar: ${e instanceof Error?e.message:e}`)}};
  const reactivateBot=async()=>{try{const r=await apiPost("/support/bot-reactivate",{},{retry:{maxAttempts:1}});toast(`Robot reactivado — ${((r&&r.reactivated)||[]).length} chat(s) atendidos.`);reloadBot()}catch{toast("No se pudo reactivar el robot.")}};
  const cls=["si-page",chatId?"has-chat":"",showCtx?"show-ctx":""].filter(Boolean).join(" ");
- return el("div",{className:"si-wrap"},el("div",{className:cls},
-  el(Inbox,{data,err,chatId,filter:filter||"all",setFilter,search,setSearch,onPick:pick,onWrite:()=>setModal("write"),onDeleteClosed:()=>setModal("delete-closed"),bot,onBot:reactivateBot}),
+ return el("div",{className:"si-wrap",ref:wrapRef},el("div",{className:cls,style:height?{height}:undefined},
+  el(Inbox,{data,err,chatId,filter:filter||"all",setFilter,role,setRole,search,setSearch,onPick:pick,onWrite:()=>setModal("write"),onDeleteClosed:()=>setModal("delete-closed"),bot,onBot:reactivateBot}),
   chatId?el(Conversation,{key:chatId,chatId,row,ctx,setCtx,reloadCtx,navigate,toast,reloadInbox:reload,onClosed:()=>{reload();reloadCtx()},onBack:()=>navigate("/soporte"),onToggleCtx:()=>setShowCtx(v=>!v),openModal:setModal}):
    el("div",{className:"si-col si-chat"},el("div",{className:"si-center"},el("div",null,el("b",null,"Elige una conversación"),"O escríbele primero a un pasajero o conductor con + Escribir."))),
   chatId?el(ContextPanel,{ctx,row,navigate,openModal:setModal}):null,

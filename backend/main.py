@@ -2653,6 +2653,20 @@ async def _release_reservation(db, trip, now, minutes_until, why: str) -> bool:
                 "[Reserved] Firestore release mirror failed for trip %d: %s",
                 trip.id, _fs_err,
             )
+    # The drivers near the pickup hear it is back, with WHEN ("Reserva
+    # disponible en 1 hora · Recogida a las 5:00 AM", owner 2026-11-17) —
+    # never the driver who lost it (excluded + released_offline). Awaited
+    # here, while the trip is still on the board: the unclaimed pass of this
+    # same tick may hand it to the nearest online driver right after, and
+    # the broadcast skips a trip that is no longer "scheduled".
+    try:
+        from services.scheduled_broadcast import notify_new_scheduled_ride
+        await asyncio.wait_for(
+            notify_new_scheduled_ride(trip.id, exclude_driver_id=released_driver_id),
+            timeout=20,
+        )
+    except Exception as _bc_err:
+        logging.warning("[Reserved] release broadcast failed trip=%d: %s", trip.id, _bc_err)
     return True
 
 

@@ -36,6 +36,37 @@ _BODY_EN = "Open to accept the ride"
 # whoever gets the push can see it and take it.
 NOTIFY_RADIUS_KM = 50.0
 
+# A reservation that comes back to the board this close to its pickup (its
+# driver did not go online 1 hour before, owner 2026-11-17: "avisarle a los
+# conductores que en 1 hora es la reserva") says WHEN, not just "new ride":
+# the driver who reads it has to go online and take it now. Still no fare,
+# no addresses — only the pickup time, in the pickup's zone (#68).
+SOON_MINUTES = 120
+
+
+def _copy(trip, now):
+    """(title, body, title_en, body_en) for this trip right now."""
+    from datetime import timezone as _tz
+    sched = trip.scheduled_at
+    if sched is not None and sched.tzinfo is None:
+        sched = sched.replace(tzinfo=_tz.utc)
+    left = (sched - now).total_seconds() / 60 if sched is not None else None
+    if left is None or left > SOON_MINUTES or left < 0:
+        return _TITLE, _BODY, _TITLE_EN, _BODY_EN
+    from utils.helpers import pickup_clock
+    clock = pickup_clock(trip)
+    if left >= 50:
+        hours = max(1, round(left / 60))
+        es_in = "en 1 hora" if hours == 1 else f"en {hours} horas"
+        en_in = "in 1 hour" if hours == 1 else f"in {hours} hours"
+    else:
+        m = max(1, round(left))
+        es_in, en_in = f"en {m} min", f"in {m} min"
+    return (f"Reserva disponible {es_in}",
+            f"Recogida a las {clock}. Conéctate y tómala en la app.",
+            f"Reserved ride available {en_in}",
+            f"Pickup at {clock}. Go online and take it in the app.")
+
 
 async def notify_new_scheduled_ride(trip_id: int, exclude_driver_id: int | None = None) -> None:
     """Push the marketplace card to the drivers who can actually claim it.
@@ -122,6 +153,8 @@ async def notify_new_scheduled_ride(trip_id: int, exclude_driver_id: int | None 
             if exclude_driver_id:
                 skip_ids.add(exclude_driver_id)
 
+            from datetime import datetime as _dt, timezone as _tz
+            title, body, title_en, body_en = _copy(trip, _dt.now(_tz.utc))
             tasks = []
             skipped_state = 0
             skipped_far = 0
@@ -154,10 +187,10 @@ async def notify_new_scheduled_ride(trip_id: int, exclude_driver_id: int | None 
                     asyncio.create_task(
                         _send_fcm_push_async(
                             token=token,
-                            title=_TITLE,
-                            body=_BODY,
-                            title_en=_TITLE_EN,
-                            body_en=_BODY_EN,
+                            title=title,
+                            body=body,
+                            title_en=title_en,
+                            body_en=body_en,
                             locale=user_lang(d),
                             data={
                                 "type": "scheduled_ride",

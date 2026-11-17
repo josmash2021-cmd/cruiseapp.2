@@ -213,3 +213,28 @@ async def test_only_drivers_within_50_km_are_notified(db, fcm_spy, state_fake):
 
     assert _tokens(fcm_spy) == {"tok-near"}
     assert near.id
+
+
+async def test_a_ride_back_on_the_board_this_close_says_when(db, fcm_spy, state_fake):
+    """Owner 2026-11-17: "que en 1 hora es la reserva" — the push says when
+    the pickup is (the pickup's own clock), still no fare and no address."""
+    await _driver(db, email="soon@test.com", lat=33.0, token="tok-soon")
+    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.2)
+    trip.scheduled_at = datetime.now(timezone.utc) + timedelta(minutes=59)
+    await db.commit()
+
+    await sb.notify_new_scheduled_ride(trip.id)
+
+    [call] = fcm_spy
+    assert call["title"] == "Reserva disponible en 1 hora"
+    assert call["title_en"] == "Reserved ride available in 1 hour"
+    assert call["body"].startswith("Recogida a las ") and call["body"].endswith("Conéctate y tómala en la app.")
+    assert call["body_en"].startswith("Pickup at ") and call["body_en"].endswith("Go online and take it in the app.")
+    assert call["body"].split("a las ")[1].split(".")[0].endswith(("AM", "PM"))
+    assert "$" not in call["body"] and "Main St" not in call["body"]
+
+    fcm_spy.clear()
+    trip.scheduled_at = datetime.now(timezone.utc) + timedelta(minutes=20, seconds=10)
+    await db.commit()
+    await sb.notify_new_scheduled_ride(trip.id)
+    assert fcm_spy[0]["title"] == "Reserva disponible en 20 min"

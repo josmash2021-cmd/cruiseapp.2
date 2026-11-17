@@ -134,3 +134,40 @@ def test_reservation_cancel_pushes_speak_the_riders_language():
     assert 'title="Scheduled ride cancelled"' not in MAIN_SRC
     assert MAIN_SRC.count('title_en="Scheduled ride cancelled"') == 3
     assert MAIN_SRC.count('title="Reserva cancelada"') == 3
+
+
+@pytest.mark.asyncio
+async def test_release_tells_the_nearby_drivers_it_is_back(
+        db, test_rider, test_driver, monkeypatch):
+    """Owner 2026-11-17: when a reservation is taken from a driver who did
+    not go online an hour before, the drivers nearby hear it is back — never
+    the one who lost it — while it is still on the board."""
+    import main
+    from main import Trip, DispatchOffer
+    from services import scheduled_broadcast
+
+    monkeypatch.setattr(main, "_send_fcm_push", lambda **kw: None)
+    calls = []
+
+    async def spy(trip_id, exclude_driver_id=None):
+        from sqlalchemy import select
+        row = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one()
+        calls.append((trip_id, exclude_driver_id, row.status, row.driver_id))
+
+    monkeypatch.setattr(scheduled_broadcast, "notify_new_scheduled_ride", spy)
+    rider, _ = test_rider
+    driver, _ = test_driver
+    trip = Trip(
+        rider_id=rider.id, driver_id=driver.id,
+        pickup_address="6928 NW 27th Ct, Margate", dropoff_address="FLL",
+        pickup_lat=26.24, pickup_lng=-80.21, dropoff_lat=26.07, dropoff_lng=-80.15,
+        fare=48.59, vehicle_type="premium", status="scheduled_accepted",
+        scheduled_at=datetime.now(timezone.utc) + timedelta(minutes=59),
+        created_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    db.add(trip)
+    await db.commit()
+    await db.refresh(trip)
+    assert await main._release_reservation(
+        db, trip, datetime.now(timezone.utc), 59.0, "not online by the deadline")
+    assert calls == [(trip.id, driver.id, "scheduled", None)]

@@ -58,7 +58,7 @@ async def _driver(db, *, email, lat=33.0, approved=True, tier="standard",
         is_verified=approved,
         verification_status="approved" if approved else "none",
         lat=lat,
-        lng=-86.0,
+        lng=-86.4,
         fcm_token=token,
         created_at=datetime.now(timezone.utc),
     )
@@ -73,7 +73,7 @@ async def _driver(db, *, email, lat=33.0, approved=True, tier="standard",
     return u
 
 
-async def _scheduled_trip(db, *, rider_id, pickup_lat=33.5, pickup_lng=-86.5,
+async def _scheduled_trip(db, *, rider_id, pickup_lat=33.2, pickup_lng=-86.5,
                           vtype="standard", status="scheduled"):
     now = datetime.now(timezone.utc)
     t = Trip(
@@ -104,7 +104,7 @@ async def test_only_same_state_drivers_are_notified(db, fcm_spy, state_fake):
     """The headline ask: no cross-state spam."""
     same = await _driver(db, email="al@test.com", lat=33.0, token="tok-al")
     other = await _driver(db, email="tx@test.com", lat=41.0, token="tok-tx")
-    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.5)  # AL
+    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.2)  # AL
 
     await sb.notify_new_scheduled_ride(trip.id)
 
@@ -115,7 +115,7 @@ async def test_only_same_state_drivers_are_notified(db, fcm_spy, state_fake):
 async def test_body_is_bare_and_payload_routes(db, fcm_spy, state_fake):
     """No fare, no addresses — and the tap handler gets what it routes on."""
     await _driver(db, email="al2@test.com", lat=33.0, token="tok-al2")
-    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.5)
+    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.2)
 
     await sb.notify_new_scheduled_ride(trip.id)
 
@@ -145,7 +145,7 @@ async def test_unapproved_wrong_tier_and_tokenless_excluded(
     await _driver(db, email="blk@test.com", lat=33.0, tier="black",
                   token="tok-blk")
     await _driver(db, email="notok@test.com", lat=33.0, token=None)
-    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.5,
+    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.2,
                                  vtype="black")
 
     await sb.notify_new_scheduled_ride(trip.id)
@@ -184,7 +184,7 @@ async def test_unknown_pickup_state_notifies_nobody(db, fcm_spy, state_fake):
 async def test_unknown_driver_state_is_not_notified(db, fcm_spy, state_fake):
     await _driver(db, email="unknown@test.com", lat=None, token="tok-unknown")
     await _driver(db, email="known@test.com", lat=33.0, token="tok-known")
-    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.5)
+    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.2)
 
     await sb.notify_new_scheduled_ride(trip.id)
 
@@ -193,9 +193,23 @@ async def test_unknown_driver_state_is_not_notified(db, fcm_spy, state_fake):
 
 async def test_non_scheduled_trip_sends_nothing(db, fcm_spy, state_fake):
     await _driver(db, email="al4@test.com", lat=33.0, token="tok-al4")
-    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.5,
+    trip = await _scheduled_trip(db, rider_id=999, pickup_lat=33.2,
                                  status="cancelled")
 
     await sb.notify_new_scheduled_ride(trip.id)
 
     assert fcm_spy == []
+
+
+async def test_only_drivers_within_50_km_are_notified(db, fcm_spy, state_fake):
+    """Owner 2026-11-16 ("como Lyft", by region): it used to reach the whole
+    state. Now only drivers within 50 km of the pickup — the same radius in
+    which the app's reservations board lists the ride."""
+    near = await _driver(db, email="near@test.com", lat=33.0, token="tok-near")  # ~24 km
+    await _driver(db, email="far@test.com", lat=34.0, token="tok-far")  # same state, ~90 km
+    trip = await _scheduled_trip(db, rider_id=999)
+
+    await sb.notify_new_scheduled_ride(trip.id)
+
+    assert _tokens(fcm_spy) == {"tok-near"}
+    assert near.id

@@ -20,7 +20,7 @@ from sqlalchemy import select
 
 from models.database import DispatchOffer, SessionLocal, Trip, User, Vehicle
 from services.fcm_service import _send_fcm_push_async
-from utils.helpers import ACTIVE_ACCOUNT_STATUSES, user_lang
+from utils.helpers import ACTIVE_ACCOUNT_STATUSES, _haversine, user_lang
 
 # Spanish is the default (old phones report no locale); English rides in
 # title_en/body_en and fcm_service picks by the driver's users.locale.
@@ -28,6 +28,13 @@ _TITLE = "Nuevo viaje programado disponible"
 _BODY = "Abre la app para aceptar el viaje"
 _TITLE_EN = "New Scheduled Ride Available"
 _BODY_EN = "Open to accept the ride"
+
+# Only drivers this close to the pickup (owner 2026-11-16, "como Lyft":
+# Lyft shows reservations by region; before this it reached all of Florida,
+# Key West to Pensacola). 50 km is the same radius in which the driver app's
+# reservations board (GET /scheduled-trips/available) lists the ride, so
+# whoever gets the push can see it and take it.
+NOTIFY_RADIUS_KM = 50.0
 
 
 async def notify_new_scheduled_ride(trip_id: int, exclude_driver_id: int | None = None) -> None:
@@ -117,8 +124,13 @@ async def notify_new_scheduled_ride(trip_id: int, exclude_driver_id: int | None 
 
             tasks = []
             skipped_state = 0
+            skipped_far = 0
             for d in drivers:
                 if d.id in skip_ids:
+                    continue
+                if d.lat is None or d.lng is None or _haversine(
+                        d.lat, d.lng, trip.pickup_lat, trip.pickup_lng) > NOTIFY_RADIUS_KM:
+                    skipped_far += 1
                     continue
                 approved = (
                     d.is_verified is True
@@ -161,11 +173,13 @@ async def notify_new_scheduled_ride(trip_id: int, exclude_driver_id: int | None 
                 await asyncio.gather(*tasks, return_exceptions=True)
             logging.info(
                 "[ScheduledPush] trip %d — notified %d driver(s) in %s, "
-                "skipped %d unresolved/out-of-state",
+                "skipped %d unresolved/out-of-state, %d beyond %.0f km",
                 trip.id,
                 len(tasks),
                 pickup_state or "unknown-state",
                 skipped_state,
+                skipped_far,
+                NOTIFY_RADIUS_KM,
             )
     except Exception as e:
         logging.warning("[ScheduledPush] fan-out failed for trip %s: %s", trip_id, e)

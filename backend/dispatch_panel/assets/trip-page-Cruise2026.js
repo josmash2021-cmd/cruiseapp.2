@@ -211,7 +211,7 @@ function LiveTripMap({t,live,onLead,onRoute}){
    map.addLayer({id:"tp-lead-line",type:"line",source:"tp-lead",layout:{"line-cap":"round","line-join":"round"},paint:{"line-width":5.5,"line-color":GOLD}},before);
    setReady(true)});
   const ro=typeof ResizeObserver==="undefined"?null:new ResizeObserver(()=>map.resize());ro?.observe(node);
-  return()=>{ro?.disconnect();cancelAnimationFrame(anim.current);Object.values(mk.current).forEach(m=>m&&m.remove());mk.current={};mapRef.current=null;setReady(false);map.remove()}},[token]);
+  return()=>{ro?.disconnect();cancelAnimationFrame(anim.current);/* guard-pin trip_page_marker_cleanup: mk.current also keeps _framedCar (a flag): only markers get remove() — true.remove() threw and the whole page fell back to the old one (#833, 2026-11-17) */Object.values(mk.current).forEach(m=>{if(m&&typeof m.remove==="function")m.remove()});mk.current={};mapRef.current=null;setReady(false);map.remove()}},[token]);
 
  // Pickup → destination, by the streets.
  const pKey=pickup?`${pickup.lat},${pickup.lng}`:"",dKey=dropoff?`${dropoff.lat},${dropoff.lng}`:"";

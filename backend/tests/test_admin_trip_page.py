@@ -238,3 +238,12 @@ def test_timeline_and_steps_read_the_taken_time_and_refetch_live():
     # Every change of the trip's Firestore mirror reads the page again.
     assert 'usePage(id,raw,`${t.status}|${t.driverId||""}`)' in CHUNK
     assert "},[id,raw,mirror]);" in CHUNK
+
+
+def test_map_cleanup_only_removes_markers():
+    """#833 (2026-11-17, reported by the panel's own error report): the map's
+    marker ref also keeps the _framedCar flag, and cleanup called
+    true.remove() — the whole page fell back to the old one."""
+    assert "guard-pin trip_page_marker_cleanup" in CHUNK
+    assert "Object.values(mk.current).forEach(m=>m&&m.remove())" not in CHUNK
+    assert 'if(m&&typeof m.remove==="function")m.remove()' in CHUNK

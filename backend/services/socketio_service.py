@@ -473,6 +473,16 @@ async def driver_location(sid: str, data: dict):
         payload["captured_at"] = captured_at
 
     await sio.emit("driver_location_update", payload, room=room, skip_sid=sid)
+    # The panel's maps follow this same fix (owner 2026-11-17: while he
+    # navigates, the app's heartbeat repeats the reading from before it
+    # started navigating; this relay is the live one) - driver_live_fix.py.
+    try:
+        from services.driver_live_fix import note_trip_fix
+        await note_trip_fix((_connection_meta.get(sid) or {}).get("user_id"),
+                            payload["lat"], payload["lng"], payload["heading"],
+                            payload["speed"], captured_at)
+    except Exception as e:
+        logger.warning("[Socket.io] panel live-fix feed failed: %s", e)
 
 
 @sio.event

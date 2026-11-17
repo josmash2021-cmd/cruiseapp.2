@@ -400,6 +400,7 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     # the heartbeat itself is fresh (owner 2026-11-17: "Yohender me sigue
     # apareciendo en el mismo lugar y realmente no está ahí"). Say so in the
     # log, at most once a minute per driver.
+    _fix_age = None
     if body.is_online and body.captured_at is not None:
         _cap = body.captured_at if body.captured_at.tzinfo else body.captured_at.replace(tzinfo=timezone.utc)
         _fix_age = (utc_now() - _cap).total_seconds()
@@ -407,6 +408,15 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
             _stale_fix_logged[driver_id] = time.monotonic()
             logging.warning("[GpsStale] driver %d sends a reading %.0f s old (%.4f, %.4f)",
                             driver_id, _fix_age, body.lat, body.lng)
+
+    # While he navigates, the Socket.IO relay carries his live fix
+    # (services/driver_live_fix.py): a heartbeat with an OLDER reading keeps
+    # him online but leaves his position alone — no overwrite, and no push
+    # that would pull the panel's arrow or the rider's car back.
+    _skip_pos = False
+    if _fix_age is not None and _fix_age > 30:
+        from services.driver_live_fix import fresher_live_fix
+        _skip_pos = await fresher_live_fix(driver_id, body.captured_at)
 
     # Update in-memory location cache FIRST (instant for nearby reads)
     _now = time.monotonic()
@@ -432,8 +442,9 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         user.online_since = utc_now()
     if (_online_flipped or _repair_shift_clock
             or (_now - _last_write) >= _DB_WRITE_THROTTLE):
-        user.lat = body.lat
-        user.lng = body.lng
+        if not _skip_pos:
+            user.lat = body.lat
+            user.lng = body.lng
         user.is_online = body.is_online
         if body.is_online:
             user.last_active_at = utc_now()
@@ -490,7 +501,7 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         _driver_active_trip[driver_id] = (_now, trip_row)
     # Only push real location to trip watchers when driver is online.
     # Skipping when is_online=False prevents corrupting the rider's map with (0,0).
-    if trip_row and body.is_online:
+    if trip_row and body.is_online and not _skip_pos:
         _safe_create_task(maybe_notify_rider_approach(driver_id, body.eta_seconds, trip_row),
                           name=f"rider_approach_{driver_id}")
         _safe_create_task(event_bus.push_driver_location(trip_row, driver_id, body.lat, body.lng))
@@ -523,15 +534,16 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         # Bonus hazard removed: `from firebase_admin import db` rebound the
         # `db: AsyncSession` parameter for the rest of this function.
 
-    _safe_create_task(
-        event_bus.push_dispatch_driver_location(
-            driver_id, body.lat, body.lng, body.is_online,
-            heading=body.heading,
-            speed=body.speed,
-            captured_at=body.captured_at.isoformat() if body.captured_at else None,
-        ),
-        name=f"dispatch_loc_{driver_id}",
-    )
+    if not _skip_pos:
+        _safe_create_task(
+            event_bus.push_dispatch_driver_location(
+                driver_id, body.lat, body.lng, body.is_online,
+                heading=body.heading,
+                speed=body.speed,
+                captured_at=body.captured_at.isoformat() if body.captured_at else None,
+            ),
+            name=f"dispatch_loc_{driver_id}",
+        )
 
     # Update Redis Geo for fast nearby queries
     try:

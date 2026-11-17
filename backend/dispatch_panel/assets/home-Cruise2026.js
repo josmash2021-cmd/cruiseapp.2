@@ -97,7 +97,8 @@ const CSS=`
 .ch-mtitle b{font-size:14px;color:#fff}
 .ch-mtitle span{font-size:12px;color:rgba(255,255,255,.62)}
 .ch-nomap{position:absolute;inset:0;display:grid;place-items:center;color:rgba(255,255,255,.6);font-size:13px;padding:16px;text-align:center}
-.ch-drv{width:30px;height:30px;display:grid;place-items:center;cursor:pointer;position:relative}
+/* guard-pin home_marker_absolute: la raiz de un Marker de Mapbox va ABSOLUTA (como .mapboxgl-marker); con position:relative cada marcador quedaba en el flujo, corrido 30 px por cada uno anterior, y al hacer zoom los conductores se movian (dueño 2026-11-16) */
+.ch-drv{width:30px;height:30px;display:grid;place-items:center;cursor:pointer;position:absolute;top:0;left:0}
 .ch-drv svg{width:24px;height:24px;position:relative;transition:transform .6s ease}
 .ch-drv path{fill:${GOLD};stroke:#0E1424;stroke-width:1.6;stroke-linejoin:round}
 .ch-drv .ch-halo{position:absolute;inset:-4px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid ${GOLD};display:none}
@@ -106,7 +107,7 @@ const CSS=`
 .ch-drv.stale path{fill:#8A8A94}
 .ch-pill{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);white-space:nowrap;background:rgba(20,20,26,.92);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 9px;font:700 11.5px Inter,system-ui,sans-serif;color:#fff;pointer-events:none}
 .ch-drv:not(.busy) .ch-pill{display:none}
-.ch-ring{width:22px;height:22px;border-radius:50%;border:3px solid ${CORAL};background:#0E1424;cursor:pointer;position:relative;box-sizing:border-box}
+.ch-ring{width:22px;height:22px;border-radius:50%;border:3px solid ${CORAL};background:#0E1424;cursor:pointer;position:absolute;top:0;left:0;box-sizing:border-box}
 .ch-ring::after{content:"";position:absolute;inset:-10px;border-radius:50%;border:2px solid ${CORAL};animation:chping 1.6s ease-out infinite}
 .ch-ring .ch-pill{bottom:26px;color:${CORAL};border-color:rgba(255,154,122,.5)}
 .ch-map.hide-drivers .ch-drv{display:none}

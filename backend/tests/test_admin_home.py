@@ -192,7 +192,9 @@ async def test_search_trip_name_phone(client, db, test_rider, test_driver):
     await db.commit()
     got = (await client.get(f"/admin/home/search?q=%23{t.id}", headers=_dispatch_headers())).json()["results"]
     assert got[0] == {"kind": "trip", "id": t.id, "label": f"Viaje #{t.id}",
-                      "sub": "Test R. · Buscando conductor"}
+                      "sub": "Test R. · Buscando conductor",
+                      # The support inbox finds a trip's chats by these.
+                      "rider_id": rider.id, "driver_id": None}
     got = (await client.get("/admin/home/search?q=test", headers=_dispatch_headers())).json()["results"]
     ids = {(r["role"], r["id"]) for r in got}
     assert ("rider", rider.id) in ids and ("driver", driver.id) in ids

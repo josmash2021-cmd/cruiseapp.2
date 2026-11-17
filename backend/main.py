@@ -1551,6 +1551,7 @@ from routers.admin_user_profile import router as admin_user_profile_router
 from routers.admin_trip_page import router as admin_trip_page_router
 from routers.admin_home import router as admin_home_router
 from routers.admin_airports import router as admin_airports_router
+from routers.admin_support_inbox import router as admin_support_inbox_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -1582,6 +1583,7 @@ app.include_router(admin_user_profile_router)
 app.include_router(admin_trip_page_router)
 app.include_router(admin_home_router)
 app.include_router(admin_airports_router)
+app.include_router(admin_support_inbox_router)
 
 # Load-test auth exists only on staging: mounted AND self-gated by
 # LOAD_TEST=1 — production never includes it (the 404 double-check inside
@@ -1750,6 +1752,8 @@ def _is_read_poll_path(path: str) -> bool:
         or path == "/admin/geo/time-zone"
         # Panel Inicio (every 10 s while open and visible, 2026-11-16).
         or path == "/admin/home"
+        # Panel Soporte inbox (every 15 s + on each Firestore change, 2026-11-16).
+        or path == "/admin/support/inbox"
         or (path.startswith("/trips/") and (path.endswith("/poll") or path.endswith("/chat")))
         or (path.startswith("/support/chats/") and (path.endswith("/messages") or path.endswith("/typing")))
     )

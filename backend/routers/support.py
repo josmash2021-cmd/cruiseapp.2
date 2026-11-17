@@ -3631,6 +3631,41 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
     return await _send_dispatch_message(db, chat, msg_text)
 
 
+@router.post("/support/chats/{chat_id}/attachments/dispatch", dependencies=[Depends(_require_dispatch_auth)])
+async def send_support_attachment_dispatch(
+    chat_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """A photo or PDF from support (the panel's paperclip, 2026-11-16). Same
+    storage and checks as the user's attachment; it lands as a dispatch
+    message, so the app shows it like any photo in the chat and the user
+    gets the usual push (never the content)."""
+    chat = (await db.execute(
+        select(SupportChat).where(SupportChat.id == chat_id)
+    )).scalar_one_or_none()
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    try:
+        result = await upload_file(
+            data,
+            folder=f"support/{chat_id}",
+            content_type=file.content_type or "application/octet-stream",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    stored_key = support_attachment_key(chat_id, result.get("key"))
+    if stored_key is None:
+        logging.error("[support] storage returned an invalid key for chat %s", chat_id)
+        raise HTTPException(status_code=502, detail="Invalid attachment storage key")
+    return await _send_dispatch_message(db, chat, f"{_ATTACH_PREFIX}{stored_key}")
+
+
 async def _send_dispatch_message(db, chat, msg_text: str) -> dict:
     """One panel message into ``chat``: bot off, Firestore, push."""
     # When dispatch sends a message, take over from bot

@@ -481,6 +481,8 @@ async def admin_home_search(q: str = Query("", max_length=80), db: AsyncSession 
             results.append({
                 "kind": "trip", "id": trip.id, "label": f"Viaje #{trip.id}",
                 "sub": " · ".join(x for x in (_short_name(name), _STATUS_ES.get(trip.status, trip.status)) if x),
+                # The support inbox finds a trip's chats by these (2026-11-16).
+                "rider_id": trip.rider_id, "driver_id": trip.driver_id,
             })
 
     conds = []

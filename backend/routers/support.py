@@ -3663,6 +3663,26 @@ async def _send_dispatch_message(db, chat, msg_text: str) -> dict:
 _SUPPORT_CHAT_IDLE_RESTART = timedelta(hours=6)
 
 
+@router.get("/admin/users/{user_id}/support-chat", dependencies=[Depends(_require_dispatch_auth)])
+async def find_support_chat_for_user(user_id: int, db: AsyncSession = Depends(get_db)):
+    """The user's open support chat, if one is still alive (2026-11-16): the
+    panel's "Mensaje al driver / al pasajero" opens it, or asks for the first
+    message when there is none (POST below opens the chat with it). A chat
+    idle past the restart window counts as none — the next message starts a
+    new one, exactly as the POST would."""
+    chat = (await db.execute(
+        select(SupportChat)
+        .where(SupportChat.user_id == user_id, SupportChat.status == "open")
+        .order_by(SupportChat.id.desc())
+        .limit(1)
+    )).scalars().first()
+    if chat is not None:
+        idle_since = chat.last_user_message_at or chat.updated_at or chat.created_at
+        if idle_since and datetime.now(timezone.utc) - _aware(idle_since) > _SUPPORT_CHAT_IDLE_RESTART:
+            chat = None
+    return {"chat_id": chat.id if chat is not None else None}
+
+
 @router.post("/admin/users/{user_id}/support-chat", dependencies=[Depends(_require_dispatch_auth)])
 async def open_support_chat_for_user(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Support writes first (panel "Pidiendo ahora" -> Chatear, owner

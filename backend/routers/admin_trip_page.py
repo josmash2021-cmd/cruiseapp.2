@@ -25,6 +25,8 @@ from models.database import RiderPaymentMethod, Trip, User, Vehicle, get_db
 from services import vehicle_tiers
 from utils.helpers import _resolve_rider_display, is_real_reservation
 from utils.security import _require_dispatch_auth
+from routers.admin_airports import airport_block as _airport_block
+from services.airports import airport_near as _airport_near
 
 router = APIRouter()
 
@@ -191,6 +193,9 @@ async def admin_trip_page(trip_id: int, db: AsyncSession = Depends(get_db)):
         "vehicle_type": trip.vehicle_type,
         "is_airport": bool(trip.is_airport),
         "airport_code": trip.airport_code,
+        "airport": _airport_block(trip),
+        "airport_near": {"pickup": _airport_near(trip.pickup_lat, trip.pickup_lng),
+                         "dropoff": _airport_near(trip.dropoff_lat, trip.dropoff_lng)},
         "notes": trip.notes,
         "created_at": _iso(trip.created_at),
         "scheduled_at": _iso(trip.scheduled_at),

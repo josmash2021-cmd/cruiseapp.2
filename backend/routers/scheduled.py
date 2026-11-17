@@ -585,7 +585,7 @@ async def claim_scheduled_trip(
         "scheduled_at": trip.scheduled_at.isoformat() if trip.scheduled_at else None,
         "pickup_address": trip.pickup_address or "",
         "dropoff_address": trip.dropoff_address or "",
-        "message": "Viaje confirmado. Te notificaremos 30 minutos antes de la recogida.",
+        "message": "Viaje confirmado. Te avisaremos 1 hora antes de la recogida para que lo confirmes.",
     }
 
 

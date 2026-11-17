@@ -126,8 +126,10 @@ def _driver_cancel_copy(trip, in_trip_full_fare=False) -> dict[str, str]:
             "title_en": "Trip ended",
             "body_en": "The rider ended the trip early — you are paid the full fare.",
         }
-    if (getattr(trip, "is_airport", False)
-            or (getattr(trip, "airport_code", None) or "").strip()):
+    # Only a pickup AT the airport can be "delayed at the airport" — a ride
+    # TO the airport starts at home (2026-11-16).
+    from services.airports import pickup_at_airport
+    if pickup_at_airport(trip):
         return {
             "title": "Viaje cancelado",
             "body": "El pasajero tuvo un retraso en el aeropuerto y canceló su viaje.",

@@ -22,8 +22,10 @@ const kSupportBubblePollEvery = Duration(seconds: 45);
 /// conversation follows them on every screen — support wrote to them, or
 /// they wrote to support — and a tap opens the chat.
 ///
-/// Riders only: in driver mode nothing shows and nothing is polled. The
-/// bubble is visible while there is a live chat, the rider has not dropped
+/// Riders and drivers (drivers since 2026-11-16: dispatch writes to them
+/// too). For a driver it steps aside while an offer is on screen or he is
+/// navigating a trip ([driverBusy]). The
+/// bubble is visible while there is a live chat, the user has not dropped
 /// it on the close target (a newer message brings it back), no support chat
 /// screen is open and the top route is a regular page (not the splash /
 /// login pages, not a dialog or sheet).
@@ -73,6 +75,14 @@ class SupportBubbleController extends ChangeNotifier {
   bool _overlayMounted = false;
   bool _inForeground = true;
 
+  /// Driver mode (vs rider) — the bubble works in both.
+  bool _isDriver = false;
+
+  /// Driver surfaces that must stay clear: an offer on screen, a trip
+  /// being navigated. Set from the driver screens.
+  bool _driverOffer = false;
+  int _driverTrips = 0;
+
   /// A preview waits for the bubble to be on screen.
   bool _pendingPreview = false;
   bool _pendingHaptic = false;
@@ -101,7 +111,10 @@ class SupportBubbleController extends ChangeNotifier {
   /// The current preview is for a message that just arrived (haptic tick).
   bool get previewHaptic => _previewHaptic;
 
+  /// The bubble's mode is on (rider or driver).
   bool get isRider => _isRider;
+  bool get isDriver => _isDriver;
+  bool get driverBusy => _isDriver && (_driverOffer || _driverTrips > 0);
   bool get supportChatOpen => _supportChatsOpen > 0;
 
   bool get _isDismissed {
@@ -112,6 +125,7 @@ class SupportBubbleController extends ChangeNotifier {
   bool get visible =>
       _overlayMounted &&
       _isRider &&
+      !driverBusy &&
       _chatId != null &&
       !_isDismissed &&
       _supportChatsOpen == 0 &&
@@ -179,6 +193,25 @@ class SupportBubbleController extends ChangeNotifier {
     unawaited(refresh());
   }
 
+  /// The driver's online screen: an offer card is up (or not). Called from
+  /// its build — the change is applied after the frame.
+  set driverOfferShowing(bool v) {
+    if (_driverOffer == v) return;
+    _driverOffer = v;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _recompute());
+  }
+
+  /// The driver's trip screen opened / closed (navigation).
+  void driverTripOpened() {
+    _driverTrips++;
+    _recompute();
+  }
+
+  void driverTripClosed() {
+    if (_driverTrips > 0) _driverTrips--;
+    _recompute();
+  }
+
   /// Dropped on the close target: hidden until a newer message.
   void dismiss() {
     final chat = _chatId;
@@ -195,6 +228,7 @@ class SupportBubbleController extends ChangeNotifier {
     _unread = 0;
     _lastId = null;
     _isRider = false;
+    _isDriver = false;
     _sessionFetched = false;
     _pendingPreview = false;
     _quietNext = false;
@@ -216,7 +250,7 @@ class SupportBubbleController extends ChangeNotifier {
     } catch (_) {
       return false;
     }
-    if (mode != 'rider') return false;
+    if (!_bubbleMode(mode)) return false;
     if (systemBannerShown) _quietNext = true;
     await refresh();
     if (_supportChatsOpen > 0) return true;
@@ -260,7 +294,7 @@ class SupportBubbleController extends ChangeNotifier {
     } catch (_) {
       return;
     }
-    if (mode != 'rider') {
+    if (!_bubbleMode(mode)) {
       if (_isRider) {
         _isRider = false;
         _recompute();
@@ -269,6 +303,7 @@ class SupportBubbleController extends ChangeNotifier {
       return;
     }
     _isRider = true;
+    _isDriver = mode == 'driver';
     if (!_dismissedLoaded) {
       _dismissedLoaded = true;
       await _restoreDismissed();
@@ -332,8 +367,9 @@ class SupportBubbleController extends ChangeNotifier {
     } catch (_) {
       return;
     }
-    final rider = mode == 'rider';
-    if (rider == _isRider) return;
+    final rider = _bubbleMode(mode);
+    final driver = mode == 'driver';
+    if (rider == _isRider && driver == _isDriver) return;
     if (rider) {
       unawaited(refresh());
     } else {
@@ -342,6 +378,8 @@ class SupportBubbleController extends ChangeNotifier {
       _recompute();
     }
   }
+
+  static bool _bubbleMode(String mode) => mode == 'rider' || mode == 'driver';
 
   void _recompute() {
     if (_supportChatsOpen > 0) _pendingPreview = false;

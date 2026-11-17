@@ -1018,13 +1018,18 @@ async def _send_offer_to_driver(
     # longer used for offers; it keeps only the online-presence state
     # (app-side). The clear on accept/reject/expire/offline still runs, so
     # a card painted by an older build is taken down on schedule.
+    # Where the reservation goes, when that is an airport (2026-11-16).
+    from services.airports import parse_label as _airport_label
+    _to = trip.dropoff_address if _airport_label(trip.dropoff_address) else None
+    _airport_es = f" Va a {_to}." if _to else ""
+    _airport_en = f" Going to {_to}." if _to else ""
     _safe_create_task(_send_fcm_push_async(
         driver.fcm_token or "",
         title="Confirma tu viaje reservado" if confirm else "Nueva oferta de viaje",
-        body=("Acéptalo para empezar. Si no, vuelve al tablero."
+        body=("Acéptalo para empezar. Si no, vuelve al tablero." + _airport_es
               if confirm else "Abre Cruise para aceptar."),
         title_en="Confirm your reserved ride" if confirm else "New Ride Offer",
-        body_en=("Accept it to start. Otherwise it goes back to the board."
+        body_en=("Accept it to start. Otherwise it goes back to the board." + _airport_en
                  if confirm else "Open Cruise to accept."),
         locale=user_lang(driver),
         data=push_data,

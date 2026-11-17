@@ -295,6 +295,11 @@ function ProfileShell(props){
  const toastTimer=React.useRef(0);
  const toast=React.useCallback(m=>{setToastMsg(m);clearTimeout(toastTimer.current);toastTimer.current=setTimeout(()=>setToastMsg(null),3500)},[]);
  React.useEffect(()=>()=>clearTimeout(toastTimer.current),[]);
+ // "Mensaje al driver / Chat con rider" (the old header button) lands here:
+ // the open support chat, or the first message that opens one.
+ React.useEffect(()=>{if(!(id>0))return;
+  const fn=async uid=>{if(uid!==id)return;try{const r=await apiGet(`/admin/users/${id}/support-chat`,{retry:{maxAttempts:1}});if(r&&r.chat_id){navigate(`/soporte/chat/${r.chat_id}`);return}}catch{}setModal("write")};
+  window.__cruiseWriteSupport=fn;return()=>{if(window.__cruiseWriteSupport===fn)delete window.__cruiseWriteSupport}},[id,navigate]);
 
  // Old cards → tabs by their title; anything without a title (dialogs,
  // re-auth) always renders. A titled card nobody mapped lands in Cuenta.
@@ -368,7 +373,7 @@ function ProfileShell(props){
    old("ganancias"));
  }else if(tab==="soporte"){
   body=el("div",{className:"up-grid"},el("div",{className:"up-col"},el(Card,{title:"Chats de soporte"},el(ChatList,{chats,navigate}))),
-   el("div",{className:"up-col"},id>0?el(WriteSupport,{id,name,navigate}):null,el(Card,{title:"Chat directo"},el("div",{className:"up-muted"},"El chat de siempre del panel con esta persona."),el("div",null,el("button",{type:"button",className:"up-btn sm",onClick:props.cruiseOpenChat},"Abrir chat directo")))));
+   el("div",{className:"up-col"},id>0?el(WriteSupport,{id,name,navigate}):null,null));
  }else{
   const cards=old(tab);
   body=el("div",{className:"up-col"},cards.length?cards:el(Card,null,el("div",{className:"up-empty"},"Nada aquí todavía.")),tab==="cuenta"?el(NotesCard,{id}):null);
@@ -389,6 +394,7 @@ function ProfileShell(props){
   ...always,
   trip?el(TripModal,{t:trip,role,onClose:()=>setTrip(null)}):null,
   modal==="call"?el(CallModal,{name:fullName||name,phone,onClose:()=>setModal(null),toast}):null,
+  modal==="write"?el(Modal,{title:`Escribirle a ${name}`,onClose:()=>setModal(null),width:480},el(WriteSupport,{id,name,navigate})):null,
   modal==="offer"?el(OfferModal,{driverId:id,name,onClose:()=>setModal(null),toast}):null,
   modal==="pay"?el(PayModal,{driverId:id,name,amount:st.pending_balance,onClose:()=>setModal(null),onDone:reload,toast}):null,
   toastMsg?el("div",{className:"up-toast",role:"status"},toastMsg):null);

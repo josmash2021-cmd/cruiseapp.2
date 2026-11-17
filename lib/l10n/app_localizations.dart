@@ -5449,6 +5449,14 @@ class S {
   String scheduledRidesAvailableLabel(int count) => _es
       ? '$count viaje${count == 1 ? '' : 's'} reservado${count == 1 ? '' : 's'} disponible${count == 1 ? '' : 's'}'
       : '$count scheduled ride${count == 1 ? '' : 's'} available near you';
+  /// The gold chip over the driver's map that opens the reservations map.
+  String scheduledRidesAvailableChip(int count) => count == 1
+      ? (_es
+          ? '1 viaje reservado disponible'
+          : '1 scheduled ride available')
+      : (_es
+          ? '$count viajes reservados disponibles'
+          : '$count scheduled rides available');
   String get scheduledRideConfirmed =>
       _es ? 'Viaje reservado confirmado' : 'Scheduled ride confirmed';
   String get scheduledRideNoLongerAvailable => _es

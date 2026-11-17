@@ -1,6 +1,6 @@
-"""No-show policy (2026-09-13): thresholds 7/10/15/20 min, the per-tier
-no-show fee floor (max of accrued wait fee and the tier minimum), and the
-one-time "leaving soon" warning ~2 minutes before the auto-cancel fires."""
+"""No-show policy. 2026-11-16 (owner, like Lyft): the agent never cancels —
+the driver decides after the free wait; the rider hears once that the free
+wait is over. The per-tier minimums (and the old settlement routine) stay."""
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -139,72 +139,55 @@ async def test_accrual_wins_over_min_fee(db, test_rider, test_driver):
     assert trip.platform_fee == 2.00
 
 
-async def test_leaving_soon_warning_fires_once_in_window(db, test_rider, test_driver):
-    """comfort threshold 7: at 5.5 min the rider gets ONE warning, no cancel;
-    a second scan does not re-push."""
-    from main import User, Trip  # noqa: F401
+def _capture(pushes):
+    def _push(token, title, body, data=None, **kw):
+        pushes.append((title, data, kw))
+    return _push
 
+
+async def test_free_wait_over_notice_fires_once_and_never_cancels(db, test_rider, test_driver):
     rider, _ = test_rider
     driver, _ = test_driver
     rider.fcm_token = "test-rider-fcm-token"
+    rider.locale = "en"
     trip = _trip(db, rider, driver, vehicle_type="comfort", arrived_minutes_ago=5.5)
-    db.add(trip)
     await db.commit()
     await db.refresh(trip)
 
     _warned_trips.clear()
     agent = WaitTimeoutAgent()
     agent._db_session_maker = lambda: _SessionCM(db)
-
     pushes = []
-    with patch("services.fcm_service._send_fcm_push",
-               side_effect=lambda token, title, body, data=None: pushes.append(
-                   (title, data))) as _:
+    with patch("services.fcm_service._send_fcm_push", side_effect=_capture(pushes)):
         await agent._scan()
-        # Warning fired once, trip NOT cancelled
-        warnings = [p for p in pushes if (p[1] or {}).get("type") == "wait_timeout_warning"]
-        assert len(warnings) == 1
-        assert trip.id in _warned_trips
-        await db.refresh(trip)
-        assert trip.status == "arrived"
-
-        # Second scan: no re-push
         await agent._scan()
-        warnings = [p for p in pushes if (p[1] or {}).get("type") == "wait_timeout_warning"]
-        assert len(warnings) == 1
+    notices = [p for p in pushes if (p[1] or {}).get("type") == "wait_timeout_warning"]
+    assert len(notices) == 1
+    title, _data, kw = notices[0]
+    assert title == "Tu conductor te está esperando"
+    assert kw["title_en"] == "Your driver is waiting" and kw["locale"] == "en"
+    assert "cancelar" in kw.get("body_en", "") or "cancel" in kw.get("body_en", "")
+    await db.refresh(trip)
+    assert trip.status == "arrived"
 
 
-async def test_no_warning_before_window_or_after_threshold(db, test_rider, test_driver):
-    """At 3 min (before T-2) no warning; at 8 min (past T) it cancels without
-    a warning push."""
+async def test_long_wait_is_never_cancelled_by_the_agent(db, test_rider, test_driver):
     rider, _ = test_rider
     driver, _ = test_driver
-
-    trip_early = _trip(db, rider, driver, vehicle_type="comfort", arrived_minutes_ago=3)
-    db.add(trip_early)
-    trip_late = _trip(db, rider, driver, vehicle_type="comfort", arrived_minutes_ago=8)
-    db.add(trip_late)
+    early = _trip(db, rider, driver, vehicle_type="comfort", arrived_minutes_ago=3)
+    late = _trip(db, rider, driver, vehicle_type="vip", is_airport=True, arrived_minutes_ago=90)
     await db.commit()
-    await db.refresh(trip_early)
-    await db.refresh(trip_late)
+    await db.refresh(early)
+    await db.refresh(late)
 
     _warned_trips.clear()
     agent = WaitTimeoutAgent()
     agent._db_session_maker = lambda: _SessionCM(db)
-
     pushes = []
-    mock_retrieve, mock_capture = _patch_hold_capture()
-    with patch("services.fcm_service._send_fcm_push",
-               side_effect=lambda token, title, body, data=None: pushes.append(
-                   (title, data))), mock_retrieve, mock_capture:
+    with patch("services.fcm_service._send_fcm_push", side_effect=_capture(pushes)):
         await agent._scan()
-
-    warnings = [p for p in pushes if (p[1] or {}).get("type") == "wait_timeout_warning"]
-    assert warnings == []
-
-    await db.refresh(trip_early)
-    await db.refresh(trip_late)
-    assert trip_early.status == "arrived"
-    assert trip_late.status == "cancelled"
-    # The late trip's fee hits the $5.00 comfort floor: (8-2)*0.40 = $2.40 < $5.00
-    assert trip_late.cancellation_fee == 5.00
+    await db.refresh(early)
+    await db.refresh(late)
+    assert early.status == "arrived" and late.status == "arrived"
+    assert early.id not in _warned_trips          # still inside the free 5 min
+    assert late.cancellation_fee in (None, 0)

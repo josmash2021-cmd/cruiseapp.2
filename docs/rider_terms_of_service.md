@@ -99,11 +99,12 @@ minute; Premium — $0.60 per minute; VIP and SUV XL — $1.00 per minute; trips
 booked through the airport flow (to or from the airport) — $0.40 per minute.
 For a scheduled ride, the free minutes start at the scheduled pickup time,
 not when the driver arrives early. Partial minutes round up.
-Accrued wait fees are added to your trip fare. If you do not appear within
-the applicable waiting period, the trip may be canceled as a no-show and the
-no-show fee applies: the greater of the accrued wait fees and a per-tier
-minimum — **$5.00** Standard/Compact, **$8.00** Premium, **$10.00**
-VIP/SUV XL and airport trips.
+Accrued wait fees are added to your trip fare. Your trip is not canceled
+automatically while your driver waits. Once the free waiting period is over,
+if you have not appeared, your driver may cancel the trip as a no-show; the
+no-show fee then applies instead of the accrued wait fees — **$5.00**
+Standard/Compact, **$8.00** Premium, **$10.00** VIP/SUV XL and airport
+trips.
 
 5.6. **Cleaning and damage fees.** The Company does not currently charge
 cleaning or damage fees. If such fees are introduced in the future, Riders

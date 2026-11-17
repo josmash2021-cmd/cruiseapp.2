@@ -2129,7 +2129,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final DateTime? confirmPickupAt = isReservationConfirm
         ? parseServerTime(offer['reservation_pickup_at'])
         : null;
-    final bool isAirportTrip = offer['is_airport'] == true;
+    // A panel reservation to the airport keeps is_airport false and carries
+    // only airport_code (owner 2026-11-16) — both are an airport ride.
+    final bool isAirportTrip = tripIsAirport(offer);
     // Cash ride detection — backend sends `payment_method: 'cash'` when the
     // rider chose to pay in cash at the end of the trip. Accept a few
     // possible keys for forward compat.
@@ -2160,6 +2162,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         icon: Icons.task_alt_rounded,
         color: goldAccent,
       ));
+      // The confirm offer IS the reservation: it keeps its AIRPORT badge
+      // (owner 2026-11-16).
+      if (isAirportTrip) {
+        badges.add(_OfferBadgeData(
+          label: s.badgeAirport,
+          icon: Icons.flight_takeoff_rounded,
+          color: const Color(0xFF3B82F6), // blue
+        ));
+      }
       if (isCashRide) {
         badges.add(_OfferBadgeData(
           label: s.badgeCash,
@@ -2388,6 +2399,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               ),
           dropoffAddr: dropoffAddr,
           stopAddr: _offerStopLabel(offer),
+          dropoffAirline: airlineFromAddress(dropoffAddr),
         ),
 
         const SizedBox(height: 16),
@@ -2535,6 +2547,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     required String dropoffMeta,
     required String dropoffAddr,
     String? stopAddr,
+    String? dropoffAirline,
   }) {
     const goldAccent = Color(0xFFE8C547);
     // The markers are centred on the stops by arithmetic: half the typical
@@ -2622,7 +2635,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     _offerStopText(S.of(context).stopFieldLabel, stopAddr),
                   ],
                   const SizedBox(height: 22),
-                  _offerStopText(dropoffMeta, dropoffAddr),
+                  _offerStopText(
+                    dropoffMeta,
+                    dropoffAddr,
+                    // The airline's real mark at the terminal (owner
+                    // 2026-11-16); an ordinary drop-off has none.
+                    trailing: dropoffAirline == null
+                        ? null
+                        : AirlineLogo(dropoffAirline, size: 28),
+                  ),
                 ],
               ),
             ),
@@ -2637,12 +2658,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         color: Colors.white.withValues(alpha: 0.05),
       );
 
-  Widget _offerStopText(String meta, String address) {
+  Widget _offerStopText(String meta, String address, {Widget? trailing}) {
     // No fixed height — the card around it is measured for real now, so the
     // stop takes what the font takes. A hard 34-pt box is what painted the
     // "BOTTOM OVERFLOWED" stripes on web fonts, whose line heights run a
     // few points taller than the Roboto this was tuned for.
-    return Column(
+    final text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
@@ -2665,6 +2686,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             fontWeight: FontWeight.w500,
           ),
         ),
+      ],
+    );
+    if (trailing == null) return text;
+    return Row(
+      children: [
+        Expanded(child: text),
+        const SizedBox(width: 10),
+        trailing,
       ],
     );
   }

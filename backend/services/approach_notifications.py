@@ -59,7 +59,7 @@ async def maybe_notify_rider_approach(
         await _send_fcm_push_async(
             token,
             title="Tu conductor está por llegar",
-            body="Tu driver llega en 2 minutos o menos",
+            body="Tu conductor llega en 2 minutos o menos",
             title_en="Your driver is almost here",
             body_en="Your driver arrives in 2 minutes or less",
             locale=locale,

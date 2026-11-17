@@ -118,6 +118,9 @@ import 'driver_documents_screen.dart';
 import 'driver_menu_screen.dart';
 import 'driver_contracts_screen.dart';
 import '../../data/us_airports_geo.dart';
+import '../../data/airport_airlines.dart'
+    show airlineFromAddress, tripIsAirport;
+import '../../widgets/airline_logo.dart' show AirlineLogo;
 import 'online_intro_overlay.dart';
 import 'selfie_check_screen.dart';
 import 'onboarding/driver_notifications_screen.dart';
@@ -133,6 +136,7 @@ import '../../utils/server_time.dart';
 import 'package:intl/intl.dart';
 import 'reservation_detail_page.dart';
 import 'reservation_map_card.dart';
+import '../../services/support_bubble_controller.dart';
 
 part 'driver_online_controller.dart';
 part 'driver_online_map.dart';
@@ -2488,6 +2492,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     final isNav = _phase == _Phase.enRouteToPickup ||
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
+    // The support bubble stays clear of an offer and of navigation.
+    SupportBubbleController.instance.driverOfferShowing = _offerOnScreen || isNav;
     SystemChrome.setSystemUIOverlayStyle(
       SystemUiOverlayStyle(
         statusBarIconBrightness: isNav
@@ -2735,9 +2741,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            _scheduledAvailCount == 1
-                                ? '1 scheduled ride available'
-                                : '$_scheduledAvailCount scheduled rides available',
+                            S.of(context).scheduledRidesAvailableChip(
+                                _scheduledAvailCount),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12,

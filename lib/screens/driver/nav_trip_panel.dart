@@ -7,9 +7,11 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 
+import '../../data/airport_airlines.dart' show airlineFromAddress;
 import '../../l10n/app_localizations.dart';
 import '../../services/haptic_service.dart';
 import '../../utils/app_platform.dart';
+import '../../widgets/airline_logo.dart';
 import '../../widgets/glass_style.dart';
 import '../../widgets/morph_box.dart';
 import '../../widgets/smooth_reveal.dart';
@@ -1301,6 +1303,7 @@ class _NavTripPanelState extends State<NavTripPanel>
                   done: false,
                   title: s.navDropOffName(_firstName),
                   lines: [widget.dropoffAddress, widget.dropoffNote.trim()],
+                  trailing: _airlineMark(widget.dropoffAddress),
                   acts: dropActs,
                   // On to the expand button under it (owner 2026-11-02:
                   // "que conecte con el botón de expandir").
@@ -1439,10 +1442,19 @@ class _NavTripPanelState extends State<NavTripPanel>
           done: false,
           title: s.navDropOffName(first),
           lines: [next.dropoffAddress],
+          trailing: _airlineMark(next.dropoffAddress),
           line: false,
         ),
       ],
     );
+  }
+
+  /// The airline's real mark at an airport drop-off ("FLL · Terminal 1 —
+  /// United Airlines", owner 2026-11-16); null for an ordinary address, so
+  /// its row stays as it was.
+  Widget? _airlineMark(String address) {
+    final airline = airlineFromAddress(address);
+    return airline == null ? null : AirlineLogo(airline, size: 30);
   }
 
   Widget _rowDivider() => Container(
@@ -1459,8 +1471,27 @@ class _NavTripPanelState extends State<NavTripPanel>
     required bool line,
     bool verified = false,
     Widget? acts,
+    Widget? trailing,
   }) {
     final dim = Colors.white.withValues(alpha: 0.42);
+    final texts = <Widget>[
+      Text(
+        title,
+        style: TextStyle(
+          color: done ? dim : Colors.white,
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      for (final l in lines.where((l) => l.isNotEmpty))
+        Text(
+          l,
+          style: TextStyle(
+            color: done ? dim : Colors.white.withValues(alpha: 0.75),
+            fontSize: 16,
+          ),
+        ),
+    ];
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1505,22 +1536,22 @@ class _NavTripPanelState extends State<NavTripPanel>
                         ),
                       ],
                     ),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: done ? dim : Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  for (final l in lines.where((l) => l.isNotEmpty))
-                    Text(
-                      l,
-                      style: TextStyle(
-                        color:
-                            done ? dim : Colors.white.withValues(alpha: 0.75),
-                        fontSize: 16,
-                      ),
+                  if (trailing == null)
+                    ...texts
+                  else
+                    // The mark sits beside the title and the address, the
+                    // actions keep the row's full width under them.
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: texts,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        trailing,
+                      ],
                     ),
                   if (acts != null) acts,
                 ],

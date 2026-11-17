@@ -69,6 +69,7 @@ import '../../widgets/offer_countdown_ring.dart';
 import '../../services/firebase_auth_recovery.dart';
 import '../../utils/fix_kinematics.dart';
 import '../../utils/offer_metrics.dart';
+import '../../services/support_bubble_controller.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER TRIP ACCEPT SCREEN  — DoorDash-style trip details sheet
@@ -749,6 +750,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // Observed for one reason: coming back from background is where a dead
     // GPS stream is found, and this screen owns the one the passenger sees.
     WidgetsBinding.instance.addObserver(this);
+    SupportBubbleController.instance.driverTripOpened();
     _enforceDriverRole();
     _pickupAddr = widget.pickupAddress;
     _dropoffAddr = widget.dropoffAddress;
@@ -1659,6 +1661,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    SupportBubbleController.instance.driverTripClosed();
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _chainedSseSub?.cancel();
     _chainedPollTimer?.cancel();

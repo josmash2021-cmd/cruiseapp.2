@@ -1275,6 +1275,27 @@ def sync_trip_route_change(trip_id: int, *, stops=None, dropoff=None,
         log.error("❌ Route-change sync failed for %d: %s", trip_id, e)
 
 
+def sync_trip_labels(trip_id: int, *, pickup_address=None, dropoff_address=None,
+                     airport_code=None, terminal=None, pickup_zone=None):
+    """The airport/airline text of a trip changed (panel, 2026-11-16). Only
+    the words: no routeVersion bump, so neither app shows "Destino cambiado"
+    and nobody's route is redrawn."""
+    _ensure_init()
+    if _db is None:
+        return
+    data = {"airportCode": airport_code or "", "terminal": terminal or "",
+            "pickupZone": pickup_zone or ""}
+    if pickup_address is not None:
+        data["pickup_address"] = data["pickupAddress"] = pickup_address
+    if dropoff_address is not None:
+        data["dropoff_address"] = data["dropoffAddress"] = dropoff_address
+    try:
+        _retry_sync(lambda: _db.collection("trips")
+                    .document(f"sql_{trip_id}").set(data, merge=True, timeout=_FS_TIMEOUT))
+    except Exception as e:
+        log.error("❌ Label sync failed for %d: %s", trip_id, e)
+
+
 _RTDB_URL = os.getenv("FIREBASE_DATABASE_URL",
                       "https://cruise-af9f1-default-rtdb.firebaseio.com")
 

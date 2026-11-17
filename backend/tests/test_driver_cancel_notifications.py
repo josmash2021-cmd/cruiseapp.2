@@ -42,7 +42,8 @@ async def _trip(db, rider, driver, *, airport=False, status="accepted"):
     trip = Trip(
         rider_id=rider.id,
         driver_id=driver.id,
-        pickup_address="A",
+        # An airport ride here is a pickup AT the airport (rider app label).
+        pickup_address="MIA · North Terminal" if airport else "A",
         dropoff_address="B",
         pickup_lat=1.0,
         pickup_lng=1.0,
@@ -69,7 +70,17 @@ def test_cancel_copy_normal_airport_and_in_trip_variant():
         "title_en": "Ride cancelled",
         "body_en": "The rider cancelled this trip.",
     }
-    airport = SimpleNamespace(is_airport=True, airport_code="MIA")
+    airport = SimpleNamespace(is_airport=True, airport_code="MIA",
+                              pickup_address="MIA · North Terminal", dropoff_address="B",
+                              pickup_lat=1.0, pickup_lng=1.0, dropoff_lat=1.1, dropoff_lng=1.1)
+    # A ride TO the airport starts at home: never "delayed at the airport"
+    # (2026-11-16).
+    to_airport = SimpleNamespace(is_airport=False, airport_code="FLL",
+                                 pickup_address="6928 NW 27th Court, Margate",
+                                 dropoff_address="FLL · Terminal 1 — United Airlines",
+                                 pickup_lat=26.26, pickup_lng=-80.22,
+                                 dropoff_lat=26.0729, dropoff_lng=-80.1434)
+    assert _driver_cancel_copy(to_airport)["body"] == "El pasajero canceló este viaje."
     assert _driver_cancel_copy(airport) == {
         "title": "Viaje cancelado",
         "body": "El pasajero tuvo un retraso en el aeropuerto y canceló su viaje.",

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/airport_airlines.dart'
+    show airlineFromAddress, tripIsAirport;
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
@@ -14,6 +16,7 @@ import '../../utils/friendly_load_error.dart';
 import '../../utils/name_helper.dart' as nh;
 import '../../utils/server_time.dart';
 import '../../utils/vehicle_tier_style.dart';
+import '../../widgets/airline_logo.dart';
 import '../../widgets/neu_style.dart';
 import '../../widgets/tracking/rider_trip_sheet.dart' show RiderStopPin;
 import '../../widgets/verified_avatar.dart';
@@ -527,6 +530,10 @@ class _MyReservationsPageState extends State<MyReservationsPage> {
     final rider = nh.shortName((t['rider_name'] ?? '').toString());
     final rating = (t['rider_rating'] as num?)?.toDouble();
     final photo = (t['rider_photo_url'] ?? '').toString();
+    // A panel reservation to the airport keeps is_airport false and carries
+    // only airport_code (owner 2026-11-16).
+    final isAirport = tripIsAirport(t);
+    final dropAddr = (t['dropoff_address'] ?? '').toString();
 
     return Container(
       margin: const EdgeInsets.only(top: 14),
@@ -576,12 +583,33 @@ class _MyReservationsPageState extends State<MyReservationsPage> {
                 ),
             ],
           ),
-          if (at != null) ...[
+          if (at != null && !isAirport) ...[
             const SizedBox(height: 4),
             Text(_whenLine(s, at, isEs),
                 style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.6),
                     fontSize: 13.5)),
+          ],
+          // An airport ride: the offer card's AIRPORT badge beside the date.
+          if (isAirport) ...[
+            const SizedBox(height: 6),
+            Row(
+              key: const ValueKey('my-res-airport'),
+              children: [
+                if (at != null) ...[
+                  Flexible(
+                    child: Text(_whenLine(s, at, isEs),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 13.5)),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                _airportBadge(s),
+              ],
+            ),
           ],
           _hairline(),
           Row(
@@ -618,7 +646,8 @@ class _MyReservationsPageState extends State<MyReservationsPage> {
                 at == null ? s.trackPickup : s.resDetailPickupAt(_time(at)),
             pickupAddr: (t['pickup_address'] ?? '').toString(),
             dropTitle: dropMeta.isEmpty ? s.trackDestination : dropMeta,
-            dropAddr: (t['dropoff_address'] ?? '').toString(),
+            dropAddr: dropAddr,
+            dropAirline: airlineFromAddress(dropAddr),
           ),
           if (stops > 0) ...[
             const SizedBox(height: 14),
@@ -744,6 +773,7 @@ class _MyReservationsPageState extends State<MyReservationsPage> {
     required String pickupAddr,
     required String dropTitle,
     required String dropAddr,
+    String? dropAirline,
   }) {
     Widget ring({bool filled = false}) => Container(
           width: 14,
@@ -816,8 +846,49 @@ class _MyReservationsPageState extends State<MyReservationsPage> {
     return Column(
       children: [
         step(last: false, content: text(pickupTitle, pickupAddr)),
-        step(last: true, content: text(dropTitle, dropAddr)),
+        step(
+          last: true,
+          // The airline's real mark at the terminal (owner 2026-11-16); an
+          // ordinary drop-off keeps the row as it was.
+          content: dropAirline == null
+              ? text(dropTitle, dropAddr)
+              : Row(
+                  children: [
+                    Expanded(child: text(dropTitle, dropAddr)),
+                    const SizedBox(width: 10),
+                    AirlineLogo(dropAirline, size: 28),
+                  ],
+                ),
+        ),
       ],
+    );
+  }
+
+  /// The offer card's AIRPORT badge: the outline only, no filled box.
+  Widget _airportBadge(S s) {
+    const blue = Color(0xFF3B82F6);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: blue, width: 1.2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.flight_takeoff_rounded, size: 14, color: blue),
+          const SizedBox(width: 5),
+          Text(
+            s.badgeAirport,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+              color: blue,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

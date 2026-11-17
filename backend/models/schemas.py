@@ -482,6 +482,10 @@ class AdminCreateTripIn(BaseModel):
     # The rider's card dispatch picked (rider_payment_methods.id, 2026-11-15).
     # It becomes the rider's default: every later charge uses the default.
     payment_method_id: Optional[int] = Field(default=None, gt=0)
+    # The airline when one end is at an airport (2026-11-16): the trip then
+    # reads "FLL · Terminal 1 — United Airlines" like an app airport booking.
+    airport_end: Optional[Literal["pickup", "dropoff"]] = None
+    airline: Optional[str] = Field(default=None, max_length=80)
 
 
 class AdminNotificationIn(BaseModel):

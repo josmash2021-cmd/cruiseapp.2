@@ -2184,8 +2184,9 @@ async def driver_reports_no_show(
         if arrived is None or now - arrived < min_wait:
             raise HTTPException(409, "The free wait is not over yet")
         from wait_timeout_agent import wait_timeout_agent as _wta
-        waited = int((now - arrived).total_seconds() // 60)
-        fee = max(_wta._calculate_wait_fee(trip, waited), _wta._get_no_show_min_fee(trip))
+        # The no-show fee only, never the wait time on top (owner
+        # 2026-11-16, like Lyft) — the driver may have waited a long time.
+        fee = _wta._get_no_show_min_fee(trip)
         trip.wait_time_charge = fee
     elif status == "in_trip":
         kind = "stop"

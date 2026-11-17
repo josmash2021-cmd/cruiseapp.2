@@ -13,6 +13,7 @@ import '../../config/api_keys.dart';
 import '../../config/map_theme.dart';
 import '../../config/mapbox_config.dart';
 import '../../config/page_transitions.dart';
+import '../../data/airport_airlines.dart' show tripIsAirport;
 import '../../l10n/app_localizations.dart';
 import '../../map/flat_map_projection.dart';
 import '../../map/gradient_route_line.dart';
@@ -575,7 +576,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   List<Map<String, dynamic>> get _filtered {
     return _available.where((t) {
-      if (_airportOnly && t['is_airport'] != true) return false;
+      // A panel reservation to the airport carries only airport_code.
+      if (_airportOnly && !tripIsAirport(t)) return false;
       if (_dateFilter != _DateFilter.all || _timeFilter != _TimeFilter.all) {
         final st = _parseScheduledAt(t);
         if (st == null) return false;
@@ -1730,7 +1732,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     final fare = (trip['fare'] as num?)?.toDouble() ?? 0;
     final pickup = trip['pickup_address'] as String? ?? '';
     final dropoff = trip['dropoff_address'] as String? ?? '';
-    final isAirport = trip['is_airport'] == true;
+    final isAirport = tripIsAirport(trip);
     final airportCode = trip['airport_code'] as String?;
 
     // The ride's own route minutes/miles; a straight-line estimate (the

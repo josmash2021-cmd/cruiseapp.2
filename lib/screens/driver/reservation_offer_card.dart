@@ -2,10 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../data/airport_airlines.dart'
+    show airlineFromAddress, tripIsAirport;
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../utils/name_helper.dart' as nh;
 import '../../utils/offer_metrics.dart';
+import '../../widgets/airline_logo.dart';
 import '../../widgets/route_connector_line.dart';
 
 const _gold = Color(0xFFE8C547);
@@ -67,7 +70,9 @@ class ReservationOfferCard extends StatelessWidget {
     final pickup = LatLng(_num(trip['pickup_lat']), _num(trip['pickup_lng']));
     final dropoff =
         LatLng(_num(trip['dropoff_lat']), _num(trip['dropoff_lng']));
-    final isAirport = trip['is_airport'] == true;
+    // A panel reservation to the airport keeps is_airport false and carries
+    // only airport_code (owner 2026-11-16).
+    final isAirport = tripIsAirport(trip);
     final isCash =
         (trip['payment_method'] ?? '').toString().toLowerCase() == 'cash';
 
@@ -196,6 +201,8 @@ class ReservationOfferCard extends StatelessWidget {
               pickupAddr: (trip['pickup_address'] ?? '').toString(),
               dropTitle: '$tripMin min · ${tripMi.toStringAsFixed(1)} mi',
               dropAddr: (trip['dropoff_address'] ?? '').toString(),
+              dropAirline:
+                  airlineFromAddress(trip['dropoff_address']?.toString()),
             ),
           ),
           Padding(
@@ -298,6 +305,7 @@ class ReservationOfferCard extends StatelessWidget {
     required String pickupAddr,
     required String dropTitle,
     required String dropAddr,
+    String? dropAirline,
   }) {
     const marker = 13.0;
     const top = 5.0;
@@ -382,6 +390,12 @@ class ReservationOfferCard extends StatelessWidget {
             ),
             const SizedBox(width: 14),
             Expanded(child: text(dropTitle, dropAddr)),
+            // The airline's real mark at the terminal (owner 2026-11-16);
+            // an ordinary drop-off keeps the row as it was.
+            if (dropAirline != null) ...[
+              const SizedBox(width: 10),
+              AirlineLogo(dropAirline, size: 28),
+            ],
           ],
         ),
       ],

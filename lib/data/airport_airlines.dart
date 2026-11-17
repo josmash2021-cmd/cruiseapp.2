@@ -150,3 +150,34 @@ String? airlineIataFor(String name) {
   final base = name.replaceAll(RegExp(r'\s*\(.*\)\s*$'), '').trim();
   return kAirlineIata[base];
 }
+
+/// The airline written in an airport end's address — the rider app's own
+/// format, which the dispatch panel now writes too (owner 2026-11-16):
+/// "FLL · Terminal 1 — United Airlines" → "United Airlines". The LAST
+/// " — " part, because a terminal name can carry one of its own ("TPA ·
+/// Main Terminal — Airside E — Delta Air Lines"). Null when that part is
+/// not an airline we have a logo for — an arrival door ("— Door 1A"), a
+/// charter, an ordinary address — so only a real mark is ever drawn.
+String? airlineFromAddress(String? address) {
+  final a = (address ?? '').trim();
+  final dash = a.lastIndexOf(' — ');
+  if (dash <= 0) return null;
+  final name = a.substring(dash + 3).trim();
+  if (name.isEmpty || airlineIataFor(name) == null) return null;
+  return name;
+}
+
+/// An airport ride however it was booked (owner 2026-11-16): the rider app
+/// sets `is_airport`; a reservation the dispatch panel gives an airline
+/// keeps `is_airport` FALSE (pricing) and carries only `airport_code`. FCM
+/// data is all strings, so "true"/"1" count, and an empty or "None" code
+/// does not.
+bool tripIsAirport(Map<dynamic, dynamic>? trip) {
+  if (trip == null) return false;
+  final flag = trip['is_airport'];
+  if (flag == true || flag == 1 || flag == 'true' || flag == '1') return true;
+  final code = trip['airport_code'];
+  if (code is! String) return false;
+  final c = code.trim().toLowerCase();
+  return c.isNotEmpty && c != 'none' && c != 'null';
+}

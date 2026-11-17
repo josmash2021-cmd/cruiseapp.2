@@ -130,8 +130,9 @@ def test_wait_fee_schedule_consistent_between_ui_and_backend():
     for frag in ("$0.40 per minute", "$0.60 per minute", "$1.00 per minute"):
         assert frag in screen, f"terms screen missing wait-fee figure: {frag}"
 
-    # No-show fee minimum (2026-09-13): the no-show fee is max(accrued wait
-    # fee, a per-tier minimum). The backend constants in
+    # No-show fee (2026-11-16, like Lyft): the per-tier fee only — never the
+    # accrued wait on top, and only when the driver cancels; nothing cancels
+    # by itself. The backend constants in
     # backend/wait_timeout_agent.py and the rider-facing text must advertise
     # the SAME figures — drift here means the app promises one fee and the
     # backend captures another.

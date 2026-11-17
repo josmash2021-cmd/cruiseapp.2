@@ -81,7 +81,7 @@ async def test_threshold_is_once_per_trip_and_localized_spanish(
     token, payload = calls[0]
     assert token == "rider-fcm"
     assert payload["title"] == "Tu conductor está por llegar"
-    assert payload["body"] == "Tu driver llega en 2 minutos o menos"
+    assert payload["body"] == "Tu conductor llega en 2 minutos o menos"
     assert payload["locale"] == "es"
     assert payload["data"] == {
         "type": "driver_arriving",

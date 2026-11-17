@@ -143,7 +143,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
     _haversine, _user_dict, _trip_dict, _vehicle_dict, _doc_dict, _support_msg_dict,
-    ACTIVE_ACCOUNT_STATUSES, _safe_create_task,
+    ACTIVE_ACCOUNT_STATUSES, _safe_create_task, user_lang,
 )
 from services.fcm_service import _send_fcm_push
 from services.email_sms_service import _send_email
@@ -1025,6 +1025,9 @@ async def _start_scheduler_agents() -> None:
     # 400 m cells and writes config/rider_heat when they change (~1.5 s).
     from services.rider_heat import rider_heat_loop
     _safe_create_task(rider_heat_loop(lambda: _is_scheduler_leader))
+    # The rider's reminder the night before a reservation (2026-11-16).
+    from services.rider_reminders import rider_reminder_loop
+    _spawn_background(rider_reminder_loop(lambda: _is_scheduler_leader), "rider_night_reminder")
 
     # Driving-time dispatch learns from real pickups (owner 2026-11-01): every
     # worker reloads its own correction factors; the leader prunes old rows.
@@ -1547,6 +1550,7 @@ from routers.admin_rider_cards import router as admin_rider_cards_router
 from routers.admin_user_profile import router as admin_user_profile_router
 from routers.admin_trip_page import router as admin_trip_page_router
 from routers.admin_home import router as admin_home_router
+from routers.admin_airports import router as admin_airports_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -1577,6 +1581,7 @@ app.include_router(admin_rider_cards_router)
 app.include_router(admin_user_profile_router)
 app.include_router(admin_trip_page_router)
 app.include_router(admin_home_router)
+app.include_router(admin_airports_router)
 
 # Load-test auth exists only on staging: mounted AND self-gated by
 # LOAD_TEST=1 — production never includes it (the 404 double-check inside
@@ -2708,6 +2713,7 @@ async def _dispatch_reserved_scheduled_rides(db, now):
                         body="Tu viaje reservado es en 1 hora y 15 minutos — conéctate en los próximos 15 minutos para conservarlo.",
                         title_en="Go online to keep your reservation",
                         body_en="Your reserved ride is in 1 hour 15 minutes — go online within the next 15 minutes to keep it.",
+                        locale=user_lang(driver),
                         data={
                             "type": "scheduled_reminder",
                             "trip_id": str(trip.id),
@@ -2804,6 +2810,9 @@ async def _dispatch_reserved_scheduled_rides(db, now):
                         token=driver.fcm_token,
                         title="Tu reserva empieza ahora",
                         body=f"Tu viaje reservado hacia {pickup} ya está activo. Dirígete al punto de recogida.",
+                        title_en="Your reservation starts now",
+                        body_en=f"Your reserved ride to {pickup} is active. Head to the pickup.",
+                        locale=user_lang(driver),
                         data={
                             "type": "driver_assigned",
                             "trip_id": str(trip.id),
@@ -3438,6 +3447,9 @@ async def _scheduled_ride_reminder_loop():
 
                     driver_name = (driver.first_name or "").strip() or "Conductor"
                     pickup = trip.pickup_address or "punto de recogida"
+                    # Where it goes, when that is an airport (2026-11-16).
+                    from services.airports import parse_label as _airport_label
+                    _dest = trip.dropoff_address if _airport_label(trip.dropoff_address) else None
 
                     # --------------------------------------------------
                     # 1-hour reminder (driver only)
@@ -3447,7 +3459,12 @@ async def _scheduled_ride_reminder_loop():
                         _send_fcm_push(
                             token=driver.fcm_token,
                             title="Viaje reservado en 1 hora",
-                            body=f"{driver_name}, tienes un viaje programado hacia {pickup} en aproximadamente 1 hora. Preparate para salir a tiempo.",
+                            body=(f"{driver_name}, tienes un viaje programado en aproximadamente 1 hora. "
+                                  f"Recogida: {pickup}." + (f" Va a {_dest}." if _dest else "")),
+                            title_en="Reserved ride in 1 hour",
+                            body_en=(f"{driver_name}, you have a scheduled ride in about 1 hour. "
+                                     f"Pickup: {pickup}." + (f" Going to {_dest}." if _dest else "")),
+                            locale=user_lang(driver),
                             data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "1h"},
                         )
                         trip_reminders.add("1h")
@@ -3464,7 +3481,10 @@ async def _scheduled_ride_reminder_loop():
                         _send_fcm_push(
                             token=driver.fcm_token,
                             title="Tu viaje comienza en 30 minutos",
-                            body=f"{driver_name}, tu viaje reservado comienza en 30 minutos. Ya no recibiras nuevos viajes hasta completar este.",
+                            body=f"{driver_name}, tu viaje reservado comienza en 30 minutos. Ya no recibirás nuevos viajes hasta completar este.",
+                            title_en="Your ride starts in 30 minutes",
+                            body_en=f"{driver_name}, your reserved ride starts in 30 minutes. You will not get new rides until it is done.",
+                            locale=user_lang(driver),
                             data={"type": "scheduled_lockout", "trip_id": str(trip.id), "reminder": "30m"},
                         )
                         trip_reminders.add("30m")
@@ -3502,6 +3522,7 @@ async def _scheduled_ride_reminder_loop():
                             body=f"{driver_name}, tu viaje reservado empieza en 15 minutos. Ve a {pickup} para llegar a tiempo.",
                             title_en="Head to the pickup point now",
                             body_en=f"{driver_name}, your scheduled ride starts in 15 minutes. Head to {pickup} now to arrive on time.",
+                            locale=user_lang(driver),
                             data={"type": "scheduled_reminder", "trip_id": str(trip.id), "reminder": "15m"},
                         )
                         trip_reminders.add("15m")

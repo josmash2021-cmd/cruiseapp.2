@@ -269,6 +269,7 @@ async def create_dispatch_trip(db, body: AdminCreateTripIn) -> Trip:
     data = body.model_dump(exclude={
         "funding_mode", "allow_courtesy_when_unpaid",
         "tip_amount", "tip_funding", "target_driver_id", "payment_method_id",
+        "airport_end", "airline",
     })
     data = {k: v for k, v in data.items() if v is not None}
     if is_scheduled:
@@ -289,6 +290,16 @@ async def create_dispatch_trip(db, body: AdminCreateTripIn) -> Trip:
     data.update(quote_snapshot_fields(selection))
     data["vehicle_type"] = selection["tier"]
     data["pickup_pin"] = _gen_pickup_pin()
+    # The airline, after the price: it only changes what the trip reads.
+    if body.airport_end:
+        from services import airports
+        try:
+            data = airports.apply_airline(
+                data, end=body.airport_end, airline=body.airline,
+                pickup_lat=data["pickup_lat"], pickup_lng=data["pickup_lng"],
+                dropoff_lat=data["dropoff_lat"], dropoff_lng=data["dropoff_lng"])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
     booking_stops_json(data)
 
     # ── Funding ───────────────────────────────────────────────────────

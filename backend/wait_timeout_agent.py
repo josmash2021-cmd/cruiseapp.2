@@ -1,24 +1,21 @@
 """
-Wait Timeout Agent — AUTO-CANCEL TRIPS WHEN PASSENGER NO-SHOW
+Wait Timeout Agent — THE RIDER HEARS WHEN THE FREE WAIT IS OVER
 
-Detects trips in "arrived" status where the driver has been waiting beyond
-the tier-specific auto-cancel threshold. This frees up drivers who are
-stuck waiting for passengers that never show up.
+Nothing is cancelled by this agent any more (owner 2026-11-16, like Lyft:
+"no quiero que se cancele solo… si [el conductor] decide cancelar podrá
+hacerlo o si quiere esperar puede hacerlo"). Once the free wait is over the
+driver chooses: slide "Pasajero no llegó" (POST /trips/{id}/no-show — the
+rider pays the no-show fee) or keep waiting while the per-minute wait fee
+accrues.
 
-Tier Policies:
-- Standard (sedan/comfort): 5 min auto-cancel
-- Premium: 10 min auto-cancel
-- VIP: 15 min auto-cancel
-- Airport: 20 min auto-cancel
+What it still does, every 45 s for trips in "arrived":
+1. The free wait (5 min, from the arrival — or from a reservation's pickup
+   time when the driver got there early, wait_clock_start) is over →
+2. one push to the rider, in their language: their driver is waiting, the
+   wait is now charged, and the driver can cancel as a no-show.
 
-Actions:
-1. SCAN  — Every 45s, check for trips in "arrived" status
-2. CHECK — Calculate elapsed wait time since arrived_at
-3. CANCEL — If beyond tier threshold, auto-cancel with reason "auto:wait_timeout"
-4. NOTIFY — Push notifications to both driver and rider
-5. SYNC  — Update Firestore so clients see cancellation immediately
-
-Source of truth: Backend cancels, Flutter just displays the state.
+_cancel_trip / the no-show minimums stay: POST /trips/{id}/no-show prices
+with _get_no_show_min_fee, and the Terms compliance test pins the figures.
 """
 
 import asyncio
@@ -174,43 +171,15 @@ class WaitTimeoutAgent:
                 from utils.helpers import wait_clock_start
                 arrived_at = wait_clock_start(trip)
 
-                # Get auto-cancel threshold for this trip
-                auto_cancel_minutes = self._get_auto_cancel_minutes(trip)
-                timeout_threshold = now - timedelta(minutes=auto_cancel_minutes)
-
-                # "Leaving soon" warning ~2 minutes before the auto-cancel
-                # fires (2026-09-13): exactly one push per trip, and never
-                # for a trip that is already past the threshold (that one
-                # goes straight to cancel below).
-                if trip.id not in _warned_trips and arrived_at >= timeout_threshold:
-                    warn_threshold = timeout_threshold + timedelta(minutes=2)
-                    if arrived_at < warn_threshold:
-                        _warned_trips[trip.id] = time.time()
-                        await self._notify_rider_leaving_soon(db, trip)
-
-                # Check if wait time exceeded threshold
-                if arrived_at < timeout_threshold:
-                    # Re-read under the row lock (2026-11-02): the driver's
-                    # no-show slider may be settling this very trip — never
-                    # charge the rider twice. Locked elsewhere → next scan.
-                    locked = (await db.execute(
-                        select(Trip).where(Trip.id == trip.id)
-                        .with_for_update(skip_locked=True)
-                        .execution_options(populate_existing=True)
-                    )).scalar_one_or_none()
-                    if locked is None or locked.status != "arrived":
-                        continue
-                    # Cancel the trip
-                    await self._cancel_trip(db, trip, auto_cancel_minutes)
-                    cancelled_count += 1
-                    _cancelled_trips_cache[trip.id] = time.time()
-
-                    # Notify driver
-                    if await self._notify_driver_no_show(db, trip):
-                        driver_notified_count += 1
-
-                    # Notify rider
-                    if await self._notify_rider_cancelled(db, trip):
+                if arrived_at is None:
+                    continue
+                # The free wait is over: the rider hears it once. From here
+                # the DRIVER decides — "Pasajero no llegó" or keep waiting.
+                from routers.trips import _wait_policy
+                free_minutes, _rate = _wait_policy(trip.vehicle_type, bool(trip.is_airport))
+                if trip.id not in _warned_trips and now >= arrived_at + timedelta(minutes=free_minutes):
+                    _warned_trips[trip.id] = time.time()
+                    if await self._notify_rider_free_wait_over(db, trip, free_minutes):
                         rider_notified_count += 1
 
             if cancelled_count > 0:
@@ -361,40 +330,34 @@ class WaitTimeoutAgent:
         return _NO_SHOW_MIN_FEE_BY_TYPE.get(
             (trip.vehicle_type or "comfort").lower(), _DEFAULT_NO_SHOW_MIN_FEE)
 
-    async def _notify_rider_leaving_soon(self, db, trip) -> bool:
-        """Warn the rider the auto-cancel is ~2 minutes out (2026-09-13)."""
+    async def _notify_rider_free_wait_over(self, db, trip, free_minutes: int) -> bool:
+        """Tell the rider, once, that the free wait is over (2026-11-16)."""
         from models.database import User
         from services.fcm_service import _send_fcm_push
+        from utils.helpers import user_lang
 
         try:
             if not trip.rider_id:
                 return False
-
-            result = await db.execute(select(User).where(User.id == trip.rider_id))
-            rider = result.scalar_one_or_none()
-
+            rider = (await db.execute(select(User).where(User.id == trip.rider_id))).scalar_one_or_none()
             if not rider or not rider.fcm_token:
                 return False
-
             _send_fcm_push(
                 rider.fcm_token,
-                title="Tu driver puede irse en 2 min / Driver leaving in 2 min",
-                body=(
-                    "Llevas mucho tiempo sin llegar al pickup. En 2 minutos el viaje "
-                    "se cancela y aplica el cargo de no-show. "
-                    "You have 2 minutes before the trip auto-cancels and the "
-                    "no-show fee applies."
-                ),
-                data={
-                    "type": "wait_timeout_warning",
-                    "trip_id": str(trip.id),
-                    "minutes_left": "2",
-                },
+                title="Tu conductor te está esperando",
+                body=(f"Ya pasaron tus {free_minutes} minutos gratis: desde ahora se cobra la "
+                      "espera. Si no sales, tu conductor puede cancelar el viaje y se cobra "
+                      "el cargo de no-show."),
+                title_en="Your driver is waiting",
+                body_en=(f"Your {free_minutes} free minutes are over: waiting time is now "
+                         "charged. If you don't come out, your driver can cancel the ride and "
+                         "the no-show fee applies."),
+                locale=user_lang(rider),
+                data={"type": "wait_timeout_warning", "trip_id": str(trip.id)},
             )
             return True
-
         except Exception as e:
-            logger.warning("[WaitTimeout] Leaving-soon warn failed for trip #%d: %s", trip.id, e)
+            logger.warning("[WaitTimeout] Free-wait notice failed for trip #%d: %s", trip.id, e)
             return False
 
     async def _notify_driver_no_show(self, db, trip) -> bool:

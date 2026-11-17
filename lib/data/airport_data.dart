@@ -50,7 +50,9 @@ const List<AirportInfo> kCommonAirports = [
     terminals: [
       AirportTerminal(
         name: 'Terminal 1',
-        airlines: ['Delta Air Lines', 'Spirit Airlines'],
+        // United and Southwest fly from Terminal 1 (owner 2026-11-16; the
+        // Broward County tenant directory, "Terminal 1, 50 Terminal Drive").
+        airlines: ['Delta Air Lines', 'Spirit Airlines', 'United Airlines', 'Southwest Airlines'],
         arrivalDoors: ['Door 1A', 'Door 1B', 'Door 1C'],
       ),
       AirportTerminal(
@@ -65,7 +67,7 @@ const List<AirportInfo> kCommonAirports = [
       ),
       AirportTerminal(
         name: 'Terminal 4',
-        airlines: ['Southwest Airlines', 'United Airlines', 'Frontier Airlines', 'Sun Country'],
+        airlines: ['Frontier Airlines', 'Sun Country'],
         arrivalDoors: ['Door 4A', 'Door 4B', 'Door 4C', 'Door 4D'],
       ),
     ],

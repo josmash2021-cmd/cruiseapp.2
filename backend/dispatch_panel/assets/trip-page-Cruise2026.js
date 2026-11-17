@@ -4,7 +4,7 @@ import{r as React,j as J}from"./vendor-react-DprhJQz-.js";
 import{m as mapboxgl}from"./vendor-mapbox-ComAnvan.js";
 import{N as navyStyle,a as applyNavyGold,r as refineRoads,h as hideTraffic}from"./mapNavyGold-CiIxy5Vj.js";
 import{m as getMapboxToken}from"./mapboxToken-DDoCRQix.js";
-import{W as apiGet}from"./index-CuQT_62K.js";
+import{W as apiGet,L as apiPost}from"./index-CuQT_62K.js";
 import{fetchStreetRoute,okPoint}from"./trip-route-map-Cruise2026.js";
 import{ZoneTime}from"./local-zone-Cruise2026.js";
 
@@ -116,6 +116,16 @@ const CSS=`
 .tp-phone{font:700 26px Inter,system-ui,sans-serif;color:#fff;user-select:all}
 .tp-skel{height:120px;border-radius:18px;background:linear-gradient(90deg,#1C1C24,#23232D,#1C1C24);background-size:200% 100%;animation:tpsk 1.2s infinite}
 @keyframes tpsk{to{background-position:-200% 0}}
+.tp-dlg-wide{max-width:600px}
+.tp-air{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px}
+.tp-airlogo{width:18px;height:18px;border-radius:5px;background:#fff;object-fit:cover;flex:none}
+.tp-airlogo.big{width:36px;height:36px;border-radius:9px}
+.tp-airlogo.none{display:grid;place-items:center;background:#23232D;color:#fff;font-size:16px}
+.tp-airgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;max-height:380px;overflow-y:auto}
+.tp-airtile{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:10px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:#14141A;color:#F4F4F5;font:600 13px Inter,system-ui,sans-serif;cursor:pointer;text-align:left}
+.tp-airtile:hover{border-color:rgba(255,255,255,.25)}
+.tp-airtile.on{border-color:#E8C547;background:rgba(232,197,71,.08)}
+.tp-stop .tp-link{align-self:flex-start;margin-top:4px}
 `;
 function ensureCss(){
  if(typeof document==="undefined")return;
@@ -341,13 +351,54 @@ function MoneyCard({page}){
  return el(Card,{title:"Dinero"},el("div",null,...rows),el("div",{className:"tp-note"},note));
 }
 
-function RouteCard({page,summary}){
- const facts=summary?`${summary.minutes} min · ${summary.miles.toFixed(1)} mi`:[page.minutes?`${Math.round(page.minutes)} min`:null,page.miles?`${Number(page.miles).toFixed(1)} mi`:null].filter(Boolean).join(" · ");
- const pickLabel=page.reservation&&page.scheduled_at&&okPoint(page.pickup)?["Recogida · ",el(ZoneTime,{date:page.scheduled_at,lat:page.pickup.lat,lng:page.pickup.lng,key:"z"})]:["Recogida"];
+// The airport end (2026-11-16): the airport's name, the airline with its
+// logo, the terminal (only when confirmed) and Salidas/Llegadas; dispatch
+// picks or changes the airline here. Only words change — never the point,
+// the price or the airport fee (POST /admin/trips/{id}/airport).
+function AirlineDialog({tripId,end,point,current,onClose,onSaved}){
+ const[air,setAir]=React.useState(null),[pick,setPick]=React.useState(current||null),[busy,setBusy]=React.useState(false),[error,setError]=React.useState(null);
+ React.useEffect(()=>{let alive=true;apiGet("/admin/airports/near",{query:{lat:point.lat,lng:point.lng},retry:{maxAttempts:1}}).then(r=>{if(alive)setAir(r&&r.airport?r.airport:false)}).catch(()=>{if(alive)setAir(false)});return()=>{alive=false}},[point.lat,point.lng]);
+ React.useEffect(()=>{const k=e=>{if(e.key==="Escape")onClose()};window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k)},[onClose]);
+ const chosen=air&&pick?air.airlines.find(a=>a.name===pick):null;
+ const save=async()=>{setBusy(true);setError(null);try{const r=await apiPost(`/admin/trips/${tripId}/airport`,{end,airline:pick},{retry:{maxAttempts:1}});onSaved(r)}catch(e){setError((e&&e.message)||"No se pudo guardar.");setBusy(false)}};
+ return el("div",{className:"tp-ov",onMouseDown:e=>{if(e.target===e.currentTarget)onClose()}},
+  el("div",{className:"tp-dlg tp-dlg-wide",role:"dialog","aria-modal":"true","aria-label":"Elegir aerolínea"},
+   el("div",{className:"tp-dh"},el("div",null,el("h2",null,"¿Con qué aerolínea vuela?"),air?el("span",{className:"tp-muted"},air.name):null),el("button",{type:"button",className:"tp-x","aria-label":"Cerrar",onClick:onClose},"✕")),
+   air===null?el("div",{className:"tp-skel",style:{height:160}}):air===false?el("div",{className:"tp-note"},"Este punto no está en un aeropuerto."):
+    el("div",{className:"tp-airgrid"},air.airlines.map(a=>el("button",{key:a.name,type:"button","aria-pressed":pick===a.name,className:pick===a.name?"tp-airtile on":"tp-airtile",onClick:()=>setPick(a.name)},
+     a.logo?el("img",{src:a.logo,alt:"",className:"tp-airlogo big"}):el("span",{className:"tp-airlogo big none"},"✈"),
+     el("b",null,a.name),el("span",{className:"tp-small"},a.terminal||"Terminal sin confirmar")))),
+   air?el("div",{className:"tp-note"},"El conductor verá: ",el("b",null,`${air.code} · ${(chosen&&chosen.terminal)||air.short_name}${pick?` — ${pick}`:""}`),chosen&&!chosen.terminal?". La terminal no está confirmada, así que no se la decimos.":"."):null,
+   error?el("div",{className:"tp-note",style:{color:"#FF9A7A"}},error):null,
+   el("div",{className:"tp-row-end"},
+    current?el("button",{type:"button",className:"tp-btn",disabled:busy,onClick:()=>setPick(null)},"Quitar aerolínea"):null,
+    el("button",{type:"button",className:"tp-btn",onClick:onClose},"Cancelar"),
+    el("button",{type:"button",className:"tp-btn gold",disabled:busy||!air||(pick||null)===(current||null),onClick:save},busy?"Guardando…":"Guardar"))));
+}
+
+function AirportStop({info,address}){
+ return [el("b",{key:"n"},info.name),
+  el("div",{className:"tp-air",key:"c"},
+   info.airline?el("span",{className:"tp-chip plain"},info.logo?el("img",{src:info.logo,alt:"",className:"tp-airlogo"}):null,info.airline):el("span",{className:"tp-chip dim"},"Sin aerolínea"),
+   info.terminal?el("span",{className:"tp-chip gold"},info.terminal):null,
+   el("span",{className:"tp-chip plain"},info.way)),
+  el("span",{className:"tp-small",key:"a"},"El conductor ve: ",address)];
+}
+
+function RouteCard({page,summary,tripId}){
+ const[over,setOver]=React.useState(null),[dlg,setDlg]=React.useState(null);
+ const p=over?{...page,pickup:{...page.pickup,address:over.pickup_address},dropoff:{...page.dropoff,address:over.dropoff_address},airport:over.airport}:page;
+ const facts=summary?`${summary.minutes} min · ${summary.miles.toFixed(1)} mi`:[p.minutes?`${Math.round(p.minutes)} min`:null,p.miles?`${Number(p.miles).toFixed(1)} mi`:null].filter(Boolean).join(" · ");
+ const pickLabel=p.reservation&&p.scheduled_at&&okPoint(p.pickup)?["Recogida · ",el(ZoneTime,{date:p.scheduled_at,lat:p.pickup.lat,lng:p.pickup.lng,key:"z"})]:["Recogida"];
+ const over_=p.status==="completed"||p.status==="cancelled";
+ const near=p.airport_near||{};
+ const stopBody=(end,addr)=>{const info=p.airport&&p.airport.end===end?p.airport:null;return info?AirportStop({info,address:addr||"—"}):[el("b",{key:"b"},addr||"—")]};
+ const pickBtn=end=>{if(over_||!near[end])return null;const has=p.airport&&p.airport.end===end&&p.airport.airline;return el("button",{type:"button",className:"tp-link",key:"x",onClick:()=>setDlg(end)},has?"Cambiar aerolínea":`Elegir aerolínea · Aeropuerto ${near[end]}`)};
  return el(Card,{title:"Ruta",right:facts?el("span",{className:"tp-muted"},facts):null},
   el("div",{className:"tp-rail"},
-   el("div",{className:"tp-stop"},el("span",{className:"tp-small"},...pickLabel),el("b",null,page.pickup.address||"—")),
-   el("div",{className:"tp-stop end"},el("span",{className:"tp-small"},page.is_airport&&page.airport_code?`Destino · Aeropuerto ${page.airport_code}`:"Destino"),el("b",null,page.dropoff.address||"—"))));
+   el("div",{className:"tp-stop"},el("span",{className:"tp-small"},...pickLabel),...stopBody("pickup",p.pickup.address),pickBtn("pickup")),
+   el("div",{className:"tp-stop end"},el("span",{className:"tp-small"},p.airport&&p.airport.end==="dropoff"?"Destino · Aeropuerto":"Destino"),...stopBody("dropoff",p.dropoff.address),pickBtn("dropoff"))),
+  dlg?el(AirlineDialog,{tripId,end:dlg,point:dlg==="pickup"?p.pickup:p.dropoff,current:p.airport&&p.airport.end===dlg?p.airport.airline:null,onClose:()=>setDlg(null),onSaved:r=>{setOver({pickup_address:r.pickup_address,dropoff_address:r.dropoff_address,airport:r.airport});setDlg(null)}}):null);
 }
 
 function TimelineCard({page,raw}){
@@ -429,7 +480,7 @@ function TripPageShell(props){
    buttons),
   el(Steps,{t:stepsT,raw:st}),
   el("div",{className:"tp-grid"},
-   el("div",{className:"tp-col"},map,el(RouteCard,{page,summary}),el(TimelineCard,{page,raw:st})),
+   el("div",{className:"tp-col"},map,el(RouteCard,{page,summary,tripId:id}),el(TimelineCard,{page,raw:st})),
    el("div",{className:"tp-col"},
     el(PersonCard,{title:"Pasajero",p:rider,line:riderLine,onCall:()=>setCall({name:rider.name,phone:rider.phone}),onChat:()=>navigate("/soporte",{state:{tripId:t.tripId}}),onProfile:rider&&rider.id?()=>navigate(`/personas/rider/sql_${rider.id}`):null,empty:"Sin datos del pasajero"}),
     el(PersonCard,{title:"Conductor",p:driver,line:driverLine,live:driverLive,onCall:()=>setCall({name:driver.name,phone:driver.phone}),onChat:driver?()=>navigate("/soporte",{state:{tripId:t.tripId,driverId:t.driverId}}):null,onProfile:driver?()=>navigate(`/personas/driver/sql_${driver.id}`):null,empty:"Sin conductor todavía"}),

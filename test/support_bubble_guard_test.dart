@@ -74,7 +74,7 @@ void main() {
     expect(banner, greaterThan(ask), reason: 'banner only when not handled');
     expect(fn, contains('if (handledByBubble) return;'));
     final handle = body(ctrl, 'Future<bool> handleForegroundPush(');
-    expect(handle, contains("if (mode != 'rider') return false;"));
+    expect(handle, contains('if (!_bubbleMode(mode)) return false;'));
     expect(handle, contains('if (!_overlayMounted) return false;'));
   });
 
@@ -129,16 +129,20 @@ void main() {
       front = true;
     });
 
-    test('driver mode: never asks, never shows, never polls, banner stays',
+    test('driver mode (2026-11-16): the bubble shows, except over an offer or a trip',
         () async {
       mode = 'driver';
       final c = make()..topRouteChanged(blocks: false);
       c.overlayMounted();
       await c.refresh();
-      expect(fetches, 0);
-      expect(c.visible, isFalse);
-      expect(c.isPolling, isFalse);
-      expect(await c.handleForegroundPush(), isFalse);
+      expect(fetches, greaterThan(0));
+      expect(c.visible, isTrue);
+      expect(c.isPolling, isTrue);
+      c.driverTripOpened();
+      expect(c.visible, isFalse, reason: 'navigating a trip');
+      expect(await c.handleForegroundPush(), isFalse, reason: 'the banner shows instead');
+      c.driverTripClosed();
+      expect(c.visible, isTrue);
       c.overlayUnmounted();
     });
 

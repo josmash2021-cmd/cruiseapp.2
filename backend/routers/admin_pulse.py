@@ -148,3 +148,31 @@ async def panel_push_test(body: dict = Body(...), db: AsyncSession = Depends(get
     if not sent:
         raise HTTPException(502, "El servicio de avisos del teléfono no lo aceptó")
     return {"ok": True}
+
+
+# ── A new panel page that fell back to the old one (2026-11-17) ────────────
+# Each hand-written page (#30) sits in an error boundary that shows the page
+# from before when it throws. Without this the error only lived in the
+# operator's browser console (#833's trip page showed the old layout and
+# nothing said why). Logged, never stored; per process at most 60 a minute.
+_client_errors: list[float] = []
+
+
+@router.post("/admin/panel/client-error", dependencies=[Depends(_require_dispatch_auth)])
+async def panel_client_error(body: dict = Body(...)):
+    import logging
+    import time as _time
+    now = _time.monotonic()
+    _client_errors[:] = [t for t in _client_errors if now - t < 60]
+    if len(_client_errors) >= 60:
+        return {"ok": False}
+    _client_errors.append(now)
+
+    def clip(k, n):
+        v = body.get(k) if isinstance(body, dict) else None
+        return " ".join(str(v or "").split())[:n]
+
+    logging.getLogger(__name__).warning(
+        "[PanelError] where=%s path=%s msg=%s | stack=%s | component=%s",
+        clip("where", 40), clip("path", 200), clip("message", 500), clip("stack", 1500), clip("component", 800))
+    return {"ok": True}

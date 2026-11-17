@@ -157,3 +157,23 @@ def test_panel_wiring():
     board = (ASSETS / "trips-board-Cruise2026.js").read_text(encoding="utf-8")
     assert board.count("guard-pin panel_trips_board") == 1
     assert '"/admin/trips/board"' in board
+
+
+@pytest.mark.asyncio
+async def test_a_new_page_that_falls_back_tells_the_server(client, caplog):
+    """#833's trip page showed the old layout and nothing said why: every
+    new-page error boundary now posts its error, and the server logs it."""
+    from tests.conftest import _make_auth_headers
+    from tests.test_dispatch_trip_booking import _dispatch_headers
+    body = {"where": "TripPage", "message": "x is undefined", "stack": "at RouteCard", "path": "#/viajes/viaje/sql_833"}
+    r = await client.post("/admin/panel/client-error", headers=_make_auth_headers(), json=body)
+    assert r.status_code in (401, 403)
+    with caplog.at_level("WARNING"):
+        r = await client.post("/admin/panel/client-error", headers=_dispatch_headers(), json=body)
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    assert "[PanelError] where=TripPage path=#/viajes/viaje/sql_833 msg=x is undefined" in caplog.text
+    assets = Path(__file__).resolve().parents[1] / "dispatch_panel" / "assets"
+    main = (assets / "index-CuQT_62K.js").read_text(encoding="utf-8")
+    assert main.count("guard-pin panel_client_error_report") == 1 and main.count("cruiseReport(\"") == 3
+    detail = (assets / "index-B68rRA9U.js").read_text(encoding="utf-8")
+    assert 'window.__cruiseReport("TripPage",err,info)' in detail

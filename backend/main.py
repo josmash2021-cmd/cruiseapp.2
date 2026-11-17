@@ -1557,6 +1557,7 @@ from routers.admin_airports import router as admin_airports_router
 from routers.admin_support_inbox import router as admin_support_inbox_router
 from routers.admin_pulse import router as admin_pulse_router
 from routers.admin_trips_board import router as admin_trips_board_router
+from routers.admin_fleet_map import router as admin_fleet_map_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -1591,6 +1592,7 @@ app.include_router(admin_airports_router)
 app.include_router(admin_support_inbox_router)
 app.include_router(admin_pulse_router)
 app.include_router(admin_trips_board_router)
+app.include_router(admin_fleet_map_router)
 
 # Load-test auth exists only on staging: mounted AND self-gated by
 # LOAD_TEST=1 — production never includes it (the 404 double-check inside
@@ -1765,6 +1767,8 @@ def _is_read_poll_path(path: str) -> bool:
         # Viajes list (8 s) — 2026-11-16.
         or path == "/admin/panel/pulse"
         or path == "/admin/trips/board"
+        # Mapa en vivo (8 s) — 2026-11-17.
+        or path == "/admin/fleet/map"
         or (path.startswith("/trips/") and (path.endswith("/poll") or path.endswith("/chat")))
         or (path.startswith("/support/chats/") and (path.endswith("/messages") or path.endswith("/typing")))
     )
@@ -2936,8 +2940,11 @@ async def _scheduled_ride_dispatcher():
                             if rider and rider.fcm_token:
                                 _send_fcm_push(
                                     token=rider.fcm_token,
-                                    title="Scheduled ride cancelled",
-                                    body="We could not find a driver for your scheduled ride. Please try requesting a new ride.",
+                                    title="Reserva cancelada",
+                                    body="No encontramos un conductor para tu viaje reservado. Puedes pedir un viaje nuevo.",
+                                    title_en="Scheduled ride cancelled",
+                                    body_en="We could not find a driver for your scheduled ride. Please try requesting a new ride.",
+                                    locale=rider.locale,
                                     data={"type": "scheduled_canceled", "trip_id": str(trip.id)},
                                 )
                         except Exception as _fcm_err:
@@ -3130,8 +3137,11 @@ async def _scheduled_ride_dispatcher():
                                         if rider and rider.fcm_token:
                                             _send_fcm_push(
                                                 token=rider.fcm_token,
-                                                title="Scheduled ride cancelled",
-                                                body="Your payment method was declined. Please update it and book again.",
+                                                title="Reserva cancelada",
+                                                body="Tu método de pago fue rechazado. Actualízalo y vuelve a reservar.",
+                                                title_en="Scheduled ride cancelled",
+                                                body_en="Your payment method was declined. Please update it and book again.",
+                                                locale=rider.locale,
                                                 data={"type": "scheduled_canceled", "trip_id": str(trip.id)},
                                             )
                                     except Exception as _fcm_err:
@@ -3430,8 +3440,11 @@ async def _scheduled_ride_reminder_loop():
                             if rider and rider.fcm_token:
                                 _send_fcm_push(
                                     token=rider.fcm_token,
-                                    title="Scheduled ride cancelled",
-                                    body="We could not find a driver for your scheduled ride. Please try requesting a new ride.",
+                                    title="Reserva cancelada",
+                                    body="No encontramos un conductor para tu viaje reservado. Puedes pedir un viaje nuevo.",
+                                    title_en="Scheduled ride cancelled",
+                                    body_en="We could not find a driver for your scheduled ride. Please try requesting a new ride.",
+                                    locale=rider.locale,
                                     data={"type": "scheduled_canceled", "trip_id": str(trip.id)},
                                 )
                         except Exception as _fcm_err:

@@ -126,3 +126,11 @@ async def test_release_push_reaches_an_english_rider_in_english(
 
 def test_main_release_copy_is_fixed():
     assert "volvio al marketplace" not in MAIN_SRC
+
+
+def test_reservation_cancel_pushes_speak_the_riders_language():
+    """The three "Scheduled ride cancelled" pushes (no driver by the time,
+    card declined, missed reservation) went out in English only."""
+    assert 'title="Scheduled ride cancelled"' not in MAIN_SRC
+    assert MAIN_SRC.count('title_en="Scheduled ride cancelled"') == 3
+    assert MAIN_SRC.count('title="Reserva cancelada"') == 3

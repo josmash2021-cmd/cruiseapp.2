@@ -184,3 +184,39 @@ def test_panel_shows_buttons_for_a_reservation_without_driver():
     assert '(t.status==="requested"||t.status==="scheduled")&&!V' in page
     assert '"Avisar a los conductores":"Despachar"' in page
     assert 'children:"Ofrecer a un conductor"' in page
+
+
+async def _searching(db, rider_id, minutes_out):
+    now = datetime.now(timezone.utc)
+    trip = Trip(rider_id=rider_id, driver_id=None, pickup_address="6928 NW 27th Ct, Margate",
+                dropoff_address="FLL", pickup_lat=26.24, pickup_lng=-80.21, dropoff_lat=26.07, dropoff_lng=-80.15,
+                fare=48.59, vehicle_type="premium", status="requested",
+                scheduled_at=now + timedelta(minutes=minutes_out), created_at=now - timedelta(days=1))
+    db.add(trip)
+    await db.commit()
+    await db.refresh(trip)
+    return trip
+
+
+async def test_avisar_puts_a_live_search_reservation_back_on_the_board(client, db, test_rider, quiet_tasks, broadcasts):
+    """#833 (owner 2026-11-17): in its last hour the scheduler turned the
+    reservation into a live search ("requested"); nobody took it and
+    "Avisar a los conductores" re-offered it live within 10 min, so it never
+    showed on the drivers' reservations page. More than 30 min out it goes
+    back to the page (status "scheduled") with the push."""
+    from tests.test_dispatch_trip_booking import _dispatch_headers
+    rider, _ = test_rider
+    now = datetime.now(timezone.utc)
+    trip = await _searching(db, rider.id, 45)
+    r = await client.post(f"/admin/trips/{trip.id}/reassign", headers=_dispatch_headers(), json={"mode": "nearest"})
+    assert r.status_code == 200, r.text
+    st = (await db.execute(select(Trip.status, Trip.driver_id).where(Trip.id == trip.id))).one()
+    assert tuple(st) == ("scheduled", None)
+    assert f"reservation_reassign_broadcast_{trip.id}" in quiet_tasks
+
+    # 20 min out the page no longer lists it: it stays a live search.
+    late = await _searching(db, rider.id, 20)
+    await client.post(f"/admin/trips/{late.id}/reassign", headers=_dispatch_headers(), json={"mode": "nearest"})
+    st = (await db.execute(select(Trip.status).where(Trip.id == late.id))).scalar()
+    assert st == "requested"
+    assert f"reservation_reassign_broadcast_{late.id}" not in quiet_tasks

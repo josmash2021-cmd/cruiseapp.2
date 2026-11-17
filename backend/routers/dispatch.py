@@ -3211,6 +3211,9 @@ _REASSIGNABLE_STATUSES = ("requested", "accepted", "driver_en_route")
 # scheduled_active = the 30-min lockout before pickup; the driver has not
 # left yet, so dispatch can still release or move it (2026-10-30).
 _RESERVATION_REASSIGNABLE = ("scheduled", "scheduled_accepted", "scheduled_active")
+# The drivers' reservations page lists a ride until 30 min before pickup
+# (routers/scheduled.py MIN_ADVANCE_MINUTES); closer than that it is a live offer.
+_BOARD_LEAD_MIN = 30
 
 
 async def _reassign_reservation(db, trip, mode: str, body) -> dict:
@@ -3393,6 +3396,17 @@ async def admin_reassign_trip(
     # reservation goes back to the marketplace — aimed at the chosen driver
     # or open to every eligible one.
     if trip.scheduled_at is not None and trip.status in _RESERVATION_REASSIGNABLE:
+        return await _reassign_reservation(db, trip, mode, body)
+    # A reservation the scheduler already put in live search in its last
+    # hour (status "requested", no one accepted) and still more than 30 min
+    # out: back to the drivers' reservations page with the push (owner
+    # 2026-11-17, #833: "ponlo disponible en la página de schedule de los
+    # drivers") — not a live re-offer within 10 min that nobody sees.
+    _sched = trip.scheduled_at
+    if _sched is not None and _sched.tzinfo is None:
+        _sched = _sched.replace(tzinfo=timezone.utc)
+    if (trip.status == "requested" and _sched is not None and is_real_reservation(trip)
+            and _sched > datetime.now(timezone.utc) + timedelta(minutes=_BOARD_LEAD_MIN)):
         return await _reassign_reservation(db, trip, mode, body)
     if trip.status not in _REASSIGNABLE_STATUSES:
         raise HTTPException(

@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import AppConfig, SupportChat, SupportMessage, User, get_db
 from routers.admin_user_profile import admin_user_profile
-from services import photo_face
+from services import photo_face, support_persona
 from utils.security import _require_dispatch_auth, _security_audit_log
 
 router = APIRouter()
@@ -65,7 +65,9 @@ def _with_person(chat: SupportChat) -> bool:
         (chat.bot_phase or "") in _PERSON_PHASES
         or chat.needs_escalation
         or chat.supervisor_connected
-        or chat.dispatch_persona
+        # A name chosen in "Escribes como" is not a takeover; the old
+        # connect-agent / connect-supervisor buttons are (support_persona).
+        or support_persona.is_takeover(chat.dispatch_persona)
     )
 
 
@@ -142,6 +144,7 @@ async def support_inbox(db: AsyncSession = Depends(get_db)):
             "subject": chat.subject or "",
             "bot_phase": chat.bot_phase,
             "with_person": person,
+            "persona": support_persona.describe(chat),
             "waiting": waiting,
             "waiting_since": None,
             "unread": int(unread.get(chat.id, 0)),
@@ -273,6 +276,7 @@ async def support_chat_context(chat_id: int, db: AsyncSession = Depends(get_db))
     base = {
         "chat": {"id": chat.id, "status": chat.status, "bot_phase": chat.bot_phase,
                  "with_person": _with_person(chat), "locale": chat.locale,
+                 "persona": support_persona.describe(chat),
                  "created_at": _iso(chat.created_at)},
         "past_chats": [{"id": c.id, "status": c.status, "subject": c.subject or "",
                         "created_at": _iso(c.created_at), "updated_at": _iso(c.updated_at)}
@@ -340,3 +344,27 @@ async def add_support_chat_note(chat_id: int, body: SupportNoteIn, db: AsyncSess
     await db.commit()
     _security_audit_log("ADMIN_SUPPORT_NOTE", "admin", f"chat_id={chat_id} len={len(text)}")
     return {"notes": notes}
+
+
+class SupportPersonaIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str = Field(min_length=1, max_length=20)
+    name: Optional[str] = Field(default=None, max_length=60)
+
+
+@router.post("/admin/support/chats/{chat_id}/persona", dependencies=[Depends(_require_dispatch_auth)])
+async def set_support_chat_persona(chat_id: int, body: SupportPersonaIn, db: AsyncSession = Depends(get_db)):
+    """ "Escribes como" (owner 2026-11-17): the name the person sees on the
+    panel's messages in this chat — all of them, the earlier ones too. It
+    does not take the chat from the robot; the first message does."""
+    try:
+        value = support_persona.encode(body.kind, body.name)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    chat = await _chat_or_404(db, chat_id)
+    chat.dispatch_persona = value
+    await db.commit()
+    from routers.support import _relabel_panel_messages
+    await _relabel_panel_messages(db, chat)
+    _security_audit_log("ADMIN_SUPPORT_PERSONA", "admin", f"chat_id={chat_id} kind={body.kind}")
+    return {"persona": support_persona.describe(chat)}

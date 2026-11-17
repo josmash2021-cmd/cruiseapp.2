@@ -100,6 +100,29 @@ html.si-full .si-page{border:0;border-radius:0}
 .si-send{width:44px;height:44px;border-radius:50%;border:0;background:#E8C547;color:#14141A;display:grid;place-items:center;cursor:pointer;flex:none}
 .si-send:disabled{opacity:.5;cursor:default}
 .si-hint{font-size:11.5px;color:rgba(255,255,255,.5)}
+/* guard-pin support_persona_picker: "Escribes como" (dueño 2026-11-17, dibujo https://claude.ai/artifact/FsPDGSjiVvWcqbste98FrF) */
+.si-as{display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,.55);position:relative;flex-wrap:wrap}
+.si-aschip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px 0 4px;border-radius:999px;background:#1C1C24;border:1px solid rgba(232,197,71,.55);color:#F4F4F5;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;max-width:260px}
+.si-aschip:hover{border-color:#E8C547}
+.si-aschip i{width:20px;height:20px;border-radius:50%;background:#E8C547;color:#0B0B0F;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:700;flex:none}
+.si-aschip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.si-aschip em{font-style:normal;color:#E8C547;font-size:10px}
+.si-ppx{position:fixed;inset:0;z-index:24}
+.si-pp{position:absolute;left:0;bottom:calc(100% + 8px);z-index:25;width:min(340px,calc(100vw - 48px));box-sizing:border-box;background:#1C1C24;border:1px solid rgba(255,255,255,.12);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.55);padding:14px;display:flex;flex-direction:column;gap:6px;color:#F4F4F5}
+.si-pp h4{margin:0;font-size:13.5px;font-weight:700}
+.si-pp p{margin:0 0 4px;color:rgba(255,255,255,.55);font-size:12px}
+.si-ppo{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:10px;border:1px solid transparent;background:transparent;color:#F4F4F5;text-align:left;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;width:100%;box-sizing:border-box}
+.si-ppo:hover{background:rgba(255,255,255,.04)}
+.si-ppo.on{border-color:rgba(232,197,71,.45);background:rgba(232,197,71,.06)}
+.si-ppo .r{width:16px;height:16px;border-radius:50%;border:2px solid #55535f;flex:none;margin-top:1px;box-sizing:border-box}
+.si-ppo.on .r{border-color:#E8C547;background:radial-gradient(circle,#E8C547 0 3px,transparent 4px)}
+.si-ppo small{display:block;color:rgba(255,255,255,.5);font-size:11px;font-weight:500;margin-top:1px}
+.si-ppo .si-field{margin-top:6px;padding:8px 10px;font-size:13px}
+.si-ppf{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:4px}
+.si-ppf small{color:rgba(255,255,255,.4);font-size:11px}
+.si-ppsave{height:32px;padding:0 14px;border-radius:10px;border:0;background:#E8C547;color:#0B0B0F;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;flex:none}
+.si-ppsave:disabled{opacity:.5;cursor:default}
+.si-pperr{color:#FF8A80;font-size:12px}
 .si-card{background:#1C1C24;border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:8px}
 .si-h3{margin:0;font-size:13.5px;font-weight:700;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .si-kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px}
@@ -298,10 +321,48 @@ function Inbox({data,err,chatId,filter,setFilter,role,setRole,search,setSearch,o
 }
 
 // ── Conversation ──────────────────────────────────────────────────────────
+// "Escribes como": the name the person sees on our messages in this chat
+// (services/support_persona.py). This browser remembers the last one and
+// sends it with the first message of a chat that never had one.
+const PERSONA_KEY="si-persona-last";
+function readMem(){try{const v=JSON.parse(localStorage.getItem(PERSONA_KEY)||"null");return v&&typeof v.kind==="string"?v:null}catch{return null}}
+function writeMem(kind,name){try{const old=readMem()||{};localStorage.setItem(PERSONA_KEY,JSON.stringify({kind,name:kind==="name"?name:null,last:kind==="name"?name:(old.last||null)}))}catch{}}
+function memBody(m){return m?{kind:m.kind,name:m.kind==="name"?m.name:null}:null}
+function personaLabel(p,robot,locale){const en=locale==="en";if(!p||!p.kind)return en?"Cruise Support":"Soporte Cruise";if(p.kind==="name")return p.name||"";if(p.kind==="robot"&&robot)return robot;if(p.kind==="agent")return en?"Specialized Agent":"Agente especializado";if(p.kind==="supervisor")return"Supervisor";return en?"Cruise Support":"Soporte Cruise"}
+function PersonaPicker({chatId,cur,mem,robot,locale,first,onClose,onSaved}){
+ const start=(cur&&cur.kind)||(mem&&mem.kind)||"default";
+ const[kind,setKind]=React.useState(start==="robot"&&!robot?"default":start);
+ const[name,setName]=React.useState((cur&&cur.kind==="name"&&cur.name)||(mem&&(mem.name||mem.last))||"");
+ const[busy,setBusy]=React.useState(false),[err,setErr]=React.useState(null);
+ const inRef=React.useRef(null);
+ React.useEffect(()=>{const k=e=>{if(e.key==="Escape")onClose()};window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k)},[onClose]);
+ const en=locale==="en";
+ const opts=[["default",en?"Cruise Support":"Soporte Cruise","El de siempre"],robot?["robot",robot,"El nombre del robot en este chat: sigue la misma persona"]:null,["agent",en?"Specialized Agent":"Agente especializado",null],["supervisor","Supervisor",null]].filter(Boolean);
+ const save=async()=>{if(busy)return;const nm=name.trim().replace(/\s+/g," ");if(kind==="name"&&!nm){setErr("Escribe un nombre.");return}setBusy(true);setErr(null);
+  try{const d=await apiPost(`/admin/support/chats/${chatId}/persona`,{kind,name:kind==="name"?nm:null},{retry:{maxAttempts:1}});writeMem(kind,nm);onSaved((d&&d.persona)||{kind,name:kind==="name"?nm:null,label:personaLabel({kind,name:nm},robot,locale),robot})}
+  catch(e){setBusy(false);setErr(e instanceof Error?e.message:String(e))}};
+ const pickName=()=>{setKind("name");setTimeout(()=>{const i=inRef.current;if(i)i.focus()},0)};
+ return el(React.Fragment,null,
+  el("div",{className:"si-ppx",onClick:onClose}),
+  el("div",{className:"si-pp",role:"dialog","aria-label":`Nombre que ve ${first||"la persona"}`},
+   el("h4",null,`Nombre que ve ${first||"la persona"}`),
+   el("p",null,"Sale arriba de tus mensajes en su app."),
+   opts.map(([k,label,sub])=>el("button",{type:"button",key:k,className:kind===k?"si-ppo on":"si-ppo",onClick:()=>setKind(k)},el("span",{className:"r"}),el("div",{style:{minWidth:0}},label,sub?el("small",null,sub):null))),
+   el("div",{className:kind==="name"?"si-ppo on":"si-ppo",role:"button",tabIndex:0,onClick:pickName,onKeyDown:e=>{if(e.key===" "||e.key==="Enter")pickName()}},
+    el("span",{className:"r"}),
+    el("div",{style:{flex:1,minWidth:0}},"Otro nombre",
+     el("input",{ref:inRef,className:"si-field",value:name,maxLength:30,placeholder:"Ej. Carlos","aria-label":"Otro nombre",onFocus:()=>setKind("name"),onChange:e=>{setName(e.target.value);setKind("name");setErr(null)},onKeyDown:e=>{if(e.key==="Enter"){e.preventDefault();save()}}}))),
+   err?el("span",{className:"si-pperr"},err):null,
+   el("div",{className:"si-ppf"},
+    el("small",null,kind==="name"?`${name.trim().length}/30 · nada de "dispatch", "operador" ni "admin"`:"También cambia tus mensajes anteriores de este chat."),
+    el("button",{type:"button",className:"si-ppsave",disabled:busy||(kind==="name"&&!name.trim()),onClick:save},busy?"Guardando…":"Guardar"))));
+}
+
 function Conversation({chatId,row,ctx,setCtx,reloadCtx,navigate,toast,onClosed,onBack,onToggleCtx,openModal,reloadInbox}){
  const{messages,loading,setEcho}=useMessages(chatId);
  const typing=useUserTyping(chatId);
  const[mode,setMode]=React.useState("reply"),[draft,setDraft]=React.useState(""),[sending,setSending]=React.useState(false),[menu,setMenu]=React.useState(false),[closing,setClosing]=React.useState(false);
+ const[pers,setPers]=React.useState(null),[pickAs,setPickAs]=React.useState(false),[mem,setMem]=React.useState(readMem);
  const endRef=React.useRef(null),fileRef=React.useRef(null),taRef=React.useRef(null),typT=React.useRef(null),typAt=React.useRef(0);
  const person=ctx&&ctx.person;
  const name=(row&&row.user_name)||(person?`${person.first_name||""} ${person.last_name||""}`.trim():"")||"—";
@@ -312,7 +373,12 @@ function Conversation({chatId,row,ctx,setCtx,reloadCtx,navigate,toast,onClosed,o
  const withPerson=row?row.with_person:!!(ctx&&ctx.chat&&ctx.chat.with_person);
  const locale=String((ctx&&ctx.chat&&ctx.chat.locale)||(person&&person.locale)||"es").toLowerCase().startsWith("en")?"en":"es";
  const first=firstOf(name);
- React.useEffect(()=>{setMode("reply");setDraft("");setMenu(false)},[chatId]);
+ React.useEffect(()=>{setMode("reply");setDraft("");setMenu(false);setPers(null);setPickAs(false)},[chatId]);
+ const srvP=(row&&row.persona)||(ctx&&ctx.chat&&ctx.chat.persona)||null;
+ const curP=pers||srvP;
+ const robot=(curP&&curP.robot)||null;
+ const useMem=!(curP&&curP.kind)&&mem?mem:null;
+ const asLabel=curP&&curP.kind?(curP.label||personaLabel(curP,robot,locale)):useMem?personaLabel(useMem,robot,locale):((curP&&curP.label)||personaLabel(null,robot,locale));
  const notes=(ctx&&Array.isArray(ctx.notes)?ctx.notes:[]).map(n=>({id:`n${n.id||n.at}`,role:"note",text:String(n.text||""),at:toDate(n.at)}));
  const items=React.useMemo(()=>{const all=[...messages,...notes];all.sort((a,b)=>((a.at&&a.at.getTime())||Date.now())-((b.at&&b.at.getTime())||Date.now()));return all},[messages,ctx]);// eslint-disable-line
  const lastKey=items.length?`${items[items.length-1].id}:${items.length}`:"";
@@ -321,11 +387,11 @@ function Conversation({chatId,row,ctx,setCtx,reloadCtx,navigate,toast,onClosed,o
  React.useEffect(()=>()=>stopTyping(),[chatId]);// eslint-disable-line
  const onType=v=>{setDraft(v);const ta=taRef.current;if(ta){ta.style.height="auto";ta.style.height=Math.min(140,ta.scrollHeight)+"px"}if(mode!=="reply"||closed)return;if(!v.trim()){stopTyping();return}const now=Date.now();if(now-typAt.current>4e3){typAt.current=now;apiPost(`/support/chats/${chatId}/dispatch-typing`,{typing:true},{retry:{maxAttempts:1}}).catch(()=>{})}clearTimeout(typT.current);typT.current=setTimeout(stopTyping,3e3)};
  const resetBox=()=>{setDraft("");const ta=taRef.current;if(ta)ta.style.height="auto"};
- const sendText=async(text,tempId)=>{const id=tempId||`e${Date.now()}`;setEcho(es=>[...es.filter(e=>e.id!==id),{id,role:"dispatch",text,at:new Date(),pending:true}]);try{const m=await apiPost(`/support/chats/${chatId}/messages/dispatch`,{message:text},{retry:{maxAttempts:1}});setEcho(es=>es.map(e=>e.id===id?{...e,pending:false,realId:Number(m&&m.id),read:false}:e));reloadInbox()}catch(e){setEcho(es=>es.map(x=>x.id===id?{...x,pending:false,failed:true}:x))}};
+ const sendText=async(text,tempId)=>{const id=tempId||`e${Date.now()}`;setEcho(es=>[...es.filter(e=>e.id!==id),{id,role:"dispatch",text,at:new Date(),pending:true}]);const as=useMem;try{const m=await apiPost(`/support/chats/${chatId}/messages/dispatch`,as?{message:text,persona:memBody(as)}:{message:text},{retry:{maxAttempts:1}});setEcho(es=>es.map(e=>e.id===id?{...e,pending:false,realId:Number(m&&m.id),read:false}:e));if(as)setPers({kind:as.kind,name:as.kind==="name"?as.name:null,label:personaLabel(as,robot,locale),robot});reloadInbox()}catch(e){setEcho(es=>es.map(x=>x.id===id?{...x,pending:false,failed:true}:x))}};
  const send=async()=>{const text=draft.trim();if(!text||sending)return;
   if(mode==="note"){setSending(true);try{const d=await apiPost(`/admin/support/chats/${chatId}/notes`,{text},{retry:{maxAttempts:1}});setCtx(c=>c?{...c,notes:d.notes||[]}:c);resetBox()}catch(e){toast(`No se guardó la nota: ${e instanceof Error?e.message:e}`)}setSending(false);return}
   stopTyping();
-  if(closed){if(!userId)return;setSending(true);try{const r=await apiPost(`/admin/users/${userId}/support-chat`,{message:text},{retry:{maxAttempts:1}});resetBox();navigate(`/soporte/chat/${r.chat_id}`)}catch(e){toast(`No se envió: ${e instanceof Error?e.message:e}`)}setSending(false);return}
+  if(closed){if(!userId)return;setSending(true);try{const m0=readMem();const r=await apiPost(`/admin/users/${userId}/support-chat`,m0?{message:text,persona:memBody(m0)}:{message:text},{retry:{maxAttempts:1}});resetBox();navigate(`/soporte/chat/${r.chat_id}`)}catch(e){toast(`No se envió: ${e instanceof Error?e.message:e}`)}setSending(false);return}
   resetBox();sendText(text)};
  const onKey=e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send()}};
  const onFile=async e=>{const f=e.target.files&&e.target.files[0];e.target.value="";if(!f)return;const id=`f${Date.now()}`;setEcho(es=>[...es,{id,role:"dispatch",text:`📎 ${f.name}`,at:new Date(),pending:true,upload:true}]);try{const m=await uploadAttachment(chatId,f);setEcho(es=>es.map(x=>x.id===id?{...x,pending:false,realId:Number(m&&m.id),text:m&&m.message||x.text}:x));reloadInbox()}catch(err){setEcho(es=>es.filter(x=>x.id!==id));toast(err instanceof Error?err.message:String(err))}};
@@ -343,7 +409,7 @@ function Conversation({chatId,row,ctx,setCtx,reloadCtx,navigate,toast,onClosed,o
   const body=att?el(Attachment,{chatId,raw:m.text}):el("div",{className:"si-bub"},m.text);
   if(m.role==="note"){rows.push(el("div",{className:"si-row me note",key:m.id},el("span",{className:"si-who"},"Nota interna"),el("div",{className:"si-bub"},m.text),el("span",{className:"si-meta"},`Solo el equipo la ve · ${hm(d)}`)));continue}
   if(m.role==="dispatch"){const meta=m.failed?el("span",{className:"si-meta"},"No se envió",el("button",{type:"button",onClick:()=>sendText(m.text,m.id)},"Reintentar")):el("span",{className:"si-meta"},m.pending?(m.upload?"Subiendo…":"Enviando…"):`${hm(d)} · ${m.read?"Visto":"Enviado"}`);
-   rows.push(el("div",{className:m.failed?"si-row me fail":"si-row me",key:`m${m.id}`},el("span",{className:"si-who"},"Tú · Soporte"),m.upload&&m.pending?el("div",{className:"si-bub"},m.text):body,meta));continue}
+   rows.push(el("div",{className:m.failed?"si-row me fail":"si-row me",key:`m${m.id}`},el("span",{className:"si-who"},`Tú · ${asLabel}`),m.upload&&m.pending?el("div",{className:"si-bub"},m.text):body,meta));continue}
   if(m.role==="bot"){rows.push(el("div",{className:"si-row them bot",key:`m${m.id}`},el("span",{className:"si-who"},"Robot"),body,el("span",{className:"si-meta"},hm(d))));continue}
   rows.push(el("div",{className:"si-row them",key:`m${m.id}`},el("span",{className:"si-who"},first||m.name||"Usuario"),body,el("span",{className:"si-meta"},hm(d))));
  }
@@ -379,6 +445,9 @@ function Conversation({chatId,row,ctx,setCtx,reloadCtx,navigate,toast,onClosed,o
      el("button",{type:"button",className:mode==="reply"?"si-tab on":"si-tab",onClick:()=>setMode("reply")},"Responder"),
      el("button",{type:"button",className:mode==="note"?"si-tab note on":"si-tab note",onClick:()=>{stopTyping();setMode("note")}},"Nota interna")),
     mode==="reply"?el("div",{className:"si-quick"},quick.map(q=>el("button",{type:"button",key:q,className:"si-q",onClick:()=>{onType(q);const ta=taRef.current;if(ta)ta.focus()}},q))):null),
+   mode==="reply"&&!closed?el("div",{className:"si-as"},"Escribes como",
+    el("button",{type:"button",className:"si-aschip","aria-haspopup":"dialog","aria-expanded":pickAs,title:"Cambiar el nombre que ve la persona",onClick:()=>setPickAs(v=>!v)},el("i",null,initials(asLabel)[0]||"S"),el("span",null,asLabel),el("em",null,"▾")),
+    pickAs?el(PersonaPicker,{chatId,cur:curP,mem,robot,locale,first,onClose:()=>setPickAs(false),onSaved:p=>{setPers(p);setPickAs(false);setMem(readMem());toast(`${first||"La persona"} ahora te ve como ${p.label}.`);reloadInbox()}}):null):null,
    el("div",{className:"si-box"},
     el("button",{type:"button",className:"si-ib","aria-label":"Adjuntar foto o PDF",title:"Adjuntar foto o PDF",disabled:mode!=="reply"||closed,onClick:()=>fileRef.current&&fileRef.current.click()},el(Ico.clip)),
     el("input",{ref:fileRef,type:"file",accept:"image/*,application/pdf",style:{display:"none"},onChange:onFile}),
@@ -440,7 +509,7 @@ function ContextPanel({ctx,row,navigate,openModal}){
 function WriteModal({onClose,navigate}){
  const[q,setQ]=React.useState(""),[res,setRes]=React.useState(null),[pick,setPick]=React.useState(null),[text,setText]=React.useState(""),[busy,setBusy]=React.useState(false),[err,setErr]=React.useState(null);
  React.useEffect(()=>{const s=q.trim();if(s.length<2){setRes(null);return}let off=false;const t=setTimeout(()=>{apiGet("/admin/home/search",{query:{q:s},retry:{maxAttempts:1}}).then(d=>{if(!off)setRes(((d&&d.results)||[]).filter(r=>r.kind==="person"))}).catch(()=>{if(!off)setRes([])})},300);return()=>{off=true;clearTimeout(t)}},[q]);
- const send=async()=>{const message=text.trim();if(!pick||!message||busy)return;setBusy(true);setErr(null);try{const r=await apiPost(`/admin/users/${pick.id}/support-chat`,{message},{retry:{maxAttempts:1}});onClose();navigate(`/soporte/chat/${r.chat_id}`)}catch(e){setBusy(false);setErr(e instanceof Error?e.message:String(e))}};
+ const send=async()=>{const message=text.trim();if(!pick||!message||busy)return;setBusy(true);setErr(null);try{const m0=readMem();const r=await apiPost(`/admin/users/${pick.id}/support-chat`,m0?{message,persona:memBody(m0)}:{message},{retry:{maxAttempts:1}});onClose();navigate(`/soporte/chat/${r.chat_id}`)}catch(e){setBusy(false);setErr(e instanceof Error?e.message:String(e))}};
  return el(Modal,{title:"Escribir primero",sub:"Busca a un pasajero o conductor. Le llega como mensaje de Soporte con aviso; si ya tiene un chat abierto, va ahí.",onClose,width:520},
   pick?el("div",{className:"si-pick"},el("button",{type:"button",className:"on",onClick:()=>setPick(null)},pick.label,el("small",null,`${pick.sub} · cambiar`))):
   el("div",{style:{display:"flex",flexDirection:"column",gap:8}},

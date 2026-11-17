@@ -75,14 +75,8 @@ def _dispatch_persona_label(chat, lang: str = "en") -> str:
     """Sender label for a message from the dispatch panel: the persona the
     operator connected with, else the generic support tag. Chats from before
     dispatch_persona existed keep the supervisor label off the old flag."""
-    persona = (getattr(chat, "dispatch_persona", None) or "").strip()
-    if not persona and getattr(chat, "supervisor_connected", False):
-        persona = "supervisor"
-    if persona == "agent":
-        return "Agente especializado" if (lang or "en").startswith("es") else "Specialized Agent"
-    if persona == "supervisor":
-        return "Supervisor"
-    return "Soporte Cruise"
+    from services import support_persona
+    return support_persona.label(chat, lang)
 
 _ESCALATION_TRIGGERS = [
     "manager", "supervisor", "gerente", "jefe", "encargado", "superior",
@@ -3615,6 +3609,36 @@ async def _push_support_message(db, chat) -> None:
                         chat.id, e)
 
 
+def _persona_from_body(body) -> Optional[str]:
+    """The optional ``persona`` {kind, name} the panel sends with a message:
+    the operator's last name, for a chat that never had one."""
+    if not isinstance(body, dict) or not isinstance(body.get("persona"), dict):
+        return None
+    from services import support_persona
+    try:
+        return support_persona.encode(str(body["persona"].get("kind") or ""), body["persona"].get("name"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+async def _relabel_panel_messages(db, chat) -> None:
+    """Every panel message of ``chat`` carries the current name in the
+    Firestore mirror too (the apps read it off /messages, which reads the
+    label live)."""
+    if not _HAS_FIRESTORE:
+        return
+    ids = [r[0] for r in (await db.execute(
+        select(SupportMessage.id).where(SupportMessage.chat_id == chat.id,
+                                        SupportMessage.sender_role == "dispatch")
+        .order_by(SupportMessage.id.desc()).limit(200)
+    )).all()]
+    try:
+        firestore_sync.relabel_support_messages(
+            chat.id, ids, _dispatch_persona_label(chat, getattr(chat, "locale", "en") or "en"))
+    except Exception as e:
+        logging.warning("[Support] relabel mirror failed for chat %s: %s", chat.id, e)
+
+
 @router.post("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_require_dispatch_auth)])
 async def send_support_message_dispatch(chat_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Send a message in a support chat (dispatch side). Switches bot off."""
@@ -3623,11 +3647,18 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
     if not msg_text:
         raise HTTPException(400, "Message cannot be empty")
 
+    persona_value = _persona_from_body(body)
+
     chat_result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
     chat = chat_result.scalar_one_or_none()
     if not chat:
         raise HTTPException(404, "Chat not found")
 
+    if persona_value and not (chat.dispatch_persona or "").strip():
+        chat.dispatch_persona = persona_value
+        sent = await _send_dispatch_message(db, chat, msg_text)
+        await _relabel_panel_messages(db, chat)
+        return sent
     return await _send_dispatch_message(db, chat, msg_text)
 
 
@@ -3731,6 +3762,9 @@ async def open_support_chat_for_user(user_id: int, request: Request, db: AsyncSe
     msg_text = (body.get("message") or "").strip()
     if not msg_text:
         raise HTTPException(400, "Message cannot be empty")
+    # The name the operator writes with (support_persona): applied only to a
+    # chat that never had one, so it never overrides a name chosen there.
+    persona_value = _persona_from_body(body)
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if user is None:
         raise HTTPException(404, "User not found")
@@ -3776,7 +3810,12 @@ async def open_support_chat_for_user(user_id: int, request: Request, db: AsyncSe
             except Exception as e:
                 logging.error("Firestore outbound chat sync failed: %s", e)
 
+    relabel = bool(persona_value and not (chat.dispatch_persona or "").strip())
+    if relabel:
+        chat.dispatch_persona = persona_value
     message = await _send_dispatch_message(db, chat, msg_text)
+    if relabel:
+        await _relabel_panel_messages(db, chat)
     return {"chat_id": chat.id, "message": message}
 
 

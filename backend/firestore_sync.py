@@ -591,6 +591,31 @@ def sync_support_message(chat_id: int, msg_id: int, sender_id: int,
              sender_name, sender_role, message)
 
 
+def relabel_support_messages(chat_id: int, msg_ids, sender_name: str):
+    """The panel changed the name it writes with (support_persona): the
+    mirrored copies of its messages say the new one too. Only existing docs
+    are touched (update, never set)."""
+    _ensure_init()
+    if _db is None or not msg_ids:
+        return
+    _offload(_relabel_support_messages_now, chat_id, list(msg_ids), sender_name)
+
+
+def _relabel_support_messages_now(chat_id: int, msg_ids, sender_name: str):
+    _ensure_init()
+    if _db is None:
+        return
+    col = _db.collection("support_chats").document(f"chat_{chat_id}").collection("messages")
+    done = 0
+    for msg_id in msg_ids:
+        try:
+            col.document(f"msg_{msg_id}").update({"senderName": sender_name})
+            done += 1
+        except Exception:
+            pass  # not mirrored (Firestore was down then): nothing to rename
+    log.info("Relabeled %d/%d support msgs in chat %d", done, len(msg_ids), chat_id)
+
+
 def _sync_support_message_now(chat_id: int, msg_id: int, sender_id: int,
                           sender_name: str, sender_role: str, message: str):
     _ensure_init()

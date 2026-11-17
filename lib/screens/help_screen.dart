@@ -1491,9 +1491,13 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         return;
       }
 
-      // Extract agent name from bot messages
+      // The header names whoever answered last: the robot, or the person
+      // from support with the name the panel picked ("Escribes como",
+      // CLAUDE.md #91) — before, only the robot counted and the header kept
+      // the robot's name while a person wrote as someone else.
       for (final m in newMessages) {
-        if (m.role == 'bot' && m.senderName.isNotEmpty &&
+        if ((m.role == 'bot' || m.role == 'dispatch') &&
+            m.senderName.isNotEmpty &&
             m.senderName != 'Asistente Cruise' &&
             m.senderName != 'Cruise Assistant') {
           _agentName = m.senderName;

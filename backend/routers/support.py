@@ -71,6 +71,12 @@ def _agent_for_role(role: str) -> str:
     return _rng.choice(pool)
 
 
+def _shown_agent_name(chat):
+    """The app's chat header (support_persona.shown_name)."""
+    from services import support_persona
+    return support_persona.shown_name(chat)
+
+
 def _dispatch_persona_label(chat, lang: str = "en") -> str:
     """Sender label for a message from the dispatch panel: the persona the
     operator connected with, else the generic support tag. Chats from before
@@ -2744,7 +2750,7 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
             chat.locale = locale
             await db.commit()
         return {"id": chat.id, "user_id": chat.user_id, "status": chat.status,
-                "subject": chat.subject, "agent_name": chat.agent_name,
+                "subject": chat.subject, "agent_name": _shown_agent_name(chat),
                 "agent_avatar": (user.role or "rider").lower(),
                 "bot_phase": chat.bot_phase or "welcome",
                 "created_at": chat.created_at.isoformat() if chat.created_at else None}
@@ -2807,7 +2813,7 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
             logging.error("Firestore support chat sync failed: %s", e)
 
     return {"id": chat.id, "user_id": chat.user_id, "status": chat.status,
-            "subject": chat.subject, "agent_name": chat.agent_name,
+            "subject": chat.subject, "agent_name": _shown_agent_name(chat),
             "agent_avatar": (user.role or "rider").lower(),
             "bot_phase": chat.bot_phase or "welcome",
             "created_at": chat.created_at.isoformat() if chat.created_at else None}

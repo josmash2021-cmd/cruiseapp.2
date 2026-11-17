@@ -161,3 +161,28 @@ def test_panel_picker_is_wired():
     assert CHUNK.count("persona:memBody(m0)") == 2   # reopening a closed chat + "Escribir primero"
     assert '"Tú · Soporte"' not in CHUNK and "`Tú · ${asLabel}`" in CHUNK
     assert 'localStorage.getItem(PERSONA_KEY)' in CHUNK and "try{" in CHUNK
+
+
+@pytest.mark.asyncio
+async def test_app_header_names_the_panel_once_a_person_took_the_chat(client, db, test_rider):
+    """The app's chat header showed the robot's name ("Javier") while the
+    panel wrote as Carlos. The open-chat answer names the panel's name once
+    a person took the chat; the robot's before that."""
+    rider, token = test_rider
+    def user():   # fresh signed headers each call (replay guard)
+        return {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+    chat = await _chat(db, rider, phase="agent_active", robot="Javier")
+    r = await client.post("/support/chats", headers=user(), json={"subject": "Soporte general", "locale": "es"})
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == chat.id and r.json()["agent_name"] == "Javier"
+
+    await client.post(f"/support/chats/{chat.id}/messages/dispatch", headers=_panel(),
+                      json={"message": "hola", "persona": {"kind": "name", "name": "Carlos"}})
+    r = await client.post("/support/chats", headers=user(), json={"subject": "Soporte general", "locale": "es"})
+    assert r.status_code == 200, r.text
+    assert r.json()["agent_name"] == "Carlos"
+
+
+def test_app_header_follows_the_last_answer_bot_or_panel():
+    src = (Path(__file__).resolve().parents[2] / "lib" / "screens" / "help_screen.dart").read_text(encoding="utf-8")
+    assert "if ((m.role == 'bot' || m.role == 'dispatch') &&" in src

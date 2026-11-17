@@ -109,5 +109,14 @@ def describe(chat) -> dict:
     }
 
 
+def shown_name(chat) -> Optional[str]:
+    """The name the app's chat header shows: the robot's until a person
+    takes the chat (the robot never writes again), then the name the panel
+    writes with — the app names whoever answered last."""
+    if (getattr(chat, "bot_phase", None) or "") == "dispatch_takeover":
+        return label(chat, getattr(chat, "locale", None) or "en")
+    return getattr(chat, "agent_name", None)
+
+
 def is_takeover(value: Optional[str]) -> bool:
     return (value or "").strip() in TAKEOVER

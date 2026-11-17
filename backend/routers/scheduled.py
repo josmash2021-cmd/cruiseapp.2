@@ -454,7 +454,10 @@ async def claim_scheduled_trip(
     trip.status = "scheduled_accepted"
     trip.scheduled_target_driver_id = None  # the aimed reservation is consumed
 
-    # Record offer
+    # Record offer — after retiring any accepted row left by an earlier
+    # holder, or his 1-hour confirm offer would be a 409 (reservation_claims).
+    from services.reservation_claims import retire_stale_claims
+    await retire_stale_claims(db, trip.id)
     offer = DispatchOffer(trip_id=trip.id, driver_id=user.id, status="accepted")
     db.add(offer)
     await db.commit()
@@ -750,6 +753,10 @@ async def cancel_claimed_scheduled_trip(
     trip.driver_id = None
     trip.rider_approach_notified_at = None
     trip.status = "scheduled"
+    # His claim row (accepted) must go, or the next driver's accept is a 409
+    # "already accepted by another driver" (services/reservation_claims.py).
+    from services.reservation_claims import retire_offers
+    await retire_offers(db, trip.id)
     await db.commit()
 
     logging.info("[Scheduled] Driver %d dropped scheduled trip %d — back to marketplace", user.id, trip.id)
@@ -796,6 +803,19 @@ async def cancel_claimed_scheduled_trip(
         _safe_create_task(
             _bg_mirror_trip_released(trip.id, "scheduled"),
             name=f"scheduled_cancel_trip_release_{trip.id}",
+        )
+
+    # Back on the board, like Lyft: the other drivers who can take it hear
+    # about it (the same "new scheduled ride" push), never the one who let
+    # it go (owner 2026-11-16).
+    _sched = trip.scheduled_at
+    if _sched is not None and _sched.tzinfo is None:
+        _sched = _sched.replace(tzinfo=timezone.utc)
+    if _sched and (_sched - datetime.now(timezone.utc)).total_seconds() > MIN_ADVANCE_MINUTES * 60:
+        from services.scheduled_broadcast import notify_new_scheduled_ride
+        _safe_create_task(
+            notify_new_scheduled_ride(trip.id, exclude_driver_id=user.id),
+            name=f"scheduled_cancel_broadcast_{trip.id}",
         )
 
     return {"ok": True, "trip_id": trip.id, "status": "scheduled"}
@@ -874,7 +894,8 @@ async def drop_scheduled_trip(
             stale_offers = await db.execute(
                 select(DispatchOffer).where(
                     DispatchOffer.trip_id == trip.id,
-                    DispatchOffer.status == "pending",
+                    # accepted too: the claim row (services/reservation_claims.py)
+                    DispatchOffer.status.in_(["pending", "accepted"]),
                 )
             )
             for offer in stale_offers.scalars().all():
@@ -966,7 +987,7 @@ async def drop_scheduled_trip(
     if _sched and (_sched - datetime.now(timezone.utc)).total_seconds() > MIN_ADVANCE_MINUTES * 60:
         from services.scheduled_broadcast import notify_new_scheduled_ride
         _safe_create_task(
-            notify_new_scheduled_ride(trip.id),
+            notify_new_scheduled_ride(trip.id, exclude_driver_id=user.id),
             name=f"scheduled_drop_broadcast_{trip.id}",
         )
 

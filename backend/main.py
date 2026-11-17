@@ -3211,6 +3211,10 @@ async def _scheduled_ride_dispatcher():
                             break
 
                     if best and best_dist < 50:  # Within 50 km
+                        # An accepted row left by an earlier holder would make
+                        # this driver's accept a 409 (reservation_claims).
+                        from services.reservation_claims import retire_stale_claims
+                        await retire_stale_claims(db, trip.id)
                         # Create dispatch offer
                         offer = DispatchOffer(
                             trip_id=trip.id, driver_id=best.id, status="pending",

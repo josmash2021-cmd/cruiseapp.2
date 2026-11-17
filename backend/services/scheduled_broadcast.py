@@ -18,7 +18,7 @@ import logging
 
 from sqlalchemy import select
 
-from models.database import SessionLocal, Trip, User, Vehicle
+from models.database import DispatchOffer, SessionLocal, Trip, User, Vehicle
 from services.fcm_service import _send_fcm_push_async
 from utils.helpers import ACTIVE_ACCOUNT_STATUSES, user_lang
 
@@ -30,8 +30,13 @@ _TITLE_EN = "New Scheduled Ride Available"
 _BODY_EN = "Open to accept the ride"
 
 
-async def notify_new_scheduled_ride(trip_id: int) -> None:
+async def notify_new_scheduled_ride(trip_id: int, exclude_driver_id: int | None = None) -> None:
     """Push the marketplace card to the drivers who can actually claim it.
+
+    Also when a reservation comes BACK to the board (a driver let it go,
+    dispatch took it away): ``exclude_driver_id`` is that driver — he is not
+    told about the ride he just left — and drivers marked released_offline
+    on it never hear about it (the board hides it from them too).
 
     Fire-and-forget from the trip-create paths; never raises — a push
     failure must not fail the booking that triggered it.
@@ -101,9 +106,20 @@ async def notify_new_scheduled_ride(trip_id: int) -> None:
                 if uid not in driver_vtypes:
                     driver_vtypes[uid] = (vt or "standard").strip().lower()
 
+            skip_ids = set((await db.execute(
+                select(DispatchOffer.driver_id).where(
+                    DispatchOffer.trip_id == trip.id,
+                    DispatchOffer.status == "released_offline",  # main.RELEASED_OFFLINE
+                )
+            )).scalars().all())
+            if exclude_driver_id:
+                skip_ids.add(exclude_driver_id)
+
             tasks = []
             skipped_state = 0
             for d in drivers:
+                if d.id in skip_ids:
+                    continue
                 approved = (
                     d.is_verified is True
                     or (d.verification_status or "").strip().lower() == "approved"

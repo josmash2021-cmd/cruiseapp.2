@@ -380,8 +380,8 @@ async def test_reservation_change_driver_aims_it_at_the_new_one(
     from services import scheduled_broadcast
     sent = []
 
-    async def _broadcast(trip_id):
-        sent.append(trip_id)
+    async def _broadcast(trip_id, exclude_driver_id=None):
+        sent.append((trip_id, exclude_driver_id))
     monkeypatch.setattr(scheduled_broadcast, "notify_new_scheduled_ride", _broadcast)
     old = await _driver(db, "old-res@test.com", "+13055551201", *NEAR)
     new = await _driver(db, "new-res@test.com", "+13055551202", *FAR,

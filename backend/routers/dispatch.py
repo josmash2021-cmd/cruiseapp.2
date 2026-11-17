@@ -3243,13 +3243,10 @@ async def _reassign_reservation(db, trip, mode: str, body) -> dict:
     trip.status = "scheduled"
     trip.scheduled_target_driver_id = target.id if target else None
     trip.updated_at = datetime.now(timezone.utc)
-    pending = await db.execute(
-        select(DispatchOffer).where(
-            DispatchOffer.trip_id == trip.id, DispatchOffer.status == "pending",
-        )
-    )
-    for offer in pending.scalars().all():
-        offer.status = "canceled"
+    # Pending AND the previous holder's accepted claim row: left accepted,
+    # the next driver's accept is a 409 (services/reservation_claims.py).
+    from services.reservation_claims import retire_offers
+    await retire_offers(db, trip.id)
     await db.commit()
     await db.refresh(trip)
     logging.warning(
@@ -3294,7 +3291,7 @@ async def _reassign_reservation(db, trip, mode: str, body) -> dict:
                 data={"type": "ride_reassigned", "trip_id": str(trip.id)},
             ))
     from services.scheduled_broadcast import notify_new_scheduled_ride
-    _safe_create_task(notify_new_scheduled_ride(trip.id),
+    _safe_create_task(notify_new_scheduled_ride(trip.id, exclude_driver_id=previous_driver_id),
                       name=f"reservation_reassign_broadcast_{trip.id}")
     if target is not None:
         name = _driver_display_name(target)

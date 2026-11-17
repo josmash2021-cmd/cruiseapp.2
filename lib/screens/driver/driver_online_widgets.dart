@@ -2833,140 +2833,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   /// BackdropFilter (that would have to see the native map, rule 43), and
   /// clipped to the card's radius so its edge stays crisp.
   Widget _takenOnCard(AnimationController ctrl, Widget card, Widget button) {
-    const settle = Cubic(0.22, 1, 0.36, 1);
-    double seg(double ms, int start, int dur, Curve c) =>
-        c.transform(((ms - start) / dur).clamp(0.0, 1.0));
-    return IgnorePointer(
-      child: AnimatedBuilder(
-        animation: ctrl,
-        builder: (context, _) {
-          final ms = ctrl.value * _kTakenMs;
-          final kF = seg(ms, 0, 450, Curves.easeOutCubic);
-          final kN = seg(ms, 120, 420, settle);
-          final kRing = seg(ms, 160, 520, settle);
-          final kPulse = seg(ms, 300, 900, Curves.easeOutCubic);
-          final kOut = seg(ms, _kTakenExitMs, 450, Curves.fastOutSlowIn);
-          final blur = 10 * kF;
-          final notice = Opacity(
-            opacity: kN,
-            child: Transform.translate(
-              offset: Offset(0, 10 * (1 - kN)),
-              child: Transform.scale(
-                scale: 0.96 + 0.04 * kN,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 30),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Transform.scale(
-                        scale: 0.86 + 0.14 * kRing,
-                        child: Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: const Color(0xFFE8C547)
-                                .withValues(alpha: 0.12),
-                            border: Border.all(
-                              color: const Color(0xFFE8C547),
-                              width: 1.5,
-                            ),
-                            boxShadow: [
-                              if (kPulse > 0 && kPulse < 1)
-                                BoxShadow(
-                                  color: const Color(0xFFE8C547)
-                                      .withValues(alpha: 0.22 * (1 - kPulse)),
-                                  spreadRadius: 12 * kPulse,
-                                ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.swap_horiz_rounded,
-                            color: Color(0xFFE8C547),
-                            size: 30,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        S.of(context).rideTakenByAnotherDriver,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        S.of(context).driverRideTakenReturning,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          fontSize: 13,
-                          height: 1.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-          return Opacity(
-            opacity: 1 - kOut,
-            child: Transform.translate(
-              offset: Offset(0, 40 * kOut),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: _kOfferSideInset, vertical: 4),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: ImageFiltered(
-                            enabled: blur > 0.01,
-                            imageFilter:
-                                ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-                            child: card,
-                          ),
-                        ),
-                        Positioned.fill(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: ColoredBox(
-                              color:
-                                  Colors.black.withValues(alpha: 0.45 * kF),
-                            ),
-                          ),
-                        ),
-                        Positioned.fill(child: Center(child: notice)),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                        _kOfferSideInset, 4, _kOfferSideInset, 8),
-                    child: Opacity(
-                      opacity: 1 - 0.7 * kF,
-                      child: ImageFiltered(
-                        enabled: kF > 0.01,
-                        imageFilter: ui.ImageFilter.blur(
-                            sigmaX: 3 * kF, sigmaY: 3 * kF),
-                        child: button,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+    // The look lives in TakenOverCard (shared with a reservation claimed a
+    // moment too late): the card's own pixels frost (IgnorePointer,
+    // ImageFiltered clipped by ClipRRect — never a BackdropFilter, rule 43).
+    return TakenOverCard(
+      controller: ctrl,
+      card: card,
+      button: button,
+      title: S.of(context).rideTakenByAnotherDriver,
+      body: S.of(context).driverRideTakenReturning,
+      sideInset: _kOfferSideInset,
+      totalMs: _kTakenMs,
+      exitMs: _kTakenExitMs,
     );
   }
 

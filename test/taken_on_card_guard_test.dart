@@ -55,15 +55,36 @@ void main() {
   });
 
   test('the frost is the card\'s own pixels, clipped, and takes no tap', () {
-    final w = body(widgets, 'Widget _takenOnCard(', 7000);
-    expect(w, contains('IgnorePointer('));
-    expect(w, contains('ImageFiltered('));
-    expect(w, isNot(contains('BackdropFilter(')),
+    // The look lives in the shared TakenOverCard (2026-11-16).
+    final shared = read('lib/widgets/taken_over_card.dart');
+    expect(shared, contains('IgnorePointer('));
+    expect(shared, contains('ImageFiltered('));
+    expect(shared, isNot(contains('BackdropFilter(')),
         reason: 'a backdrop blur would have to see the native map (rule 43)');
-    expect(w, contains('ClipRRect('));
+    expect(shared, contains('ClipRRect('));
+    expect(shared, contains('\nconst int kTakenOverCardMs = 3390;'));
+    expect(shared, contains('\nconst int kTakenOverCardExitMs = 2940;'));
+    final w = body(widgets, 'Widget _takenOnCard(', 1200);
+    expect(w, contains('return TakenOverCard('));
     expect(w, contains('S.of(context).rideTakenByAnotherDriver'));
     expect(w, contains('S.of(context).driverRideTakenReturning'));
+    expect(w, contains('totalMs: _kTakenMs'));
+    expect(w, contains('exitMs: _kTakenExitMs'));
     expect(widgets, contains('return _takenOnCard(taken, card, _buildAcceptButton(offer, oid));'));
+  });
+
+  test('a reservation claimed a moment too late says it on its card too', () {
+    // Owner 2026-11-16 ("sí", drawing 2616qkJe6Tub8W6oNk4Xwg): the red bar
+    // gave way to the instant offers' look.
+    final resv = read('lib/screens/driver/scheduled_rides_map_screen.dart');
+    final claim = body(resv, 'Future<void> _claimTrip(', 3600);
+    expect(claim, contains("if (taken && _selected != null && _selected!['id'] == tripId) {"));
+    expect(claim, contains('await _playTakenOnCard(tripId);'));
+    final detail = body(resv, 'Widget _buildFloatingDetail(', 2400);
+    expect(detail, contains('TakenOverCard('));
+    expect(detail, contains('s.rideTakenByAnotherDriver'));
+    expect(detail, contains('s.scheduledRideTakenBody'));
+    expect(resv, contains('_takenCtrl?.dispose();'));
   });
 
   test('timeline constants are top-level (CLAUDE.md #16) and match the demo', () {

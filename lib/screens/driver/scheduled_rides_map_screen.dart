@@ -30,6 +30,7 @@ import '../../utils/driver_location_settings.dart';
 import '../../utils/fix_kinematics.dart';
 import '../../utils/friendly_load_error.dart';
 import '../../utils/mapbox_safe.dart';
+import '../../widgets/taken_over_card.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/map/map_callout_bubble.dart';
 import '../../widgets/neu_style.dart';
@@ -164,6 +165,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   bool _fetchingAvail = false; // guard concurrent calls
   int _myRidesCount = 0;
   int? _claimingId;
+
+  /// "Otro conductor lo tomó" running on the open card (its trip id), and
+  /// its clock — the instant offers' look (TakenOverCard, owner 2026-11-16).
+  int? _takenTripId;
+  AnimationController? _takenCtrl;
   bool _routeFetching = false;
 
   // ── Filters ──
@@ -230,6 +236,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _countdownTimer?.cancel();
     _availPollTimer?.cancel();
+    _takenCtrl?.dispose();
     _camFrame.dispose();
     unawaited(_gps?.stop());
     _gps = null;
@@ -527,6 +534,18 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
           e.statusCode == 409 &&
           e.message == 'go_online_first';
       final taken = e is ApiException && e.statusCode == 409 && !goOnline;
+      // Lost to a driver who asked first: the card frosts in place with
+      // "Otro conductor lo tomó", like an instant offer, then leaves with
+      // the ride (owner 2026-11-16). The red bar stays for a card already
+      // closed and for every other refusal.
+      if (taken && _selected != null && _selected!['id'] == tripId) {
+        await _playTakenOnCard(tripId);
+        if (!mounted) return;
+        _dismissSelection();
+        setState(() => _takenTripId = null);
+        _loadAvailable(force: true);
+        return;
+      }
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
         // The refusals the driver can act on get their own sentence.
         // Everything else keeps the raw server reason.
@@ -1518,6 +1537,19 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     );
   }
 
+  /// The run over the open card; completes with it invisible (the caller
+  /// closes it in the same frame it clears [_takenTripId]).
+  Future<void> _playTakenOnCard(int tripId) async {
+    if (!mounted || _takenTripId != null) return;
+    HapticService.mediumImpact();
+    final ctrl = _takenCtrl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: kTakenOverCardMs),
+    );
+    setState(() => _takenTripId = tripId);
+    await ctrl.forward(from: 0);
+  }
+
   /// "¿Reservar este viaje?" first (owner 2026-11-03, Lyft); only its
   /// Reservar takes the ride.
   Future<void> _confirmReserve(Map<String, dynamic> trip) async {
@@ -1539,25 +1571,44 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     final at = _parseScheduledAt(trip);
     final isEs = Localizations.localeOf(context).languageCode == 'es';
     final tripId = trip['id'] as int? ?? 0;
-    return Column(
-      key: ValueKey('sched-detail-${trip['id']}'),
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ReservationOfferCard(
-          trip: trip,
-          whenLabel: at == null ? '' : _whenShort(s, at, isEs),
-          driverPos: _driverPos,
+    final card = ReservationOfferCard(
+      trip: trip,
+      whenLabel: at == null ? '' : _whenShort(s, at, isEs),
+      driverPos: _driverPos,
+    );
+    final button = ReserveOfferButton(
+      label: driverIsResting ? driverRestLabel : s.resvReserve,
+      busy: _claimingId == tripId,
+      resting: driverIsResting,
+      onTap: driverIsResting
+          ? showDriverRestRemaining
+          : () => _confirmReserve(trip),
+    );
+    final ctrl = _takenCtrl;
+    if (_takenTripId == tripId && ctrl != null) {
+      // Same key and type as the plain card: the AnimatedSwitcher above
+      // keeps it in place (no cross-fade) while it frosts.
+      return KeyedSubtree(
+        key: ValueKey('sched-detail-$tripId'),
+        child: TakenOverCard(
+          controller: ctrl,
+          card: card,
+          button: button,
+          title: s.rideTakenByAnotherDriver,
+          body: s.scheduledRideTakenBody,
         ),
-        const SizedBox(height: 8),
-        ReserveOfferButton(
-          label: driverIsResting ? driverRestLabel : s.resvReserve,
-          busy: _claimingId == tripId,
-          resting: driverIsResting,
-          onTap: driverIsResting
-              ? showDriverRestRemaining
-              : () => _confirmReserve(trip),
-        ),
-      ],
+      );
+    }
+    return KeyedSubtree(
+      key: ValueKey('sched-detail-$tripId'),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          card,
+          const SizedBox(height: 8),
+          button,
+        ],
+      ),
     );
   }
 

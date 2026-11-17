@@ -5459,6 +5459,9 @@ class S {
           : '$count scheduled rides available');
   String get scheduledRideConfirmed =>
       _es ? 'Viaje reservado confirmado' : 'Scheduled ride confirmed';
+  String get scheduledRideTakenBody => _es
+      ? 'Esta reserva ya fue asignada a otro conductor.'
+      : 'This reservation was already assigned to another driver.';
   String get scheduledRideNoLongerAvailable => _es
       ? 'Este viaje ya no está disponible'
       : 'This ride is no longer available';

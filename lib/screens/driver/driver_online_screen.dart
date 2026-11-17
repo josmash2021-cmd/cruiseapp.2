@@ -38,6 +38,7 @@ import '../../services/scheduled_board_watcher.dart';
 import '../../services/rider_heat_watcher.dart';
 import '../../widgets/offer_countdown_ring.dart';
 import '../../widgets/route_connector_line.dart';
+import '../../widgets/taken_over_card.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/map/route_endpoint_markers.dart';
 import '../../services/gps_service.dart';

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +39,12 @@ _FUTURE_RESERVATION = timedelta(minutes=60)
 
 @router.get("/admin/panel/pulse", dependencies=[Depends(_require_dispatch_auth)])
 async def panel_pulse(db: AsyncSession = Depends(get_db)):
+    return await pulse_snapshot(db)
+
+
+async def pulse_snapshot(db: AsyncSession) -> dict:
+    """The counts — shared by the panel's poll and the phone pushes
+    (services/panel_push.py), so both always say the same thing."""
     now = datetime.now(timezone.utc)
 
     support = await waiting_chats(db)
@@ -101,3 +107,44 @@ async def panel_pulse(db: AsyncSession = Depends(get_db)):
         "drivers": {"online": len(drivers), "quiet": quiet},
         "payouts_failed": {"n": len(failed), "amount": round(sum(float(a or 0) for a in failed), 2)},
     }
+
+
+# ── Notices on the operators' phones (Web Push, services/panel_push.py) ──
+@router.get("/admin/panel/push/key", dependencies=[Depends(_require_dispatch_auth)])
+async def panel_push_key():
+    from services import panel_push
+    return {"public_key": panel_push.keys()[1]}
+
+
+@router.post("/admin/panel/push/subscribe", dependencies=[Depends(_require_dispatch_auth)])
+async def panel_push_subscribe(body: dict = Body(...), db: AsyncSession = Depends(get_db)):
+    from services import panel_push
+    sub = panel_push.clean(body.get("subscription"))
+    if sub is None:
+        raise HTTPException(400, "Suscripción no válida")
+    await panel_push.save(db, sub, str(body.get("label") or ""))
+    return {"ok": True}
+
+
+@router.post("/admin/panel/push/unsubscribe", dependencies=[Depends(_require_dispatch_auth)])
+async def panel_push_unsubscribe(body: dict = Body(...), db: AsyncSession = Depends(get_db)):
+    from services import panel_push
+    endpoint = body.get("endpoint")
+    if not isinstance(endpoint, str):
+        raise HTTPException(400, "Falta el endpoint")
+    return {"ok": True, "removed": await panel_push.remove(db, endpoint)}
+
+
+@router.post("/admin/panel/push/test", dependencies=[Depends(_require_dispatch_auth)])
+async def panel_push_test(body: dict = Body(...), db: AsyncSession = Depends(get_db)):
+    """One test notice to THIS device only — never to the other operators."""
+    from services import panel_push
+    endpoint = body.get("endpoint")
+    if not isinstance(endpoint, str) or not any(
+            s["endpoint"] == endpoint for s in await panel_push.subscriptions(db)):
+        raise HTTPException(404, "Este dispositivo no tiene los avisos activados")
+    sent = await panel_push.send({"title": "Cruise Dispatch", "body": "Los avisos llegan a este teléfono.",
+                                  "url": "/inicio", "tag": "cruise-test"}, only=endpoint)
+    if not sent:
+        raise HTTPException(502, "El servicio de avisos del teléfono no lo aceptó")
+    return {"ok": True}

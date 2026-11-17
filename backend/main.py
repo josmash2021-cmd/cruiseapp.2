@@ -1028,6 +1028,9 @@ async def _start_scheduler_agents() -> None:
     # The rider's reminder the night before a reservation (2026-11-16).
     from services.rider_reminders import rider_reminder_loop
     _spawn_background(rider_reminder_loop(lambda: _is_scheduler_leader), "rider_night_reminder")
+    # Notices on the operators' phones (2026-11-16): leader only, same pulse.
+    from services.panel_push import panel_push_loop
+    _spawn_background(panel_push_loop(lambda: _is_scheduler_leader), "panel_push")
 
     # Driving-time dispatch learns from real pickups (owner 2026-11-01): every
     # worker reloads its own correction factors; the leader prunes old rows.

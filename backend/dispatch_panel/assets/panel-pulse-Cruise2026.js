@@ -1,6 +1,6 @@
 /*! guard-pin panel_pulse: menú con contadores en vivo + los DOS únicos avisos agrupados (dueño 2026-11-16, dibujo https://claude.ai/artifact/MSML67sC6y5MHc4kNF2rxQ) - chunk escrito a mano, sin fuente React (CLAUDE.md #30). Un solo poll a GET /admin/panel/pulse (10 s visible / 20 s oculta). Avisan SOLO soporte (gente esperando a una persona) y viajes sin conductor; cada uno es UN aviso que cuenta (100 mensajes = "100 personas esperan"). Suena una vez: de 0 a 1 o cuando alguien pasa de 5 min, máximo 1 vez por minuto. Cerrarlo = 5 min sin volver salvo que alguien pase de 5 min. En Soporte no sale el de soporte; en Viajes no sale el de viajes. */
 import{r as React,j as J,y as useNavigate}from"./vendor-react-DprhJQz-.js";
-import{W as apiGet,aA as useVerificationQueue}from"./index-CuQT_62K.js";
+import{W as apiGet,L as apiPost,aA as useVerificationQueue}from"./index-CuQT_62K.js";
 
 function el(type,props,...kids){
  const p=Object.assign({},props||{});const key=p.key;delete p.key;
@@ -33,6 +33,14 @@ const CSS=`
 .cp-fi b{font-size:13px;font-weight:600;display:block}.cp-fi small{font-size:12px;color:rgba(244,244,245,.55)}
 .cp-w{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none}
 .cp-w.hot{background:rgba(255,107,87,.16);color:#FF8A7A}.cp-w.gold{background:rgba(232,197,71,.14);color:#E8C547}.cp-w.blue{background:rgba(127,209,255,.14);color:#8FD7FF}.cp-w.grey{background:#262630;color:rgba(244,244,245,.75)}
+.cp-sep{height:1px;background:rgba(255,255,255,.08);margin:8px 6px}
+.cp-push{padding:6px 8px 4px;display:flex;flex-direction:column;gap:6px}
+.cp-push b{font-size:13px;font-weight:700}.cp-push small{font-size:12px;color:rgba(244,244,245,.6);line-height:1.45}
+.cp-push .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+.cp-pbtn{height:32px;padding:0 14px;border-radius:999px;border:0;background:#E8C547;color:#14141A;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.cp-pbtn.ghost{background:transparent;border:1px solid rgba(255,255,255,.16);color:#F4F4F5}
+.cp-pbtn:disabled{opacity:.5;cursor:default}
+.cp-pmsg{font-size:12px;color:#E8C547}
 .cp-toasts{position:fixed;top:16px;right:18px;z-index:80;display:flex;flex-direction:column;gap:10px;pointer-events:none}
 .cp-toast{pointer-events:auto;width:370px;max-width:calc(100vw - 24px);background:rgba(28,28,36,.97);border:1px solid rgba(255,255,255,.1);border-radius:16px;box-shadow:0 16px 40px rgba(0,0,0,.55);overflow:hidden;color:#F4F4F5;font-family:inherit;animation:cp-in .34s cubic-bezier(.2,.9,.3,1.15)}
 .cp-toast.pulse{animation:cp-pulse .45s cubic-bezier(.3,1.5,.5,1)}
@@ -121,6 +129,45 @@ function chime(){
  try{const t=audioCtx.currentTime;[[880,0],[1320,.14]].forEach(([f,d])=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(0,t+d);g.gain.linearRampToValueAtTime(.18,t+d+.02);g.gain.exponentialRampToValueAtTime(.0001,t+d+.32);o.connect(g).connect(audioCtx.destination);o.start(t+d);o.stop(t+d+.34)})}catch{}
 }
 
+// ── Notices on this phone (Web Push, services/panel_push.py) ─────────────
+// iOS only lets a web app ask once it was added to the Home Screen and
+// opened from its icon; the permission must be asked inside the tap.
+function b64ToU8(s){const p="=".repeat((4-s.length%4)%4);const b=atob((s+p).replace(/-/g,"+").replace(/_/g,"/"));const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u}
+function pushSupport(){try{const ios=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);const standalone=(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)||navigator.standalone===true;if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window))return ios&&!standalone?"install":"none";return"ok"}catch{return"none"}}
+function deviceLabel(){const u=navigator.userAgent||"";return/iPhone/.test(u)?"iPhone":/iPad/.test(u)?"iPad":/Android/.test(u)?"Android":/Mac/.test(u)?"Mac":/Windows/.test(u)?"Windows":"Navegador"}
+const errText=e=>e instanceof Error?e.message:String(e);
+function PushControl(){
+ const[st,setSt]=React.useState("checking"),[msg,setMsg]=React.useState(null),sub=React.useRef(null);
+ React.useEffect(()=>{let off=false;(async()=>{const s=pushSupport();if(s!=="ok"){setSt(s);return}if(Notification.permission==="denied"){setSt("denied");return}
+  try{const reg=await navigator.serviceWorker.getRegistration("/panel/");const ps=reg&&reg.pushManager?await reg.pushManager.getSubscription():null;if(off)return;sub.current=ps;setSt(ps?"on":"off")}catch{if(!off)setSt("off")}})();return()=>{off=true}},[]);
+ const turnOn=async()=>{setMsg(null);let perm="default";try{perm=await Notification.requestPermission()}catch{}
+  if(perm!=="granted"){setSt(perm==="denied"?"denied":"off");return}
+  setSt("busy");
+  try{const reg=await navigator.serviceWorker.register("/panel/push-sw.js",{scope:"/panel/"});await navigator.serviceWorker.ready;
+   const k=await apiGet("/admin/panel/push/key",{retry:{maxAttempts:1}});
+   let ps=await reg.pushManager.getSubscription();
+   if(!ps)ps=await reg.pushManager.subscribe({userVisibleOnly:!0,applicationServerKey:b64ToU8(k.public_key)});
+   await apiPost("/admin/panel/push/subscribe",{subscription:ps.toJSON(),label:deviceLabel()},{retry:{maxAttempts:1}});
+   sub.current=ps;setSt("on");setMsg("Listo. Te llega un aviso de prueba.");
+   apiPost("/admin/panel/push/test",{endpoint:ps.endpoint},{retry:{maxAttempts:1}}).catch(()=>{})
+  }catch(e){setSt("off");setMsg(`No se pudo activar: ${errText(e)}`)}};
+ const test=async()=>{setMsg(null);try{await apiPost("/admin/panel/push/test",{endpoint:sub.current.endpoint},{retry:{maxAttempts:1}});setMsg("Enviado. Llega en unos segundos.")}catch(e){setMsg(`No llegó: ${errText(e)}`)}};
+ const turnOff=async()=>{setMsg(null);const ps=sub.current;try{if(ps){await apiPost("/admin/panel/push/unsubscribe",{endpoint:ps.endpoint},{retry:{maxAttempts:1}}).catch(()=>{});await ps.unsubscribe()}}catch{}sub.current=null;setSt("off")};
+ if(st==="checking")return null;
+ const T={
+  off:["Avisos en este teléfono","Soporte y viajes sin conductor, aunque el teléfono esté bloqueado."],
+  busy:["Activando…","Acepta el permiso si el teléfono lo pide."],
+  on:["Avisos activados en este teléfono","Llegan como notificación, uno por tipo, con el número."],
+  denied:["El teléfono bloqueó los avisos","Actívalos en Ajustes › Notificaciones › Dispatch y vuelve a abrir el panel."],
+  install:["Para recibir avisos en el iPhone","En Safari: Compartir › Agregar a pantalla de inicio. Ábrelo desde ese ícono y toca Activar aquí."],
+  none:["Este navegador no recibe avisos","En el iPhone usa Safari agregado a la pantalla de inicio; en la computadora, Chrome o Edge."],
+ }[st];
+ return el("div",{className:"cp-push"},el("b",null,T[0]),el("small",null,T[1]),
+  st==="off"?el("div",{className:"row"},el("button",{type:"button",className:"cp-pbtn",onClick:turnOn},"Activar")):null,
+  st==="on"?el("div",{className:"row"},el("button",{type:"button",className:"cp-pbtn",onClick:test},"Probar"),el("button",{type:"button",className:"cp-pbtn ghost",onClick:turnOff},"Apagar")):null,
+  msg?el("span",{className:"cp-pmsg",role:"status"},msg):null);
+}
+
 // ── Header: sound + "Necesita atención" ───────────────────────────────────
 const IC={
  bell:"M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4",
@@ -160,7 +207,8 @@ function PulseHeader({rail}){
    el("h4",null,"Necesita atención"),
    items.length===0?el("div",{style:{padding:"10px 8px 12px",fontSize:13,color:"rgba(244,244,245,.55)"}},"Todo en orden."):
    items.map(it=>el("button",{type:"button",key:it.k,className:"cp-fi",onClick:()=>{setOpen(false);navigate(it.to,it.state?{state:it.state}:undefined)}},el("span",{className:`cp-w ${it.tone}`},svg(it.icon,15)),el("span",null,el("b",null,it.title),el("small",null,it.sub)))),
-   rail?el("button",{type:"button",className:"cp-fi",onClick:flip},el("span",{className:"cp-w grey"},svg(sound?IC.on:IC.off,15)),el("span",null,el("b",null,sound?"Sonido activado":"Sonido apagado"),el("small",null,"Toca para cambiarlo"))):null):null);
+   rail?el("button",{type:"button",className:"cp-fi",onClick:flip},el("span",{className:"cp-w grey"},svg(sound?IC.on:IC.off,15)),el("span",null,el("b",null,sound?"Sonido activado":"Sonido apagado"),el("small",null,"Toca para cambiarlo"))):null,
+   el("div",{className:"cp-sep"}),el(PushControl)):null);
 }
 
 // ── The two notices ───────────────────────────────────────────────────────

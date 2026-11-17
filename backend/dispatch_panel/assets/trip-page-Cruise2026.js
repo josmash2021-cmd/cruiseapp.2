@@ -17,7 +17,7 @@ function el(type,props,...kids){
 
 const GOLD="#E8C547";
 const EMPTY={type:"FeatureCollection",features:[]};
-const LIVE_MS=6000,IDLE_MS=30000,LEAD_REFRESH_MS=30000,LEAD_MOVE_M=150,STALE_MS=90000;
+const LIVE_MS=6000,IDLE_MS=15000,LEAD_REFRESH_MS=30000,LEAD_MOVE_M=150,STALE_MS=90000;
 
 const CSS=`
 .tp-page{display:flex;flex-direction:column;gap:14px;min-width:0}
@@ -296,11 +296,14 @@ const money=v=>v==null||!isFinite(Number(v))?"—":"$"+Number(v).toLocaleString(
 const initials=n=>String(n||"").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase()||"?";
 const phoneFmt=p=>{const d=String(p||"").replace(/\D/g,"");return d.length===11&&d[0]==="1"?`+1 (${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`:d.length===10?`(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`:String(p||"")};
 
-function usePage(id,raw){
+// guard-pin trip_page_refetch: the page data is read again with every change
+// the trip's Firestore mirror brings (status, driver) and every status the
+// /live poll sees, so the timeline never waits for a reload.
+function usePage(id,raw,mirror){
  const[page,setPage]=React.useState(null),[err,setErr]=React.useState(null);
  React.useEffect(()=>{if(!(id>0))return;let off=false;
   apiGet(`/admin/trips/${id}/page`,{retry:{maxAttempts:2}}).then(d=>{if(!off){setPage(d);setErr(null)}}).catch(e=>{if(!off)setErr(e instanceof Error?e.message:String(e))});
-  return()=>{off=true}},[id,raw]);
+  return()=>{off=true}},[id,raw,mirror]);
  return{page,err};
 }
 
@@ -403,7 +406,8 @@ function RouteCard({page,summary,tripId}){
 
 function TimelineCard({page,raw}){
  const st=raw||page.status;
- const rows=[["Pedido",page.created_at,true],["Conductor asignado",page.driver_assigned_at,!!page.driver_assigned_at]];
+ const taken=page.driver_taken_at||page.driver_assigned_at;
+ const rows=[["Pedido",page.created_at,true],["Conductor asignado",taken,!!taken]];
  if(page.reservation&&page.scheduled_at){
   const confirm=new Date(new Date(page.scheduled_at).getTime()-3600e3).toISOString();
   rows.push(["Oferta para confirmar (1 hora antes)",confirm,["driver_en_route","arrived","in_trip","completed"].includes(st)]);
@@ -424,7 +428,7 @@ function TripPageShell(props){
  const terminal=t.status==="completed"||t.status==="cancelled";
  const live=useLive(id,terminal);
  const raw=live?live.status:null;
- const{page,err}=usePage(id,raw);
+ const{page,err}=usePage(id,raw,`${t.status}|${t.driverId||""}`);
  const[lead,setLead]=React.useState(null),[summary,setSummary]=React.useState(null),[call,setCall]=React.useState(null);
 
  // Old buttons, same elements: the contextual ones stay in sight, the rest
@@ -451,7 +455,7 @@ function TripPageShell(props){
  const st=raw||page.status;
  const[label,tone]=RAW_LABEL[st]||[st,""];
  const at=v=>v?new Date(v):null;
- const stepsT=Object.assign({},t,{createdAt:at(page.created_at)||t.createdAt,acceptedAt:at(page.driver_assigned_at)||t.acceptedAt,driverArrivedAt:at(page.arrived_at)||t.driverArrivedAt,startedAt:at(page.started_at)||t.startedAt,completedAt:at(page.completed_at)||t.completedAt,cancelledAt:st==="cancelled"?(at(page.updated_at)||t.cancelledAt):t.cancelledAt});
+ const stepsT=Object.assign({},t,{createdAt:at(page.created_at)||t.createdAt,acceptedAt:at(page.driver_taken_at||page.driver_assigned_at)||t.acceptedAt,driverArrivedAt:at(page.arrived_at)||t.driverArrivedAt,startedAt:at(page.started_at)||t.startedAt,completedAt:at(page.completed_at)||t.completedAt,cancelledAt:st==="cancelled"?(at(page.updated_at)||t.cancelledAt):t.cancelledAt});
  const rider=page.rider,driver=page.driver;
  const chips=[];
  const tier=tierName(page.vehicle_type);if(tier)chips.push(el("span",{className:"tp-chip",key:"tier"},tier));

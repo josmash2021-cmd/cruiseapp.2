@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.database import RiderPaymentMethod, Trip, User, Vehicle, get_db
+from models.database import DispatchOffer, RiderPaymentMethod, Trip, User, Vehicle, get_db
 from services import vehicle_tiers
 from utils.helpers import _resolve_rider_display, is_real_reservation
 from utils.security import _require_dispatch_auth
@@ -176,6 +176,22 @@ async def admin_trip_page(trip_id: int, db: AsyncSession = Depends(get_db)):
         driver["vehicle"] = ({k: getattr(v, k, None) for k in ("make", "model", "year", "color", "plate")}
                              if v is not None else None)
 
+    # When the driver took it. A reservation's claim never stamps
+    # driver_assigned_at (that column is the start of the drive to the pickup,
+    # and the pickup-ETA calibration measures it to arrived_at), so its claim
+    # is the accepted offer row it leaves behind.
+    reservation = bool(is_real_reservation(trip))
+    taken = None
+    if trip.driver_id:
+        taken = (await db.execute(
+            select(func.min(DispatchOffer.created_at)).where(
+                DispatchOffer.trip_id == trip.id,
+                DispatchOffer.driver_id == trip.driver_id,
+                DispatchOffer.status == "accepted",
+            )
+        )).scalar()
+    taken_at = (taken if reservation else None) or trip.driver_assigned_at or taken
+
     card = None
     if rider_user is not None and not is_guest and (trip.funding_source or "rider") == "rider":
         pm = (await db.execute(
@@ -189,7 +205,7 @@ async def admin_trip_page(trip_id: int, db: AsyncSession = Depends(get_db)):
     return {
         "id": trip.id,
         "status": trip.status,
-        "reservation": bool(is_real_reservation(trip)),
+        "reservation": reservation,
         "vehicle_type": trip.vehicle_type,
         "is_airport": bool(trip.is_airport),
         "airport_code": trip.airport_code,
@@ -200,6 +216,7 @@ async def admin_trip_page(trip_id: int, db: AsyncSession = Depends(get_db)):
         "created_at": _iso(trip.created_at),
         "scheduled_at": _iso(trip.scheduled_at),
         "driver_assigned_at": _iso(trip.driver_assigned_at),
+        "driver_taken_at": _iso(taken_at) if trip.driver_id else None,
         "arrived_at": _iso(trip.arrived_at),
         "started_at": _iso(trip.started_at),
         "completed_at": _iso(trip.completed_at),

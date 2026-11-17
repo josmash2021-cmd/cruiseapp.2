@@ -96,7 +96,7 @@ def test_shell_keeps_every_old_piece():
 
 def test_map_polls_only_the_live_endpoint():
     assert "/admin/trips/${id}/live" in CHUNK
-    assert "const LIVE_MS=6000,IDLE_MS=30000" in CHUNK
+    assert "const LIVE_MS=6000,IDLE_MS=15000" in CHUNK
     # A finished trip stops asking.
     assert 'if(d&&(d.status==="completed"||d.status==="cancelled"))return' in CHUNK
 
@@ -196,3 +196,45 @@ def test_page_matches_the_drawing():
     assert "// Without the page data (an error, an older server) the old cards stay." in CHUNK
     # Scrolling the page over the map never zooms it out.
     assert "cooperativeGestures:true" in CHUNK
+
+
+@pytest.mark.asyncio
+async def test_reservation_timeline_shows_when_the_driver_took_it(client, db, test_rider, test_driver):
+    """A claim never stamps driver_assigned_at (the ETA calibration reads it
+    as the start of the drive), so the timeline said "Conductor asignado ·
+    pendiente" while the reservation had a driver. Its claim row tells."""
+    from datetime import datetime, timedelta, timezone
+    from models.database import DispatchOffer
+    rider, _ = test_rider
+    driver, _ = test_driver
+    now = datetime.now(timezone.utc)
+    t = _trip(rider.id, driver.id, "scheduled_accepted")
+    t.created_at = now - timedelta(hours=10)
+    t.scheduled_at = now + timedelta(hours=8)
+    db.add(t)
+    await db.commit()
+    took = now - timedelta(hours=2)
+    db.add(DispatchOffer(trip_id=t.id, driver_id=driver.id, status="canceled", created_at=now - timedelta(hours=5)))
+    db.add(DispatchOffer(trip_id=t.id, driver_id=driver.id, status="accepted", created_at=took))
+    await db.commit()
+    r = await client.get(f"/admin/trips/{t.id}/page", headers=_dispatch_headers())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["driver_assigned_at"] is None
+    assert body["driver_taken_at"][:16] == took.isoformat()[:16]
+
+    # Released: no driver, nothing taken.
+    t.driver_id = None
+    t.status = "scheduled"
+    await db.commit()
+    body = (await client.get(f"/admin/trips/{t.id}/page", headers=_dispatch_headers())).json()
+    assert body["driver_taken_at"] is None
+
+
+def test_timeline_and_steps_read_the_taken_time_and_refetch_live():
+    assert "guard-pin trip_page_refetch" in CHUNK
+    assert '["Conductor asignado",taken,!!taken]' in CHUNK
+    assert "acceptedAt:at(page.driver_taken_at||page.driver_assigned_at)" in CHUNK
+    # Every change of the trip's Firestore mirror reads the page again.
+    assert 'usePage(id,raw,`${t.status}|${t.driverId||""}`)' in CHUNK
+    assert "},[id,raw,mirror]);" in CHUNK

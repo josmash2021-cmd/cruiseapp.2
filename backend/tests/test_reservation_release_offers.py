@@ -173,3 +173,14 @@ async def test_drop_and_panel_reassign_retire_the_claim_row(client, db, test_rid
     assert r.status_code == 200, r.text
     assert (b.id, "accepted") not in await _offers(db, trip2.id)
     assert any(n == f"reservation_reassign_broadcast_{trip2.id}" for n in quiet_tasks)
+
+
+def test_panel_shows_buttons_for_a_reservation_without_driver():
+    """A reservation with no driver showed no button at all (owner
+    2026-11-16): now "Avisar a los conductores" and "Ofrecer a un conductor"."""
+    from pathlib import Path
+    page = (Path(__file__).resolve().parents[1] / "dispatch_panel" / "assets" / "index-B68rRA9U.js").read_text(encoding="utf-8")
+    assert page.count("guard-pin panel_reservation_no_driver_buttons") == 1
+    assert '(t.status==="requested"||t.status==="scheduled")&&!V' in page
+    assert '"Avisar a los conductores":"Despachar"' in page
+    assert 'children:"Ofrecer a un conductor"' in page

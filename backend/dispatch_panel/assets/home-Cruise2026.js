@@ -222,6 +222,24 @@ function routeFor(t,token){
 
 // ── The live map ───────────────────────────────────────────────────────────
 function arrowEl(){const d=document.createElement("div");d.className="ch-drv";d.innerHTML=`<span class="ch-halo"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ARROW}"/></svg><span class="ch-pill"></span>`;return d}
+/*! guard-pin home_live_drivers: el Inicio escucha /admin/drivers/live y cada flecha se desliza a velocidad constante el tiempo entre lecturas (nunca 1.2 s y quieta); la consulta de 10 s no mueve a quien el flujo en vivo ya movió (dueño 2026-11-16) */
+// Glide an arrow to a new reading over the time readings take to arrive
+// (~5 s while driving): it reaches this one as the next lands, so it moves
+// all the time instead of jumping and stopping. A jump over 3 km is a
+// teleport (a new trip across town), not a drive.
+function glideTo(m,to,heading){
+ const now=performance.now();
+ if(m.lastFix){const gap=now-m.lastFix;if(gap>300&&gap<20000)m.gap=m.gap?m.gap*0.6+gap*0.4:gap}
+ m.lastFix=now;
+ const from=m.pos,far=metersBetween(from,to);
+ if(heading!=null&&isFinite(heading))m.heading=heading;else if(far>8)m.heading=bearing(from,to);
+ cancelAnimationFrame(m.raf);
+ const svg=m.marker.getElement().querySelector("svg");if(svg)svg.style.transform=`rotate(${m.heading||0}deg)`;
+ if(far>3000||far<0.5){m.pos=to;m.marker.setLngLat([to.lng,to.lat]);return}
+ const dur=Math.min(8000,Math.max(900,(m.gap||5000)*1.05)),t0=now;
+ const step=t=>{const k=Math.min(1,(t-t0)/dur);const p={lat:from.lat+(to.lat-from.lat)*k,lng:from.lng+(to.lng-from.lng)*k};m.pos=p;m.marker.setLngLat([p.lng,p.lat]);if(k<1)m.raf=requestAnimationFrame(step)};
+ m.raf=requestAnimationFrame(step);
+}
 // "sin señal hace 12 min": how long since his app last reported.
 function quietFor(iso){const t=iso?Date.parse(iso):NaN;if(!isFinite(t))return"sin señal";const m=Math.max(1,Math.round((Date.now()-t)/6e4));return m<60?`sin señal hace ${m} min`:m<1440?`sin señal hace ${Math.round(m/60)} h`:`sin señal hace ${Math.round(m/1440)} d`}
 function ringEl(){const d=document.createElement("div");d.className="ch-ring";d.innerHTML='<span class="ch-pill"></span>';return d}
@@ -265,19 +283,32 @@ const HomeMap=React.memo(function HomeMap({area,drivers,live,heat,layers,skewRef
  React.useEffect(()=>{const map=mapRef.current;if(!map||!ready)return;
   map.getSource("ch-heat")?.setData({type:"FeatureCollection",features:here.heat.map(c=>({type:"Feature",properties:{w:c.w},geometry:{type:"Point",coordinates:[c.lng,c.lat]}}))})},[ready,here.heat]);
 
+ // Live: each fix the moment the driver's app sends it (same SSE as the
+ // fleet map). Unknown ids wait for the next poll to create their arrow.
+ React.useEffect(()=>{if(!ready||typeof EventSource==="undefined")return;let es=null,retry=null,off=false;
+  const connect=()=>{if(off||document.visibilityState!=="visible")return;es?.close();es=new EventSource("/admin/drivers/live");
+   es.addEventListener("driver_location",ev=>{let d;try{d=JSON.parse(ev.data)}catch{return}
+    if(!d||d.is_online===false)return;const m=mk.current.drv.get(Number(d.id));const lat=Number(d.lat),lng=Number(d.lng);
+    if(!m||!isFinite(lat)||!isFinite(lng)||(lat===0&&lng===0))return;
+    m.liveAt=Date.now();m.target={lat,lng};
+    const moving=d.speed!=null&&Number(d.speed)>1.5;
+    glideTo(m,m.target,moving&&d.heading!=null?Number(d.heading):null);
+    m.marker.getElement().classList.remove("stale")});
+   es.onerror=()=>{es?.close();es=null;if(!off){clearTimeout(retry);retry=setTimeout(connect,3000)}}};
+  const vis=()=>{if(document.visibilityState==="visible"){if(!es)connect()}else{es?.close();es=null}};
+  connect();document.addEventListener("visibilitychange",vis);
+  return()=>{off=true;clearTimeout(retry);es?.close();document.removeEventListener("visibilitychange",vis)}},[ready]);
+
  // Drivers: one arrow each, gliding to each new reading.
  React.useEffect(()=>{const map=mapRef.current;if(!map||!ready)return;
   const byTrip=new Map(here.live.map(t=>[t.id,t]));const keep=new Set();
   for(const d of here.drivers){keep.add(d.id);const to={lat:d.lat,lng:d.lng};let m=mk.current.drv.get(d.id);
    if(!m){const node=arrowEl();node.addEventListener("click",()=>{const cur=mk.current.drv.get(d.id);const h=handlers.current;if(cur&&cur.tripId)h.onTrip(cur.tripId);else h.onDriver(d.id)});
     m={marker:new mapboxgl.Marker({element:node,anchor:"center"}).setLngLat([to.lng,to.lat]).addTo(map),pos:to,heading:null,raf:0,tripId:null};mk.current.drv.set(d.id,m)}
-   else{const from=m.pos;if(metersBetween(from,to)>8)m.heading=bearing(from,to);
-    cancelAnimationFrame(m.raf);const t0=performance.now(),dur=1200;
-    const step=now=>{const k=Math.min(1,(now-t0)/dur);const p={lat:from.lat+(to.lat-from.lat)*k,lng:from.lng+(to.lng-from.lng)*k};m.pos=p;m.marker.setLngLat([p.lng,p.lat]);if(k<1)m.raf=requestAnimationFrame(step)};
-    m.raf=requestAnimationFrame(step)}
+   else if(!(m.liveAt&&Date.now()-m.liveAt<20000)&&(!m.target||metersBetween(m.target,to)>0.5)){m.target=to;glideTo(m,to,null)}
    const trip=d.trip_id?byTrip.get(d.trip_id):null;m.tripId=d.busy?d.trip_id:null;
    if(m.heading==null&&trip){const target=trip.kind==="ontrip"?trip.dropoff:trip.pickup;if(okPt(target)&&metersBetween(to,target)>30)m.heading=bearing(to,target)}
-   const node=m.marker.getElement();node.classList.toggle("busy",!!d.busy);node.classList.toggle("stale",!!d.stale);
+   const node=m.marker.getElement();node.classList.toggle("busy",!!d.busy);node.classList.toggle("stale",!!d.stale&&!(m.liveAt&&Date.now()-m.liveAt<180000));
    node.title=(d.busy?`${d.name||"Conductor"} · viaje #${d.trip_id}`:`${d.name||"Conductor"} · libre`)+(d.stale?` · ${quietFor(d.last_seen)}`:"");
    const svg=node.querySelector("svg");if(svg)svg.style.transform=`rotate(${m.heading||0}deg)`;
    const pill=node.querySelector(".ch-pill");if(pill)pill.textContent=pillText(trip)}

@@ -3297,7 +3297,8 @@ async def _reassign_reservation(db, trip, mode: str, body) -> dict:
         name = _driver_display_name(target)
         message = f"Reserva ofrecida a {name}. Queda asignada cuando la acepte."
     else:
-        message = "La reserva quedó disponible para los conductores."
+        message = ("Listo: les avisamos a los conductores de la zona. "
+                   "La toma el primero que la acepte.")
     return {
         "status": "scheduled",
         "trip_id": trip.id,

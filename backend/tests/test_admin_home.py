@@ -257,3 +257,15 @@ def test_quiet_driver_is_faded_not_grey():
     assert ".ch-drv.stale path{fill:#8A8A94}" not in home
     assert ".ch-drv.stale svg,.ch-drv.stale .ch-halo{opacity:.38}" in home
     assert '"Sin señal")' in home and "function quietFor(iso)" in home
+
+
+def test_inicio_drivers_move_live():
+    """Owner 2026-11-16: "necesito verlos moverse en tiempo real". The map
+    listens to the fleet SSE and glides over the gap between fixes; the old
+    1.2-s hop after a 10-s poll is gone."""
+    from pathlib import Path
+    home = (Path(__file__).resolve().parents[1] / "dispatch_panel" / "assets" / "home-Cruise2026.js").read_text(encoding="utf-8")
+    assert home.count("guard-pin home_live_drivers") == 1
+    assert 'new EventSource("/admin/drivers/live")' in home
+    assert "function glideTo(m,to,heading)" in home
+    assert "dur=1200" not in home

@@ -1496,6 +1496,8 @@ def _panel_login_page(error: str = "", status_code: int = 200) -> HTMLResponse:
     html = f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow">
+<link rel="manifest" href="/panel/manifest.json"><link rel="apple-touch-icon" href="/panel/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Dispatch"><meta name="theme-color" content="#0B0B0F">
 <title>Cruise Dispatch — Acceso</title><style>
 body{{margin:0;background:#0a1128;color:#f7f7fb;font:16px system-ui,sans-serif;display:grid;min-height:100vh;place-items:center}}
 main{{width:min(90vw,380px);padding:32px;border:1px solid #8c6b2f;border-radius:18px;background:#14141a}}

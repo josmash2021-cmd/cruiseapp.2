@@ -21,7 +21,9 @@ def test_menu_item_route_and_lazy_page():
 
 
 def test_badge_is_one_shared_poll_of_the_counts():
-    assert 'e.id==="pidiendo-ahora"?n.jsx(cruiseBookingBadge,{}):null' in ENTRY
+    # The menu row (2026-11-16, panel_pulse_menu): Pidiendo keeps its own
+    # shared poll; every other row asks the panel pulse.
+    assert 'e.id==="pidiendo-ahora"?(rl?null:n.jsx(cruiseBookingBadge,{})):cruisePulse(CruisePulseBadge,{id:e.id,rail:!!rl})' in ENTRY
     assert 'se("/admin/riders/booking-now",{query:{counts_only:!0}' in ENTRY
     assert 'document.visibilityState!=="visible"' in ENTRY
     # One poller for every badge on the page; it stops with the last one.

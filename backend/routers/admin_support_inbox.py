@@ -186,6 +186,56 @@ async def support_inbox(db: AsyncSession = Depends(get_db)):
     return {"now": now.isoformat(), "chats": out}
 
 
+async def waiting_chats(db: AsyncSession) -> list[dict]:
+    """Who waits for a PERSON right now — the inbox's "Esperan respuesta"
+    rule, so the panel's notice, menu count and Soporte page always agree:
+    an open chat a person owns whose last message is the user's. Oldest
+    first, each with the time of its first unanswered message."""
+    chats = [c for c in (await db.execute(
+        select(SupportChat).where(SupportChat.status == "open")
+    )).scalars().all() if _with_person(c)]
+    if not chats:
+        return []
+    ids = [c.id for c in chats]
+    last_ids = select(func.max(SupportMessage.id)).where(
+        SupportMessage.chat_id.in_(ids)).group_by(SupportMessage.chat_id)
+    last = {m.chat_id: m for m in (await db.execute(
+        select(SupportMessage).where(SupportMessage.id.in_(last_ids))
+    )).scalars().all()}
+    waiting = [c for c in chats if last.get(c.id) is not None and last[c.id].sender_role in _USER_ROLES]
+    if not waiting:
+        return []
+    wids = [c.id for c in waiting]
+    last_reply = dict((await db.execute(
+        select(SupportMessage.chat_id, func.max(SupportMessage.created_at))
+        .where(SupportMessage.chat_id.in_(wids), SupportMessage.sender_role.in_(_REPLY_ROLES))
+        .group_by(SupportMessage.chat_id)
+    )).all())
+    since: dict[int, datetime] = {}
+    for chat_id, at in (await db.execute(
+        select(SupportMessage.chat_id, SupportMessage.created_at)
+        .where(SupportMessage.chat_id.in_(wids), SupportMessage.sender_role.in_(_USER_ROLES))
+        .order_by(SupportMessage.chat_id, SupportMessage.created_at.asc())
+    )).all():
+        at, reply = _aware(at), _aware(last_reply.get(chat_id))
+        if at is not None and (reply is None or at > reply):
+            since.setdefault(chat_id, at)
+    users = {u.id: u for u in (await db.execute(
+        select(User).where(User.id.in_({c.user_id for c in waiting}))
+    )).scalars().all()}
+    out = []
+    for c in waiting:
+        u = users.get(c.user_id)
+        name = f"{u.first_name or ''} {u.last_name or ''}".strip() if u else ""
+        bits = name.split()
+        short = bits[0] if len(bits) == 1 else (f"{bits[0]} {bits[-1][0].upper()}." if bits else "Un usuario")
+        out.append({"chat_id": c.id, "user_id": c.user_id, "name": short,
+                    "role": (u.role if u else None) or "rider",
+                    "since": _iso(since.get(c.id) or _aware(last[c.id].created_at))})
+    out.sort(key=lambda r: r["since"] or "")
+    return out
+
+
 def _notes_key(chat_id: int) -> str:
     return f"support_notes:{chat_id}"
 

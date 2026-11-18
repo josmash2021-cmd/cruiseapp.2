@@ -522,6 +522,9 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
         t.status = "cancelled"
         t.cancel_reason = "cancelled"
         await settle_promotion_on_cancel(db, t, had_driver=had_driver)
+        # Free the rider's card hold, like every other cancel (2026-11-18).
+        from routers.trips import _release_or_capture_fee_on_cancel
+        t.payment_status = await _release_or_capture_fee_on_cancel(t)
         canceled.append(t.id)
     await db.commit()
     if _HAS_FIRESTORE:
@@ -625,6 +628,10 @@ async def admin_cancel_trip(trip_id: int, body: AdminCancelTripIn, db: AsyncSess
     trip.cancel_reason = rider_safe_cancel_reason(reason)
     from services.promotion_redemptions import settle_promotion_on_cancel
     await settle_promotion_on_cancel(db, trip, had_driver=had_driver)
+    # Free the rider's card hold (2026-11-18): every other cancel path
+    # already did; the panel's Cancelar left the money pinned for ~7 days.
+    from routers.trips import _release_or_capture_fee_on_cancel
+    trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
     await db.commit()
     # "Último viaje": the driver who marked this trip as their last goes
     # offline now (2026-11-02).

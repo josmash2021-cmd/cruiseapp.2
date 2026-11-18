@@ -72,3 +72,16 @@ def test_webhook_never_unpays_a_paid_trip():
     terminal_guard = body.index('trip.payment_status in ("paid", "refunded", "pending_refund", "partial")')
     mark_failed = body.index('trip.payment_status = "failed"')
     assert terminal_guard < mark_failed
+
+
+ADMIN = (BACKEND / "routers" / "admin.py").read_text(encoding="utf-8")
+
+
+def test_panel_cancels_release_the_hold():
+    """2026-11-18: the panel's Cancelar (and the emergency cancel-all) set
+    status='cancelled' and never touched the rider's PaymentIntent — the
+    hold stayed on the card ~7 days. Both settle it before the commit."""
+    for marker in ('async def admin_cancel_trip', 'async def admin_cancel_all_active'):
+        start = ADMIN.index(marker)
+        body = ADMIN[start:ADMIN.index("await db.commit()", start)]
+        assert "_release_or_capture_fee_on_cancel" in body, marker

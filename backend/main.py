@@ -1561,6 +1561,9 @@ from routers.admin_support_inbox import router as admin_support_inbox_router
 from routers.admin_pulse import router as admin_pulse_router
 from routers.admin_trips_board import router as admin_trips_board_router
 from routers.admin_fleet_map import router as admin_fleet_map_router
+from routers.admin_reservations import router as admin_reservations_router
+from routers.admin_riders_list import router as admin_riders_list_router
+from routers.admin_drivers_list import router as admin_drivers_list_router
 from services.event_bus import event_bus
 
 app.include_router(auth_router)
@@ -1596,6 +1599,9 @@ app.include_router(admin_support_inbox_router)
 app.include_router(admin_pulse_router)
 app.include_router(admin_trips_board_router)
 app.include_router(admin_fleet_map_router)
+app.include_router(admin_reservations_router)
+app.include_router(admin_riders_list_router)
+app.include_router(admin_drivers_list_router)
 
 # Load-test auth exists only on staging: mounted AND self-gated by
 # LOAD_TEST=1 — production never includes it (the 404 double-check inside
@@ -1772,6 +1778,10 @@ def _is_read_poll_path(path: str) -> bool:
         or path == "/admin/trips/board"
         # Mapa en vivo (8 s) — 2026-11-17.
         or path == "/admin/fleet/map"
+        # Reservas (10 s), Pasajeros (30 s) y Conductores (15 s) — 2026-11-18.
+        or path == "/admin/reservations/board"
+        or path == "/admin/people/riders"
+        or path == "/admin/people/drivers"
         or (path.startswith("/trips/") and (path.endswith("/poll") or path.endswith("/chat")))
         or (path.startswith("/support/chats/") and (path.endswith("/messages") or path.endswith("/typing")))
     )

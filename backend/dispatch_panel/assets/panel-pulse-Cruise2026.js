@@ -103,7 +103,7 @@ function Count({c,rail,bumpKey}){
 }
 function VerifCount({rail}){
  const q=useVerificationQueue();
- const n=q&&!q.loading&&!q.error&&Array.isArray(q.rows)?q.rows.length:0;
+ const n=q&&!q.loading&&!q.error&&Array.isArray(q.rows)?q.rows.filter(r=>r.status==="pending").length:0;// solo las que esperan revisión (434 → 213, 2026-11-18)
  return n>0?el(Count,{c:{n,tone:"grey",title:"Verificaciones pendientes"},rail}):null;
 }
 function PulseBadge({id,rail}){

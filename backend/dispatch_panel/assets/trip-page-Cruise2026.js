@@ -335,10 +335,12 @@ const phoneFmt=p=>{const d=String(p||"").replace(/\D/g,"");return d.length===11&
 // the trip's Firestore mirror brings (status, driver) and every status the
 // /live poll sees, so the timeline never waits for a reload.
 function usePage(id,raw,mirror){
- const[page,setPage]=React.useState(null),[err,setErr]=React.useState(null);
- React.useEffect(()=>{if(!(id>0))return;let off=false;
-  apiGet(`/admin/trips/${id}/page`,{retry:{maxAttempts:2}}).then(d=>{if(!off){setPage(d);setErr(null)}}).catch(e=>{if(!off)setErr(e instanceof Error?e.message:String(e))});
-  return()=>{off=true}},[id,raw,mirror]);
+ const[page,setPage]=React.useState(null),[err,setErr]=React.useState(null),[tick,setTick]=React.useState(0),fails=React.useRef(0);
+ // A phone on a weak signal (owner 2026-11-18): keep the skeleton and ask
+ // again; the old cards come back only after three misses in a row.
+ React.useEffect(()=>{if(!(id>0))return;let off=false,t=0;
+  apiGet(`/admin/trips/${id}/page`,{retry:{maxAttempts:2}}).then(d=>{if(!off){fails.current=0;setPage(d);setErr(null)}}).catch(e=>{if(off)return;fails.current++;if(fails.current>=3)setErr(e instanceof Error?e.message:String(e));t=setTimeout(()=>setTick(x=>x+1),Math.min(15e3,2e3*fails.current))});
+  return()=>{off=true;clearTimeout(t)}},[id,raw,mirror,tick]);
  return{page,err};
 }
 

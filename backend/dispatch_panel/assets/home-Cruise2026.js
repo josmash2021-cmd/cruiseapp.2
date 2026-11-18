@@ -375,21 +375,24 @@ function Skeleton(){
   el("div",{className:"ch-row"},el("div",{className:"ch-skel ch-wide",style:{height:480}}),el("div",{className:"ch-skel ch-narrow",style:{height:480}})));
 }
 
+// The last answer of this session: coming back to Inicio paints it at once
+// and refreshes (owner 2026-11-18, "no carga rápido o instantáneo").
+let homeMemo=null;
 function HomeShell({fallback}){
  injectCss();
  const navigate=useNavigate();
- const[data,setData]=React.useState(null),[failed,setFailed]=React.useState(false),[offline,setOffline]=React.useState(false);
+ const[data,setData]=React.useState(()=>homeMemo&&homeMemo.d),[failed,setFailed]=React.useState(0),[offline,setOffline]=React.useState(false);
  const[market,setMarketState]=React.useState(()=>readPref()||"todos");
  const[mapPick,setMapPick]=React.useState(null);
  const[layers,setLayers]=React.useState({drivers:true,trips:true,heat:true});
  const[,setTick]=React.useState(0);
- const skewRef=React.useRef(0);
+ const skewRef=React.useRef(homeMemo?homeMemo.skew:0);
  const verif=useVerificationQueue();
 
  React.useEffect(()=>{let alive=true,inFlight=false;
   const load=async()=>{if(inFlight||document.visibilityState!=="visible")return;inFlight=true;
-   try{const d=await apiGet("/admin/home",{retry:{maxAttempts:1}});if(!alive)return;const at=Date.parse(d&&d.now);skewRef.current=Number.isFinite(at)?at-Date.now():0;setData(d);setOffline(false)}
-   catch(err){if(!alive)return;console.warn("[Inicio] /admin/home failed",err);setFailed(true);setOffline(true)}
+   try{const d=await apiGet("/admin/home",{retry:{maxAttempts:1}});if(!alive)return;const at=Date.parse(d&&d.now);skewRef.current=Number.isFinite(at)?at-Date.now():0;setData(d);homeMemo={d,skew:skewRef.current};setOffline(false)}
+   catch(err){if(!alive)return;console.warn("[Inicio] /admin/home failed",err);setFailed(n=>n+1);setOffline(true);if(!homeMemo)setTimeout(()=>{if(alive)load()},2500)}
    finally{inFlight=false}};
   load();const h=setInterval(load,POLL_MS);
   const onVis=()=>{if(document.visibilityState==="visible")load()};document.addEventListener("visibilitychange",onVis);
@@ -398,8 +401,9 @@ function HomeShell({fallback}){
  const openTrip=React.useCallback(id=>navigate(tripPath(id)),[navigate]);
  const openDriver=React.useCallback(id=>navigate(`/personas/driver/sql_${id}`),[navigate]);
 
- // Without the server's answer the old Inicio is shown.
- if(!data&&failed)return fallback;
+ // The old Inicio only if the server failed three times in a row (a slow
+ // phone signal used to show it after ONE miss, owner 2026-11-18).
+ if(!data&&failed>=3)return fallback;
  if(!data)return el(Skeleton,null);
 
  const nowMs=Date.now()+skewRef.current;

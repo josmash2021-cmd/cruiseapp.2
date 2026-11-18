@@ -10,6 +10,7 @@ import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -18,6 +19,15 @@ from routers import admin_home
 from services.market_area import market_of
 from tests.conftest import _make_auth_headers
 from tests.test_dispatch_trip_booking import _dispatch_headers
+
+
+def _today_at(ago: timedelta) -> datetime:
+    """`ago` before now, but never before today's midnight in Central time (the
+    later of the markets' midnights): right after midnight, "5 minutes ago" is
+    yesterday and the panel's "Hoy" rightly leaves it out (failed 00:04 CST)."""
+    now = datetime.now(timezone.utc)
+    mid = datetime.now(ZoneInfo("America/Chicago")).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(now - ago, mid.astimezone(timezone.utc) + timedelta(seconds=30))
 
 BACKEND = Path(__file__).resolve().parents[1]
 ASSETS = BACKEND / "dispatch_panel" / "assets"
@@ -125,8 +135,8 @@ async def test_today_money_by_market(client, db, test_rider, test_driver):
     rider, _ = test_rider
     driver, _ = test_driver
     now = datetime.now(timezone.utc)
-    done = _trip(rider.id, driver.id, "completed", created_at=now - timedelta(minutes=50),
-                 completed_at=now - timedelta(minutes=5), fare=30.0, tip_amount=4.0, driver_earnings=31.0)
+    done = _trip(rider.id, driver.id, "completed", created_at=_today_at(timedelta(minutes=50)),
+                 completed_at=_today_at(timedelta(minutes=5)), fare=30.0, tip_amount=4.0, driver_earnings=31.0)
     gone = _trip(rider.id, None, "cancelled", at=FORT_LAUDERDALE, created_at=now - timedelta(minutes=30))
     db.add_all([done, gone])
     await db.commit()
@@ -230,8 +240,8 @@ def test_home_chunk_contract():
     home = (ASSETS / "home-Cruise2026.js").read_text(encoding="utf-8")
     assert "export{HomeShell}" in home
     assert '"/admin/home"' in home and "/admin/home/search" in home
-    # Without the server's answer the old Inicio is shown.
-    assert "if(!data&&failed)return fallback" in home
+    # The old Inicio only after three failed answers in a row (2026-11-18).
+    assert "if(!data&&failed>=3)return fallback" in home
     # Scrolling the page over the map never zooms it.
     assert "cooperativeGestures:true" in home
     # Verifications counted by the same queue as the Verificación page.

@@ -494,6 +494,9 @@ function FleetMapScreen(){
  const sel=selected!=null?all.find(d=>d.id===selected)||null:null;
  React.useEffect(()=>{if(selected!=null&&data&&!all.some(d=>d.id===selected))setSelected(null)},[data]);// eslint-disable-line
  const pick=id=>{setSelected(id);if(id==null)return;const d=all.find(x=>x.id===id);if(d){if(cur!=="all"&&d.market!==cur)setAreaState("all");setTimeout(()=>{const lv=liveRef.current.get(id);apiRef.current&&apiRef.current.flyTo(lv&&Date.now()-lv.at<LIVE_FRESH_MS?lv:d,13.5)},0)}};
+ // "Ver en el mapa" from Conductores opens here focused on that driver (navigate state driverId, 2026-11-18).
+ const focusRef=React.useRef((()=>{try{const u=window.history.state&&window.history.state.usr;const v=u&&u.driverId;return v!=null&&v!==""?Number(v):null}catch{return null}})());
+ React.useEffect(()=>{const want=focusRef.current;if(want==null||!data)return;focusRef.current=null;if(all.some(d=>d.id===want)){pick(want);setSheetOpen(true)}else toast("Ese conductor no está en línea ahora.")},[data]);// eslint-disable-line
  const onWaiting=id=>{const w=(data?data.waiting:[]).find(x=>x.id===id);if(w&&okPt(w.pickup)){apiRef.current&&apiRef.current.flyTo(w.pickup,13.5)}navigate(`/viajes/viaje/sql_${id}`)};
  const onSearch=e=>{if(e.key!=="Enter")return;const t=q.trim().replace(/^#/,"");if(!t)return;
   if(/^\d+$/.test(t)){const n=Number(t);const d=all.find(x=>x.trip&&x.trip.id===n);if(d){pick(d.id);return}navigate(`/viajes/viaje/sql_${n}`);return}

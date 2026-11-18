@@ -291,7 +291,8 @@ function ProfileShell(props){
  const navigate=useNavigate();
  const{data,err,limit,setLimit,reload}=useProfile(id);
  const chats=useChats(id);
- const[tab,setTab]=React.useState("resumen"),[filter,setFilter]=React.useState("todos"),[trip,setTrip]=React.useState(null),[modal,setModal]=React.useState(null),[toastMsg,setToastMsg]=React.useState(null);
+ /*! guard-pin profile_open_tab: Pasajeros/Conductores abren la ficha en una pestaña ("Desactivar o bloquear…" = Cuenta) con navigate(..., {state:{profileTab}}) (2026-11-18) */
+ const[tab,setTab]=React.useState(()=>{try{const u=window.history.state&&window.history.state.usr;const t=u&&(u.profileTab||u.cruiseProfileTab);return ["resumen","viajes","pagos","soporte","verificacion","cuenta","historial","ganancias","documentos","vehiculo"].includes(t)?t:"resumen"}catch{return"resumen"}}),[filter,setFilter]=React.useState("todos"),[trip,setTrip]=React.useState(null),[modal,setModal]=React.useState(null),[toastMsg,setToastMsg]=React.useState(null);
  const toastTimer=React.useRef(0);
  const toast=React.useCallback(m=>{setToastMsg(m);clearTimeout(toastTimer.current);toastTimer.current=setTimeout(()=>setToastMsg(null),3500)},[]);
  React.useEffect(()=>()=>clearTimeout(toastTimer.current),[]);

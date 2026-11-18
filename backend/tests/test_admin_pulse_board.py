@@ -6,6 +6,7 @@ with no driver — and each is one count, so 100 at once is one notice.
 """
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -14,6 +15,24 @@ from tests.conftest import _make_auth_headers
 
 ASSETS = Path(__file__).resolve().parents[1] / "dispatch_panel" / "assets"
 NOW = datetime.now(timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_now():
+    """NOW is taken at collection; in the full suite a test can run minutes
+    later and short windows (2 min searching, 180 s without signal) flip."""
+    global NOW
+    NOW = datetime.now(timezone.utc)
+
+
+def _today_at(ago: timedelta) -> datetime:
+    """`ago` before now, but never before today's midnight in Central time (the
+    later of the markets' midnights): right after midnight, "30 minutes ago" is
+    yesterday and the board's "Terminados/Cancelados hoy" rightly leave it out
+    (failed 00:04 CST)."""
+    now = datetime.now(timezone.utc)
+    mid = datetime.now(ZoneInfo("America/Chicago")).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(now - ago, mid.astimezone(timezone.utc) + timedelta(seconds=30))
 
 
 def _panel():
@@ -102,9 +121,9 @@ async def test_board_tabs_and_rows(client, db):
         _trip(rider.id, "driver_en_route", driver_id=driver.id, driver_assigned_at=NOW - timedelta(minutes=1)),
         _trip(rider.id, "scheduled", scheduled_at=NOW + timedelta(hours=5), created_at=NOW - timedelta(days=1),
               airport_code="BHM", dropoff_address="BHM · Birmingham-Shuttlesworth — Delta Air Lines"),
-        _trip(rider.id, "completed", driver_id=driver.id, completed_at=NOW - timedelta(minutes=30),
+        _trip(rider.id, "completed", driver_id=driver.id, completed_at=_today_at(timedelta(minutes=30)),
               duration=22, distance=7.1),
-        _trip(rider.id, "cancelled", updated_at=NOW - timedelta(minutes=20), cancel_reason="rider_cancelled"),
+        _trip(rider.id, "cancelled", updated_at=_today_at(timedelta(minutes=20)), cancel_reason="rider_cancelled"),
     ])
     await db.commit()
 

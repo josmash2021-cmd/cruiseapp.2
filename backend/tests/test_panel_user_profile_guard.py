@@ -23,7 +23,9 @@ def test_person_page_mounts_the_shell_with_a_fallback():
     # A chunk that fails to load or throws shows the old page, never a blank.
     assert "class UserProfileBoundary extends m.Component" in PERSON
     assert "return this.state.failed?this.props.fallback:this.props.children" in PERSON
-    assert "e.jsx(m.Suspense,{fallback:old,children:e.jsx(UserProfileLazy,{...p})})" in PERSON
+    # While the file downloads: a spinner, never the old page (2026-11-18).
+    assert "UserProfileBoundary,{fallback:old," in PERSON
+    assert "m.Suspense,{fallback:old" not in PERSON
     assert PERSON.count("return e.jsxs(UserProfileShell,{cruiseRole:t,cruiseId:c,") == 1
 
 

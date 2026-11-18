@@ -80,7 +80,10 @@ def test_detail_mounts_the_shell_with_a_fallback():
     assert "guard-pin panel_trip_page" in DETAIL
     assert 'import("./trip-page-Cruise2026.js").then(x=>({default:x.TripPageShell}))' in DETAIL
     assert "class TripPageBoundary extends a.Component" in DETAIL
-    assert "e.jsx(a.Suspense,{fallback:old,children:e.jsx(TripPageLazy,{...p})})" in DETAIL
+    # While the file downloads: a spinner, never the old page (2026-11-18);
+    # the old page stays the boundary's fallback for a failure.
+    assert "TripPageBoundary,{fallback:old," in DETAIL
+    assert "a.Suspense,{fallback:old" not in DETAIL
     assert DETAIL.count('e.jsxs(TripPageWrap,{cruiseTrip:t,cruiseBackendId:c.backendId,children:[') == 1
 
 
@@ -237,7 +240,7 @@ def test_timeline_and_steps_read_the_taken_time_and_refetch_live():
     assert "acceptedAt:at(page.driver_taken_at||page.driver_assigned_at)" in CHUNK
     # Every change of the trip's Firestore mirror reads the page again.
     assert 'usePage(id,raw,`${t.status}|${t.driverId||""}`)' in CHUNK
-    assert "},[id,raw,mirror]);" in CHUNK
+    assert "},[id,raw,mirror,tick]);" in CHUNK
 
 
 def test_map_cleanup_only_removes_markers():
